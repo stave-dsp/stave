@@ -6,7 +6,8 @@
 //!
 //!   - `harness`        drive a `Plugin` in-process (no FFI)
 //!   - `validation`     stave-host's validation suite on a linked plugin
-//!   - `face`           a face's bindings against the parameter table
+//!   - `face`           drive a face as a person would (`FaceDriver`), its laws
+//!   - `image`          golden pictures: compare a canvas within a tolerance
 //!   - `no_alloc`       no allocation on the audio thread
 //!   - `perf`           the perf report
 //!   - `stability`      no pumping, no runaway energy
@@ -16,11 +17,13 @@
 
 pub mod face;
 pub mod harness;
+pub mod image;
 pub mod no_alloc;
 pub mod perf;
 pub mod stability;
 pub mod validation;
 
+pub use face::FaceDriver;
 pub use harness::PluginHarness;
 pub use stability::{
     assert_no_pump, energy_trend, resonant_tone, StabilityPolicy, StabilityReport,

@@ -189,11 +189,33 @@ pub fn cabinet(p: &StoryParams) -> Face {
     Face::new(theme, Panel::cabinet().grille(Side::Top, 300.0, Some("Stave")).around(strip))
 }
 
+/// The controls the showcase leaves out: a pager over two pages, an x/y
+/// pad, a stepper, a momentary footswitch, and knobs that follow a
+/// toggle's step (`on_step`).
+pub fn controls(p: &StoryParams) -> Face {
+    let theme = Theme { name: "controls", ..Theme::graphite() };
+    let gap = theme.space(3);
+    let header = row(vec![Title::new("STAVE").tagline("every control").node(), spacer(), Pager::new(1, &["MAIN", "MOD"]).node()])
+        .gap(gap)
+        .align(Align::Start);
+    let main = row(vec![Pad::new(p.rate.bind(), p.depth.bind(), 140.0, 120.0).node(), Stepper::new(p.shape.bind()).node()])
+        .gap(gap)
+        .align(Align::Center);
+    let sync = p.sync.bind();
+    let follow = stack(vec![on_step(Knob::new(p.drive.bind()).node(), sync, 0), on_step(Knob::new(p.mix.bind()).node(), sync, 1)]);
+    let modulation = row(vec![Toggle::new(sync).node(), follow, Footswitch::new(p.hold.bind()).momentary().label("TAP").node()])
+        .gap(gap)
+        .align(Align::Center);
+    let body = column(vec![header, pages(1, vec![main, modulation])]).gap(theme.space(4)).align(Align::Stretch);
+    Face::new(theme, Panel::default().around(body))
+}
+
 /// Every story: the showcase on each theme, then the hardware forms.
 pub fn all(p: &StoryParams) -> Vec<(String, Face)> {
     let mut v: Vec<(String, Face)> = Theme::all().into_iter().map(|t| (t.name.to_string(), showcase(p, t))).collect();
     v.push(("amp".into(), amp(p)));
     v.push(("rack".into(), rack(p)));
     v.push(("cabinet".into(), cabinet(p)));
+    v.push(("controls".into(), controls(p)));
     v
 }

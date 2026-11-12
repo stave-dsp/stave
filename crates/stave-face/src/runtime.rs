@@ -45,6 +45,38 @@ pub struct Mods {
     pub reset: bool,
 }
 
+/// A key a face responds to while one of its controls has keyboard
+/// focus (the last control pressed). Arrows nudge like the wheel, Home
+/// and End go to the ends of the range, Escape cancels a drag (restoring
+/// the value it started from) or lets go of the focus.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Key {
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    Escape,
+}
+
+/// One condition a part's visibility depends on: a page of a page set
+/// (`pages`, `on_page`) or a step of a stepped parameter (`on_step`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Visibility {
+    Page { key: u32, page: u32 },
+    Step { param: ParamId, step: u32 },
+}
+
+/// One shown part's picture, in paint order: what tests and tools read
+/// to find a readout's text or check what draws on top.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Layer {
+    pub id: Option<PartId>,
+    pub rect: Rect,
+    pub scene: Scene,
+}
+
 /// The pointer shape the platform view should show.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Cursor {
@@ -98,6 +130,8 @@ pub struct Runtime {
     sprites: Sprites,
     drag: Option<Drag>,
     hover: Option<Target>,
+    /// Keyboard focus: the control last pressed.
+    focus: Option<Target>,
     memo: Vec<u64>,
     pages: HashMap<u32, u32>,
 }
@@ -154,6 +188,7 @@ impl Runtime {
             sprites: Sprites::default(),
             drag: None,
             hover: None,
+            focus: None,
             memo: Vec::new(),
             pages: HashMap::new(),
         }
@@ -212,6 +247,124 @@ impl Runtime {
     /// gesture.
     pub fn grab_at(&self, controller: &dyn Controller, p: Pt) -> Option<(Option<PartId>, Gesture)> {
         self.hit(controller, p).map(|t| (self.items[t.item].id, t.gesture))
+    }
+
+    /// The part (by id, if it has one) and gesture under the pointer.
+    pub fn hovered(&self) -> Option<(Option<PartId>, Gesture)> {
+        self.hover.as_ref().map(|t| (self.items[t.item].id, t.gesture.clone()))
+    }
+
+    /// The part and gesture being dragged (or held, for a momentary).
+    pub fn dragging(&self) -> Option<(Option<PartId>, Gesture)> {
+        self.drag.as_ref().map(|d| (self.items[d.target.item].id, d.target.gesture.clone()))
+    }
+
+    /// The part and gesture with keyboard focus.
+    pub fn focused(&self) -> Option<(Option<PartId>, Gesture)> {
+        self.focus.as_ref().map(|t| (self.items[t.item].id, t.gesture.clone()))
+    }
+
+    /// Every shown part's id and rect, in paint order.
+    pub fn visible(&self, controller: &dyn Controller) -> Vec<(Option<PartId>, Rect)> {
+        (0..self.items.len()).filter(|&i| self.shown(i, controller)).map(|i| (self.items[i].id, self.items[i].rect)).collect()
+    }
+
+    /// Every grab of every shown part, topmost last, with its part.
+    pub fn all_grabs(&self, controller: &dyn Controller) -> Vec<(Option<PartId>, Rect, Grab)> {
+        let mut out = Vec::new();
+        let mut grabs = Vec::new();
+        for (i, it) in self.items.iter().enumerate() {
+            if self.shown(i, controller) {
+                grabs.clear();
+                it.part.grabs(it.rect, &self.frame(i, controller, 1.0, 0.0), &mut grabs);
+                out.extend(grabs.drain(..).map(|g| (it.id, it.rect, g)));
+            }
+        }
+        out
+    }
+
+    /// Every distinct set of conditions some part shows under: putting
+    /// the face in each (with [`show`](Self::show)) shows every part.
+    /// The first is always the empty set (what shows unconditionally).
+    pub fn states(&self) -> Vec<Vec<Visibility>> {
+        let mut out: Vec<Vec<Visibility>> = vec![Vec::new()];
+        for it in &self.items {
+            let state: Vec<Visibility> = it
+                .when
+                .iter()
+                .map(|&(k, v)| {
+                    if k >= STEP_KEY {
+                        Visibility::Step { param: ParamId(k & !STEP_KEY), step: u32::from(v) }
+                    } else {
+                        Visibility::Page { key: k, page: u32::from(v) }
+                    }
+                })
+                .collect();
+            if !out.contains(&state) {
+                out.push(state);
+            }
+        }
+        out
+    }
+
+    /// Put the face in `state`: flip its pages, and step its stepped
+    /// parameters (each an edit through the controller, bracketed).
+    pub fn show(&mut self, controller: &dyn Controller, state: &[Visibility]) {
+        for v in state {
+            match *v {
+                Visibility::Page { key, page } => {
+                    self.pages.insert(key, page);
+                }
+                Visibility::Step { param, step } => {
+                    let n = controller.steps(param);
+                    controller.begin(param);
+                    controller.set(param, Normalized::new(step_value(step, n)));
+                    controller.end(param);
+                }
+            }
+        }
+    }
+
+    /// The live picture of every shown part, in the order it paints (the
+    /// part under the pointer last, so its readout is on top).
+    pub fn layers(&self, controller: &dyn Controller, time: f64) -> Vec<Layer> {
+        self.paint_order(controller)
+            .into_iter()
+            .map(|i| {
+                let it = &self.items[i];
+                let mut scene = Scene::new();
+                it.part.paint(it.rect, &self.frame(i, controller, 1.0, time), &mut scene);
+                Layer { id: it.id, rect: it.rect, scene }
+            })
+            .collect()
+    }
+
+    /// The static picture of every shown part (its bake at 1×, images
+    /// and all), in paint order.
+    pub fn static_layers(&self, controller: &dyn Controller) -> Vec<Layer> {
+        let shadows = self.shadows(controller);
+        (0..self.items.len())
+            .filter(|&i| self.shown(i, controller))
+            .map(|i| {
+                let it = &self.items[i];
+                let mut scene = Scene::new();
+                it.part.bake(
+                    it.rect,
+                    &mut Bake { theme: &self.face.theme, scale: 1.0, face: self.size, shadows: &shadows, controller, scene: &mut scene },
+                );
+                Layer { id: it.id, rect: it.rect, scene }
+            })
+            .collect()
+    }
+
+    /// The shown items in live paint order: tree order, with the part
+    /// being dragged (else the one under the pointer) last, so whatever
+    /// it shows while touched — a value readout — is never covered.
+    fn paint_order(&self, controller: &dyn Controller) -> Vec<usize> {
+        let top = self.drag.as_ref().map(|d| d.target.item).or(self.hover.as_ref().map(|t| t.item));
+        let mut order: Vec<usize> = (0..self.items.len()).filter(|&i| Some(i) != top && self.shown(i, controller)).collect();
+        order.extend(top.filter(|&i| self.shown(i, controller)));
+        order
     }
 
     /// Every grab's gesture, on every page (for binding checks).
@@ -279,14 +432,18 @@ impl Runtime {
         }
     }
 
-    fn bake(&self, controller: &dyn Controller, scale: f64, text: &mut dyn TextPainter) -> Canvas {
+    fn shadows(&self, controller: &dyn Controller) -> Shadows {
         let mut occ = Vec::new();
         for (i, it) in self.items.iter().enumerate() {
             if self.shown(i, controller) {
                 it.part.occluders(it.rect, &self.face.theme, &mut occ);
             }
         }
-        let shadows = Shadows::new(self.size.0, self.size.1, &occ);
+        Shadows::new(self.size.0, self.size.1, &occ)
+    }
+
+    fn bake(&self, controller: &dyn Controller, scale: f64, text: &mut dyn TextPainter) -> Canvas {
+        let shadows = self.shadows(controller);
         let mut scene = Scene::new();
         for (_, it) in self.items.iter().enumerate().filter(|(i, _)| self.shown(*i, controller)) {
             it.part.bake(
@@ -319,10 +476,8 @@ impl Runtime {
         out.px.clear();
         out.px.extend_from_slice(&base.px);
         let mut scene = Scene::new();
-        for (i, it) in self.items.iter().enumerate() {
-            if self.shown(i, controller) {
-                it.part.paint(it.rect, &self.frame(i, controller, scale, time), &mut scene);
-            }
+        for i in self.paint_order(controller) {
+            self.items[i].part.paint(self.items[i].rect, &self.frame(i, controller, scale, time), &mut scene);
         }
         stave_raster::render(&scene, scale, out, text);
         self.memo = self.observe(controller, time);
@@ -338,6 +493,7 @@ impl Runtime {
         v.push(self.page_key(controller));
         v.push(controller.preset().map_or(u64::MAX, |p| p as u64));
         v.push(self.drag.as_ref().map_or(u64::MAX, |d| d.target.item as u64));
+        v.push(self.focus.as_ref().map_or(u64::MAX, |t| t.item as u64));
         let animating = self
             .items
             .iter()
@@ -405,9 +561,11 @@ impl Runtime {
     /// Button down at `p`; `clicks` is the click count (2 = double).
     pub fn pointer_down(&mut self, controller: &dyn Controller, p: Pt, mods: Mods, clicks: u32) -> bool {
         let Some(target) = self.hit(controller, p) else {
+            self.focus = None;
             return false;
         };
         self.hover = Some(target.clone());
+        self.focus = Some(target.clone());
         let gesture = target.gesture.clone();
         match gesture {
             Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } if clicks >= 2 || mods.reset => {
@@ -544,6 +702,100 @@ impl Runtime {
             }
             _ => {}
         }
+    }
+
+    /// Send one event (a [`Trace`](crate::Trace)'s line): what a
+    /// platform view and a test driver both do. Returns true if the face
+    /// used it.
+    pub fn apply(&mut self, controller: &dyn Controller, act: &crate::Act) -> bool {
+        use crate::Act;
+        match *act {
+            Act::Hover(p) => self.pointer_move(controller, p),
+            Act::Press { at, mods, clicks } => self.pointer_down(controller, at, mods, clicks),
+            Act::Move { at, mods } => {
+                let dragging = self.drag.is_some();
+                self.pointer_drag(controller, at, mods);
+                dragging
+            }
+            Act::Release => {
+                let dragging = self.drag.is_some();
+                self.pointer_up(controller);
+                dragging
+            }
+            Act::Wheel { at, lines, mods } => {
+                self.wheel(controller, at, lines, mods);
+                self.drag.is_none() && self.hit(controller, at).is_some()
+            }
+            Act::Key { key, mods } => self.key(controller, key, mods),
+            Act::Exit => {
+                self.pointer_exit();
+                true
+            }
+        }
+    }
+
+    /// A key press. Returns true if the face used it (a key it does not
+    /// use belongs to the host).
+    pub fn key(&mut self, controller: &dyn Controller, key: Key, mods: Mods) -> bool {
+        if key == Key::Escape {
+            if let Some(d) = self.drag.take() {
+                // Cancel: back to where the drag started, still bracketed.
+                match d.target.gesture {
+                    Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } => {
+                        controller.set(bind.id, Normalized::new(d.start));
+                        controller.end(bind.id);
+                    }
+                    Gesture::Momentary { bind } => {
+                        controller.set(bind.id, Normalized::ZERO);
+                        controller.end(bind.id);
+                    }
+                    Gesture::Pad { x, y, .. } => {
+                        controller.end(x.id);
+                        controller.end(y.id);
+                    }
+                    _ => {}
+                }
+                return true;
+            }
+            return self.focus.take().is_some();
+        }
+        if self.drag.is_some() {
+            return false;
+        }
+        let Some(focus) = self.focus.as_ref() else {
+            return false;
+        };
+        let up = matches!(key, Key::Up | Key::Right);
+        let bind = match focus.gesture {
+            Gesture::Rotary { bind, .. } => {
+                let v = controller.normalized(bind.id);
+                let k = if mods.fine { 0.001 } else { 0.01 };
+                let to = match key {
+                    Key::Home => 0.0,
+                    Key::End => 1.0,
+                    _ if up => v + k,
+                    _ => v - k,
+                };
+                (bind, to.clamp(0.0, 1.0))
+            }
+            Gesture::Stepped { bind, .. } | Gesture::Choose { bind, .. } | Gesture::Nudge { bind, .. } => {
+                let n = controller.steps(bind.id).max(2);
+                let s = i64::from(step_of(controller.normalized(bind.id), n));
+                let s = match key {
+                    Key::Home => 0,
+                    Key::End => i64::from(n) - 1,
+                    _ if up => s + 1,
+                    _ => s - 1,
+                };
+                (bind, step_value(s.clamp(0, i64::from(n) - 1) as u32, n))
+            }
+            _ => return false,
+        };
+        let (bind, to) = bind;
+        controller.begin(bind.id);
+        controller.set(bind.id, Normalized::new(to));
+        controller.end(bind.id);
+        true
     }
 
     /// Scroll over the face: `dy` in lines (positive = up / increase).

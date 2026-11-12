@@ -26,10 +26,12 @@ use stave_ui::scene::{Brush, Font, Image, Op, Pt, Scene};
 use stave_ui::style::Color;
 
 pub mod png;
+mod box_text;
 mod coverage;
 mod path;
 mod stroke;
 
+pub use box_text::BoxText;
 pub use coverage::Mask;
 
 /// A premultiplied RGBA8 pixel buffer, row 0 at the top.
@@ -63,7 +65,8 @@ pub trait TextPainter {
     fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color, font: &Font);
 }
 
-/// No text (headless tests of everything else).
+/// No text (headless tests of everything else; [`BoxText`] paints
+/// deterministic stand-in glyphs).
 pub struct NoText;
 impl TextPainter for NoText {
     fn text(&mut self, _: &mut Canvas, _: Pt, _: &str, _: f64, _: Color, _: &Font) {}

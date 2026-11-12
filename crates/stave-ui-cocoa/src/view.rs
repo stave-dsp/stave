@@ -22,7 +22,7 @@ use std::time::Instant;
 use std::boxed::Box;
 
 use stave_core::Controller;
-use stave_face::{Cursor, Face, Mods, Runtime};
+use stave_face::{Cursor, Face, Key, Mods, Runtime};
 use stave_raster::Canvas;
 use stave_ui::scene::{pt, Pt};
 
@@ -607,11 +607,32 @@ extern "C" fn scroll_wheel(this: Obj, _cmd: Sel, event: Option<Obj>) {
     });
 }
 
+/// The face's keys, from macOS virtual key codes.
+fn face_key(code: u16) -> Option<Key> {
+    Some(match code {
+        123 => Key::Left,
+        124 => Key::Right,
+        125 => Key::Down,
+        126 => Key::Up,
+        115 => Key::Home,
+        119 => Key::End,
+        53 => Key::Escape,
+        _ => return None,
+    })
+}
+
 extern "C" fn key_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
     method(this, event, |view, event| {
-        let code = event.key_code();
-        // `None`: no key handler, so the key belongs to the host.
-        let handled = view.with_ui(|_, ui| {
+        let (code, mods) = (event.key_code(), event.mods());
+        // The focused control takes the keys it uses (arrows, Home, End,
+        // Escape); a stand-alone window's handler, the rest. `None`: the
+        // key belongs to the host.
+        let handled = view.with_ui(|shared, ui| {
+            if let Some(key) = face_key(code) {
+                if ui.runtime.key(&*shared.controller, key, mods) {
+                    return Some(ui.runtime.size());
+                }
+            }
             let on_key = ui.on_key.as_mut()?;
             let face = on_key(code);
             if let Some(face) = face {

@@ -3098,6 +3098,7 @@ dependencies = [
  "stave-core",
  "stave-face",
  "stave-raster",
+ "stave-test",
  "stave-ui",
  "stave-ui-cocoa",
 ]
@@ -3114,13 +3115,17 @@ name = "stave-test"
 version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
+ "miniz_oxide",
  "stave",
  "stave-core",
  "stave-dsp",
  "stave-face",
  "stave-host",
  "stave-measure",
+ "stave-raster",
  "stave-telemetry",
+ "stave-tilt-vst3",
+ "stave-ui",
 ]
 
 [[package]]

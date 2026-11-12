@@ -1,10 +1,34 @@
-//! A face's bindings, checked against the plugin's table — every
-//! plugin with a face mounts this in its `tests/editor.rs`:
+//! [`FaceDriver`]: a plugin's face under a test's hands. Click, drag,
+//! hover, scroll and type at named parts or exact points, then check
+//! where the pointer landed, what the parameters hold, what edits the
+//! host was sent (always bracketed begin → end), what shows and what
+//! the face looks like. Headless and deterministic: the face's own
+//! runtime over a real [`PluginController`], no window.
+//!
+//! ```
+//! # use stave_test::face::{FaceDriver, dy};
+//! let mut ui = FaceDriver::of::<stave_tilt_vst3::Tilt>();
+//! ui.drag("tilt", dy(-55.0));                  // a quarter of the travel up
+//! assert_eq!(ui.value("tilt"), 3.0);           // from 0 dB, a quarter of 12 dB
+//! ui.double_click("tilt");                     // back to the default
+//! assert_eq!(ui.value("tilt"), 0.0);
+//! ui.assert_bracketed();
+//! ```
+//!
+//! The checks every plugin with a face mounts ([`laws`] holds the
+//! interaction laws on every state; these hold the bindings):
 //!
 //! * every bound ParamId exists, under the name the face was built with;
 //! * stepped gestures (toggles, choices, latches, momentary buttons)
 //!   bind stepped parameters, and rotaries and pads bind continuous ones;
 //! * a `Choose` gesture's step is in range.
+
+mod driver;
+pub mod laws;
+
+pub use driver::{bracketed, by, dx, dy, Aim, Edit, FaceDriver, Offset, ParamRef, PartName, Shown, Toward};
+pub use stave_face::{Cursor, Key, Mods, PartId, Visibility};
+pub use stave_ui::scene::{pt, Pt};
 
 use std::sync::Arc;
 

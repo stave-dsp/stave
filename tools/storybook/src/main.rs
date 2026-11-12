@@ -11,15 +11,14 @@
 
 #![forbid(unsafe_code)]
 
-mod controller;
 mod live;
-mod stories;
 
 use std::path::PathBuf;
 
 use stave_face::Runtime;
 
-use crate::controller::StoryController;
+use stave_storybook::controller::StoryController;
+use stave_storybook::stories;
 
 fn screenshot(dir: PathBuf, scale: f64) {
     std::fs::create_dir_all(&dir).expect("create screenshot dir");

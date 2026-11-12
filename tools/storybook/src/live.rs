@@ -1,11 +1,11 @@
 //! The live storybook: one window showing the showcase face, driven by
 //! the stand-in controller. Everything drags; ←/→ step through the
-//! stories; Esc or ⌘Q quits.
+//! stories (when no control has the keyboard); Esc or ⌘Q quits.
 
 use stave_ui_cocoa::FaceView;
 
-use crate::controller::StoryController;
-use crate::stories;
+use stave_storybook::controller::StoryController;
+use stave_storybook::stories;
 
 const ESCAPE: u16 = 53;
 const LEFT: u16 = 123;

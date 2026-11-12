@@ -15,7 +15,8 @@
 //! screens.rs   pictures for displays: graticule, scope, spectrum, curve, envelope
 //! runtime.rs   layout, the cached static layer, live paint, and every
 //!              gesture (drag, fine-drag, double-click reset, wheel,
-//!              stepping, latching, pads)
+//!              stepping, latching, pads, keys)
+//! trace.rs     a session's pointer and key events as replayable text
 //! ```
 //!
 //! Parts read and write the plugin through its [`Controller`] (from
@@ -32,6 +33,7 @@ pub mod parts;
 pub mod runtime;
 pub mod screens;
 pub mod theme;
+pub mod trace;
 
 pub use part::{
     leaf, on_page, on_step, pages, step_of, step_value, Area, Bind, BindParam, FaceNode, Focus, Frame, Gesture, Grab, Part,
@@ -40,7 +42,8 @@ pub use part::{
 pub use stave_core::telemetry::TapId;
 pub use stave_core::Controller;
 pub use parts::*;
-pub use runtime::{Cursor, Face, Mods, Runtime};
+pub use runtime::{Cursor, Face, Key, Layer, Mods, Runtime, Visibility};
+pub use trace::{Act, Trace, TraceError};
 pub use theme::{CapStyle, Coat, Coverings, Finish, Hardware, Palette, Theme, Typography};
 
 /// Everything a face definition needs in one import.

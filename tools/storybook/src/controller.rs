@@ -43,8 +43,8 @@ pub struct StoryParams {
     pub width: FloatParam,
 }
 
-impl StoryParams {
-    fn new() -> Self {
+impl Default for StoryParams {
+    fn default() -> Self {
         let percent = |id, name, v| FloatParam::new(ParamId(id), name, Range::linear(0.0, 1.0)).default(v).unit(Unit::Percent);
         let db = |id, name| {
             FloatParam::new(ParamId(id), name, Range::linear(-24.0, 24.0)).unit(Unit::Db)
@@ -99,10 +99,16 @@ pub struct StoryController {
     frozen: Cell<Option<f64>>,
 }
 
+impl Default for StoryController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StoryController {
     pub fn new() -> Self {
         StoryController {
-            params: Arc::new(StoryParams::new()),
+            params: Arc::new(StoryParams::default()),
             opened: Instant::now(),
             frozen: Cell::new(None),
         }
