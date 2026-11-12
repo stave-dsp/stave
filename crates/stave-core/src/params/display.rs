@@ -332,12 +332,16 @@ mod tests {
         ];
         // Sweep: a dense linear run around zero plus a geometric run out
         // to 1e6 on both signs.
-        let mut values: Vec<f64> = (-20_000..=20_000).map(|i| i as f64 * 0.0137).collect();
+        // Miri interprets every format and parse, so it walks a sparse
+        // sweep; the switch points below stay exhaustive.
+        let (stride, growth) = if cfg!(miri) { (500, 1.05) } else { (1, 1.0007) };
+        let mut values: Vec<f64> =
+            (-20_000..=20_000).step_by(stride).map(|i| i as f64 * 0.0137).collect();
         let mut v = 1e-4;
         while v < 1e6 {
             values.push(v);
             values.push(-v);
-            v *= 1.0007;
+            v *= growth;
         }
         // Switch points and rounding edges, each nudged by ulps and by
         // the display's half-step.

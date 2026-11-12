@@ -54,17 +54,8 @@ pub(super) unsafe extern "C" fn comp_set_active<P: Vst3Export>(
                 let max_frames = inst.shared.max_frames() as usize;
                 let env = stave_core::Environment::new(inst.shared.sample_rate(), max_frames)
                     .with_layout(crate::buses::accepted(inst));
-                proc.plugin.prepare(&env);
-                // Fresh transport start: stale DSP state must not ring in.
-                proc.plugin.reset();
-                proc.prepare_scratch(max_in_channels::<P>(), max_frames.max(1));
-                let new_latency = proc.plugin.latency();
-                proc.bypass.prepare(
-                    max_in_channels::<P>(),
-                    new_latency as usize,
-                    max_frames.max(1),
-                    inst.shared.sample_rate(),
-                );
+                // Prepared and reset: stale DSP state must not ring in.
+                let new_latency = proc.prepare(&env, max_in_channels::<P>());
                 // Latency changed across activations: tell the host to re-query.
                 if new_latency != inst.shared.latency() {
                     inst.handler.restart_component(RESTART_LATENCY_CHANGED);
@@ -73,7 +64,8 @@ pub(super) unsafe extern "C" fn comp_set_active<P: Vst3Export>(
                 inst.tail
                     .store(stave_core::runtime::tail_wire(proc.plugin.tail()), Ordering::Release);
                 inst.shared.set_activated(true);
-            } else if inst.shared.activated() {
+            } else {
+                proc.release();
                 inst.shared.set_activated(false);
             }
             K_RESULT_OK

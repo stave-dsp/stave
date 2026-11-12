@@ -125,8 +125,15 @@ fn process_block<P: ClapExport>(
     // preallocated scratch (the buffers' no-alias contract), null
     // channels replaced by zeroed scratch.
     // SAFETY: the host's channel pointers are valid for `frames` (clap.h).
-    let borrows =
-        unsafe { proc.split_for_block(input_ptrs, output_ptrs, &aux_ptrs[..n_aux], frames) };
+    let Some(borrows) =
+        (unsafe { proc.split_for_block(input_ptrs, output_ptrs, &aux_ptrs[..n_aux], frames) })
+    else {
+        // Not prepared (no activate): the plugin never runs unprepared.
+        inst.fault(ProcessFault::Unprepared, 1);
+        // SAFETY: the host's output channels are writable for `frames`.
+        unsafe { stave_core::runtime::zero_tail(output_ptrs, 0, frames) };
+        return sys::CLAP_PROCESS_ERROR;
+    };
     let (plugin, gate, io) = (borrows.plugin, borrows.bypass, borrows.io);
     if io.truncated {
         inst.fault(ProcessFault::BlockTruncated, 1);

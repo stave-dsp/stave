@@ -199,8 +199,15 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // are staged through preallocated scratch; null channels read zeroed
     // scratch. Zero-copy otherwise.
     // SAFETY: the host's channel pointers are valid for `frames` (SDK).
-    let borrows =
-        unsafe { proc.split_for_block(input_ptrs, output_ptrs, &aux_ptrs[..n_aux], frames) };
+    let Some(borrows) =
+        (unsafe { proc.split_for_block(input_ptrs, output_ptrs, &aux_ptrs[..n_aux], frames) })
+    else {
+        // Not prepared (no setActive): the plugin never runs unprepared.
+        inst.diagnostics.faults.record(ProcessFault::Unprepared, 1);
+        // SAFETY: the host's output channels are writable for `frames`.
+        unsafe { stave_core::runtime::zero_tail(output_ptrs, 0, frames) };
+        return K_RESULT_OK;
+    };
     let (plugin, gate, io) = (borrows.plugin, borrows.bypass, borrows.io);
     if io.truncated {
         inst.diagnostics

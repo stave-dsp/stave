@@ -24,10 +24,13 @@ pub enum ProcessFault {
     /// A block needed more scratch (frames or channels) than was
     /// prepared; it ran cut to fit.
     BlockTruncated,
+    /// A process call before the plugin was prepared (VST3 setActive,
+    /// CLAP activate), or after it was deactivated: silenced.
+    Unprepared,
 }
 
 impl ProcessFault {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::ConcurrentProcess,
         Self::MissingProcessData,
         Self::BlockTooLong,
@@ -36,6 +39,7 @@ impl ProcessFault {
         Self::ParamChangesDropped,
         Self::EventsDropped,
         Self::BlockTruncated,
+        Self::Unprepared,
     ];
 
     pub fn severity(self) -> Severity {
@@ -45,7 +49,8 @@ impl ProcessFault {
             | Self::BlockTooLong
             | Self::MissingOutput
             | Self::UnsupportedSampleSize
-            | Self::BlockTruncated => Severity::HostMisbehaving,
+            | Self::BlockTruncated
+            | Self::Unprepared => Severity::HostMisbehaving,
             Self::ParamChangesDropped | Self::EventsDropped => Severity::Warning,
         }
     }
@@ -68,6 +73,7 @@ impl fmt::Display for ProcessFault {
             Self::BlockTruncated => {
                 "block truncated: more frames or channels than the host declared"
             }
+            Self::Unprepared => "process refused: the plugin is not active (silenced)",
         })
     }
 }

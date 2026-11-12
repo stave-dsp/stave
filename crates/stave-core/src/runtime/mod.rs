@@ -115,8 +115,15 @@ pub const MAX_AUX_PORTS: usize = 4;
 
 /// The processor-side half of an instance: the plugin itself plus the
 /// preallocated buffers the wrapper needs on the audio thread.
+///
+/// The lifecycle is a state: the plugin is processed only between
+/// [`prepare`](Self::prepare) and [`release`](Self::release) —
+/// [`split_for_block`](Self::split_for_block), the only way to its
+/// audio-thread borrow, answers `None` otherwise.
 pub struct ProcessorState<P: Erased> {
     pub plugin: P,
+    /// Between `prepare` and `release`.
+    prepared: bool,
     /// Framework-owned click-free bypass.
     pub bypass: BypassGate,
     /// Scratch channels, `scratch_frames` samples each, back to back:
@@ -174,6 +181,7 @@ impl<P: Erased> ProcessorState<P> {
     pub fn new(plugin: P) -> Self {
         Self {
             plugin,
+            prepared: false,
             bypass: BypassGate::new(),
             scratch: Box::default(),
             scratch_frames: 0,
@@ -194,6 +202,33 @@ impl<P: Erased> ProcessorState<P> {
         }
     }
 
+    /// Prepare the plugin for `env` (and reset it: a fresh start must not
+    /// ring in stale state), size the scratch and the bypass gate's dry
+    /// path, and allow processing. Non-realtime. Returns the plugin's
+    /// latency at these conditions.
+    pub fn prepare(&mut self, env: &crate::Environment, in_channels: usize) -> u32 {
+        let max_frames = env.max_block.max(1);
+        self.plugin.prepare(env);
+        self.plugin.reset();
+        self.prepare_scratch(in_channels, max_frames);
+        let latency = self.plugin.latency();
+        self.bypass
+            .prepare(in_channels, latency as usize, max_frames, env.sample_rate);
+        self.prepared = true;
+        latency
+    }
+
+    /// No more processing until the next [`prepare`](Self::prepare)
+    /// (the host deactivated the plugin).
+    pub fn release(&mut self) {
+        self.prepared = false;
+    }
+
+    /// Between [`prepare`](Self::prepare) and [`release`](Self::release).
+    pub fn is_prepared(&self) -> bool {
+        self.prepared
+    }
+
     /// Split every audio-thread borrow the wrapper needs at once: the
     /// plugin, the bypass gate, and the block's channel lists — the
     /// host's own when they can be used as-is, otherwise lists through
@@ -205,7 +240,9 @@ impl<P: Erased> ProcessorState<P> {
     /// fit — the plugin runs the frames that fit, surplus channels are
     /// left out (surplus outputs zeroed) — and `io.truncated` is set.
     /// The caller zeroes outputs past `io.frames`
-    /// ([`zero_tail`]).
+    /// ([`zero_tail`]). `None` while the plugin is not prepared: the
+    /// caller silences the block and records
+    /// [`ProcessFault::Unprepared`](crate::diagnostics::ProcessFault::Unprepared).
     ///
     /// # Safety
     /// Each non-null pointer in `input`, `output` and `aux` is valid for
@@ -217,7 +254,10 @@ impl<P: Erased> ProcessorState<P> {
         output: &'a [*mut f32],
         aux: &[&'a [*mut f32]],
         frames: usize,
-    ) -> BlockBorrows<'a, P> {
+    ) -> Option<BlockBorrows<'a, P>> {
+        if !self.prepared {
+            return None;
+        }
         let stage = ranges_alias(input, output, frames);
         let aux = &aux[..aux.len().min(MAX_AUX_PORTS)];
         let has_null = |ptrs: &[*mut f32]| ptrs.iter().any(|p| p.is_null());
@@ -262,7 +302,7 @@ impl<P: Erased> ProcessorState<P> {
         for (i, &list) in aux.iter().enumerate() {
             aux_lists[i] = resolve(aux_at[i], list);
         }
-        BlockBorrows {
+        Some(BlockBorrows {
             plugin: &mut self.plugin,
             bypass: &mut self.bypass,
             io: BlockIo {
@@ -272,7 +312,7 @@ impl<P: Erased> ProcessorState<P> {
                 frames: run,
                 truncated,
             },
-        }
+        })
     }
 }
 
@@ -788,10 +828,28 @@ mod tests {
         unsafe { core::slice::from_raw_parts(ptr, frames) }
     }
 
+    /// The lifecycle as a state: no audio-thread borrow before `prepare`
+    /// or after `release`.
+    #[test]
+    fn only_a_prepared_plugin_is_processed() {
+        let mut state = ProcessorState::new(SideFx);
+        let mut out = [0.0f32; 4];
+        let outs = [out.as_mut_ptr()];
+        // SAFETY: `out` holds the 4 frames.
+        assert!(unsafe { state.split_for_block(&[], &outs, &[], 4) }.is_none(), "unprepared");
+        state.prepare(&crate::Environment::new(48_000.0, 8), 2);
+        assert!(state.is_prepared());
+        // SAFETY: as above.
+        assert!(unsafe { state.split_for_block(&[], &outs, &[], 4) }.is_some(), "prepared");
+        state.release();
+        // SAFETY: as above.
+        assert!(unsafe { state.split_for_block(&[], &outs, &[], 4) }.is_none(), "released");
+    }
+
     #[test]
     fn staging_copies_and_zeroes_null_channels() {
         let mut state = ProcessorState::new(SideFx);
-        state.prepare_scratch(2, 8);
+        state.prepare(&crate::Environment::new(48_000.0, 8), 2);
         let mut buf = [1.0f32, 2.0, 3.0, 4.0];
         let mut out_r = [9.0f32; 4];
         // One raw pointer to `buf`, shared by the input and the output, the
@@ -800,7 +858,7 @@ mod tests {
         let ins = [shared, core::ptr::null_mut()];
         let outs = [shared, out_r.as_mut_ptr()];
         // SAFETY: `buf` and `out_r` hold the 4 frames.
-        let block = unsafe { state.split_for_block(&ins, &outs, &[], 4) };
+        let block = unsafe { state.split_for_block(&ins, &outs, &[], 4) }.expect("prepared");
         let io = block.io;
         assert!(!io.truncated);
         assert_eq!(io.input.len(), 2);
@@ -818,7 +876,7 @@ mod tests {
     #[test]
     fn null_channels_become_distinct_zeroed_scratch() {
         let mut state = ProcessorState::new(SideFx);
-        state.prepare_scratch(2, 8);
+        state.prepare(&crate::Environment::new(48_000.0, 8), 2);
         let mut a = [1.0f32; 8];
         let mut b = [2.0f32; 8];
         let null = core::ptr::null_mut();
@@ -826,7 +884,7 @@ mod tests {
         let outs = [null, null];
         let side = [null, b.as_mut_ptr()];
         // SAFETY: `a` and `b` hold the 8 frames.
-        let block = unsafe { state.split_for_block(&ins, &outs, &[&side], 8) };
+        let block = unsafe { state.split_for_block(&ins, &outs, &[&side], 8) }.expect("prepared");
         let io = block.io;
         assert!(!io.truncated);
         assert_eq!(io.input[0], ins[0], "a real channel is not copied");
@@ -844,7 +902,7 @@ mod tests {
     #[test]
     fn a_block_past_the_prepared_scratch_is_truncated_not_grown() {
         let mut state = ProcessorState::new(SideFx);
-        state.prepare_scratch(2, 4);
+        state.prepare(&crate::Environment::new(48_000.0, 4), 2);
         let (scratch, slots) = (state.scratch.as_ptr(), state.ptrs.len());
         let mut buf = [5.0f32; 16];
         let null = core::ptr::null_mut();
@@ -852,7 +910,7 @@ mod tests {
         // Too long: in place (needs staging) with 16 > 4 frames.
         let ins = [buf.as_mut_ptr()];
         // SAFETY: `buf` holds 16 frames.
-        let block = unsafe { state.split_for_block(&ins, &ins, &[], 16) };
+        let block = unsafe { state.split_for_block(&ins, &ins, &[], 16) }.expect("prepared");
         assert!(block.io.truncated);
         assert_eq!(block.io.frames, 4);
         assert_eq!(channel(block.io.input[0], 4), &[5.0; 4]);
@@ -863,7 +921,7 @@ mod tests {
         let mut outs = [null; 9];
         outs[8] = tail.as_mut_ptr();
         // SAFETY: `tail` holds 4 frames.
-        let block = unsafe { state.split_for_block(&[], &outs, &[], 4) };
+        let block = unsafe { state.split_for_block(&[], &outs, &[], 4) }.expect("prepared");
         assert!(block.io.truncated);
         assert_eq!(block.io.output.len(), 6);
         assert_eq!(tail, [0.0; 4]);
@@ -872,7 +930,7 @@ mod tests {
         let mut out = [0.0f32; 16];
         let outs = [out.as_mut_ptr()];
         // SAFETY: `buf`, `out` hold 16 frames and do not overlap.
-        let block = unsafe { state.split_for_block(&ins, &outs, &[], 16) };
+        let block = unsafe { state.split_for_block(&ins, &outs, &[], 16) }.expect("prepared");
         assert!(!block.io.truncated);
         assert_eq!(block.io.frames, 16);
 
