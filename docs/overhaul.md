@@ -380,7 +380,7 @@ framework deploy key.
 - [ ] **C8** Plugins against framework `main`: a scheduled (and dispatchable) job in stave-plugins that links the framework at `main` and runs the plugin gates, so breakage is seen before a release, not at the bump.
 - [ ] **C9** Hygiene gates: `scripts/check-vocabulary.sh` (the glossary), `cargo deny` (licences, advisories, duplicate versions), unused-dependency check, rustdoc link check; `cargo semver-checks` on the public crates once releases are published.
 - [ ] **C10** Name and shape: the workflow is `ci` (one per repo), quick jobs gate PRs, the heavy ones (Miri, sanitizers, fuzz, validators) run on `main` and nightly; required checks configured on `main`.
-- [ ] **C11** The plugins repo's CI: run `scripts/ci-framework-access.sh` (deploy key) until the framework is public, then revoke it.
+- [x] **C11** Moot: the repos are public (2026-11-12), so the plugins CI fetches the framework without a deploy key; public runners are also free, which unblocked CI billing.
 
 ### P — The plugins (stave-plugins), after the framework settles
 
