@@ -102,31 +102,37 @@ fn the_diode_clipper_reports_its_solver() {
         .unwrap());
 }
 
-/// Every module through the whole suite, a thread each (the modules are
-/// independent, and the slowest alone sets the time).
+/// Every module through the whole suite. The checks run a thread per
+/// module (the modules are independent, and the slowest alone sets the
+/// time); the one timing check, `deadline_headroom`, runs afterwards, one
+/// module at a time, so it never measures its neighbours' load.
 #[test]
 fn every_module_passes_validation() {
-    std::thread::scope(|s| {
+    const TIMED: &str = "deadline_headroom";
+    let suite = Suite::default();
+    let failures = |stage: &'static StageSpec, timed: bool| -> Vec<String> {
+        let mut fresh =
+            || Ok(Box::new(CatalogInstance::new(stage, &config())) as Box<dyn Instance>);
+        suite
+            .checks
+            .iter()
+            .filter(|check| (check.name == TIMED) == timed)
+            .map(|check| suite.run_check(&mut fresh, check))
+            .filter(|c| c.status == Status::Fail)
+            .map(|c| format!("{}: {c:#?}", stage.name))
+            .collect()
+    };
+    let mut failed: Vec<String> = std::thread::scope(|s| {
         let runs: Vec<_> = CATALOG
             .iter()
-            .map(|stage| {
-                s.spawn(move || {
-                    let mut fresh =
-                        || Ok(Box::new(CatalogInstance::new(stage, &config())) as Box<dyn Instance>);
-                    let report = Suite::default().run(&mut fresh, |_| {});
-                    let failed: Vec<String> = report
-                        .checks
-                        .iter()
-                        .filter(|c| c.status == Status::Fail)
-                        .map(|c| format!("{c:#?}"))
-                        .collect();
-                    (stage.name, failed)
-                })
-            })
+            .map(|stage| s.spawn(move || failures(stage, false)))
             .collect();
-        for run in runs {
-            let (name, failed) = run.join().expect("a validation run panicked");
-            assert!(failed.is_empty(), "{name}: {}", failed.join("\n"));
-        }
+        runs.into_iter()
+            .flat_map(|run| run.join().expect("a validation run panicked"))
+            .collect()
     });
+    for stage in CATALOG {
+        failed.extend(failures(stage, true));
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
