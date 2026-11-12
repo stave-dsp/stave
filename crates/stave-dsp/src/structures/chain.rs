@@ -15,6 +15,7 @@ use crate::kernel::control::Full;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 
+#[derive(Clone)]
 pub struct Chain<const N: usize> {
     stages: [StageKind; N],
     /// Sense endpoints: the output at every join, index-keyed
@@ -169,6 +170,7 @@ impl<const N: usize> Chain<N> {
 /// without a rebuild — while `engage` prepares the incoming stage for
 /// a clean re-entry (kind switches start fresh; IN-KIND re-voice
 /// continuity is the separate invariant, pinned in binding_continuity).
+#[derive(Clone)]
 pub struct SwapPoint {
     bench: StageKind,
 }
@@ -549,6 +551,7 @@ use crate::circuit::topologies::coupler::Coupler;
 
 /// Enum dispatch so a [`Chain`] is a flat array —
 /// no boxing, no vtables on the audio path.
+#[derive(Clone)]
 pub enum StageKind {
     Bypass,
     Curve(CurveStage),

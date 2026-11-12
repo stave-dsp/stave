@@ -9,7 +9,7 @@
 
 use crate::behavioral::curve::Frame;
 use crate::kernel::control::{Full, Route, Router, Source};
-use crate::kernel::node::{Stage, Tail};
+use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::control::envelope::{EnvelopeFollower, EnvelopeTimes};
 use crate::primitives::control::lfo::Lfo;
 use crate::primitives::control::sub::SubOctave;
@@ -29,6 +29,7 @@ use crate::structures::chain::{Chain, StageId};
 // built once at setup and ticked per sample, so it stays inline rather
 // than behind a pointer on the audio path.
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub enum Driver {
     Env(EnvelopeFollower),
     Lfo {
@@ -126,7 +127,7 @@ impl Stage for Driver {
                 env,
                 last,
             } => {
-                let osc = lfo.tick(0.0);
+                let osc = lfo.next();
                 let s = if *env_scale {
                     osc * env.tick(detector.abs())
                 } else {
@@ -184,6 +185,7 @@ pub struct StageTarget {
 ///
 /// The matrix is a kernel [`Router`] — sources and edges as data, the
 /// one [`Route`] type — plus the chain-typed apply pass.
+#[derive(Clone)]
 pub struct ModMatrix<const D: usize, const R: usize> {
     router: Router<Driver, StageTarget, D, R>,
 }

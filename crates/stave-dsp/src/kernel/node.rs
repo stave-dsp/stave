@@ -126,7 +126,8 @@ impl Tail {
 ///   rate-derived coefficient; setters take musical units only.
 ///   It may allocate; everything else is realtime.
 /// * `tick` advances one sample. A generator (oscillator, LFO,
-///   envelope) ignores its input.
+///   envelope) ignores its input; it is a [`Generator`] too, read with
+///   `next()`.
 /// * `process` is the block form; overrides stay bit-identical to the
 ///   tick loop.
 /// * `latency` is group delay in samples at the prepared rate; `tail`
@@ -146,6 +147,40 @@ pub trait Stage {
     }
     fn tail(&self) -> Tail {
         Tail::None
+    }
+}
+
+/// A [`Stage`] whose output ignores its input: an oscillator, LFO,
+/// envelope or random walk. [`next`](Self::next) is its next sample,
+/// so a generator is never ticked with a dummy input.
+///
+/// ```
+/// use stave_dsp::{Adsr, AdsrConfig, Generator, Stage};
+///
+/// let mut env = Adsr::new();
+/// env.prepare(48_000.0);
+/// env.set(&AdsrConfig { attack_ms: 1.0, decay_ms: 50.0, sustain: 0.5, release_ms: 100.0 });
+/// env.gate_on();
+/// let level = env.next();
+/// assert!(level > 0.0);
+/// ```
+pub trait Generator: Stage {
+    /// The next sample (one [`tick`](Stage::tick); the generator's
+    /// input is not read).
+    #[inline]
+    fn next(&mut self) -> f32 {
+        self.tick(0.0)
+    }
+}
+
+/// The wire: output is input, no state, no delay. The empty interior
+/// of a closure-driven region ([`Oversampled2x::tick_with`]).
+///
+/// [`Oversampled2x::tick_with`]: crate::Oversampled2x::tick_with
+impl Stage for () {
+    #[inline]
+    fn tick(&mut self, x: f32) -> f32 {
+        x
     }
 }
 

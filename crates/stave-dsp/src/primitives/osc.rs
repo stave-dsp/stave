@@ -13,7 +13,7 @@
 //!   that residual sits where ears are masked. Wavetable-grade
 //!   cleanness is a wavetable's job, not this leaf's.
 
-use crate::kernel::node::{Stage, Tail};
+use crate::kernel::node::{Generator, Stage, Tail};
 
 /// The periodic waveforms every oscillator and LFO draws from.
 ///
@@ -153,6 +153,8 @@ impl Stage for Osc {
         Tail::Infinite
     }
 }
+
+impl Generator for Osc {}
 
 #[cfg(test)]
 mod tests {

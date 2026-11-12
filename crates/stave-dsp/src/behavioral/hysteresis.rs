@@ -7,6 +7,7 @@ use crate::primitives::filters::one_pole::DcBlocker;
 /// approaches it at a rate proportional to signal motion, opening a
 /// frequency-independent loop. AC-coupled (5 Hz) so remanence doesn't
 /// linger into silence.
+#[derive(Clone)]
 pub struct Hysteresis {
     drive: f32,
     /// 0 = none (pure anhysteretic), 1 = wide loop.

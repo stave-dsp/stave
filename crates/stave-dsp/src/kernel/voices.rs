@@ -104,6 +104,7 @@ struct PendingOn {
     released: bool,
 }
 
+#[derive(Clone)]
 pub struct VoiceRack<V: Voice, const MAX: usize> {
     voices: [V; MAX],
     tags: [Tag; MAX],

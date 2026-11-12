@@ -47,5 +47,6 @@ story_goldens! {
     amp_looks_right: "amp",
     rack_looks_right: "rack",
     cabinet_looks_right: "cabinet",
+    tabs_looks_right: "tabs",
     controls_looks_right: "controls",
 }

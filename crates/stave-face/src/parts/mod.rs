@@ -13,5 +13,5 @@ pub use knob::{knob_angle, Knob, KnobSize, Scale};
 pub use meter::{Hang, Meter, Pad, Reading, Trace};
 pub use panel::{Form, Grille, Panel, Plate, Side, RACK_U};
 pub use print::{Caption, Title};
-pub use select::{Pager, Presets, Selector, Stepper};
+pub use select::{Pager, Presets, Selector, Stepper, Tabs};
 pub use switch::{lamp, lamp_in, Footswitch, Lamp, LampSource, LampStyle, LitWhen, Press, Toggle};

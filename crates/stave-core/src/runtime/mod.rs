@@ -234,8 +234,9 @@ impl<P: Erased> ProcessorState<P> {
     /// Split every audio-thread borrow the wrapper needs at once: the
     /// plugin, the bypass gate, and the block's channel lists — the
     /// host's own when they can be used as-is, otherwise lists through
-    /// preallocated scratch: inputs staged when they alias the outputs
-    /// (in-place hosts), zeroed stand-ins for null channels.
+    /// preallocated scratch: inputs (main and aux) staged when they
+    /// alias the outputs (in-place hosts), zeroed stand-ins for null
+    /// channels.
     ///
     /// Never allocates. A block that needs scratch beyond what was
     /// prepared (more frames, or more channels than declared) is cut to
@@ -262,9 +263,19 @@ impl<P: Erased> ProcessorState<P> {
         }
         let stage = ranges_alias(input, output, frames);
         let aux = &aux[..aux.len().min(MAX_AUX_PORTS)];
+        // An aux bus is read while the outputs are written (inside
+        // `Block::lanes`), so one a host aliases to an output is staged
+        // like an aliased main input.
+        let mut aux_stage = [false; MAX_AUX_PORTS];
+        for (st, &list) in aux_stage.iter_mut().zip(aux) {
+            *st = ranges_alias(list, output, frames);
+        }
         let has_null = |ptrs: &[*mut f32]| ptrs.iter().any(|p| p.is_null());
-        let needs_scratch =
-            stage || has_null(input) || has_null(output) || aux.iter().any(|a| has_null(a));
+        let needs_scratch = stage
+            || aux_stage.iter().any(|&st| st)
+            || has_null(input)
+            || has_null(output)
+            || aux.iter().any(|a| has_null(a));
         let mut truncated = false;
         let run = if needs_scratch && frames > self.scratch_frames {
             truncated = true;
@@ -289,9 +300,9 @@ impl<P: Erased> ProcessorState<P> {
         // SAFETY: as above; non-null outputs are writable too.
         let output_at = unsafe { cursor.list(output, false, true) };
         let mut aux_at = [ListAt::Host; MAX_AUX_PORTS];
-        for (at, &list) in aux_at.iter_mut().zip(aux) {
+        for ((at, &list), &st) in aux_at.iter_mut().zip(aux).zip(&aux_stage) {
             // SAFETY: as for the inputs.
-            *at = unsafe { cursor.list(list, false, false) };
+            *at = unsafe { cursor.list(list, st, false) };
         }
         let truncated = cursor.truncated;
 
@@ -838,6 +849,27 @@ mod tests {
             "staged pointers are fresh"
         );
         assert_eq!(io.output, &outs, "outputs without nulls pass through");
+    }
+
+    /// A sidechain a host routes onto an output buffer is staged: the
+    /// plugin reads the aux while it writes the outputs.
+    #[test]
+    fn an_aux_aliasing_an_output_is_staged() {
+        let mut state = ProcessorState::new(SideFx);
+        state.prepare(&crate::Environment::new(48_000.0, 8), 2);
+        let mut l = [1.0f32; 4];
+        let mut r = [2.0f32; 4];
+        let mut key = [3.0f32; 4];
+        let outs = [l.as_mut_ptr(), r.as_mut_ptr()];
+        let side = [r.as_mut_ptr(), key.as_mut_ptr()];
+        // SAFETY: every array holds the 4 frames.
+        let block = unsafe { state.split_for_block(&[], &outs, &[&side], 4) }.expect("prepared");
+        let io = block.io;
+        assert!(!io.truncated);
+        assert_eq!(io.output, &outs, "outputs pass through");
+        assert!(!ranges_alias(io.aux[0], &outs, 4), "the aux no longer aliases an output");
+        assert_eq!(channel(io.aux[0][0], 4), &[2.0; 4]);
+        assert_eq!(channel(io.aux[0][1], 4), &[3.0; 4]);
     }
 
     /// Null channels in any list become zeroed scratch, each its own

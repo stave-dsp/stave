@@ -7,6 +7,7 @@
 
 use crate::kernel::node::{Stage, Tail};
 
+#[derive(Clone)]
 pub struct Serial<T>(pub T);
 
 macro_rules! impl_serial {

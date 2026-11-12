@@ -168,8 +168,18 @@ impl<'a> Block<'a> {
     }
 
     /// Aux input `i` of the served layout; `None` past the declared aux
-    /// buses (an unconnected one has no channels).
-    pub fn aux(&self, i: usize) -> Option<&InputBuffer<'a>> {
+    /// buses (an unconnected one has no channels). It borrows the host's
+    /// buffers, not the block, so it stays readable inside
+    /// [`lanes`](Self::lanes)`().run`:
+    ///
+    /// ```ignore
+    /// let sidechain = block.aux(0).filter(|aux| aux.channel_count() > 0);
+    /// block.lanes::<2>().run(|frame| {
+    ///     let key = sidechain.map_or(0.0, |aux| aux.channel(0)[frame.index()]);
+    ///     // …
+    /// });
+    /// ```
+    pub fn aux(&self, i: usize) -> Option<&'a InputBuffer<'a>> {
         self.aux.get(i)
     }
 }

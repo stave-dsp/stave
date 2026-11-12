@@ -43,6 +43,7 @@ const VG_MAX: f64 = 16.0;
 /// the composed transfer is normalized and its flank gain read.
 const X_SPAN: f64 = 16.0;
 
+#[derive(Clone)]
 pub struct PushPull {
     p: TriodeParams,
     /// Plate swing (quiescent minus plate) of one half vs grid volts.

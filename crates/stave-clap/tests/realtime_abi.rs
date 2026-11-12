@@ -110,7 +110,7 @@ impl Erased for Wide {
             knobs: (0..PARAMS)
                 .map(|i| FloatParam::new(ParamId(i), "knob", Range::linear(0.0, 1.0)))
                 .collect(),
-            bypass: BoolParam::bypass(ParamId(BYPASS_ID)),
+            bypass: BoolParam::bypass(ParamId(BYPASS_ID), "Bypass"),
         });
         Wide {
             table: Arc::new(IndexedParams::new(params)),

@@ -36,6 +36,7 @@ impl OpAmpClipperConfig {
     };
 }
 
+#[derive(Clone)]
 pub struct OpAmpClipper {
     config: OpAmpClipperConfig,
     step: f64,

@@ -23,6 +23,7 @@ pub struct TransformerConfig {
     pub newton: NewtonSettings,
 }
 
+#[derive(Clone)]
 pub struct Transformer {
     config: TransformerConfig,
     core: JilesAthertonCore,

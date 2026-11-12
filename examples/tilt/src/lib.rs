@@ -25,7 +25,7 @@ impl Default for TiltParams {
             output: FloatParam::new(ParamId(2), "Output", Range::linear(-24.0, 24.0))
                 .unit(Unit::Db)
                 .smooth(Smooth::ms(5.0)),
-            bypass: BoolParam::bypass(ParamId(3)),
+            bypass: BoolParam::bypass(ParamId(3), "Bypass"),
         }
     }
 }

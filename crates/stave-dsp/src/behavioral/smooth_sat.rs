@@ -37,6 +37,7 @@ const N: usize = 10;
 // high drive and left a slowly decaying high-harmonic tail — fizz); the
 // Chebyshev sum then adds the tunable even/odd colour on top.
 
+#[derive(Clone)]
 pub struct SmoothSat {
     a: [f32; N],    // harmonic weights: a[0]=a₁ (fundamental) .. a[N-1]=a_N
     dc_offset: f32, // Σ aₙ·Tₙ(0) — subtracted so f(0)=0 (no zero-input DC)

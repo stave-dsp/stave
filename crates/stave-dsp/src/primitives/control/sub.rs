@@ -19,6 +19,7 @@ use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 use crate::primitives::filters::one_pole::tau_coeff;
 
+#[derive(Clone)]
 pub struct SubOctave {
     /// Detector band-limit: highpass clears DC/rumble so the comparator
     /// sees zero-mean material; lowpass keeps upper harmonics from

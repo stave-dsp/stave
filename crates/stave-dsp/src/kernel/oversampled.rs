@@ -11,6 +11,7 @@
 use crate::kernel::node::{Stage, Tail};
 use crate::kernel::resample::{Oversampler2xFir, Oversampler2xFirInner};
 
+#[derive(Clone)]
 enum Halfbands {
     Front(Oversampler2xFir),
     Nested(Oversampler2xFirInner),
@@ -20,6 +21,7 @@ enum Halfbands {
 /// block lives on the stack, so the block form allocates nothing.
 const CHUNK: usize = 64;
 
+#[derive(Clone)]
 pub struct Oversampled2x<S: Stage> {
     pub inner: S,
     os: Halfbands,
@@ -70,11 +72,7 @@ impl<S: Stage> Stage for Oversampled2x<S> {
     }
     #[inline]
     fn tick(&mut self, x: f32) -> f32 {
-        let inner = &mut self.inner;
-        match &mut self.os {
-            Halfbands::Front(o) => o.tick_with(x, |s| inner.tick(s)),
-            Halfbands::Nested(o) => o.tick_with(x, |s| inner.tick(s)),
-        }
+        self.tick_with(x, |inner, s| inner.tick(s))
     }
     /// Upsample a chunk, run the interior's block form once over the 2×
     /// chunk, decimate back. Bit-identical to the tick loop whenever the
@@ -108,10 +106,65 @@ impl<S: Stage> Stage for Oversampled2x<S> {
 }
 
 impl<S: Stage> Oversampled2x<S> {
+    /// One outer sample through a closure interior: `body` runs once
+    /// per inner (2×) sample with the interior stage and that sample,
+    /// so per-sample context (a smoothed drive, a mode) reaches the
+    /// oversampled domain without being parked in the stage's fields.
+    /// `tick` is `tick_with(x, |inner, s| inner.tick(s))`. A stateless
+    /// interior is `()`, the wire:
+    ///
+    /// ```
+    /// use stave_dsp::{Oversampled2x, Stage};
+    ///
+    /// let mut os = Oversampled2x::front(());
+    /// os.prepare(48_000.0);
+    /// let drive = 4.0;
+    /// let y = os.tick_with(0.5, |(), s| (s * drive).tanh());
+    /// assert!(y.is_finite());
+    /// ```
+    #[inline]
+    pub fn tick_with(&mut self, x: f32, mut body: impl FnMut(&mut S, f32) -> f32) -> f32 {
+        let inner = &mut self.inner;
+        match &mut self.os {
+            Halfbands::Front(o) => o.tick_with(x, |s| body(inner, s)),
+            Halfbands::Nested(o) => o.tick_with(x, |s| body(inner, s)),
+        }
+    }
+
     fn reset_halfbands(&mut self) {
         match &mut self.os {
             Halfbands::Front(o) => o.reset(),
             Halfbands::Nested(o) => o.reset(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Drive(f32);
+
+    impl Stage for Drive {
+        fn tick(&mut self, x: f32) -> f32 {
+            (x * self.0).tanh()
+        }
+    }
+
+    /// A closure interior is the same region as the stage it inlines,
+    /// sample for sample, at both designs and nested.
+    #[test]
+    fn a_closure_interior_matches_its_stage() {
+        let input: Vec<f32> = (0..2_000).map(|i| (i as f32 * 0.031).sin() * 0.9).collect();
+        let mut staged = Oversampled2x::front(Oversampled2x::nested(Drive(3.0)));
+        let mut closed = Oversampled2x::front(Oversampled2x::nested(()));
+        staged.prepare(48_000.0);
+        closed.prepare(48_000.0);
+        assert_eq!(staged.latency(), closed.latency());
+        for &x in &input {
+            let a = staged.tick(x);
+            let b = closed.tick_with(x, |inner, s| inner.tick_with(s, |(), u| (u * 3.0).tanh()));
+            assert_eq!(a.to_bits(), b.to_bits());
         }
     }
 }

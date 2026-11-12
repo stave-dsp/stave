@@ -16,6 +16,7 @@ pub struct AudioAdapterConfig {
     pub full_scale_out_volts: f64,
 }
 
+#[derive(Clone)]
 pub struct AudioAdapter<C> {
     pub circuit: C,
     config: AudioAdapterConfig,

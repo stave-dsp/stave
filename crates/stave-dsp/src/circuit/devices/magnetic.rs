@@ -73,6 +73,7 @@ fn langevin_slope(x: f64) -> f64 {
 const SERIES_BELOW: f64 = 1e-2;
 
 /// A core driven by its field: `step(h)` returns the magnetization.
+#[derive(Clone)]
 pub struct JilesAthertonCore {
     model: JilesAtherton,
     newton: NewtonSettings,

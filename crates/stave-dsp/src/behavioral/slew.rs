@@ -4,6 +4,7 @@ use crate::kernel::node::{Stage, Tail};
 /// Slew limiter: output can rise/fall at most so many full-scale units per
 /// millisecond. Distortion that depends on FREQUENCY at equal amplitude —
 /// the pushed-speaker/OTA character no memoryless curve can produce.
+#[derive(Clone)]
 pub struct Slew {
     rise_per_ms: f32,
     fall_per_ms: f32,

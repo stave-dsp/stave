@@ -56,6 +56,7 @@ story_laws! {
     amp_keeps_the_laws: "amp",
     rack_keeps_the_laws: "rack",
     cabinet_keeps_the_laws: "cabinet",
+    tabs_keeps_the_laws: "tabs",
     controls_keeps_the_laws: "controls",
 }
 

@@ -6,7 +6,7 @@
 //! advance. [`Comb`](crate::Comb) and [`DelayAllpass`](crate::DelayAllpass)
 //! are the stages built on it.
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DelayLine {
     buf: Vec<f32>,
     write_idx: usize,

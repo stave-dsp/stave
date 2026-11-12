@@ -9,6 +9,7 @@ use crate::kernel::node::{Stage, Tail};
 /// rates put the pole within ~2e-4 of unity, where f32 quantizes the
 /// corner and leaves a measurable low-frequency error floor (pinned in
 /// `stave-test/tests/coupler_conformance.rs`).
+#[derive(Clone)]
 pub struct Coupler {
     hz: f32,
     sample_rate: f32,

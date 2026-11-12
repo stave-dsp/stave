@@ -10,6 +10,7 @@ use crate::kernel::ring::Ring;
 /// the dry path of any hand-rolled parallel structure. A fixed integer
 /// delay — zero samples is a true passthrough, storage untouched. Its
 /// `latency` is the pad itself.
+#[derive(Clone)]
 pub struct Compensator {
     ring: Ring,
     samples: u32,
@@ -72,6 +73,7 @@ impl Stage for Compensator {
 /// complementary filters); the combinator owns what a graph owes any
 /// parallel composition — both branches arrive at the join aligned,
 /// whatever either branch reports.
+#[derive(Clone)]
 pub struct Par2<A: Stage, B: Stage> {
     pub a: A,
     pub b: B,
@@ -144,6 +146,7 @@ mod tests {
     use crate::kernel::ring::Ring;
 
     /// A test stage with declared latency: a pure integer delay.
+    #[derive(Clone)]
     struct Late {
         ring: Ring,
         samples: u32,
@@ -182,6 +185,7 @@ mod tests {
     }
 
     /// A gain leaf — zero latency, distinguishable output.
+    #[derive(Clone)]
     struct Gain(f32);
     impl Stage for Gain {
         fn tick(&mut self, x: f32) -> f32 {
@@ -248,6 +252,7 @@ mod tests {
     }
 
     /// Zero latency, a declared tail.
+    #[derive(Clone)]
     struct Rings(u32);
     impl Stage for Rings {
         fn tick(&mut self, x: f32) -> f32 {
@@ -258,6 +263,7 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct Endless;
     impl Stage for Endless {
         fn tick(&mut self, x: f32) -> f32 {

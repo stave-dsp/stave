@@ -37,7 +37,7 @@ pub use behavioral::shapes;
 pub use kernel::control::{Full, Route, Router, Source, StageSource};
 pub use kernel::feedback::Loop;
 pub use kernel::lanes::{downmix_51, ms_decode, ms_encode, ChannelLayout, PerChannel};
-pub use kernel::node::{Stage, Tail};
+pub use kernel::node::{Generator, Stage, Tail};
 pub use kernel::oversampled::Oversampled2x;
 pub use kernel::parallel::{Compensator, Par2};
 pub use kernel::sequence::Serial;

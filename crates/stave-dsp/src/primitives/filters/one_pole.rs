@@ -83,13 +83,21 @@ impl OnePole {
     pub const fn hz(&self) -> f32 {
         self.hz
     }
+
+    /// Move the clock (state kept): the coefficient follows the new
+    /// rate at the same corner. For a section inside a clock domain that
+    /// moves while it plays (a pulled tape clock); [`Stage::prepare`] is
+    /// this and a [`reset`](Stage::reset).
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_hz(self.hz);
+    }
 }
 
 impl Stage for OnePole {
     fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_sample_rate(sample_rate);
         self.reset();
     }
     fn reset(&mut self) {
@@ -148,13 +156,18 @@ impl DcBlocker {
         self.hz = hz;
         self.r = (-2.0 * core::f64::consts::PI * f64::from(hz) / f64::from(self.sample_rate)).exp();
     }
+
+    /// Move the clock (state kept), as [`OnePole::set_sample_rate`].
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_hz(self.hz);
+    }
 }
 
 impl Stage for DcBlocker {
     fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_sample_rate(sample_rate);
         self.reset();
     }
     fn reset(&mut self) {
@@ -187,6 +200,28 @@ mod tests {
         }
         assert!((y - (1.0 - (-1.0f32).exp())).abs() < 1e-3, "{y}");
         assert_eq!(tau_coeff(0.0, fs), 1.0);
+    }
+
+    #[test]
+    fn a_moving_clock_re_voices_without_a_reset() {
+        let mut moved = OnePole::lowpass(500.0);
+        moved.prepare(48_000.0);
+        for _ in 0..64 {
+            moved.tick(1.0);
+        }
+        let held = moved.tick(1.0);
+        moved.set_sample_rate(24_000.0);
+        // The state survives the move; the coefficient is the new rate's.
+        let mut fresh = OnePole::lowpass(500.0);
+        fresh.prepare(24_000.0);
+        let a = fresh.tick(1.0);
+        assert_eq!(moved.tick(1.0), held + a * (1.0 - held));
+
+        let mut dc = DcBlocker::new(20.0);
+        dc.prepare(48_000.0);
+        dc.tick(1.0);
+        dc.set_sample_rate(96_000.0);
+        assert_ne!(dc.tick(1.0), 0.0, "the blocker's state survives the move");
     }
 
     #[test]

@@ -55,6 +55,7 @@ struct Coefficients {
 }
 
 /// Concrete, allocation-free passive tone-stack processor.
+#[derive(Clone)]
 pub struct PassiveToneStack {
     components: PassiveToneStackComponents,
     sample_rate: f64,

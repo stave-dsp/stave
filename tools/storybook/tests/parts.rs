@@ -69,6 +69,7 @@ part_goldens! {
     stepper: "stepper", [], |p| Stepper::new(p.shape.bind()).node();
     presets: "presets", [], |_| Presets::default().node();
     pager: "pager", [], |_| Pager::new(1, &["MAIN", "MODULATION"]).node();
+    tabs: "tabs", [], |p| Tabs::of(&p.shape).node();
     title: "title", [], |_| Title::new("STAVE").tagline("a measured title").node();
     caption: "caption", [], |_| Caption::new("SMALL PRINT").node();
     plate: "plate", [], |p| Plate::titled("A PLATE WIDER THAN ITS KNOB").around(Knob::new(p.mix.bind()).small().node());

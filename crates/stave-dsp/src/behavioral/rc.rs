@@ -35,6 +35,7 @@ pub enum RcTopology {
 /// ACROSS the nonlinearity (`x − v`): the history-dependent clip of the
 /// Tube-Screamer/808 family, where the cap charges THROUGH the diode's
 /// conduction so the effective threshold moves with what came before.
+#[derive(Clone)]
 pub struct NonlinearRc {
     i_curve: Curve,
     tau_ms: f32,

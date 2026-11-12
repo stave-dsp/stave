@@ -34,7 +34,7 @@ fn capacity(max_ms: f32, sample_rate: f32) -> usize {
 /// delayed signal. `damping` puts a one-pole lowpass in the loop (0 =
 /// none, toward 1 = darker), so highs decay faster than lows as in a
 /// real room.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Comb {
     line: DelayLine,
     max_ms: f32,
@@ -109,7 +109,7 @@ impl Stage for Comb {
 
 /// Schroeder allpass: `y[n] = −g·x[n] + x[n−N] + g·y[n−N]`. A flat
 /// magnitude with a dense, delay-spread phase — the diffuser.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DelayAllpass {
     line: DelayLine,
     max_ms: f32,

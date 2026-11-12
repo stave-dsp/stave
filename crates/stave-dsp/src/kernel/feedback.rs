@@ -19,6 +19,7 @@ use core::num::NonZeroU32;
 use crate::kernel::node::{Stage, Tail};
 use crate::kernel::ring::Ring;
 
+#[derive(Clone)]
 pub struct Loop<S: Stage> {
     pub node: S,
     ring: Ring,

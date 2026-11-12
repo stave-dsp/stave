@@ -14,15 +14,18 @@
 //! 0..1, so no second kind is earned.
 //!
 //! Deterministic: same seed, same sequence — walks are part of the
-//! sound and must survive a bit-compare (validation runs twice).
+//! sound and must survive a bit-compare (validation runs twice), and a
+//! reset restarts the sequence (a reset plugin sounds as a fresh one).
 
 use crate::kernel::control::Source;
-use crate::kernel::node::{Stage, Tail};
+use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
 use crate::primitives::random::Xorshift32;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RandomWalk {
+    /// The seed `reset` restarts the sequence from.
+    seed: u32,
     rng: Xorshift32,
     value: f32,
     target: f32,
@@ -40,6 +43,7 @@ impl RandomWalk {
     /// must be nonzero (xorshift's absorbing state) — 0 is remapped.
     pub fn new(interval_ms: f32, ease_ms: f32, seed: u32) -> Self {
         let mut w = Self {
+            seed,
             rng: Xorshift32::new(seed),
             value: 0.0,
             target: 0.0,
@@ -82,9 +86,10 @@ impl Stage for RandomWalk {
         self.reset();
     }
 
-    /// Back to rest at center. The generator's position in its
-    /// sequence is kept — reset never repeats a stretch of walk.
+    /// Back to rest at center, and back to the start of the seed's
+    /// sequence: a reset walk walks exactly as a fresh one.
     fn reset(&mut self) {
+        self.rng = Xorshift32::new(self.seed);
         self.value = 0.0;
         self.target = 0.0;
         self.countdown = 0;
@@ -108,6 +113,8 @@ impl Stage for RandomWalk {
         Tail::Infinite
     }
 }
+
+impl Generator for RandomWalk {}
 
 impl Source for RandomWalk {
     fn state(&self) -> f32 {
@@ -170,6 +177,10 @@ mod tests {
             run(&mut b, 10_000),
             "same seed, same walk"
         );
+        a.reset();
+        let mut fresh = RandomWalk::new(40.0, 30.0, 42);
+        fresh.prepare(48_000.0);
+        assert_eq!(run(&mut a, 10_000), run(&mut fresh, 10_000), "a reset walk walks as a fresh one");
         let mut c = RandomWalk::new(40.0, 30.0, 43);
         c.prepare(48_000.0);
         assert_ne!(run(&mut a, 0), run(&mut c, 1), "seeds decorrelate");

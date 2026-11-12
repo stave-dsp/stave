@@ -203,9 +203,10 @@ impl BoolParam {
     /// The plugin's bypass: the host's bypass switch (VST3 `kIsBypass`,
     /// CLAP `is_bypass`), run by the framework as a click-free,
     /// latency-matched crossfade — the plugin never reads it. The one way
-    /// to declare bypass.
-    pub fn bypass(id: ParamId) -> Self {
-        let mut p = Self::new(id, "Bypass", false);
+    /// to declare bypass. Named like every other param: the name is what
+    /// the host shows (hosts key automation and state on the id).
+    pub fn bypass(id: ParamId, name: &'static str) -> Self {
+        let mut p = Self::new(id, name, false);
         p.meta.flags.bypass = true;
         p
     }
@@ -808,7 +809,7 @@ mod tests {
                     .unit(Unit::Db)
                     .group("Main"),
                 character: EnumParam::new(ParamId(2), "character", Character::Triode).group("Main"),
-                bypass: BoolParam::bypass(ParamId(3)),
+                bypass: BoolParam::bypass(ParamId(3), "Bypass"),
             }
         }
     }

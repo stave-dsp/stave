@@ -56,6 +56,7 @@ impl PowerSupplyConfig {
 /// A [`Stage`] from load current to supply voltage: `tick` takes the
 /// amps the load draws this sample and returns the B+ it sees
 /// ([`tick_f64`](PowerSupply::tick_f64) is the same step in `f64`).
+#[derive(Clone)]
 pub struct PowerSupply {
     config: PowerSupplyConfig,
     sample_rate: f32,

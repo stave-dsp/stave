@@ -60,6 +60,7 @@ impl std::error::Error for Full {}
 /// router advances sources and exposes states and routes; application
 /// belongs to the inlet's owner (displace-from-base). No allocation, no
 /// dispatch beyond the source impl.
+#[derive(Clone)]
 pub struct Router<D: Source, T: Copy, const S: usize, const R: usize> {
     pub sources: [D; S],
     routes: [Option<Route<T>>; R],
@@ -121,6 +122,7 @@ impl<D: Source, T: Copy, const S: usize, const R: usize> Router<D, T, S, R> {
 /// Any [`Stage`] viewed as a control source (detector-shaped stages:
 /// rectifiers, smoothers built from audio primitives). Its state is the
 /// last value it produced.
+#[derive(Clone)]
 pub struct StageSource<S: Stage> {
     pub stage: S,
     last: f32,

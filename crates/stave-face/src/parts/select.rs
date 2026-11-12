@@ -1,11 +1,13 @@
 //! Choosing from a list: the rotary [`Selector`] (a pointer knob with the
 //! options printed around it), the [`Stepper`] (a glass readout with
-//! ◀ ▶ for long lists), the [`Presets`] readout, and the [`Pager`] that
-//! flips editor-local pages.
+//! ◀ ▶ for long lists), the [`Presets`] readout, the [`Tabs`] that pick
+//! a stepped parameter's option, and the [`Pager`] that flips
+//! editor-local pages (the same lit row, choosing the face's page).
 
 use std::string::String;
 use std::vec::Vec;
 
+use stave_core::params::{EnumParam, ParamEnum};
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke, TextAlign};
 use stave_ui::Fonts;
@@ -346,47 +348,36 @@ impl Part for Presets {
     }
 }
 
-// ------------------------------------------------------------------ pager
+// ------------------------------------------------------------- lit rows
 
-/// A row of lit buttons flipping an editor-local page set. Pair with
-/// [`crate::part::on_page`] on the content of each page.
-#[derive(Clone, Debug)]
-pub struct Pager {
-    pub key: u32,
-    pub labels: Vec<&'static str>,
-}
-
-/// The least width of one page's button.
+/// The least width of one button of a lit row ([`Pager`], [`Tabs`]).
 const PAGE_W: f64 = 72.0;
-/// A page button's lamp seat, from the top.
+/// A lit row button's lamp seat, from the top.
 const PAGE_SEAT: f64 = 20.0;
 
-impl Pager {
-    pub fn new(key: u32, labels: &[&'static str]) -> Self {
-        Pager {
-            key,
-            labels: labels.to_vec(),
-        }
-    }
-    pub fn node(self) -> FaceNode {
-        measured(self)
-    }
-    /// Page `i`'s button: the part split evenly.
-    fn cell(&self, r: Rect, i: usize) -> Rect {
-        let w = r.w / self.labels.len().max(1) as f64;
-        Rect { x: r.x + w * i as f64, y: r.y, w, h: r.h }
-    }
-    fn label_y(c: Rect, th: &Theme) -> f64 {
-        c.y + PAGE_SEAT + th.typography.caption_size * 1.75
-    }
+/// A row of lit buttons, one per label, split evenly: what [`Pager`]
+/// and [`Tabs`] share. The lit one is the choice.
+#[derive(Clone, Debug)]
+struct LitRow {
+    labels: Vec<&'static str>,
 }
 
-impl Part for Pager {
+impl LitRow {
     fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
         let ty = &th.typography;
         let widest = self.labels.iter().map(|l| fonts.width(&l.to_uppercase(), ty.caption_size, &ty.caption)).fold(0.0, f64::max);
         let cell = PAGE_W.max(widest + 2.0 * th.space(1));
         (cell * self.labels.len() as f64, PAGE_SEAT + ty.caption_size * 2.75)
+    }
+
+    /// Button `i`: the part split evenly.
+    fn cell(&self, r: Rect, i: usize) -> Rect {
+        let w = r.w / self.labels.len().max(1) as f64;
+        Rect { x: r.x + w * i as f64, y: r.y, w, h: r.h }
+    }
+
+    fn label_y(c: Rect, th: &Theme) -> f64 {
+        c.y + PAGE_SEAT + th.typography.caption_size * 1.75
     }
 
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
@@ -401,10 +392,10 @@ impl Part for Pager {
         }
     }
 
-    fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
+    /// Light button `at`.
+    fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene, at: usize) {
         let th = f.theme;
         let ty = &th.typography;
-        let at = f.page(self.key) as usize;
         if let Some(l) = self.labels.get(at) {
             let c = self.cell(r, at);
             lamp(f, s, pt(c.x + c.w / 2.0, c.y + 10.0));
@@ -414,10 +405,108 @@ impl Part for Pager {
         }
     }
 
-    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+    fn grabs(&self, r: Rect, out: &mut Vec<Grab>, gesture: impl Fn(u32) -> Gesture) {
         out.extend((0..self.labels.len()).map(|i| Grab {
             area: Area::Rect(self.cell(r, i)),
-            gesture: Gesture::Page { key: self.key, page: i as u32 },
+            gesture: gesture(i as u32),
         }));
+    }
+}
+
+// ------------------------------------------------------------------- tabs
+
+/// A row of lit tabs choosing a stepped parameter's option, one tab per
+/// step: the [`Pager`]'s look, but the choice is the plugin's — a tab
+/// automates and saves like a knob. Pair with [`crate::part::on_step`]
+/// to show only the chosen option's controls under it.
+///
+/// ```ignore
+/// column(vec![Tabs::of(&p.algo).node(), follow_algo])
+/// ```
+#[derive(Clone, Debug)]
+pub struct Tabs {
+    pub bind: Bind,
+    row: LitRow,
+}
+
+impl Tabs {
+    /// Tabs for `bind`, labelled in step order (one label per step).
+    pub fn new(bind: Bind, labels: &[&'static str]) -> Self {
+        Tabs { bind, row: LitRow { labels: labels.to_vec() } }
+    }
+
+    /// Tabs for an enum parameter, labelled with its options' names.
+    pub fn of<T: ParamEnum>(param: &EnumParam<T>) -> Self {
+        let labels: Vec<&'static str> = (0..T::COUNT).map(T::name).collect();
+        Self::new(crate::part::BindParam::bind(param), &labels)
+    }
+
+    pub fn node(self) -> FaceNode {
+        measured(self)
+    }
+}
+
+impl Part for Tabs {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        self.row.size(th, fonts)
+    }
+
+    fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
+        self.row.bake(r, cx);
+    }
+
+    fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
+        let at = step_of(f.value(self.bind), self.row.labels.len() as u32);
+        self.row.paint(r, f, s, at as usize);
+    }
+
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+        let bind = self.bind;
+        self.row.grabs(r, out, |step| Gesture::Choose { bind, step });
+    }
+
+    fn reads(&self) -> Reads {
+        Reads::params(&[self.bind])
+    }
+}
+
+// ------------------------------------------------------------------ pager
+
+/// A row of lit buttons flipping an editor-local page set. Pair with
+/// [`crate::part::on_page`] on the content of each page.
+#[derive(Clone, Debug)]
+pub struct Pager {
+    pub key: u32,
+    row: LitRow,
+}
+
+impl Pager {
+    pub fn new(key: u32, labels: &[&'static str]) -> Self {
+        Pager {
+            key,
+            row: LitRow { labels: labels.to_vec() },
+        }
+    }
+    pub fn node(self) -> FaceNode {
+        measured(self)
+    }
+}
+
+impl Part for Pager {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        self.row.size(th, fonts)
+    }
+
+    fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
+        self.row.bake(r, cx);
+    }
+
+    fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
+        self.row.paint(r, f, s, f.page(self.key) as usize);
+    }
+
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+        let key = self.key;
+        self.row.grabs(r, out, |page| Gesture::Page { key, page });
     }
 }

@@ -4,6 +4,7 @@
 //! is [`DelayLine`](crate::DelayLine); this is deliberately smaller so
 //! the kernel depends on nothing below it.
 
+#[derive(Clone)]
 pub(crate) struct Ring {
     buf: Vec<f32>,
     idx: usize,

@@ -210,12 +210,30 @@ pub fn controls(p: &StoryParams) -> Face {
     Face::new(theme, Panel::default().around(body))
 }
 
+/// A stepped parameter chosen by tabs, the plate under them following
+/// the tab (`Tabs` with `on_step`): one shape's own knobs at a time.
+pub fn tabs(p: &StoryParams) -> Face {
+    let theme = Theme { name: "tabs", ..Theme::graphite() };
+    let gap = theme.space(3);
+    let shape = p.shape.bind();
+    let plate = |title: &'static str, knobs: Vec<FaceNode>| Plate::titled(title).around(row(knobs).gap(gap).align(Align::End));
+    let plates = [
+        plate("SINE", vec![Knob::new(p.rate.bind()).node()]),
+        plate("SQUARE", vec![Knob::new(p.width.bind()).node()]),
+        plate("DRIFT", vec![Knob::new(p.depth.bind()).node()]),
+    ];
+    let follow = stack(plates.into_iter().zip(0..).map(|(n, i)| on_step(n.width(Dim::Fill(1.0)), shape, i)).collect());
+    let body = column(vec![Tabs::of(&p.shape).node(), follow]).gap(gap).align(Align::Stretch);
+    Face::new(theme, Panel::default().around(body))
+}
+
 /// Every story: the showcase on each theme, then the hardware forms.
 pub fn all(p: &StoryParams) -> Vec<(String, Face)> {
     let mut v: Vec<(String, Face)> = Theme::all().into_iter().map(|t| (t.name.to_string(), showcase(p, t))).collect();
     v.push(("amp".into(), amp(p)));
     v.push(("rack".into(), rack(p)));
     v.push(("cabinet".into(), cabinet(p)));
+    v.push(("tabs".into(), tabs(p)));
     v.push(("controls".into(), controls(p)));
     v
 }

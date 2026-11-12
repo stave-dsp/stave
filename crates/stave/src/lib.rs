@@ -17,7 +17,7 @@
 //!             gain: FloatParam::new(ParamId(1), "Gain", Range::linear(-24.0, 24.0))
 //!                 .unit(Unit::Db)
 //!                 .smooth(Smooth::ms(10.0)),
-//!             bypass: BoolParam::bypass(ParamId(2)),
+//!             bypass: BoolParam::bypass(ParamId(2), "Bypass"),
 //!         }
 //!     }
 //! }
@@ -89,6 +89,41 @@ pub use stave_core::{
 pub use stave_core::{brk_if, param_enum, probe};
 /// `#[derive(Params)]`: the parameter table of a struct of params.
 pub use stave_macros::StaveParams as Params;
+/// `#[derive(Smoothers)]`: a group of [`Smoother`](params::Smoother)s
+/// built, prepared and ramped together, one per param of the same name.
+///
+/// ```
+/// use stave::prelude::*;
+///
+/// #[derive(Params)]
+/// pub struct DelayParams {
+///     pub time: FloatParam,
+///     pub mix: FloatParam,
+/// }
+///
+/// /// One frame of the knobs, as the DSP reads them.
+/// pub struct Knobs {
+///     pub time: f32,
+///     pub mix: f32,
+/// }
+///
+/// #[derive(Smoothers)]
+/// #[smoothers(params = DelayParams, frame = Knobs)]
+/// pub struct Glides {
+///     time: Smoother,
+///     mix: Smoother,
+/// }
+///
+/// let params = DelayParams {
+///     time: FloatParam::new(ParamId(1), "time", Range::linear(1.0, 500.0)).smooth(Smooth::ms(40.0)),
+///     mix: FloatParam::new(ParamId(2), "mix", Range::linear(0.0, 1.0)).smooth(Smooth::ms(10.0)),
+/// };
+/// let mut glides = Glides::new(&params);
+/// glides.prepare(&Environment::new(48_000.0, 64));
+/// // In `process`: `let mut ramps = glides.ramp(block, &params);`, then
+/// // per frame `ramps.next()` (a `Knobs`) or `ramps.time.next()`.
+/// ```
+pub use stave_macros::StaveSmoothers as Smoothers;
 /// `#[derive(Taps)]`: a telemetry table of a struct of taps.
 pub use stave_macros::StaveTaps as Taps;
 pub use voice::ToVoiceEvent;
@@ -173,22 +208,66 @@ pub mod prelude {
     pub use std::sync::Arc;
 
     pub use crate::{
-        Block, Channels, Environment, Event, EventCursor, EventKind, Face, Feature, Info, Layout,
-        NoteEvent, NoteKind, Params, ParamId, Plugin, Preset, Tail, Tap, TapId, Taps, Telemetry,
-        ToVoiceEvent, Transport,
+        Aux, Block, Channels, Environment, Event, EventCursor, EventKind, Face, Feature, Info, Layout,
+        NoteEvent, NoteKind, Params, ParamId, Plugin, Preset, Smoothers, Tail, Tap, TapId, Taps,
+        Telemetry, ToVoiceEvent, Transport,
     };
     /// The table trait (`table.by_name(..)`), beside the derive.
     pub use stave_core::params::Params;
     pub use stave_core::param_enum;
     pub use stave_core::params::{
-        BoolParam, EnumParam, FloatParam, ParamEnum, Range, Smooth, Smoother, Step, Steps, Unit,
+        AnyParam, BoolParam, EnumParam, FloatParam, ModalWatch, ParamEnum, Ramp, Range, Smooth,
+        Smoother, Step, Steps, Unit, Watch,
     };
     pub use stave_core::state::Migrations;
     pub use stave_dsp::{
-        amp_to_db, db_to_amp, soft_clip, Biquad, DcBlocker, DelayLine, FilterSpec, OnePole,
-        Oversampled2x, PerChannel, Stage, Svf,
+        amp_to_db, db_to_amp, soft_clip, Biquad, DcBlocker, DelayLine, FilterSpec, Generator, Lfo,
+        OnePole, Oversampled2x, PerChannel, Stage, Svf,
     };
     pub use stave_face::prelude::*;
+}
+
+/// A [`Plugin`] [`export!`] made a VST3 and a CLAP plugin: the facts only
+/// the exporting crate knows. `export!` implements it; an author never
+/// does.
+pub trait Exported: Plugin {
+    /// The exporting crate's `CARGO_PKG_VERSION`.
+    const CRATE_VERSION: &'static str;
+    /// VST3 class ids `[component, controller]`, when they must stay
+    /// what an earlier build shipped; `None` derives them from
+    /// `INFO.id`.
+    const VST3_CLASS_IDS: Option<[[u32; 4]; 2]> = None;
+}
+
+/// What hosts key a plugin on: saved sessions, presets and automation
+/// find it again by these, so a shipped plugin's identity never
+/// changes. Read it with [`identity`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Identity {
+    /// The CLAP plugin id (`Info::id`).
+    pub clap: &'static str,
+    /// The VST3 component class id, as the 16 bytes hosts print in hex.
+    pub vst3_component: [u8; 16],
+    /// The VST3 edit-controller class id.
+    pub vst3_controller: [u8; 16],
+}
+
+/// The identity [`export!`] gives plugin `P`: its CLAP id and VST3 class
+/// ids, derived from `INFO.id` or pinned by `export!`'s
+/// `vst3_class_ids`. Pin it in a test, so a change that would orphan
+/// every saved session fails the build:
+///
+/// ```ignore
+/// let id = stave::identity::<Tilt>();
+/// assert_eq!(id.clap, "com.example.tilt");
+/// assert_eq!(id.vst3_component, [0x5A, 0x7F, /* … */]);
+/// ```
+pub const fn identity<P: Exported>() -> Identity {
+    Identity {
+        clap: P::INFO.id,
+        vst3_component: __export::class_id::<P>(0, "component"),
+        vst3_controller: __export::class_id::<P>(1, "controller"),
+    }
 }
 
 /// The bridge from [`Plugin`] to the format wrappers. Not author API:
@@ -202,16 +281,7 @@ pub mod __export {
     pub use stave_clap as clap;
     pub use stave_vst3 as vst3;
 
-    /// Per-crate facts only the exporting crate knows (`export!`
-    /// implements it there).
-    pub trait Export: Plugin {
-        /// The exporting crate's `CARGO_PKG_VERSION`.
-        const CRATE_VERSION: &'static str;
-        /// VST3 class ids `[component, controller]`, when they must stay
-        /// what an earlier build shipped; `None` derives them from
-        /// `INFO.id`.
-        const VST3_CLASS_IDS: Option<[[u32; 4]; 2]> = None;
-    }
+    pub use crate::Exported as Export;
 
     /// A [`Plugin`] with its params, table and presets: what the wrappers
     /// instantiate.
@@ -292,7 +362,7 @@ pub mod __export {
         }
     }
 
-    const fn class_id<P: Export>(role: usize, name: &str) -> vst3::sys::Tuid {
+    pub(crate) const fn class_id<P: Export>(role: usize, name: &str) -> vst3::sys::Tuid {
         match P::VST3_CLASS_IDS {
             Some(ids) => {
                 let [a, b, c, d] = ids[role];
@@ -339,7 +409,7 @@ pub mod __export {
 #[macro_export]
 macro_rules! export {
     ($plugin:ty $(,)?) => {
-        impl $crate::__export::Export for $plugin {
+        impl $crate::Exported for $plugin {
             const CRATE_VERSION: &'static str = ::core::env!("CARGO_PKG_VERSION");
         }
         $crate::export!(@entries $plugin);
@@ -348,7 +418,7 @@ macro_rules! export {
         component: [$c1:expr, $c2:expr, $c3:expr, $c4:expr $(,)?],
         controller: [$e1:expr, $e2:expr, $e3:expr, $e4:expr $(,)?] $(,)?
     } $(,)?) => {
-        impl $crate::__export::Export for $plugin {
+        impl $crate::Exported for $plugin {
             const CRATE_VERSION: &'static str = ::core::env!("CARGO_PKG_VERSION");
             const VST3_CLASS_IDS: ::core::option::Option<[[u32; 4]; 2]> =
                 ::core::option::Option::Some([[$c1, $c2, $c3, $c4], [$e1, $e2, $e3, $e4]]);

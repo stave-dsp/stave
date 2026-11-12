@@ -17,6 +17,7 @@ pub fn sympathy(total_level: f32, own_level: f32) -> f32 {
     ((total_level - own_level) / 3.0).clamp(0.0, 1.0)
 }
 
+#[derive(Clone)]
 pub struct NoteSources<const LFOS: usize> {
     pub velocity: f32,
     pub key: f32,

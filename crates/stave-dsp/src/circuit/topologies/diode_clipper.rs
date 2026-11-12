@@ -25,6 +25,7 @@ pub enum PairSolver {
     WrightOmega,
 }
 
+#[derive(Clone)]
 pub struct DiodeClipper {
     tree: Parallel<ResistiveSource, Capacitor>,
     sample_rate: f32,

@@ -7,7 +7,7 @@
 //!   once per block and apply N times.
 
 use crate::kernel::control::Source;
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Generator, Stage};
 use crate::primitives::filters::one_pole::tau_coeff;
 
 /// Default time constant. ~5 ms = no zipper at GUI rate, no audible lag.
@@ -97,6 +97,8 @@ impl Stage for SmoothedParam {
         self.current
     }
 }
+
+impl Generator for SmoothedParam {}
 
 impl Source for SmoothedParam {
     fn state(&self) -> f32 {

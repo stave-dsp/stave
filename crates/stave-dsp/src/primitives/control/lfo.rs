@@ -8,7 +8,7 @@
 //! (input ignored) returns the next sample in [−1, 1]. Phase is in
 //! cycles, `0 ≤ t < 1`, as everywhere in stave-dsp.
 
-use crate::kernel::node::{Stage, Tail};
+use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::osc::Waveform;
 use crate::primitives::random::Xorshift32;
 
@@ -24,6 +24,9 @@ pub struct Lfo {
     drift_state: f32,
     rng: Xorshift32,
 }
+
+/// Where the drift's draws start (and restart on reset).
+const DRIFT_SEED: u32 = 0x9E37_79B9;
 
 impl Default for Lfo {
     /// 1 Hz sine.
@@ -42,7 +45,7 @@ impl Lfo {
             waveform: Waveform::Sine,
             drift: 0.0,
             drift_state: 0.0,
-            rng: Xorshift32::new(0x9E37_79B9),
+            rng: Xorshift32::new(DRIFT_SEED),
         };
         lfo.set_hz(hz);
         lfo
@@ -81,9 +84,12 @@ impl Stage for Lfo {
         self.set_hz(self.hz);
         self.reset();
     }
+    /// Phase 0, no drift, and the drift's draws from their start: a
+    /// reset LFO runs exactly as a fresh one.
     fn reset(&mut self) {
         self.phase = 0.0;
         self.drift_state = 0.0;
+        self.rng = Xorshift32::new(DRIFT_SEED);
     }
     #[inline]
     fn tick(&mut self, _: f32) -> f32 {
@@ -105,6 +111,8 @@ impl Stage for Lfo {
         Tail::Infinite
     }
 }
+
+impl Generator for Lfo {}
 
 #[cfg(test)]
 mod properties {

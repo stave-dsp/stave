@@ -18,7 +18,7 @@
 //! silence (the rack's kill semantics — a click is the caller's
 //! accepted trade).
 
-use crate::kernel::node::{Stage, Tail};
+use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -176,6 +176,8 @@ impl Stage for Adsr {
         Tail::Infinite
     }
 }
+
+impl Generator for Adsr {}
 
 impl Default for Adsr {
     fn default() -> Self {

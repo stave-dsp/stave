@@ -38,6 +38,8 @@ pub use process::{Block, ParamBlock, ParamChange, ParamChangeKind, Transport};
 pub use stave_dsp::Tail;
 /// `#[derive(Params)]`: the parameter table of a struct of params.
 pub use stave_macros::Params;
+/// `#[derive(Smoothers)]`: a group of [`params::Smoother`]s, one per param.
+pub use stave_macros::Smoothers;
 /// `#[derive(Taps)]`: the telemetry table of a struct of taps.
 pub use stave_macros::Taps;
 pub use telemetry::{Scope, Tap, TapId, Telemetry};

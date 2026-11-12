@@ -24,6 +24,7 @@ pub struct CommonCathodeConfig<T> {
     pub newton: NewtonSettings,
 }
 
+#[derive(Clone)]
 pub struct CommonCathode<T> {
     config: CommonCathodeConfig<T>,
     sample_rate: f32,
@@ -113,12 +114,14 @@ impl<T: TriodeModel> CommonCathode<T> {
 
 /// The bypass capacitor's trapezoidal companion: conductance 2C/T and
 /// the previous step's voltage and current.
+#[derive(Clone)]
 struct Companion {
     siemens: f64,
     previous_cathode: f64,
     previous_amps: f64,
 }
 
+#[derive(Clone)]
 struct Solution {
     nodes: NodeVoltages,
     iterations: u32,
@@ -134,6 +137,7 @@ struct Solution {
 ///     (Vb − Vp)/Ra − Ip = 0
 ///     Ip + Ig − Vk/Rk − (Gc·(Vk − Vk₋₁) − Ic₋₁) = 0
 /// ```
+#[derive(Clone)]
 struct Residual {
     values: [f64; 3],
     jacobian: [[f64; 3]; 3],

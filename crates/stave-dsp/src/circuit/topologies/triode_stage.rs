@@ -121,6 +121,7 @@ pub enum Bias {
     Cathode { bypass_farads: f64 },
 }
 
+#[derive(Clone)]
 pub struct Triode {
     p: TriodeParams,
 

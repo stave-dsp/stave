@@ -159,7 +159,7 @@ reuse, never renumber (docs/architecture.md).
 FloatParam::new(ParamId(1), "Tilt", Range::linear(-6.0, 6.0))   // also Range::log, Range::skewed
     .unit(Unit::Db).smooth(Smooth::ms(30.0)).group("Tone");      // .default(x): else the value nearest 0
 BoolParam::new(ParamId(4), "Hold", false);
-BoolParam::bypass(ParamId(3));                                   // the one way to declare bypass
+BoolParam::bypass(ParamId(3), "Bypass");                         // the one way to declare bypass
 EnumParam::<Mode>::new(ParamId(5), "Mode", Mode(0));             // param_enum! declares Mode and its labels
 ```
 
@@ -167,8 +167,12 @@ EnumParam::<Mode>::new(ParamId(5), "Mode", Mode(0));             // param_enum! 
 the enum) — bounded by the declaration; never restate a range at a read
 site. A per-frame glide is a `Smoother` built from the param
 (`Smoother::new(&p.tilt)` in `new`, `prepare(env)` in `prepare`,
-`ramp(block, &p.tilt)` once per block, `next()` per frame); a stepped
-param's changes at their exact frames are `Steps`. Declared smoothing
+`ramp(block, &p.tilt)` once per block, `next()` per frame); several
+knobs gliding together are a `#[derive(Smoothers)]` struct of them
+(`#[smoothers(params = MyParams, frame = Knobs)]`: one `new`, `prepare`
+and `ramp` for the group, a `Ramp` per field, and with `frame` one
+`next()` filling a `Knobs` per frame); a stepped param's changes at
+their exact frames are `Steps`. Declared smoothing
 for audio-rate gain paths; plugin-owned motion only when the glide IS
 the instrument (document which). Selector labels live in the
 `param_enum!` — the face and the host read the same declaration.
@@ -186,8 +190,11 @@ Old sessions load through `migrations()` (`Migrations::default()
 whole look — parts never mint a colour, a font or a coordinate. Tilt's
 `face` is the worked example and `tools/storybook` shows every part on
 every theme. Paged views are declared: a `Pager` part plus
-`pages(key, …)` overlays the pages in one rect; content that follows a
-selector is `on_step(node, p.algo.bind(), step)`. Every part has a
+`pages(key, …)` overlays the pages in one rect; a stepped param chosen
+by a row of tabs is `Tabs::of(&p.algo)`, and content that follows a
+selector is `on_step(node, p.algo.bind(), step)`. Draw code sets type
+with the prelude's scene words: `Font::new(Family::Serif, 600)
+.align(TextAlign::Left)`, a `Brush::Linear`/`Radial` fill, a `Pt`. Every part has a
 name (`PartId`: its bound param, its role, or `node.id("…")`), so tests
 address parts by name, not coordinates. A bespoke display starts IN
 YOUR PROJECT as your own `Part` — `reads()` declares the params and
@@ -202,7 +209,11 @@ Map every piece to its form before writing it:
 | You need | You use |
 |---|---|
 | serial audio path | `chain!` — the declaration's shape IS the signal path; `.slot` is the StageId, `.slot()` the typed cell (swappable slots stay swap-aware). `Serial`/`Chain` underneath |
-| another clock domain (oversampling) | `Oversampled2x` presets — never a rate literal |
+| another clock domain (oversampling) | `Oversampled2x` presets — never a rate literal; `tick_with(x, \|stage, s\| …)` runs a closure in the 2× domain (`Oversampled2x::front(())` when the interior is only the closure) |
+| a clock that moves while it plays | `OnePole`/`DcBlocker::set_sample_rate` re-voice and keep state (`prepare` also resets) |
+| an oscillator, LFO, envelope, walk | a `Generator`: `next()` per sample, never `tick(0.0)` |
+| a sidechain | `block.aux(i)`, taken before `lanes()` and read inside `run` |
+| a settled circuit for `reset` | settle in `prepare`, keep a `clone()`, copy it back in `reset` (every circuit is `Clone` and holds no heap, so `clone_from` allocates nothing): `reset` is realtime |
 | per-channel state | `PerChannel` — lanes never cross-index |
 | feedback | `Loop` (explicit delay, required) |
 | detectors/LFO → knob displacement | `Router`/`ModMatrix` — routes as data, displace-from-base |

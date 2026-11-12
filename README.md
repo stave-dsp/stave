@@ -31,7 +31,7 @@ impl Default for GainParams {
             gain: FloatParam::new(ParamId(1), "Gain", Range::linear(-24.0, 24.0))
                 .unit(Unit::Db)
                 .smooth(Smooth::ms(10.0)),
-            bypass: BoolParam::bypass(ParamId(2)),
+            bypass: BoolParam::bypass(ParamId(2), "Bypass"),
         }
     }
 }

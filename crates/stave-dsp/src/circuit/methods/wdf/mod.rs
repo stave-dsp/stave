@@ -13,6 +13,7 @@ pub trait OnePort {
     fn incident(&mut self, wave: f64);
 }
 
+#[derive(Clone)]
 pub struct Resistor {
     pub ohms: f64,
 }
@@ -28,6 +29,7 @@ impl OnePort for Resistor {
 }
 
 /// An ideal voltage source behind a series resistance.
+#[derive(Clone)]
 pub struct ResistiveSource {
     pub ohms: f64,
     pub volts: f64,
@@ -44,6 +46,7 @@ impl OnePort for ResistiveSource {
 }
 
 /// Discretized by the bilinear transform: R = T / 2C, `b[n] = a[n−1]`.
+#[derive(Clone)]
 pub struct Capacitor {
     farads: f64,
     sample_rate: f64,
@@ -96,6 +99,7 @@ impl OnePort for Capacitor {
 }
 
 /// Two ports sharing one voltage.
+#[derive(Clone)]
 pub struct Parallel<A, B> {
     pub left: A,
     pub right: B,

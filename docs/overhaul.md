@@ -76,7 +76,7 @@ impl Default for TiltParams {
             output: FloatParam::new(ParamId(2), "Output", Range::linear(-24.0, 24.0))
                 .unit(Unit::Db)
                 .smooth(Smooth::ms(5.0)),
-            bypass: BoolParam::bypass(ParamId(3)),
+            bypass: BoolParam::bypass(ParamId(3), "Bypass"),
         }
     }
 }
@@ -139,7 +139,7 @@ stave::export!(Tilt);   // VST3 + CLAP; CIDs derived stably from INFO.id
 FloatParam::new(ParamId(1), "Tilt", Range::linear(-6.0, 6.0))   // also Range::log, Range::skewed
     .unit(Unit::Db).smooth(Smooth::ms(30.0)).group("Tone");
 BoolParam::new(ParamId(4), "Hold", false);
-BoolParam::bypass(ParamId(3));                                   // the one way to declare bypass
+BoolParam::bypass(ParamId(3), "Bypass");                         // the one way to declare bypass
 EnumParam::<Mode>::new(ParamId(5), "Mode", Mode::Tape);
 
 p.tilt.value()      // f32 (Float), bool (Bool), Mode (Enum) — one reader, natural type
@@ -324,6 +324,7 @@ Status: `[ ]` open · `[x]` done (with the commit).
 - [x] **A8** (31340a2) History in code comments ("user-specced", "Step 1.3", "chime consumer … fifth instrument lock", "forge's boot()", milestone tags) and cargo-culted `extern crate alloc` in std crates. Remove.
 - [x] **A9** (e2f5294: `ui!` deleted) `ui!` fails silently (bad `cols` → 1, bad `kind` → Rect, dropped attrs). Becomes moot with L7 for editors; any surviving macro emits `compile_error!`.
 - [x] **A10** (5f01da0: one file, `use stave::prelude::*`, a `Smoother` per knob, `block.lanes::<2>()`; its laws run on the harness) Tilt clones the params `Arc` every block and hand-wires lanes, ramps and coefficients. Tilt is rewritten to the target shape as the acceptance test.
+- [x] **A11** (this commit) What migrating the seventeen plugins (P1) found the author surface missing, each fixed so no plugin keeps a local copy: the face prelude carries the Scene IR's words (`Pt`, `Brush`, `Font`, `Family`, `TextAlign`, `Cap`, `Op`), so draw code sets type flush or in a serif and fills gradients instead of estimating widths and painting bands; the prelude also has `Ramp`, `Watch`/`ModalWatch`, `AnyParam`, `Aux`, `Lfo` and `Generator`; `BoolParam::bypass(id, name)` names the bypass like every other param (the shipped plugins keep "bypass"); `Tabs` — a lit tab row bound to a stepped param (`Tabs::of(&p.algo)`), sharing the `Pager`'s row, with a part golden, a story and its laws; `#[derive(Smoothers)]` builds, prepares, snaps and ramps a group of `Smoother`s (`{Name}Ramps`, and `frame = T` for one `next()` per frame); `OnePole`/`DcBlocker::set_sample_rate` re-voice a moving clock without the reset `prepare` does; every circuit and kernel type is `Clone`, so a plugin settles in `prepare` and copies the settled state back in `reset`; `Generator::next()` for oscillators, LFOs, envelopes and walks; `RandomWalk` and `Lfo` resets restart their sequences (a reset sounds as fresh); `Block::aux` borrows the host's buffers, not the block, so a sidechain is read inside `lanes().run` (an aux a host aliases to an output is staged); `Oversampled2x::tick_with` runs a closure in the 2× domain (`()` is the wire stage for a closure-only interior); `stave::identity::<P>()` reads the CLAP id and VST3 class ids `export!` gives (the public `Exported` trait replaces `__export::Export`).
 
 ### D — DSP vocabulary
 

@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "stave's procedural macros: #[derive(Params)], #[derive(Taps)]"
+description = "stave's procedural macros: #[derive(Params)], #[derive(Taps)], #[derive(Smoothers)]"
 
 [lib]
 proc-macro = true

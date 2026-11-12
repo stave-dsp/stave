@@ -224,7 +224,7 @@ mod tests {
         assert_eq!((p.id, p.unit.as_str()), (ParamId(4), "dB"));
         assert_eq!((p.min, p.max, p.default, p.value), (-12.0, 12.0, 3.0, 3.0));
         assert_eq!((p.step_count, p.automatable()), (0, true));
-        let bypass = Param::of(&BoolParam::bypass(ParamId(5)));
+        let bypass = Param::of(&BoolParam::bypass(ParamId(5), "Bypass"));
         assert!(bypass.flags.bypass);
         assert_eq!((bypass.step_count, bypass.step_names.len()), (2, 2));
     }

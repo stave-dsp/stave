@@ -46,7 +46,7 @@ impl TableParams {
             .unit(Unit::Db)
             .group("Main"),
             // VST3 convention: bypass param TRUE = bypassed.
-            power: stave_core::params::BoolParam::bypass(stave_core::ParamId(ID_POWER)),
+            power: stave_core::params::BoolParam::bypass(stave_core::ParamId(ID_POWER), "Bypass"),
             sgain: FloatParam::new(stave_core::ParamId(ID_SGAIN), "sgain", Range::linear(0.0, 1.0)).default(1.0),
         }
     }

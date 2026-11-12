@@ -7,7 +7,7 @@
 use super::lfo::Lfo;
 use super::random_walk::RandomWalk;
 use crate::kernel::control::Source;
-use crate::kernel::node::{Stage, Tail};
+use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::osc::Waveform;
 
 /// Beats per cycle of each tempo division: 1/1, 1/2, 1/4, 1/8, 1/16,
@@ -57,6 +57,7 @@ pub fn rise(age_samples: u32, rise_ms: f32, sample_rate: f32) -> f32 {
     }
 }
 
+#[derive(Clone)]
 pub struct ModLfo {
     lfo: Lfo,
     walk: RandomWalk,
@@ -98,8 +99,8 @@ impl ModLfo {
     pub fn tick_frames(&mut self, frames: usize) -> f32 {
         let (mut oscillator, mut walk) = (self.value, self.value);
         for _ in 0..frames {
-            oscillator = self.lfo.tick(0.0);
-            walk = self.walk.tick(0.0);
+            oscillator = self.lfo.next();
+            walk = self.walk.next();
         }
         self.value = match self.shape {
             ModLfoShape::Wave(_) => oscillator,
@@ -141,6 +142,8 @@ impl Stage for ModLfo {
         Tail::Infinite
     }
 }
+
+impl Generator for ModLfo {}
 
 impl Source for ModLfo {
     fn state(&self) -> f32 {

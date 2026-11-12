@@ -52,7 +52,7 @@ pub mod prelude {
     pub use crate::parts::*;
     pub use crate::{on_page, on_step, pages, screens, Bind, BindParam, Face, FaceNode, Frame, PartId, Reads, TapId, Theme};
     pub use stave_ui::layout::Rect;
-    pub use stave_ui::scene::{pt, Path, Scene, Stroke};
+    pub use stave_ui::scene::{pt, Brush, Cap, Family, Font, Op, Path, Pt, Scene, Stroke, TextAlign};
     pub use stave_ui::style::Color;
     pub use stave_ui::{column, row, spacer, stack, Align, Dim, Justify};
 }

@@ -64,13 +64,17 @@ and host automation points honored at their frames. (≈ a CSS
 transition on the value: you declare the duration, the runtime tweens.)
 
 **Bypass** — the host-visible on/off. The FRAMEWORK owns the
-click-free crossfade; a plugin declares `BoolParam::bypass(id)`.
+click-free crossfade; a plugin declares `BoolParam::bypass(id, name)`.
 
 ## Composition vocabulary (the kernel forms)
 
 **Node / Stage** — the one processing surface: state + prepare +
 tick. Leaves (a filter) and composites (a whole chain) present the
 same surface. (≈ everything is a component.)
+
+**Generator / next** — a Stage whose output ignores its input (an
+oscillator, LFO, envelope, random walk); `next()` is its next sample,
+so nothing is ticked with a dummy input.
 
 **`chain!` / Sequence** — serial composition, declared so the
 code's shape IS the signal path; every slot is a named handle:
