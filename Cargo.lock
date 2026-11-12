@@ -3265,6 +3265,7 @@ dependencies = [
  "stave-ui-win32",
  "stave-ui-x11",
  "stave-vst3-sys",
+ "x11rb",
 ]
 
 [[package]]

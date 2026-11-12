@@ -39,8 +39,10 @@ fn a_panic_is_logged_as_fatal_with_its_location() {
     let logged = &text[before..];
     // The other test writes this file too: find this panic's message.
     assert_eq!(logged.matches("the plugin gave up").count(), 1, "{logged}");
+    // The location is the compiler's path: `\` separators on Windows.
+    let file = std::path::Path::new("crates").join("stave-core").join("tests").join("panic_log.rs");
     assert!(
-        logged.contains(" fatal Panic Log: panicked at crates/stave-core/tests/panic_log.rs:"),
+        logged.contains(&format!(" fatal Panic Log: panicked at {}:", file.display())),
         "{logged}"
     );
 }

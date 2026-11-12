@@ -230,7 +230,10 @@ fn at_a_scale_the_window_is_scaled_and_points_map() {
     assert_eq!(r.value(2), 1.0, "a click at 1.5× the coordinates is the footswitch");
     let (x, y) = r.knob;
     r.drag(r.knob, (x, y - 55.0), 0);
-    assert!((r.value(1) - 0.75).abs() < 1e-9, "travel is in points, not pixels: {}", r.value(1));
+    // Messages carry whole pixels: at 1.5 px/pt a point lands within
+    // a pixel, so the drag is exact to 1 px of 220 pt travel.
+    let px = 1.0 / 1.5 / 220.0;
+    assert!((r.value(1) - 0.75).abs() <= px, "travel is in points, not pixels: {}", r.value(1));
 }
 
 #[test]

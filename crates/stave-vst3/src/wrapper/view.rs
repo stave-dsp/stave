@@ -235,16 +235,22 @@ pub(super) unsafe extern "C" fn sv_attached<P: Vst3Export>(
             #[cfg(all(unix, not(target_os = "macos")))]
             {
                 // `X11EmbedWindowID`: the parent is a window id, passed
-                // as the pointer's value.
+                // as the pointer's value. None: nothing to show in.
+                if parent.is_null() {
+                    return K_RESULT_OK;
+                }
                 if let Err(error) = editor.view.attach(parent as usize as u32) {
                     let error = stave_core::diagnostics::CallError::WindowRefused(error.to_string());
                     return inst.answer("IPlugView::attached", Err(error));
                 }
                 // SAFETY: `this` is the live box on the UI thread.
+                // (`editor` is not used past here: the run loop reads the
+                // box through shared references.)
                 if unsafe { run_loop::join::<P>(this.cast()) } {
                     K_RESULT_OK
                 } else {
-                    editor.view.detach();
+                    // SAFETY: as above; the shared references are gone.
+                    unsafe { &mut *this.cast::<EditorBox<P>>() }.view.detach();
                     let error = stave_core::diagnostics::CallError::WindowRefused("the frame offers no IRunLoop".into());
                     inst.answer("IPlugView::attached", Err(error))
                 }
@@ -260,13 +266,13 @@ pub(super) unsafe extern "C" fn sv_removed<P: Vst3Export>(this: *mut FUnknown) -
         "IPlugView::removed",
         || K_INTERNAL_ERROR,
         || {
-            // SAFETY: as in `sv_attached`.
-            let editor = unsafe { &mut *this.cast::<EditorBox<P>>() };
             #[cfg(all(unix, not(target_os = "macos")))]
             // SAFETY: `this` is the live box on the UI thread.
             unsafe {
                 run_loop::leave::<P>(this.cast())
             };
+            // SAFETY: as in `sv_attached`.
+            let editor = unsafe { &mut *this.cast::<EditorBox<P>>() };
             editor.view.detach();
             K_RESULT_OK
         },
