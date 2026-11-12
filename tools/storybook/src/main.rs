@@ -27,7 +27,7 @@ fn screenshot(dir: PathBuf, scale: f64) {
         let controller = StoryController::new();
         controller.freeze(1.7);
         let face = stories::all(&controller.params).swap_remove(i).1;
-        let mut rt = Runtime::new(face);
+        let mut rt = Runtime::new(face, &stave_ui_cocoa::text::SystemFonts);
         if std::env::var_os("STAVE_FACE_DEBUG").is_some() {
             for r in rt.rects() {
                 println!("  {:7.1} {:7.1} {:7.1} {:7.1}", r.x, r.y, r.w, r.h);

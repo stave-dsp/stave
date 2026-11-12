@@ -203,7 +203,7 @@ impl FaceDriver {
         let log = Log::default();
         let controller = PluginController::new(table.clone(), Telemetry::new(), presets.into(), Box::new(log.clone()));
         FaceDriver {
-            runtime: Runtime::new(face),
+            runtime: Runtime::new(face, &BoxText),
             controller,
             table,
             log,

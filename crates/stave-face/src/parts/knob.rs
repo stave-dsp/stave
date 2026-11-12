@@ -7,7 +7,9 @@ use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke};
 
 use crate::material::{self, Occluder};
-use crate::part::{leaf, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
+use stave_ui::Fonts;
+
+use crate::part::{measured, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
 use crate::theme::{CapStyle, Theme};
 
 /// Knob sizes: the cap's radius in points.
@@ -51,8 +53,9 @@ pub struct Knob {
 
 /// Where the scale ring sits outside the cap.
 const RING: f64 = 7.0;
-/// Room for the legend under the knob.
-const LEGEND: f64 = 18.0;
+/// The widest value a knob shows while touched, for its width: a sign,
+/// three digits, a point, a digit and a unit.
+const WIDEST_VALUE: &str = "-000.0 dB";
 
 /// The angle (radians, y-down) of normalized value `v`: a 270° sweep
 /// from lower-left through the top to lower-right.
@@ -90,18 +93,15 @@ impl Knob {
         self.label = Some(l);
         self
     }
-    fn extent(&self) -> (f64, f64) {
-        let r = self.size.radius();
-        let d = 2.0 * (r + RING + 5.0);
-        (d.max(72.0), d + LEGEND)
-    }
     pub fn node(self) -> FaceNode {
-        let (w, h) = self.extent();
-        leaf(self, w, h)
+        measured(self)
     }
-    fn centre(&self, r: Rect) -> Pt {
-        let rad = self.size.radius();
-        pt(r.x + r.w / 2.0, r.y + rad + RING + 5.0)
+    /// The cap, its scale ring and the clearance around them.
+    fn reach(&self, th: &Theme) -> f64 {
+        self.size.radius() + RING + th.space(0) + 1.0
+    }
+    fn centre(&self, r: Rect, th: &Theme) -> Pt {
+        pt(r.x + r.w / 2.0, r.y + self.reach(th))
     }
     fn legend(&self) -> std::string::String {
         self.label.unwrap_or(self.bind.name).to_uppercase()
@@ -117,8 +117,16 @@ fn pointer_span(style: CapStyle, r: f64) -> (f64, f64, f64) {
 }
 
 impl Part for Knob {
-    fn occluders(&self, r: Rect, _theme: &Theme, out: &mut Vec<Occluder>) {
-        let c = self.centre(r);
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        let d = 2.0 * self.reach(th);
+        let legend = fonts.width(&self.legend(), ty.legend_size, &ty.legend);
+        let value = fonts.width(WIDEST_VALUE, ty.value_size, &ty.value);
+        (d.max(legend.max(value) + 2.0 * th.space(0)), d + th.line(ty.legend_size))
+    }
+
+    fn occluders(&self, r: Rect, theme: &Theme, out: &mut Vec<Occluder>) {
+        let c = self.centre(r, theme);
         let rad = self.size.radius();
         out.push(Occluder::Disc {
             cx: c.x,
@@ -130,7 +138,7 @@ impl Part for Knob {
 
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let c = self.centre(r);
+        let c = self.centre(r, th);
         let rad = self.size.radius();
         let (style, tint, scale) = (th.hardware.caps, th.hardware.cap, cx.scale);
         let size = 2.0 * rad + 2.0;
@@ -149,7 +157,7 @@ impl Part for Knob {
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let th = f.theme;
-        let c = self.centre(r);
+        let c = self.centre(r, th);
         let rad = self.size.radius();
         let v = f.value(self.bind);
         let a = knob_angle(v);
@@ -168,7 +176,7 @@ impl Part for Knob {
         s.solid(Path::circle(pt(c.x + ca * ring, c.y + sa * ring), if lit { 2.4 } else { 1.9 }), accent);
         // Legend, or the value while touched.
         let ty = &th.typography;
-        let base = pt(r.x + r.w / 2.0, r.y + r.h - 5.0);
+        let base = pt(r.x + r.w / 2.0, r.y + r.h - ty.legend_size * 0.5);
         if lit {
             s.text_in(base, f.controller.value_text(self.bind.id), ty.value_size, accent, ty.value);
         } else {
@@ -176,10 +184,10 @@ impl Part for Knob {
         }
     }
 
-    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+    fn grabs(&self, r: Rect, f: &Frame<'_>, out: &mut Vec<Grab>) {
         out.push(Grab {
             area: Area::Circle {
-                c: self.centre(r),
+                c: self.centre(r, f.theme),
                 r: self.size.radius() + RING + 3.0,
             },
             gesture: Gesture::Rotary {

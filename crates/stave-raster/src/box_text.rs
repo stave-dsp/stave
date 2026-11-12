@@ -6,10 +6,14 @@
 use stave_ui::scene::{Font, Pt, TextAlign};
 use stave_ui::style::Color;
 
+use stave_ui::Fonts;
+
 use crate::{Canvas, TextPainter};
 
 /// Deterministic text: every visible glyph a box `BOX_W` × `CAP` of the
-/// size, `ADVANCE` of the size apart (plus the font's tracking).
+/// size, `ADVANCE` of the size apart (plus the font's tracking, in em as
+/// everywhere). It is also the [`Fonts`] layout measures with, so a face
+/// laid out for golden images is laid out for exactly these glyphs.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct BoxText;
 
@@ -28,7 +32,12 @@ impl BoxText {
         if n == 0.0 {
             return 0.0;
         }
-        n * (size * Self::ADVANCE + font.tracking) - (size * (Self::ADVANCE - Self::BOX_W) + font.tracking)
+        n * Self::step(size, font) - (size * (Self::ADVANCE - Self::BOX_W) + font.tracking * size)
+    }
+
+    /// From one glyph's left edge to the next's.
+    fn step(size: f64, font: &Font) -> f64 {
+        size * (Self::ADVANCE + font.tracking)
     }
 
     /// The box a line covers: (x, y, w, h), y down, with its baseline
@@ -44,10 +53,16 @@ impl BoxText {
     }
 }
 
+impl Fonts for BoxText {
+    fn width(&self, text: &str, size: f64, font: &Font) -> f64 {
+        Self::width(text, size, font)
+    }
+}
+
 impl TextPainter for BoxText {
     fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color, font: &Font) {
         let (x0, top, _, h) = Self::bounds(at, text, size, font);
-        let step = size * Self::ADVANCE + font.tracking;
+        let step = Self::step(size, font);
         let a = color.a.clamp(0.0, 1.0);
         let c = [color.r, color.g, color.b].map(|v| (v.clamp(0.0, 1.0) * a * 255.0) as f32);
         for (i, ch) in text.chars().enumerate() {
@@ -88,6 +103,9 @@ mod tests {
         let (x, y, w, h) = BoxText::bounds(Pt { x: 50.0, y: 20.0 }, "ab", 10.0, &font);
         assert_eq!((x + w / 2.0, y + h), (50.0, 20.0));
         assert!((w - (6.0 + 4.5)).abs() < 1e-12, "two glyphs: one advance and one box");
+        let tracked = Font::DEFAULT.tracking(0.1);
+        let w = BoxText::width("ab", 10.0, &tracked);
+        assert!((w - (6.0 + 1.0 + 4.5)).abs() < 1e-12, "tracking is in em: 0.1 of 10 pt between letters");
     }
 
     #[test]

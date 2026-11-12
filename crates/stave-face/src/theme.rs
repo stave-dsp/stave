@@ -124,6 +124,12 @@ impl Theme {
     pub fn space(&self, step: usize) -> f64 {
         self.spacing[step.min(self.spacing.len() - 1)]
     }
+
+    /// The height a printed line of `size` points takes, leading
+    /// included (a legend row, a caption row).
+    pub fn line(&self, size: f64) -> f64 {
+        size * 1.9
+    }
 }
 
 const fn rgb8(r: u8, g: u8, b: u8) -> Color {

@@ -11,9 +11,12 @@ use stave_ui::style::Color;
 
 use stave_core::telemetry::TapId;
 
-use crate::part::{leaf, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
+use stave_ui::Fonts;
+
+use crate::part::{leaf, measured, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
 use crate::parts::display::{bake_window, glass_over};
 use crate::screens;
+use crate::theme::Theme;
 
 fn with_alpha(c: Color, a: f64) -> Color {
     Color::rgba(c.r, c.g, c.b, c.a * a)
@@ -44,6 +47,8 @@ pub struct Meter {
 }
 
 const SEGMENTS: usize = 24;
+/// The bar's window width.
+const METER_W: f64 = 14.0;
 
 impl Meter {
     pub fn db(tap: TapId) -> Self {
@@ -76,11 +81,11 @@ impl Meter {
         self
     }
     pub fn node(self) -> FaceNode {
-        let extra = if self.label.is_some() { 20.0 } else { 0.0 };
-        leaf(self, 30.0, self.height + extra)
+        measured(self)
     }
+    /// The bar's window, centred across the part.
     fn window(&self, r: Rect) -> Rect {
-        Rect { x: r.x + 8.0, y: r.y + 3.0, w: 14.0, h: self.height - 6.0 }
+        Rect { x: r.x + (r.w - METER_W) / 2.0, y: r.y + 3.0, w: METER_W, h: self.height - 6.0 }
     }
     fn level(&self, v: f64) -> f64 {
         match self.reading {
@@ -94,12 +99,24 @@ impl Meter {
 }
 
 impl Part for Meter {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        let w = METER_W + 4.0 * th.space(0);
+        match self.label {
+            Some(l) => {
+                let lw = fonts.width(l, ty.caption_size, &ty.caption) + th.space(0);
+                (w.max(lw), self.height + th.line(ty.caption_size) + 1.5 * th.space(0))
+            }
+            None => (w, self.height),
+        }
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         bake_window(cx, self.window(r), 3.0, 3.0);
         if let Some(l) = self.label {
             let th = cx.theme;
             let ty = &th.typography;
-            cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + r.h - 4.0), l, ty.caption_size, th.palette.ink_soft, ty.caption);
+            cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + r.h - th.space(0)), l, ty.caption_size, th.palette.ink_soft, ty.caption);
         }
     }
 

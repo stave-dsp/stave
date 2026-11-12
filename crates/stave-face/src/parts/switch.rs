@@ -10,7 +10,9 @@ use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Pt, Scene, TextAlign};
 
 use crate::material::{self, Occluder};
-use crate::part::{leaf, sprite_key, step_of, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
+use stave_ui::Fonts;
+
+use crate::part::{measured, sprite_key, step_of, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
 use crate::theme::Theme;
 
 // ----------------------------------------------------------------- toggle
@@ -23,9 +25,20 @@ pub struct Toggle {
     pub label: Option<&'static str>,
 }
 
-const TOGGLE_W: f64 = 96.0;
-const TOGGLE_H: f64 = 72.0;
-const OPTION_PITCH: f64 = 13.0;
+/// From the lever's pivot to its printed options.
+const OPTION_GAP: f64 = 18.0;
+/// The least room left of the pivot (the nut and the lever's swing).
+const PIVOT_X: f64 = 28.0;
+
+/// The rows the options print on.
+fn option_pitch(th: &Theme) -> f64 {
+    th.typography.caption_size * 1.75
+}
+
+/// The column the options print in: room for about eight caption letters.
+fn options_w(th: &Theme) -> f64 {
+    th.typography.caption_size * 6.5
+}
 
 impl Toggle {
     pub fn new(bind: Bind) -> Self {
@@ -36,14 +49,20 @@ impl Toggle {
         self
     }
     pub fn node(self) -> FaceNode {
-        leaf(self, TOGGLE_W, TOGGLE_H)
+        measured(self)
     }
-    fn pivot(&self, r: Rect) -> Pt {
-        pt(r.x + 28.0, r.y + 46.0)
+    /// The lever's pivot: the options column at the right edge, the
+    /// legend's row and an option's pitch above.
+    fn pivot(&self, r: Rect, th: &Theme) -> Pt {
+        let x = r.x + r.w - options_w(th) - OPTION_GAP;
+        pt(x, r.y + th.line(th.typography.legend_size) + 2.0 * option_pitch(th))
     }
-    fn option_y(&self, r: Rect, i: u32, n: u32) -> f64 {
-        let c = self.pivot(r).y;
-        c + (f64::from(i) - f64::from(n.saturating_sub(1)) / 2.0) * OPTION_PITCH
+    fn option_y(&self, r: Rect, th: &Theme, i: u32, n: u32) -> f64 {
+        let c = self.pivot(r, th).y;
+        c + (f64::from(i) - f64::from(n.saturating_sub(1)) / 2.0) * option_pitch(th)
+    }
+    fn legend(&self) -> String {
+        self.label.unwrap_or(self.bind.name).to_uppercase()
     }
     fn names(&self, controller: &dyn Controller) -> Vec<String> {
         let n = controller.steps(self.bind.id).clamp(2, 3);
@@ -52,8 +71,16 @@ impl Toggle {
 }
 
 impl Part for Toggle {
-    fn occluders(&self, r: Rect, _theme: &Theme, out: &mut Vec<Occluder>) {
-        let p = self.pivot(r);
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        // The legend centres on the pivot: as much room left of it as half.
+        let half = fonts.width(&self.legend(), ty.legend_size, &ty.legend) / 2.0 + 2.0;
+        let pitch = option_pitch(th);
+        (half.max(PIVOT_X) + OPTION_GAP + options_w(th), th.line(ty.legend_size) + 4.0 * pitch)
+    }
+
+    fn occluders(&self, r: Rect, theme: &Theme, out: &mut Vec<Occluder>) {
+        let p = self.pivot(r, theme);
         out.push(Occluder::Disc {
             cx: p.x,
             cy: p.y,
@@ -66,11 +93,11 @@ impl Part for Toggle {
         let th = cx.theme;
         let ty = &th.typography;
         let scale = cx.scale;
-        let p = self.pivot(r);
+        let p = self.pivot(r, th);
         let nut = material::sprite(22.0, scale, |dx, dy| material::toggle_nut(dx, dy, 9.0, scale));
         cx.image(p.x - 11.0, p.y - 11.0, 22.0, 22.0, nut);
-        let legend = self.label.unwrap_or(self.bind.name).to_uppercase();
-        cx.scene.text_in(pt(p.x, r.y + 11.0), legend, ty.legend_size, th.palette.ink, ty.legend);
+        let base = r.y + th.line(ty.legend_size) * 0.6;
+        cx.scene.text_in(pt(p.x, base), self.legend(), ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
@@ -85,7 +112,7 @@ impl Part for Toggle {
         } else {
             f64::from(cur) - 1.0
         };
-        let p = self.pivot(r);
+        let p = self.pivot(r, th);
         let len = 12.0;
         f.sprite(s, p, 34.0, sprite_key(("lever", (tilt * 4.0) as i64)), |scale| {
             material::sprite(34.0, scale, |dx, dy| material::toggle_lever(dx, dy, len, tilt, scale))
@@ -96,12 +123,15 @@ impl Part for Toggle {
             let (color, w) = if i == cur { (th.palette.accent, 750) } else { (th.palette.ink_soft, 600) };
             let mut fnt = font;
             fnt.weight = w;
-            s.text_in(pt(p.x + 18.0, self.option_y(r, i, n) + 3.0), name.as_str(), ty.caption_size, color, fnt);
+            let y = self.option_y(r, th, i, n) + ty.caption_size * 0.4;
+            s.text_in(pt(p.x + OPTION_GAP, y), name.as_str(), ty.caption_size, color, fnt);
         }
     }
 
     fn grabs(&self, r: Rect, f: &Frame<'_>, out: &mut Vec<Grab>) {
-        let p = self.pivot(r);
+        let th = f.theme;
+        let p = self.pivot(r, th);
+        let pitch = option_pitch(th);
         out.push(Grab {
             area: Area::Circle { c: p, r: 16.0 },
             gesture: Gesture::Stepped {
@@ -113,13 +143,13 @@ impl Part for Toggle {
         // prints them.
         let n = f.controller.steps(self.bind.id).clamp(2, 3);
         for i in 0..n {
-            let y = self.option_y(r, i, n);
+            let y = self.option_y(r, th, i, n);
             out.push(Grab {
                 area: Area::Rect(Rect {
                     x: p.x + 16.0,
-                    y: y - OPTION_PITCH / 2.0,
+                    y: y - pitch / 2.0,
                     w: r.x + r.w - p.x - 16.0,
-                    h: OPTION_PITCH,
+                    h: pitch,
                 }),
                 gesture: Gesture::Choose { bind: self.bind, step: i },
             });
@@ -208,18 +238,34 @@ impl Footswitch {
         self
     }
     pub fn node(self) -> FaceNode {
-        let h = 50.0 + 2.0 * self.radius;
-        leaf(self, (4.0 * self.radius).max(64.0), h)
+        measured(self)
     }
-    fn lamp(&self, r: Rect) -> Pt {
-        pt(r.x + r.w / 2.0, r.y + 10.0)
+    fn legend(&self) -> String {
+        self.label.unwrap_or(self.bind.name).to_uppercase()
+    }
+    fn lamp(&self, r: Rect, th: &Theme) -> Pt {
+        pt(r.x + r.w / 2.0, r.y + th.space(1) + 2.0)
+    }
+    /// The legend's baseline, under the lamp's seat.
+    fn legend_y(&self, r: Rect, th: &Theme) -> f64 {
+        self.lamp(r, th).y + LAMP_SEAT + th.typography.legend_size * 1.5
     }
     fn button(&self, r: Rect) -> Pt {
         pt(r.x + r.w / 2.0, r.y + r.h - self.radius - 3.0)
     }
 }
 
+/// A lamp seat's radius.
+const LAMP_SEAT: f64 = 7.0;
+
 impl Part for Footswitch {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        let legend = fonts.width(&self.legend(), ty.legend_size, &ty.legend);
+        let w = (4.0 * self.radius).max(legend + 2.0 * th.space(1));
+        (w, self.legend_y(Rect::default(), th) + th.space(3) + 2.0 * self.radius + 3.0)
+    }
+
     fn occluders(&self, r: Rect, _theme: &Theme, out: &mut Vec<Occluder>) {
         let b = self.button(r);
         out.push(Occluder::Disc {
@@ -239,17 +285,16 @@ impl Part for Footswitch {
         let size = 2.0 * rad + 2.0;
         let sw = material::sprite(size, scale, |dx, dy| material::footswitch(dx, dy, rad, scale));
         cx.image(b.x - size / 2.0, b.y - size / 2.0, size, size, sw);
-        let l = self.lamp(r);
+        let l = self.lamp(r, th);
         let seat = material::sprite(14.0, scale, |dx, dy| material::lamp_seat(dx, dy, 6.0, scale));
         cx.image(l.x - 7.0, l.y - 7.0, 14.0, 14.0, seat);
-        let legend = self.label.unwrap_or(self.bind.name).to_uppercase();
-        cx.scene.text_in(pt(l.x, l.y + 21.0), legend, ty.legend_size, th.palette.ink, ty.legend);
+        cx.scene.text_in(pt(l.x, self.legend_y(r, th)), self.legend(), ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let on = f.value(self.bind) >= 0.5;
         if on == (self.lit == LitWhen::On) {
-            lamp_in(f, s, self.lamp(r), self.color.unwrap_or(f.theme.hardware.lamp));
+            lamp_in(f, s, self.lamp(r, f.theme), self.color.unwrap_or(f.theme.hardware.lamp));
         }
     }
 
@@ -359,9 +404,7 @@ impl Lamp {
         }
     }
     pub fn node(self) -> FaceNode {
-        let top = if self.style == LampStyle::Jewel { 2.0 * JEWEL_R + 6.0 } else { 18.0 };
-        let h = top + if self.label.is_some() { 20.0 } else { 0.0 };
-        leaf(self, 44.0, h)
+        measured(self)
     }
     fn centre(&self, r: Rect) -> Pt {
         let half = if self.style == LampStyle::Jewel { JEWEL_R + 3.0 } else { 9.0 };
@@ -369,7 +412,22 @@ impl Lamp {
     }
 }
 
+/// A lamp's least width: room for its glow.
+const LAMP_W: f64 = 44.0;
+
 impl Part for Lamp {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        let top = if self.style == LampStyle::Jewel { 2.0 * JEWEL_R + 6.0 } else { 18.0 };
+        match self.label {
+            Some(l) => {
+                let w = fonts.width(l, ty.caption_size, &ty.caption) + 2.0 * th.space(0);
+                (w.max(LAMP_W), top + th.line(ty.caption_size) + 1.5 * th.space(0))
+            }
+            None => (LAMP_W, top),
+        }
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let scale = cx.scale;

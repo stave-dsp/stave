@@ -54,7 +54,7 @@ pub fn face_of<P: Plugin>(project: &str) -> (Runtime, PluginController) {
     let presets = P::presets(&params).into();
     let table: Arc<dyn Params> = Arc::new(IndexedParams::new(params));
     let controller = PluginController::new(table, Telemetry::new(), presets, Box::new(Nowhere));
-    (Runtime::new(face), controller)
+    (Runtime::new(face, &stave_raster::BoxText), controller)
 }
 
 /// Check the face of `P` over freshly built params.

@@ -36,7 +36,7 @@ pub mod theme;
 pub mod trace;
 
 pub use part::{
-    leaf, on_page, on_step, pages, step_of, step_value, Area, Bind, BindParam, FaceNode, Focus, Frame, Gesture, Grab, Part,
+    leaf, measured, on_page, on_step, pages, step_of, step_value, Area, Bind, BindParam, FaceNode, Focus, Frame, Gesture, Grab, Part,
     PartId, Reads,
 };
 pub use stave_core::telemetry::TapId;

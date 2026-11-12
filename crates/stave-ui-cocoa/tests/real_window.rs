@@ -60,7 +60,7 @@ mod real {
             });
             // Where the parts are, from the headless runtime (face
             // points, y down).
-            let rt = Runtime::new(face(&table));
+            let rt = Runtime::new(face(&table), &stave_ui_cocoa::text::SystemFonts);
             let probe = PluginController::new(table.clone(), Telemetry::new(), Vec::new().into(), Box::new(Nowhere));
             let at = |id| {
                 let c = rt.grabs(&probe, PartId::Param(ParamId(id)))[0].area.centre();
@@ -161,7 +161,7 @@ mod real {
             foot: BoolParam::new(ParamId(2), "Foot", false),
         });
         let c = PluginController::new(table.clone(), Telemetry::new(), Vec::new().into(), Box::new(Nowhere));
-        let mut rt = Runtime::new(face(&table));
+        let mut rt = Runtime::new(face(&table), &stave_ui_cocoa::text::SystemFonts);
         for act in &trace.0 {
             rt.apply(&c, act);
         }

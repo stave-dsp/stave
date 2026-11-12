@@ -130,7 +130,7 @@ fn trace_file(size: (f64, f64)) -> Option<std::fs::File> {
 impl FaceView {
     /// `face` over `controller`. Touches no Cocoa until `attach`.
     pub fn new(face: Face, controller: Box<dyn Controller>) -> Self {
-        let runtime = Runtime::new(face);
+        let runtime = Runtime::new(face, &crate::text::SystemFonts);
         let trace = trace_file(runtime.size());
         FaceView {
             shared: Rc::new(Shared {
@@ -708,7 +708,7 @@ extern "C" fn key_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
             let on_key = ui.on_key.as_mut()?;
             let face = on_key(code);
             if let Some(face) = face {
-                ui.runtime = Runtime::new(face);
+                ui.runtime = Runtime::new(face, &crate::text::SystemFonts);
                 ui.opened = Instant::now();
             }
             Some(ui.runtime.size())

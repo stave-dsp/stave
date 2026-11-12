@@ -57,7 +57,7 @@ fn rig() -> (Runtime, Arc<Table>, PluginController) {
         ]),
     );
     let controller = PluginController::new(table.clone(), Telemetry::new(), Vec::new().into(), Box::new(Nowhere));
-    (Runtime::new(face), table, controller)
+    (Runtime::new(face, &stave_raster::BoxText), table, controller)
 }
 
 #[test]

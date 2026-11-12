@@ -1,6 +1,10 @@
 //! The flexbox solver — PURE: `solve(tree, avail, measure)` → rects.
 //! No OS, no side effects; snapshot tests pin the geometry headless.
 //!
+//! A leaf whose width or height is `Auto` takes its natural size from
+//! the [`Measure`] (a title measures its text in the platform's
+//! [`Fonts`]); `Px` overrides it, and under `Fill` it is the floor.
+//!
 //! Model (the CSS subset a face needs, nothing more):
 //!  - A node's rect EXCLUDES its margin (margin is spacing the parent
 //!    consumes); border + padding inset the content box (border-box).
@@ -15,7 +19,39 @@
 use std::vec::Vec;
 
 use crate::node::{Kind, Node};
+use crate::scene::Font;
 use crate::style::{Align, Dim, Dir, Justify};
+
+/// The platform's fonts, as layout sees them: how wide a line of text
+/// sets. The platform that paints the text supplies it (CoreText on
+/// macOS; `stave_raster::BoxText` for tests and golden images), so what
+/// layout measures is what the painter draws.
+pub trait Fonts {
+    /// The width of `text` set in `font` at `size` points, in points.
+    fn width(&self, text: &str, size: f64, font: &Font) -> f64;
+}
+
+/// What layout asks of the leaves: each one's natural size (w, h) in
+/// points, for the axes its style leaves `Auto` (and as the floor under
+/// `Fill`). Any `Fn(&W) -> (f64, f64)` is one.
+pub trait Measure<W> {
+    fn size(&self, leaf: &W) -> (f64, f64);
+}
+
+impl<W, F: Fn(&W) -> (f64, f64)> Measure<W> for F {
+    fn size(&self, leaf: &W) -> (f64, f64) {
+        self(leaf)
+    }
+}
+
+/// Leaves with no natural size: every leaf is sized by its style alone.
+pub struct Unmeasured;
+
+impl<W> Measure<W> for Unmeasured {
+    fn size(&self, _leaf: &W) -> (f64, f64) {
+        (0.0, 0.0)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Rect {
@@ -32,10 +68,13 @@ pub struct Layout {
     pub children: Vec<Layout>,
 }
 
-pub fn solve<W>(node: &Node<W>, avail: (f64, f64)) -> Layout {
-    let (w, h) = outer_size(node, avail);
+/// Lay `node` out in `avail` points, asking `measure` for the natural
+/// size of each leaf.
+pub fn solve<W>(node: &Node<W>, avail: (f64, f64), measure: &dyn Measure<W>) -> Layout {
+    let (w, h) = outer_size(node, avail, measure);
     place(
         node,
+        measure,
         Rect {
             x: node.style.margin.l,
             y: node.style.margin.t,
@@ -52,10 +91,7 @@ fn inset<W>(node: &Node<W>) -> (f64, f64, f64, f64) {
 }
 
 /// The node's size EXCLUDING margin, given the parent's content box.
-fn outer_size<W>(
-    node: &Node<W>,
-    avail: (f64, f64),
-) -> (f64, f64) {
+fn outer_size<W>(node: &Node<W>, avail: (f64, f64), m: &dyn Measure<W>) -> (f64, f64) {
     let dim = |d: Dim, avail_axis: f64, intrinsic: &dyn Fn() -> f64| -> f64 {
         match d {
             Dim::Px(v) => v,
@@ -68,20 +104,23 @@ fn outer_size<W>(
     };
     let (it, ir, ib, il) = inset(node);
     match &node.kind {
-        Kind::Widget(_) | Kind::Spacer => (
-            dim(node.style.width, avail.0, &|| 0.0),
-            dim(node.style.height, avail.1, &|| 0.0),
-        ),
+        Kind::Widget(leaf) => {
+            let auto = matches!(node.style.width, Dim::Auto | Dim::Fill(_))
+                || matches!(node.style.height, Dim::Auto | Dim::Fill(_));
+            let (nw, nh) = if auto { m.size(leaf) } else { (0.0, 0.0) };
+            (dim(node.style.width, avail.0, &|| nw), dim(node.style.height, avail.1, &|| nh))
+        }
+        Kind::Spacer => (dim(node.style.width, avail.0, &|| 0.0), dim(node.style.height, avail.1, &|| 0.0)),
         Kind::Box => {
             let content_avail = ((avail.0 - il - ir).max(0.0), (avail.1 - it - ib).max(0.0));
             let w = dim(node.style.width, avail.0, &|| {
-                content_size(node, content_avail).0 + il + ir
+                content_size(node, content_avail, m).0 + il + ir
             });
             // Height flows at the RESOLVED width: a fixed-width box
             // wraps inside its own width, not the parent's avail.
             let h_avail = ((w - il - ir).max(0.0), content_avail.1);
             let h = dim(node.style.height, avail.1, &|| {
-                content_size(node, h_avail).1 + it + ib
+                content_size(node, h_avail, m).1 + it + ib
             });
             (w, h)
         }
@@ -89,12 +128,9 @@ fn outer_size<W>(
 }
 
 /// Natural content extent of a Box (children flowed at Auto).
-fn content_size<W>(
-    node: &Node<W>,
-    avail: (f64, f64),
-) -> (f64, f64) {
+fn content_size<W>(node: &Node<W>, avail: (f64, f64), m: &dyn Measure<W>) -> (f64, f64) {
     let gap = node.style.gap_y.unwrap_or(node.style.gap);
-    let lines = flow_lines(node, avail);
+    let lines = flow_lines(node, avail, m);
     match node.style.dir {
         Dir::Grid(cols) => {
             let cols = cols.max(1) as usize;
@@ -102,7 +138,7 @@ fn content_size<W>(
             let mut h = 0.0f64;
             let mut row_h = 0.0f64;
             for (i, c) in node.children.iter().enumerate() {
-                let (cw, ch) = outer_size(c, avail);
+                let (cw, ch) = outer_size(c, avail, m);
                 col_w = col_w.max(cw + c.style.margin.h());
                 row_h = row_h.max(ch + c.style.margin.v());
                 if (i + 1) % cols == 0 || i + 1 == node.children.len() {
@@ -121,9 +157,9 @@ fn content_size<W>(
             // A stack sizes to its content: a Fill child stretches to
             // the stack, it does not size it.
             for c in &node.children {
-                let (cw, ch) = outer_size(c, avail);
+                let (cw, ch) = outer_size(c, avail, m);
                 // A Fill child counts with its min-content only.
-                let (mw, mh) = outer_size(c, (0.0, 0.0));
+                let (mw, mh) = outer_size(c, (0.0, 0.0), m);
                 let cw = if matches!(c.style.width, Dim::Fill(_)) { mw } else { cw };
                 let ch = if matches!(c.style.height, Dim::Fill(_)) { mh } else { ch };
                 w = w.max(cw + c.style.margin.h());
@@ -164,10 +200,7 @@ struct Line {
 }
 
 /// Greedy line filler. Non-wrapping containers yield one line.
-fn flow_lines<W>(
-    node: &Node<W>,
-    avail: (f64, f64),
-) -> Vec<Line> {
+fn flow_lines<W>(node: &Node<W>, avail: (f64, f64), m: &dyn Measure<W>) -> Vec<Line> {
     let row = node.style.dir != Dir::Column;
     let gap = node.style.gap;
     let main_avail = if row { avail.0 } else { avail.1 };
@@ -179,7 +212,7 @@ fn flow_lines<W>(
         fill: 0.0,
     };
     for (i, c) in node.children.iter().enumerate() {
-        let (cw, ch) = outer_size(c, avail);
+        let (cw, ch) = outer_size(c, avail, m);
         let (cmain, ccross) = if row {
             (cw + c.style.margin.h(), ch + c.style.margin.v())
         } else {
@@ -210,7 +243,7 @@ fn flow_lines<W>(
             }
             // Fill children contribute their min-content as a basis;
             // the line's slack is shared out on top of it.
-            let (mw, mh) = outer_size(c, (0.0, 0.0));
+            let (mw, mh) = outer_size(c, (0.0, 0.0), m);
             let basis = if row { mw + c.style.margin.h() } else { mh + c.style.margin.v() };
             cur.main += basis - cmain;
         }
@@ -219,7 +252,7 @@ fn flow_lines<W>(
         let cross_dim = if row { c.style.height } else { c.style.width };
         if matches!(cross_dim, Dim::Fill(_)) {
             // Counts with its min-content only.
-            let (mw, mh) = outer_size(c, (0.0, 0.0));
+            let (mw, mh) = outer_size(c, (0.0, 0.0), m);
             let min = if row { mh + c.style.margin.v() } else { mw + c.style.margin.h() };
             cur.cross = cur.cross.max(min);
         } else {
@@ -233,7 +266,7 @@ fn flow_lines<W>(
     lines
 }
 
-fn place<W>(node: &Node<W>, rect: Rect) -> Layout {
+fn place<W>(node: &Node<W>, m: &dyn Measure<W>, rect: Rect) -> Layout {
     let (it, ir, ib, il) = inset(node);
     let content = Rect {
         x: rect.x + il,
@@ -252,11 +285,12 @@ fn place<W>(node: &Node<W>, rect: Rect) -> Layout {
             let mut row_h = 0.0f64;
             for (i, c) in node.children.iter().enumerate() {
                 let col = i % cols;
-                let (cw, ch) = child_final_size(c, (col_w, content.h), None, None);
+                let (cw, ch) = child_final_size(c, m, (col_w, content.h), None, None);
                 let cw = cw.min((col_w - c.style.margin.h()).max(0.0));
                 let x = content.x + col as f64 * (col_w + gap) + c.style.margin.l;
                 children.push(place(
                     c,
+                    m,
                     Rect {
                         x,
                         y: content.y + y + c.style.margin.t,
@@ -273,7 +307,7 @@ fn place<W>(node: &Node<W>, rect: Rect) -> Layout {
         }
         Dir::Stack => {
             for c in &node.children {
-                let (cw, ch) = child_final_size(c, (content.w, content.h), None, None);
+                let (cw, ch) = child_final_size(c, m, (content.w, content.h), None, None);
                 let free_x = content.w - cw - c.style.margin.h();
                 let free_y = content.h - ch - c.style.margin.v();
                 let x = content.x
@@ -290,14 +324,14 @@ fn place<W>(node: &Node<W>, rect: Rect) -> Layout {
                         Align::Center => free_y * 0.5,
                         Align::End => free_y,
                     };
-                children.push(place(c, Rect { x, y, w: cw, h: ch }));
+                children.push(place(c, m, Rect { x, y, w: cw, h: ch }));
             }
         }
         dir => {
             let row = dir == Dir::Row;
             let gap = node.style.gap;
             let line_gap = node.style.gap_y.unwrap_or(gap);
-            let lines = flow_lines(node, (content.w, content.h));
+            let lines = flow_lines(node, (content.w, content.h), m);
             let main_avail = if row { content.w } else { content.h };
             let single = !node.style.wrap && lines.len() == 1;
             let mut cross_pos = 0.0f64;
@@ -340,6 +374,7 @@ fn place<W>(node: &Node<W>, rect: Rect) -> Layout {
                     }
                     let (cw, ch) = child_final_size(
                         c,
+                        m,
                         (content.w, content.h),
                         Some((row, fill_unit)),
                         Some((node.style.align, line.cross)),
@@ -366,7 +401,7 @@ fn place<W>(node: &Node<W>, rect: Rect) -> Layout {
                             content.y + main_pos + c.style.margin.t,
                         )
                     };
-                    children.push(place(c, Rect { x, y, w: cw, h: ch }));
+                    children.push(place(c, m, Rect { x, y, w: cw, h: ch }));
                     main_pos += cmain;
                 }
                 cross_pos += line.cross;
@@ -380,13 +415,14 @@ fn place<W>(node: &Node<W>, rect: Rect) -> Layout {
 /// remainder on main; Stretch grows Auto-cross to the line extent.
 fn child_final_size<W>(
     c: &Node<W>,
+    m: &dyn Measure<W>,
     avail: (f64, f64),
     fill_ctx: Option<(bool, f64)>,
     align_ctx: Option<(Align, f64)>,
 ) -> (f64, f64) {
-    let (mut cw, mut ch) = outer_size(c, avail);
+    let (mut cw, mut ch) = outer_size(c, avail, m);
     if let Some((row, unit)) = fill_ctx {
-        let (mw, mh) = outer_size(c, (0.0, 0.0));
+        let (mw, mh) = outer_size(c, (0.0, 0.0), m);
         if row {
             if let Dim::Fill(wt) = c.style.width {
                 cw = (mw + unit * wt.max(0.0)).max(0.0);
