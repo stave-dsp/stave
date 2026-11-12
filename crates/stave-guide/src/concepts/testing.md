@@ -213,7 +213,8 @@ and a judgment call is reported as `info` with its numbers:
 - `self_noise`: silent input stays below a floor (no hiss, hum, DC or
   denormal storm);
 - `silence_tail`: the output goes quiet after the input stops;
-- `deadline_headroom`: p99 block cost against the realtime budget;
+- `deadline_headroom`: p99 block cost against the realtime budget (a
+  miss fails a release build; in a debug build it is reported, not failed);
 - `state_roundtrip`: params nudged off their defaults, saved, loaded into
   a fresh instance and saved again: the same bytes;
 - `solver_converges`: every param held at each end of its range while a
