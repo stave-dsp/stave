@@ -24,33 +24,15 @@ fn thread_cpu_time() -> Duration {
     Duration::new(now.tv_sec as u64, now.tv_nsec as u32)
 }
 
-/// This thread's CPU time so far (kernel + user).
+/// Time for one block on Windows: wall time from the performance counter
+/// (`Instant`). The thread's CPU time (`GetThreadTimes`) advances in
+/// scheduler ticks of 15.6 ms — coarser than a block, so every block
+/// measured 0 or 15.6 ms (measured in CI). Wall time also counts
+/// preemption: pessimistic, never optimistic.
 #[cfg(windows)]
 fn thread_cpu_time() -> Duration {
-    /// `FILETIME`: 100 ns units, split in two halves.
-    #[repr(C)]
-    #[derive(Default)]
-    struct FileTime {
-        low: u32,
-        high: u32,
-    }
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetCurrentThread() -> *mut core::ffi::c_void;
-        fn GetThreadTimes(
-            thread: *mut core::ffi::c_void,
-            creation: *mut FileTime,
-            exit: *mut FileTime,
-            kernel: *mut FileTime,
-            user: *mut FileTime,
-        ) -> i32;
-    }
-    let [mut creation, mut exit, mut kernel, mut user] = Default::default();
-    // SAFETY: the pseudo-handle of this thread and four valid out-pointers.
-    let ok = unsafe { GetThreadTimes(GetCurrentThread(), &mut creation, &mut exit, &mut kernel, &mut user) } != 0;
-    debug_assert!(ok, "GetThreadTimes failed");
-    let ticks = |t: &FileTime| (u64::from(t.high) << 32) | u64::from(t.low);
-    Duration::from_nanos((ticks(&kernel) + ticks(&user)) * 100)
+    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    ORIGIN.get_or_init(std::time::Instant::now).elapsed()
 }
 
 /// One processed block, as handed to a run callback.

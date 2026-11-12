@@ -136,7 +136,7 @@ impl Session {
         stave_raster::png::encode(&canvas)
     }
 
-    /// Once the face has run [`SNAPSHOT_AFTER`], write its picture to the
+    /// Once the face has run `SNAPSHOT_AFTER`, write its picture to the
     /// PNG `STAVE_FACE_SNAPSHOT` names (once per face).
     pub fn snapshot_when_settled(&mut self, controller: &dyn Controller, scale: f64) {
         if self.snapshot_taken || self.time() < SNAPSHOT_AFTER {
