@@ -43,7 +43,7 @@ pub struct Session {
 
 impl Session {
     pub fn new(face: Face) -> Self {
-        let runtime = Runtime::new(face);
+        let runtime = Runtime::new(face, &FontText);
         let trace = trace_file(runtime.size());
         Session { runtime, trace, snapshot_taken: false, canvas: Canvas::new(0, 0), opened: Instant::now(), on_key: None }
     }
@@ -101,7 +101,7 @@ impl Session {
         let face = (self.on_key.as_mut()?)(code);
         let replaced = face.is_some();
         if let Some(face) = face {
-            self.runtime = Runtime::new(face);
+            self.runtime = Runtime::new(face, &FontText);
             self.opened = Instant::now();
         }
         Some(replaced)

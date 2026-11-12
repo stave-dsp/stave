@@ -13,5 +13,8 @@ stave-face.workspace = true
 stave-ui.workspace = true
 stave-ui-shell.workspace = true
 
+[target.'cfg(windows)'.dev-dependencies]
+stave-font.workspace = true
+
 [lints]
 workspace = true

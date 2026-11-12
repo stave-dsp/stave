@@ -117,6 +117,14 @@ impl OutlinePen for Pen {
     }
 }
 
+/// Layout measures with the same metrics the painter sets (points in,
+/// points out: widths are linear in the size).
+impl stave_ui::Fonts for FontText {
+    fn width(&self, text: &str, size: f64, font: &Font) -> f64 {
+        Self::width(text, size, font)
+    }
+}
+
 impl TextPainter for FontText {
     fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color, font: &Font) {
         if text.is_empty() || size.is_nan() || size <= 0.0 {

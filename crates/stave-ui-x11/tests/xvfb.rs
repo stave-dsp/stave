@@ -99,7 +99,7 @@ impl Rig {
         let root = conn.setup().roots[screen].root;
         let t = table();
         // Where the parts are, from the headless runtime (face points).
-        let rt = Runtime::new(face(&t));
+        let rt = Runtime::new(face(&t), &stave_font::FontText);
         let probe = controller(&t);
         let at = |id| {
             let c = rt.grabs(&probe, PartId::Param(ParamId(id)))[0].area.centre();
