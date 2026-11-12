@@ -20,6 +20,7 @@ one, for a person or an agent reading the code cold:
 * **One dependency, one import, one trait, one macro.** `stave` re-exports
   everything an author needs; `use stave::prelude::*;`; implement
   `Plugin`; `stave::export!(MyPlugin);` produces VST3 and CLAP.
+  (The concrete signatures are under *Target interfaces*.)
 * **One word per concept, one concept per word** (the glossary below is
   normative; `scripts/check-vocabulary.sh` rejects the banned synonyms).
 * **Types, not conventions.** `ParamId` and `TapId` everywhere, enums not
@@ -39,7 +40,7 @@ one, for a person or an agent reading the code cold:
 ```
 leaves      stave-dsp   stave-telemetry   stave-macros   stave-measure
             stave-vst3-sys   stave-clap-sys
-model       stave-core            → telemetry, macros          (no UI, no DSP)
+model       stave-core            → dsp, telemetry, macros     (no UI)
 look        stave-ui (layout + Scene IR)   stave-raster → ui
             stave-face            → core, ui, raster         (design system)
 platform    stave-cocoa           → face                     (window, pointer, blit, text)
@@ -89,6 +90,151 @@ impl Plugin for Tilt {
 }
 
 stave::export!(Tilt);
+```
+
+## Target interfaces
+
+The shapes every phase builds toward. Signatures are normative; bodies and
+private details are not.
+
+### Where the author's trait lives
+
+`stave-core` stays UI-free, so the one author trait lives in the umbrella
+`stave` crate (which sees core, dsp and face). Core keeps the *erased*
+runtime contract the format wrappers drive (`stave_core::runtime::Erased`,
+`#[doc(hidden)]`); `stave::export!` adapts `Plugin` to it.
+
+```rust
+// stave (umbrella)
+pub trait Plugin: Sized + Send + 'static {
+    const INFO: Info;
+    const LAYOUTS: &'static [Layout] = &[Layout::STEREO];
+    /// Bumped when saved state changes shape; `migrations` maps old to new.
+    const STATE_VERSION: u32 = 0;
+    type Params: Params + Default;
+
+    fn new(params: &Arc<Self::Params>, telemetry: &Telemetry) -> Self;
+    fn prepare(&mut self, _env: &Environment) {}   // may allocate
+    fn reset(&mut self) {}                         // realtime
+    fn process(&mut self, block: &mut Block<'_>);  // realtime
+    fn latency(&self) -> u32 { 0 }                 // samples
+    fn tail(&self) -> Tail { Tail::None }
+
+    fn face(_params: &Self::Params) -> Option<Face> { None }
+    fn presets(_params: &Self::Params) -> Vec<Preset> { Vec::new() }
+    fn migrations() -> Migrations { Migrations::default() }
+    fn save(&self) -> Vec<u8> { Vec::new() }       // state beyond params (rare)
+    fn load(&mut self, _bytes: &[u8], _version: u32) {}
+}
+
+stave::export!(Tilt);   // VST3 + CLAP; CIDs derived stably from INFO.id
+```
+
+### Parameters
+
+```rust
+FloatParam::new(ParamId(1), "Tilt", Range::linear(-6.0, 6.0))   // also Range::log, Range::skewed
+    .unit(Unit::Db).smooth(Smooth::ms(30.0)).group("Tone");
+BoolParam::new(ParamId(4), "Hold", false);
+BoolParam::bypass(ParamId(3));                                   // the one way to declare bypass
+EnumParam::<Mode>::new(ParamId(5), "Mode", Mode::Tape);
+
+p.tilt.value()      // f32 (Float), bool (Bool), Mode (Enum) — one reader, natural type
+```
+
+`Range` fields are private; constructors validate. `ParamId` is the only
+id type (core, state, gestures, faces, migrations).
+
+### Processing
+
+```rust
+pub struct Block<'a> { /* private */ }
+impl Block<'_> {
+    pub fn frames(&self) -> usize;
+    pub fn sample_rate(&self) -> f32;
+    pub fn transport(&self) -> Option<&Transport>;
+    pub fn events(&self) -> &[Event];
+    pub fn input(&self) -> &InputBuffer<'_>;
+    pub fn output(&mut self) -> &mut OutputBuffer<'_>;
+    pub fn aux(&self, i: usize) -> Option<&InputBuffer<'_>>;
+    pub fn lanes<const N: usize>(&mut self) -> Lanes<'_, N>;   // per-frame, per-channel walk
+}
+
+pub struct Smoother { /* … */ }       // replaces ContinuousControl
+impl Smoother {
+    pub fn new(param: &FloatParam) -> Self;
+    pub fn prepare(&mut self, env: &Environment);
+    pub fn ramp<'s>(&'s mut self, block: &Block<'_>, param: &FloatParam) -> Ramp<'s>;  // Ramp::next() -> f32
+}
+```
+
+### Telemetry
+
+```rust
+#[derive(Taps)]
+pub struct HeirloomTaps { pub spin: Tap, pub level: Tap }   // HeirloomTaps::SPIN: TapId (derived const)
+
+let taps = HeirloomTaps::new(telemetry);   // in Plugin::new
+taps.spin.set(angle);                      // realtime, lock-free
+f.tap(HeirloomTaps::SPIN)                  // in a face: typed, no strings
+```
+
+`Telemetry` (formerly `DebugBus`) has private fields. String-keyed
+`probe!`/`brk_if!` remain for tooling only.
+
+### The editor contract
+
+```rust
+// stave-core: what any editor reads and writes on its plugin (VST3's term).
+pub trait Controller {
+    fn param(&self, id: ParamId) -> Option<&dyn AnyParam>;   // value, normalized, format, steps
+    fn begin(&self, id: ParamId);
+    fn set(&self, id: ParamId, normalized: f64);
+    fn end(&self, id: ParamId);
+    fn tap(&self, id: TapId) -> f64;
+    fn capture(&self, channel: usize, out: &mut [f32]) -> usize;
+    fn curve(&self) -> Vec<f32>;
+    fn presets(&self) -> &[Preset];
+    fn preset(&self) -> Option<usize>;
+    fn apply_preset(&self, index: usize);
+}
+/// The wrapper side: where an edit gesture goes (the host's automation).
+pub trait GestureSink: Send { fn begin(&self, id: ParamId); fn perform(&self, id: ParamId, plain: f64); fn end(&self, id: ParamId); }
+/// The one implementation, over the table, the telemetry and a sink.
+pub struct PluginController { /* … */ }
+```
+
+`stave-face` consumes `&dyn Controller` (its `Host` trait goes away);
+`stave-cocoa` is a window, a pointer, a blit and text — no parameter logic.
+
+### DSP
+
+```rust
+pub trait Stage {
+    fn prepare(&mut self, _sample_rate: f32) {}
+    fn reset(&mut self) {}
+    fn tick(&mut self, x: f32) -> f32;
+    fn process(&mut self, block: &mut [f32]) { for s in block { *s = self.tick(*s) } }
+    fn latency(&self) -> u32 { 0 }
+    fn tail(&self) -> Tail { Tail::None }
+}
+```
+
+Every leaf implements it. `Tail` lives in `stave-dsp` and core re-uses it
+(core → dsp is allowed; the route/voice conversions move out of core).
+
+### Faces
+
+```rust
+pub struct Grab { pub area: Area, pub gesture: Gesture }   // Area::Circle | Area::Rect
+pub trait Part {
+    fn occluders(&self, r: Rect, theme: &Theme, out: &mut Vec<Occluder>) {}
+    fn bake(&self, r: Rect, cx: &mut Bake<'_>) {}
+    fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {}
+    fn grabs(&self, r: Rect, f: &Frame<'_>, out: &mut Vec<Grab>) {}   // may read live values
+    fn reads(&self) -> Reads { Reads::NONE }                          // params + taps, declared once
+}
+Theme { palette, finish, hardware, typography, spacing, coverings }
 ```
 
 ## Glossary (normative)
