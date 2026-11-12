@@ -272,26 +272,26 @@ Status: `[ ]` open · `[x]` done (with the commit).
 
 ### S — Soundness and realtime (first)
 
-- [ ] **S1** Restored values can glide in: `params/control.rs:86` reads the value before the restore counter, the writer stores value then counter. Read the counter (Acquire) first; the writer's increment Release.
-- [ ] **S2** `stave-test/src/harness.rs:73` `inputs_mut() -> &mut [Vec<f32>]`: a caller can reallocate a channel and the cached pointers dangle (UB from a safe API). Store `Box<[f32]>`, hand out `&mut [f32]`, rebuild pointers per block.
-- [ ] **S3** `AudioBuffer::channel/_ref` build slices from null host pointers (the debug check skips nulls). Wrappers substitute zeroed scratch; `from_raw` asserts non-null.
+- [x] **S1** (87034fe) Restored values can glide in: `params/control.rs:86` reads the value before the restore counter, the writer stores value then counter. Read the counter (Acquire) first; the writer's increment Release.
+- [x] **S2** (01ee9bf) `stave-test/src/harness.rs:73` `inputs_mut() -> &mut [Vec<f32>]`: a caller can reallocate a channel and the cached pointers dangle (UB from a safe API). Store `Box<[f32]>`, hand out `&mut [f32]`, rebuild pointers per block.
+- [x] **S3** (87034fe) `AudioBuffer::channel/_ref` build slices from null host pointers (the debug check skips nulls). Wrappers substitute zeroed scratch; `from_raw` asserts non-null.
 - [ ] **S4** `stave-ui-cocoa/src/face.rs` `parts()` aliases `&mut FaceEditor` with `&Slots` (UB under Stacked Borrows). Split by destructuring.
 - [ ] **S5** The editor is reached through four raw-pointer roots (`EditorBox`, `self_ptr`, `EditorTarget`, ivars) with no reentrancy guard. One `NonNull` root; a busy flag drops reentrant events.
-- [ ] **S6** VST3 `tresult` constants are the COM-compatible values; macOS/Linux use `kNoInterface = -1`, `kResultFalse = 1`, `kInvalidArgument = 2` … `kOutOfMemory = 6` (`stave-vst3/src/sys.rs:40`). Split by `cfg(windows)`.
-- [ ] **S7** `IPlugView` refcount is faked (`wrapper/view.rs:23`); a host holding the view past the controller gets a use-after-free. Real count holding an Instance reference.
-- [ ] **S8** Panics cross FFI: Cocoa methods and timers, VST3 `createInstance`/`createView`/`sv_*`, CLAP `create_plugin`/`init` are unguarded; MSRV 1.80 makes that UB. MSRV 1.81 and one `ffi_entry` guard for every `extern "C"`.
+- [x] **S6** (a614e52) VST3 `tresult` constants are the COM-compatible values; macOS/Linux use `kNoInterface = -1`, `kResultFalse = 1`, `kInvalidArgument = 2` … `kOutOfMemory = 6` (`stave-vst3/src/sys.rs:40`). Split by `cfg(windows)`.
+- [x] **S7** (a614e52) `IPlugView` refcount is faked (`wrapper/view.rs:23`); a host holding the view past the controller gets a use-after-free. Real count holding an Instance reference.
+- [ ] **S8** (formats half done in a614e52: MSRV 1.81, `ffi_entry` on every VST3/CLAP entry; the Cocoa callbacks remain, with F11) Panics cross FFI: Cocoa methods and timers, VST3 `createInstance`/`createView`/`sv_*`, CLAP `create_plugin`/`init` are unguarded; MSRV 1.80 makes that UB. MSRV 1.81 and one `ffi_entry` guard for every `extern "C"`.
 - [ ] **S9** `objc_msgSend` transmutes returning `CGRect` need `_stret` on x86_64; `bool` for `BOOL` is wrong there. A typed send that handles both, or a compile error off aarch64 until it does.
 - [ ] **S10** Objective-C class names are global (`StaveFaceView`, …): two stave plugins in one DAW share one class. Per-binary unique suffix.
-- [ ] **S11** Stable `sort_by_key` on the audio thread can allocate (`processor.rs:118`, `clap process.rs:73`). Insertion sort keyed by (frame, sequence).
-- [ ] **S12** Allocation and locks on the audio thread: `split_for_block` grows `Vec`s past the declared block; `PanicGuard` logs through a `Mutex` + file open. Truncate and count as a fault; report from the main thread.
-- [ ] **S13** Probe names > 31 bytes never match their truncated slot, so every block reserves a new one until the bus is full (`probe.rs:83`, `inline_str.rs:49`). Reject at compile time (typed taps make this moot).
-- [ ] **S14** `Ring::delayed` indexes before `prepare` (a `Loop::tick` before prepare panics). Size in `new` or read with a 0 fallback.
-- [ ] **S15** One NaN locks Svf/Biquad/Loop/Chain feedback until reset. NaN → 0 in `denormal::flush`, and a guard in `Loop`.
-- [ ] **S16** Param lookup is a linear scan through `dyn` calls on the audio thread (`types.rs:522`; CLAP bypass every block, VST3 every event). An id → index table built at instance creation; cache the bypass param.
+- [x] **S11** (87034fe) Stable `sort_by_key` on the audio thread can allocate (`processor.rs:118`, `clap process.rs:73`). Insertion sort keyed by (frame, sequence).
+- [ ] **S12** (bounded scratch + `BlockTruncated` fault and the realtime panic slot done in 87034fe; the panic hook in `panic_log.rs` still writes a file from the audio thread) Allocation and locks on the audio thread: `split_for_block` grows `Vec`s past the declared block; `PanicGuard` logs through a `Mutex` + file open. Truncate and count as a fault; report from the main thread.
+- [x] **S13** (01ee9bf) Probe names > 31 bytes never match their truncated slot, so every block reserves a new one until the bus is full (`probe.rs:83`, `inline_str.rs:49`). Reject at compile time (typed taps make this moot).
+- [x] **S14** (01ee9bf) `Ring::delayed` indexes before `prepare` (a `Loop::tick` before prepare panics). Size in `new` or read with a 0 fallback.
+- [x] **S15** (01ee9bf) One NaN locks Svf/Biquad/Loop/Chain feedback until reset. NaN → 0 in `denormal::flush`, and a guard in `Loop`.
+- [x] **S16** (87034fe) Param lookup is a linear scan through `dyn` calls on the audio thread (`types.rs:522`; CLAP bypass every block, VST3 every event). An id → index table built at instance creation; cache the bypass param.
 - [ ] **S17** Leaks: FaceMount view alloc, NSTrackingArea, CFRunLoopTimer never released; the 30 Hz editor timer keeps running with a face attached.
 - [ ] **S18** `text.rs` `CFRetain(NULL)` if NSFont returns nil; font cache unbounded.
-- [ ] **S19** `stave-host` `RTLD_LOCAL = 0x4` is `RTLD_NOLOAD` on Linux (`plugin/module.rs:104`). Use `libc::RTLD_*`.
-- [ ] **S20** `EditorBox` `unsafe impl Send/Sync` is unneeded; stale SAFETY/comments (`capture.rs:24`, `sys.rs:5`).
+- [x] **S19** (01ee9bf) `stave-host` `RTLD_LOCAL = 0x4` is `RTLD_NOLOAD` on Linux (`plugin/module.rs:104`). Use `libc::RTLD_*`.
+- [x] **S20** (a614e52) `EditorBox` `unsafe impl Send/Sync` is unneeded; stale SAFETY/comments (`capture.rs:24`, `sys.rs:5`).
 
 ### L — Layering
 
