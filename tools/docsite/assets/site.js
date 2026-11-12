@@ -77,7 +77,7 @@
       s += 4;
     }
     if (KIND[e[2]]) s += 12; // prose first, on a tie
-    if (e[2] === "method" || e[2] === "structfield" || e[2] === "variant") s -= 6;
+    if (e[2] === "method" || e[2] === "field" || e[2] === "variant" || e[2] === "type" || e[2] === "const") s -= 6;
     s -= Math.min(t.length, 60) / 20;
     return s;
   }

@@ -175,9 +175,16 @@ pub fn items(doc: &Path, krate: &str) -> Result<Vec<Item>> {
             if matches!(kind.as_str(), "struct" | "enum" | "trait" | "union") {
                 let page = read(doc, &target)?;
                 let short = path.rsplit("::").next().unwrap_or(&path).to_string();
-                for (id, sum) in members(&page) {
+                for (id, sum) in members(&page, kind == "trait") {
                     let (mk, name) = id.split_once('.').unwrap_or(("method", &id));
-                    out.push(Item { kind: mk.replace("tymethod", "method"), path: format!("{short}::{name}"), href: format!("{target}#{id}"), summary: sum });
+                    let mk = match mk {
+                        "tymethod" => "method",
+                        "associatedtype" => "type",
+                        "associatedconstant" => "const",
+                        "structfield" => "field",
+                        k => k,
+                    };
+                    out.push(Item { kind: mk.to_string(), path: format!("{short}::{name}"), href: format!("{target}#{id}"), summary: sum });
                 }
             }
             out.push(Item { kind, path, href: target, summary });
@@ -223,14 +230,20 @@ fn item_table(html: &str) -> Vec<(String, String, String, String)> {
 }
 
 /// `(id, summary)` of every method and associated item on a type page.
-fn members(html: &str) -> Vec<(String, String)> {
+fn members(html: &str, is_trait: bool) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut rest = html;
     while let Some(i) = rest.find("<section id=\"") {
         rest = &rest[i + 13..];
         let Some(end) = rest.find('"') else { break };
         let id = rest[..end].to_string();
-        let interesting = ["method.", "tymethod.", "associatedconstant.", "associatedtype.", "variant.", "structfield."];
+        // A type's associated items come from the traits it implements
+        // (`Error` from `TryFrom` …): noise; a trait's own are its API.
+        let interesting: &[&str] = if is_trait {
+            &["method.", "tymethod.", "associatedconstant.", "associatedtype."]
+        } else {
+            &["method.", "variant.", "structfield."]
+        };
         if !interesting.iter().any(|p| id.starts_with(p)) {
             continue;
         }
