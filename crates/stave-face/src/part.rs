@@ -15,9 +15,8 @@
 //! [`Bind`] (a ParamId and its name) and read taps by [`TapId`], both
 //! through the plugin's [`Controller`]; they never see the plugin.
 
-extern crate alloc;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use std::sync::Arc;
+use std::vec::Vec;
 use core::cell::RefCell;
 use std::collections::HashMap;
 
@@ -247,9 +246,9 @@ impl Gesture {
             | Gesture::Stepped { bind, .. }
             | Gesture::Choose { bind, .. }
             | Gesture::Latch { bind }
-            | Gesture::Momentary { bind } => alloc::vec![*bind],
-            Gesture::Pad { x, y, .. } => alloc::vec![*x, *y],
-            Gesture::Nudge { bind, .. } => alloc::vec![*bind],
+            | Gesture::Momentary { bind } => std::vec![*bind],
+            Gesture::Pad { x, y, .. } => std::vec![*x, *y],
+            Gesture::Nudge { bind, .. } => std::vec![*bind],
             Gesture::Preset { .. } | Gesture::Page { .. } => Vec::new(),
         }
     }

@@ -25,8 +25,7 @@
 //! any other tag: skipped by byte_len, PRESERVED for re-save
 //! ```
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use crate::params::ParamId;
 use crate::params::Params;

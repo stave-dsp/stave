@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn fir_oversampler_latency_is_exactly_integer() {
         // An impulse through the identity round trip must peak at exactly
-        // latency_samples() with near-unity amplitude, and the response
+        // latency() with near-unity amplitude, and the response
         // must be symmetric about the peak (linear phase). A half-sample
         // error here would comb the dry/wet mix of every consumer.
         let mut os = Oversampler2xFir::new();

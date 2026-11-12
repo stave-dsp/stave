@@ -3,8 +3,7 @@
 //! field of neurons). The plugin supplies the picture; the face supplies
 //! the bezel, the screen and the glass.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use stave_core::telemetry::TapId;
 use stave_ui::layout::Rect;

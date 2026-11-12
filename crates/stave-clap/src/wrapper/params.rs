@@ -5,7 +5,7 @@ use super::*;
 pub(super) unsafe extern "C" fn params_count<P: ClapExport>(plugin: *const sys::ClapPlugin) -> u32 {
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    inst.guarded("params.count", || 0, || inst.param_table.count() as u32)
+    inst.guarded("params.count", || 0, || inst.params.count() as u32)
 }
 
 pub(super) unsafe extern "C" fn params_get_info<P: ClapExport>(
@@ -31,7 +31,7 @@ fn get_info<P: ClapExport>(
     out: &mut sys::ClapParamInfo,
 ) -> Result<(), CallError> {
     let p = inst
-        .param_table
+        .params
         .by_index(param_index as usize)
         .ok_or(CallError::IndexOutOfRange(param_index.into()))?;
     let meta = p.meta();
@@ -150,7 +150,7 @@ fn param<P: ClapExport>(
     inst: &Instance<P>,
     id: sys::ClapId,
 ) -> Result<&dyn stave_core::params::AnyParam, CallError> {
-    inst.param_table
+    inst.params
         .by_id(ParamId(id))
         .ok_or(CallError::UnknownParamId(id))
 }
@@ -174,7 +174,7 @@ pub(super) unsafe extern "C" fn params_flush<P: ClapExport>(
         || (),
         || {
             if let Some(events) = in_events {
-                let _ = apply_param_events(&events, inst.param_table.as_ref(), &mut []);
+                let _ = apply_param_events(&events, inst.params.as_ref(), &mut []);
             }
             emit_gestures(&inst.gestures, out_events);
         },

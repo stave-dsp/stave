@@ -14,16 +14,14 @@
 //! snapshot is `[u64; N]` of value bits, and polling is N relaxed
 //! atomic loads.
 //!
-//! **The activation invariant: reset every watch in `activate()`.** A
+//! **The prepare invariant: reset every watch in `prepare()`.** A
 //! re-prepare wipes TWO things the params can't see — rate-derived
 //! coefficients AND param-applied structure that `prepare()`
 //! resets (re-voiced curves, clipper settings) — so the first poll
-//! after activation must report changed and force full
-//! re-application (forge's `boot()` is the worked example). A
-//! rate-watching variant (`changed_env`) once existed for the
-//! first half; it was deleted UNUSED because it cannot see the
-//! second half — the reset covers both, and a partial guarantee
-//! that reads like a full one is a trap.
+//! after a prepare must report changed and force full
+//! re-application. There is no rate-watching variant: it could see
+//! only the first half, and a partial guarantee that reads like a
+//! full one is a trap.
 
 use super::AnyParam;
 
@@ -51,7 +49,7 @@ impl<const N: usize> Watch<N> {
     }
 
     /// Forget the snapshot — the next poll reports changed. **Call
-    /// from `activate()`** (the activation invariant, module docs): a
+    /// from `prepare()`** (the prepare invariant, module docs): a
     /// re-prepare wipes state the params can't see.
     pub fn reset(&mut self) {
         self.seen = None;
@@ -141,7 +139,7 @@ mod tests {
 
     #[test]
     fn modal_semantics() {
-        // The forge invariant in miniature: base = [stack], gated = drive
+        // A modal plugin in miniature: base = [stack], gated = drive
         // (mode 2), bias (mode 3).
         let stack = FloatParam::new(ParamId(1), "stack", Range::linear(0.0, 3.0));
         let drive = FloatParam::new(ParamId(2), "drive", Range::linear(0.0, 10.0)).default(4.0);

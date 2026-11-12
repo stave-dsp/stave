@@ -1,9 +1,8 @@
 //! Instruments: the segmented level [`Meter`], the moving [`Trace`] of a
 //! tap over time, and the XY [`Pad`].
 
-extern crate alloc;
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
+use std::collections::VecDeque;
+use std::vec::Vec;
 use std::sync::Mutex;
 
 use stave_ui::layout::Rect;
@@ -269,7 +268,7 @@ impl Part for Pad {
     }
 }
 
-fn format_xy(f: &Frame<'_>, x: Bind, y: Bind) -> alloc::string::String {
-    alloc::format!("{}  {}", f.controller.value_text(x.id), f.controller.value_text(y.id))
+fn format_xy(f: &Frame<'_>, x: Bind, y: Bind) -> std::string::String {
+    std::format!("{}  {}", f.controller.value_text(x.id), f.controller.value_text(y.id))
 }
 

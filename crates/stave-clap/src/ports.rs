@@ -1,6 +1,6 @@
 //! CLAP audio-ports extension: ports are DERIVED from the
 //! plugin's declared `Layout` — main + aux inputs in declaration
-//! order, names from the `AuxIn` declarations. audio-ports-config
+//! order, names from the `Aux` declarations. audio-ports-config
 //! (the declared SET) joins here with negotiation.
 
 use core::ffi::c_char;

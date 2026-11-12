@@ -51,7 +51,7 @@ pub(super) unsafe extern "C" fn ec_get_parameter_count<P: Vst3Export>(this: *mut
     inst.guarded(
         "getParameterCount",
         || 0,
-        || (inst.param_table.count() + usize::from(inst.programs.exposed())) as i32,
+        || (inst.params.count() + usize::from(inst.programs.exposed())) as i32,
     )
 }
 
@@ -73,7 +73,7 @@ pub(super) unsafe extern "C" fn ec_get_parameter_info<P: Vst3Export>(
             // SAFETY: all-zero is a valid `ParameterInfo` (integers, a float,
             // UTF-16 arrays).
             *dest = unsafe { mem::zeroed() };
-            let table = &inst.param_table;
+            let table = &inst.params;
             if index as usize == table.count() && inst.programs.exposed() {
                 inst.programs.info(dest);
                 return K_RESULT_OK;
@@ -91,7 +91,7 @@ pub(super) unsafe extern "C" fn ec_get_parameter_info<P: Vst3Export>(
             let combined = if meta.group.is_empty() {
                 meta.name.to_string()
             } else {
-                alloc::format!("{} · {}", meta.group, meta.name)
+                std::format!("{} · {}", meta.group, meta.name)
             };
             write_utf16_name(&mut dest.title, &combined);
             write_utf16_name(&mut dest.short_title, meta.name);
@@ -128,7 +128,7 @@ pub(super) unsafe extern "C" fn ec_get_param_string_by_value<P: Vst3Export>(
                 Ok(dst) => dst,
                 Err(error) => return inst.answer("getParamStringByValue", Err(error)),
             };
-            let table = &inst.param_table;
+            let table = &inst.params;
             if id == stave_core::ParamId::PROGRAM.0 && inst.programs.exposed() {
                 write_utf16_name(dst, inst.programs.name(value_normalized));
                 return K_RESULT_OK;
@@ -168,7 +168,7 @@ pub(super) unsafe extern "C" fn ec_get_param_value_by_string<P: Vst3Export>(
                 (Ok(string), Ok(out)) => (string, out),
                 (Err(error), _) | (_, Err(error)) => return inst.answer(call, Err(error)),
             };
-            let table = &inst.param_table;
+            let table = &inst.params;
             let program = id == stave_core::ParamId::PROGRAM.0 && inst.programs.exposed();
             let p = table.by_id(stave_core::ParamId(id));
             if p.is_none() && !program {
@@ -212,7 +212,7 @@ pub(super) unsafe extern "C" fn ec_normalized_param_to_plain<P: Vst3Export>(
         "normalizedParamToPlain",
         || value_normalized,
         || {
-            let table = &inst.param_table;
+            let table = &inst.params;
             match table.by_id(stave_core::ParamId(id)) {
                 Some(p) => p.denormalize(value_normalized),
                 None if id == stave_core::ParamId::PROGRAM.0 && inst.programs.exposed() => {
@@ -235,7 +235,7 @@ pub(super) unsafe extern "C" fn ec_plain_param_to_normalized<P: Vst3Export>(
         "plainParamToNormalized",
         || value,
         || {
-            let table = &inst.param_table;
+            let table = &inst.params;
             match table.by_id(stave_core::ParamId(id)) {
                 Some(p) => p.normalize(value),
                 None if id == stave_core::ParamId::PROGRAM.0 && inst.programs.exposed() => {
@@ -257,7 +257,7 @@ pub(super) unsafe extern "C" fn ec_get_param_normalized<P: Vst3Export>(
         "getParamNormalized",
         || 0.0,
         || {
-            let table = &inst.param_table;
+            let table = &inst.params;
             match table.by_id(stave_core::ParamId(id)) {
                 Some(p) => p.normalized(),
                 None if id == stave_core::ParamId::PROGRAM.0 => inst.programs.normalized(),
@@ -278,7 +278,7 @@ pub(super) unsafe extern "C" fn ec_set_param_normalized<P: Vst3Export>(
         "setParamNormalized",
         || K_INTERNAL_ERROR,
         || {
-            let table = &inst.param_table;
+            let table = &inst.params;
             match table.by_id(stave_core::ParamId(id)) {
                 Some(p) => {
                     p.set_normalized(value);

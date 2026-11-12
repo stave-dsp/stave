@@ -13,9 +13,8 @@
 //! (angles in radians, `cw` flag as CG means it in a y-up context)
 //! so a CoreGraphics renderer is a 1:1 mapping.
 
-extern crate alloc;
-use alloc::string::String;
-use alloc::vec::Vec;
+use std::string::String;
+use std::vec::Vec;
 
 use crate::style::Color;
 
@@ -82,7 +81,7 @@ impl Path {
     /// A full circle (one closed arc).
     pub fn circle(c: Pt, r: f64) -> Self {
         Self {
-            segs: alloc::vec![Seg::Arc {
+            segs: std::vec![Seg::Arc {
                 c,
                 r,
                 a0: 0.0,
@@ -95,7 +94,7 @@ impl Path {
     /// An open circular arc (the knob/ring primitive).
     pub fn arc(c: Pt, r: f64, a0: f64, a1: f64, cw: bool) -> Self {
         Self {
-            segs: alloc::vec![Seg::Arc { c, r, a0, a1, cw }],
+            segs: std::vec![Seg::Arc { c, r, a0, a1, cw }],
         }
     }
 
@@ -205,7 +204,7 @@ pub enum Op {
 pub struct Image {
     pub px_w: u32,
     pub px_h: u32,
-    pub rgba: alloc::sync::Arc<[u8]>,
+    pub rgba: std::sync::Arc<[u8]>,
 }
 
 /// A typeface family. Renderers map these onto the platform's system

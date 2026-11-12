@@ -95,8 +95,8 @@ mod tests {
     #[test]
     fn parallel_maxes_and_pads() {
         // Dry/wet: dry (0) against a wet path (84) → the join reports
-        // 84 and the dry branch is padded by 84 — exactly the delay
-        // Forge and the multiband saturation path hand-rolled until now.
+        // 84 and the dry branch is padded by 84 — the delay a dry/wet
+        // mix around an oversampled path needs.
         assert_eq!(
             parallel([0, 84]),
             Balanced {
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn nested_regions_divide_per_level() {
-        // The forge 4x stack: front half-band = 132 inner samples at
+        // A 4x stack: front half-band = 132 inner samples at
         // 2x → 66 outer; nested inner half-band = 72 samples at 4x =
         // 36 at 2x → 18 outer. Serial at the outer rate: 84.
         let front = region(132, 2);

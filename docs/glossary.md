@@ -1,6 +1,6 @@
 # The Stave glossary — domain concepts, in plain words
 
-*Read this once before reading any engine. Every term links a
+*Read this once before reading any plugin. Every term links a
 concept you must genuinely learn to the closest idea you may
 already know. The right-hand analogies are honest bridges, not
 equivalences — where they break down, the entry says so.*
@@ -31,7 +31,7 @@ tens of thousands of times per second per lane.
 **dB (decibel)** — loudness on a log scale, because ears are
 logarithmic. Samples need *linear* multipliers: gain = 10^(dB/20),
 so 0 dB = ×1 (unchanged), −6 dB ≈ ×0.5, +6 dB ≈ ×2. Knobs speak
-dB; the engine converts once per sample or block.
+dB; the plugin converts once per frame or block.
 
 ## The two halves of a plugin
 
@@ -46,25 +46,25 @@ enclosure), all drawn on a **Theme**, the whole look as data. Parts
 never mint a colour or a font; they ask the theme. (≈ a component
 tree on a design system's tokens.)
 
-**Engine (Processor)** — the realtime half. `process(ctx)` runs per
-block on the audio thread. (≈ the reducer: state + input block →
-output block, under a deadline.)
+**Plugin** — the author's type, implementing `stave::Plugin`.
+`process(block)` runs per **Block** on the audio thread. (≈ the
+reducer: state + input block → output block, under a deadline.)
 
 **Param / the table** — a knob with a FOREVER-stable id, declared
-range/taper/unit, and DECLARED smoothing. Engines read
+range/taper/unit, and DECLARED smoothing. Plugins read
 `p.x.value()` — typed, already bounded by the declaration. Never
 restate a range at a read site. (≈ a typed, validated config store;
 ids-forever ≈ database column stability across migrations.)
 
 **Smoothing / ramp** — a knob's target can jump; applying jumps
-clicks ("zipper noise"). A `ContinuousControl` the engine owns yields
-a per-sample glide toward the target (`begin_block(ctx.params, &p.x)`,
-then `.next()` per sample), with the glide time declared in params.rs
-and host automation points honored at their sample offsets. (≈ a CSS
+clicks ("zipper noise"). A `Smoother` the plugin owns yields a
+per-frame glide toward the target (`ramp(block, &p.x)`, then `.next()`
+per frame), with the glide declared on the param (`Smooth::ms(30.0)`)
+and host automation points honored at their frames. (≈ a CSS
 transition on the value: you declare the duration, the runtime tweens.)
 
 **Bypass** — the host-visible on/off. The FRAMEWORK owns the
-click-free crossfade; a plugin just flags which param carries it.
+click-free crossfade; a plugin declares `BoolParam::bypass(id)`.
 
 ## Composition vocabulary (the kernel forms)
 
@@ -128,13 +128,12 @@ detectors) and observation both read this one surface.
 ## Observation
 
 **Telemetry** — the plugin → editor/tool channel (crate
-`stave-telemetry`; formerly the debug bus): taps, capture, the
-transfer curve, log messages. The wrapper allocates one per instance
-and hands it over through `attach_telemetry`.
+`stave-telemetry`): taps, capture, the transfer curve, log messages.
+The wrapper allocates one per instance and hands it to `Plugin::new`.
 
 **Tap / TapId** — one published value / its id. Declared as a struct
 field under `#[derive(Taps)]`, which makes the id a constant
-(`HeirloomTaps::SPIN`); the engine writes `taps.spin.set(v)`, a face or
+(`HeirloomTaps::SPIN`); the plugin writes `taps.spin.set(v)`, a face or
 tool reads by that id. Never strings, never "probe" (that word is the
 tooling macro `probe!`). (≈ a metrics endpoint / structured logging:
 named channels, sampled by the UI.)
@@ -202,7 +201,7 @@ TypeScript interface, implemented explicitly, never inherited).
 | `import { X } from '../y'` | `use super::y::X` (module path, NOT inheritance) |
 | not re-exported from the barrel | `pub(super)` (visible to the parent module only) |
 | component props/schema | the declarations half |
-| reducer | the engine |
+| reducer | the plugin's `process` |
 | JSX | `chain!` topology / a face's `row`/`column` tree |
 | CSS transition | declared param smoothing |
 | dependency array | `Watch` (value snapshots, never gated) |

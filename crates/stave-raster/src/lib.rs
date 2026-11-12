@@ -19,9 +19,8 @@
 
 #![forbid(unsafe_code)]
 
-extern crate alloc;
-use alloc::vec;
-use alloc::vec::Vec;
+use std::vec;
+use std::vec::Vec;
 
 use stave_ui::scene::{Brush, Font, Image, Op, Pt, Scene};
 use stave_ui::style::Color;
@@ -302,7 +301,7 @@ mod tests {
     #[test]
     fn an_image_drawn_one_to_one_is_copied() {
         let rgba: Vec<u8> = (0..16).flat_map(|i| [i as u8 * 10, 0, 0, 255]).collect();
-        let img = Image { px_w: 4, px_h: 4, rgba: alloc::sync::Arc::from(rgba.clone()) };
+        let img = Image { px_w: 4, px_h: 4, rgba: std::sync::Arc::from(rgba.clone()) };
         let mut sc = Scene::new();
         sc.ops.push(Op::Image { at: pt(0.0, 0.0), w: 2.0, h: 2.0, image: img });
         let mut c = Canvas::new(4, 4);

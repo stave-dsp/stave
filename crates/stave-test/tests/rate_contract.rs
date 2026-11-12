@@ -1,6 +1,6 @@
 //! The rate contract as LAW.
 //!
-//! Convention until now: every stage derives its coefficients from the
+//! The convention: every stage derives its coefficients from the
 //! rate it is prepared at, so a host re-prepare at a new rate re-derives
 //! everything. These limits pin it:
 //!  1. A re-prepared stage is indistinguishable from one built fresh at

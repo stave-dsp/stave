@@ -96,7 +96,7 @@ pub(super) unsafe extern "C" fn comp_set_state<P: Vst3Export>(
                 wrapper_state::load(
                     &stream.read_to_end(MAX_STATE_BYTES)?,
                     &inst.plugin,
-                    inst.param_table.as_ref(),
+                    inst.params.as_ref(),
                     &inst.state_store,
                 )
             });
@@ -119,7 +119,7 @@ pub(super) unsafe extern "C" fn comp_get_state<P: Vst3Export>(
             let result = stream.and_then(|stream| {
                 stream.write_all(&wrapper_state::save(
                     &inst.plugin,
-                    inst.param_table.as_ref(),
+                    inst.params.as_ref(),
                     &inst.state_store,
                     &inst.diagnostics,
                 ))

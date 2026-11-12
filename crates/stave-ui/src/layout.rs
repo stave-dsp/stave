@@ -12,8 +12,7 @@
 //!  - `justify` places the line along main; `align` places children
 //!    across (Stretch grows Auto-cross children to the line extent).
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use crate::node::{Kind, Node};
 use crate::style::{Align, Dim, Dir, Justify};

@@ -6,14 +6,13 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 /// A fixed-capacity, write-once string slot with its own publication flag.
 ///
-/// Slot names used to be plain `[u8; N]` written through a pointer cast
-/// from `&self` — provenance-UB under the Rust memory model, and racy:
-/// the slot counter was CAS-published *before* the bytes were written, so
-/// a GUI thread iterating `0..used` could read a name mid-write. This
-/// type fixes both: bytes live in an `UnsafeCell` (writes through `&self`
-/// are sanctioned) and `as_str` returns `""` until `ready` is published
-/// with Release ordering *after* the bytes are complete, so no reader
-/// ever dereferences bytes that are still being written.
+/// Writing a plain `[u8; N]` through a pointer cast from `&self` would
+/// be provenance-UB, and publishing the slot before its bytes would let
+/// a GUI thread iterating `0..used` read a name mid-write. Here the bytes
+/// live in an `UnsafeCell` (writes through `&self` are sanctioned), and
+/// `as_str` returns `""` until `ready` is published with Release ordering
+/// *after* the bytes are complete, so no reader ever dereferences bytes
+/// that are still being written.
 ///
 /// Write protocol: exactly one thread calls `set`, exactly once, while it
 /// holds exclusive ownership of the slot (won the reservation CAS or is

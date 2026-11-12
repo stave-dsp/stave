@@ -45,9 +45,8 @@ use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-extern crate alloc;
-use alloc::boxed::Box;
-use alloc::vec::Vec;
+use std::boxed::Box;
+use std::vec::Vec;
 
 
 
@@ -189,8 +188,8 @@ impl<P: Erased> ProcessorState<P> {
     pub fn prepare_scratch(&mut self, in_channels: usize, max_frames: usize) {
         let channels = declared_channels::<P>().max(in_channels);
         if self.ptrs.len() != channels || self.scratch_frames != max_frames {
-            self.scratch = alloc::vec![0.0; channels * max_frames].into_boxed_slice();
-            self.ptrs = alloc::vec![core::ptr::null_mut(); channels].into_boxed_slice();
+            self.scratch = std::vec![0.0; channels * max_frames].into_boxed_slice();
+            self.ptrs = std::vec![core::ptr::null_mut(); channels].into_boxed_slice();
             self.scratch_frames = max_frames;
         }
     }
@@ -653,7 +652,7 @@ mod tests {
     use crate::info::{Info, Layout};
     use crate::params::Params;
     use crate::process::Block;
-    use alloc::sync::Arc;
+    use std::sync::Arc;
     use stave_telemetry::Telemetry;
 
     struct NullPlugin;

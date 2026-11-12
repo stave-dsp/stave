@@ -56,7 +56,7 @@ pub fn ui(ui: &mut egui::Ui, info: PerfInfo<'_>) {
 
     // ---- stats -----------------------------------------------------
     let misses = log.deadline_misses.load(Ordering::Relaxed);
-    let latency = log.plugin_latency_samples.load(Ordering::Relaxed);
+    let latency = log.plugin_latency.load(Ordering::Relaxed);
     ui.horizontal(|ui| {
         egui::Grid::new("perf_stats_a")
             .num_columns(2)

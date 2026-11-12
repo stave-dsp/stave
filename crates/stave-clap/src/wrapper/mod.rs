@@ -6,8 +6,7 @@
 use core::ffi::{c_char, c_void, CStr};
 use core::ptr;
 
-extern crate alloc;
-use alloc::sync::Arc;
+use std::sync::Arc;
 
 use stave_core::diagnostics::{CallError, Diagnostics, ProcessFault};
 use stave_core::event::NoteKind;
@@ -207,7 +206,7 @@ pub(crate) struct Instance<P: ClapExport> {
     plugin: PluginCell<P>,
     /// Typed parameter table; host params served from here
     /// with stable ids. CLAP wire values are PLAIN, matching the store.
-    param_table: Arc<dyn Params>,
+    params: Arc<dyn Params>,
     /// Unknown-content retention across state cycles.
     state_store: std::sync::Mutex<StateStore>,
     /// UI→host gesture events, drained into `out_events`

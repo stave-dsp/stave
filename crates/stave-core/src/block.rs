@@ -1,7 +1,7 @@
-//! Block scaffolding: the per-frame plumbing every engine used
+//! Block scaffolding: the per-frame plumbing every plugin would
 //! to hand-roll — channel counting and clamping, lane-sliced reads
 //! and writes, zeroing of undriven outputs, and block peak metering
-//! — owned HERE, once. Engines keep the decisions (what to do at
+//! — owned here, once. Plugins keep the decisions (what to do at
 //! each lane count); the framework keeps the mechanics.
 //!
 //! ```ignore
@@ -15,7 +15,7 @@
 //!             fr.write(1, out_r);
 //!         });
 //!     }
-//!     _ => { /* the engine's own fallback */ }
+//!     _ => { /* the plugin's own fallback */ }
 //! }
 //! ```
 
@@ -24,7 +24,7 @@ use core::marker::PhantomData;
 use crate::process::Block;
 
 /// Block peaks, measured by the scaffolding: `input` is the raw
-/// per-frame peak over the active input lanes (before the engine
+/// per-frame peak over the active input lanes (before the plugin
 /// touches anything); `output` is the peak of everything written.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Peaks {
@@ -55,7 +55,7 @@ pub struct LaneFrame<'l, const MAX: usize> {
 }
 
 impl Block<'_> {
-    /// The block's lane view, at most `MAX` lanes (the engine's own
+    /// The block's lane view, at most `MAX` lanes (the plugin's own
     /// capacity). For an effect, active = min(inputs, outputs, MAX); for
     /// a generator (no inputs: instruments) the lanes follow the
     /// outputs, active = min(outputs, MAX), and `input()` reads silence.
@@ -147,7 +147,7 @@ impl<const MAX: usize> LaneFrame<'_, MAX> {
 
     /// The input sample on `lane`. Panics if the lane is not active
     /// — branch on [`Lanes::active`] first; lane count is the
-    /// engine's decision.
+    /// plugin's decision.
     #[inline]
     pub fn input(&self, lane: usize) -> f32 {
         assert!(lane < self.lanes.active, "lane {lane} is not active");

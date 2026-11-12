@@ -218,7 +218,7 @@ pub fn description(d: &Description) -> String {
     let _ = writeln!(
         w,
         "   {} in / {} out @ {} Hz, latency {} samples, tail {:?}",
-        l.inputs, l.outputs, l.sample_rate, d.latency_samples, d.tail
+        l.inputs, l.outputs, l.sample_rate, d.latency, d.tail
     );
     let _ = writeln!(w, "controls ({}):", d.controls.len());
     for c in &d.controls {

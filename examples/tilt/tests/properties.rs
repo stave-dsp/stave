@@ -8,11 +8,11 @@
 use stave_test::PluginHarness;
 use stave_tilt_vst3::Tilt;
 
-const FS: f32 = 48_000.0;
+const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 256;
 
-fn render(set: &[(&str, f64)], input: &[f32]) -> Vec<f32> {
-    let mut h = PluginHarness::<Tilt>::new(FS, BLOCK);
+fn run(set: &[(&str, f64)], input: &[f32]) -> Vec<f32> {
+    let mut h = PluginHarness::<Tilt>::new(SAMPLE_RATE, BLOCK);
     let table = h.table();
     for (n, v) in set {
         table
@@ -34,15 +34,15 @@ fn render(set: &[(&str, f64)], input: &[f32]) -> Vec<f32> {
 
 fn sine(freq: f32, n: usize) -> Vec<f32> {
     (0..n)
-        .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / FS).sin() * 0.1)
+        .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / SAMPLE_RATE).sin() * 0.1)
         .collect()
 }
 
-/// Steady-state RMS gain (dB) of a rendered sine vs its input,
+/// Steady-state RMS gain (dB) of a processed sine vs its input,
 /// skipping the first half (filter + ramp settling).
 fn gain_db(freq: f32, tilt: f64) -> f64 {
     let input = sine(freq, 48_000);
-    let out = render(&[("Tilt", tilt)], &input);
+    let out = run(&[("Tilt", tilt)], &input);
     let rms = |w: &[f32]| {
         (w.iter().map(|x| f64::from(*x) * f64::from(*x)).sum::<f64>() / w.len() as f64).sqrt()
     };
@@ -81,7 +81,7 @@ fn the_pivot_holds_still() {
 #[test]
 fn zero_tilt_is_bit_flat() {
     let input = sine(1_000.0, 12_800);
-    let out = render(&[("Tilt", 0.0)], &input);
+    let out = run(&[("Tilt", 0.0)], &input);
     for (i, (x, y)) in input.iter().zip(&out).enumerate() {
         assert!(x.to_bits() == y.to_bits(), "sample {i}: {x} vs {y}");
     }

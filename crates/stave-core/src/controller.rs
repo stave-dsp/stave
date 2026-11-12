@@ -7,11 +7,10 @@
 //! table and telemetry; every edit goes through a [`GestureSink`] the
 //! format wrapper supplies, so the DAW records and undoes it.
 
-extern crate alloc;
-use alloc::boxed::Box;
-use alloc::string::{String, ToString};
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use std::boxed::Box;
+use std::string::{String, ToString};
+use std::sync::Arc;
+use std::vec::Vec;
 use core::cell::Cell;
 
 use stave_telemetry::{TapId, Telemetry, CAPTURE_LEN};
@@ -32,7 +31,7 @@ pub trait Controller {
     fn set(&self, id: ParamId, normalized: Normalized);
     /// Close the gesture `begin` opened.
     fn end(&self, id: ParamId);
-    /// The latest value of tap `id` (0 until the engine publishes it).
+    /// The latest value of tap `id` (0 until the plugin publishes it).
     fn tap(&self, id: TapId) -> f64;
     /// The latest captured audio of `channel` into `out`; how many
     /// frames were written (0 when nothing is captured).
@@ -201,13 +200,13 @@ mod tests {
 
     impl GestureSink for Log {
         fn begin(&self, id: ParamId) {
-            self.0.lock().unwrap().push(alloc::format!("begin {}", id.0));
+            self.0.lock().unwrap().push(std::format!("begin {}", id.0));
         }
         fn perform(&self, id: ParamId, value: f64) {
-            self.0.lock().unwrap().push(alloc::format!("perform {} {value}", id.0));
+            self.0.lock().unwrap().push(std::format!("perform {} {value}", id.0));
         }
         fn end(&self, id: ParamId) {
-            self.0.lock().unwrap().push(alloc::format!("end {}", id.0));
+            self.0.lock().unwrap().push(std::format!("end {}", id.0));
         }
     }
 
@@ -247,9 +246,9 @@ mod tests {
     fn a_preset_applies_each_value_as_a_clamped_gesture() {
         let preset = Preset {
             name: "Hot",
-            values: alloc::vec![(ParamId(7), 40.0), (ParamId(99), 1.0)],
+            values: std::vec![(ParamId(7), 40.0), (ParamId(99), 1.0)],
         };
-        let (c, log) = rig(alloc::vec![preset]);
+        let (c, log) = rig(std::vec![preset]);
         assert_eq!(c.preset(), None);
         c.apply_preset(0);
         c.apply_preset(5);

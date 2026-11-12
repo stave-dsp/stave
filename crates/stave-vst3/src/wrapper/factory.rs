@@ -216,8 +216,8 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
     let plugin_obj = P::new(&telemetry);
     let diagnostics = Diagnostics::new(&P::INFO);
     diagnostics.log.add(Box::new(TelemetrySink(telemetry.clone())));
-    let (param_table, face) = (plugin_obj.params(), plugin_obj.face());
-    if let Err(e) = param_table.validate() {
+    let (params, face) = (plugin_obj.params(), plugin_obj.face());
+    if let Err(e) = params.validate() {
         // Author bug (duplicate or reserved ids): refuse the instance
         // loudly rather than corrupt automation.
         Diagnostics::new(&P::INFO).log.write(
@@ -260,12 +260,12 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
         ref_count: AtomicU32::new(0),
         shared,
         plugin: PluginCell::new(plugin_obj),
-        bypass_id: (0..param_table.count())
-            .filter_map(|i| param_table.by_index(i))
+        bypass_id: (0..params.count())
+            .filter_map(|i| params.by_index(i))
             .find(|p| p.meta().flags.bypass)
             .map(|p| p.meta().id),
-        units: crate::units::Units::new(param_table.as_ref()),
-        param_table,
+        units: crate::units::Units::new(params.as_ref()),
+        params,
         programs,
         face,
         state_store: std::sync::Mutex::new(StateStore::default()),

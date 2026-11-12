@@ -10,19 +10,26 @@ History lives in git; product design lives with each plugin (`plugins/<name>/doc
 ```
 stave-macros ────┐
 stave-telemetry ─┼─ stave-core ─┬─ stave-vst3 ─┐
-stave-dsp ───────┘   (no UI)    ├─ stave-clap ─┼─ examples/tilt, stave-plugins
-                                └─ stave-face ─┘
+stave-dsp ───────┘   (no UI)    ├─ stave-clap ─┼─ stave ── examples/tilt, stave-plugins
+                                └─ stave-face ─┘  (author crate: Plugin, prelude, export!)
 stave-vst3-sys ── stave-vst3, stave-host     (raw ABI only)
 stave-clap-sys ── stave-clap
 stave-ui ── stave-raster ── stave-face ── stave-ui-cocoa ── stave-vst3, stave-clap (macOS)
 stave-measure ── stave-host ── stave-test, tools/*
 ```
 
-- **stave-core** — the plugin model: `Processor` (realtime half) and
-  `Spec` (declarations half) composed by `StavePlugin<E>`; typed params;
-  presets; state; events; the editor contract (`Controller`, and
+- **stave** — the author crate, and the one dependency a plugin takes:
+  the `Plugin` trait, `stave::prelude`, `stave::export!` (VST3 + CLAP
+  from one line, class ids derived from `Info::id`), the derives, and
+  re-exports of the model, `stave::dsp` and `stave::face`. Its
+  `__export::Shell<P>` adapts a `Plugin` to the core's erased runtime
+  contract and implements the wrappers' face/version/id traits.
+- **stave-core** — the plugin model: `Info`/`Layout`, typed params,
+  `Smoother`/`Steps`, `Block` (`InputBuffer`/`OutputBuffer`), presets,
+  state, events; the editor contract (`Controller`, and
   `PluginController` over the table, the telemetry and a wrapper's
-  `GestureSink`); `wrapper`, the machinery both format wrappers share.
+  `GestureSink`); and `runtime` (doc-hidden): `Erased`, the plugin as
+  the wrappers drive it, plus the machinery both format wrappers share.
   No UI dependency.
 - **stave-dsp** — the DSP vocabulary (below). Depends on nothing in the
   plugin model: it never sees hosts, params or events.
@@ -33,11 +40,11 @@ stave-measure ── stave-host ── stave-test, tools/*
   `stave-vst3-sys` without linking the plugin wrapper or its platform
   crate.
 - **stave-vst3 / stave-clap** — the plugin side of each ABI (re-exported
-  as `stave_vst3::sys` / `stave_clap::sys`). A plugin exports with
-  one macro each; the macro implements `Vst3Ids` / `ClapEntry` on the
-  engine and the blanket `Vst3Export` / `ClapExport` impls lift it onto
-  `StavePlugin<E>`.
-- **stave-telemetry** — `Telemetry`, the plugin → editor/tool channel:
+  as `stave_vst3::sys` / `stave_clap::sys`), generic over
+  `Vst3Export` / `ClapExport` (an `Erased` plus its face, version and
+  class ids). Vtables, descriptors and factories are promoted constants
+  of generic functions; `stave::export!` emits only the entry symbols.
+- **stave-telemetry** — `Telemetry`, the plugin → face/tool channel:
   typed `Tap`s declared with `#[derive(Taps)]` and read by `TapId`, the
   capture frame and `Scope`, the transfer curve, the plugin's recent log
   messages; string-keyed `probe!`/`brk_if!` for tooling only. Lock-free,
@@ -51,8 +58,9 @@ stave-measure ── stave-host ── stave-test, tools/*
   Its `Runtime` lays out, bakes the static layer, paints live values and
   turns pointer input into parameter gestures, all through the plugin's
   `&dyn Controller` (params by `ParamId`, taps by `TapId`). A plugin
-  declares its face with `FaceSpec` beside `Spec`; wrappers ask through
-  `HasFace`.
+  declares its face with `Plugin::face`. Parts declare what they read
+  (`Reads`) and where they are grabbed (`Grab`), and have names
+  (`PartId`) tests address them by.
 - **stave-ui-cocoa** — the macOS platform of a face: `FaceView`, one
   NSView that blits the runtime's canvas, forwards the pointer, and sets
   text with CoreText — a window, a pointer, a blit and text; no
@@ -168,34 +176,37 @@ exaggeration owns it in its own engine.
 
 ## The plugin model (`stave-core`)
 
-- **Engine = `Processor` + `Spec`.** `Processor::new(params)` builds
-  everything; `activate(env)` derives every coefficient from the
-  environment; `process(ctx)` is realtime and allocation-free
-  (`stave_test::no_alloc`). `Spec` declares descriptor, port configs,
-  params, face, presets, state version and migrations.
+- **One trait, `stave::Plugin`.** `new(params, telemetry)` builds
+  everything (smoothers from params, taps on the telemetry);
+  `prepare(env)` derives every coefficient from the environment;
+  `process(block)` is realtime and allocation-free
+  (`stave_test::no_alloc`). Associated items declare `INFO`, `LAYOUTS`,
+  `STATE_VERSION` and the params type; `face`, `presets` and
+  `migrations` are pure functions of the params.
 - **Params are the spine.** A typed table (`#[derive(Params)]`) owns
-  ranges, tapers and smoothing; engines read `p.x.value()` or a ramp,
-  never a cast-and-clamp copy (`check-plugin-rules.sh`).
+  ranges, tapers and smoothing; plugins read `p.x.value()` or a
+  `Smoother` ramp, never a cast-and-clamp copy.
 - **Ids are forever; shipped ranges and tapers are frozen.** VST3
   automation stores normalized positions, so re-ranging a shipped id
   remaps users' curves. Change a range with a new id plus
-  `Migrations::renamed`/`rescaled`; bump `state_version` whenever
-  `migrate()` must reason about a change.
-- **Editors are declarations.** `FaceSpec::face` returns a `Face`, a
+  `Migrations::renamed`/`rescaled`; bump `STATE_VERSION` whenever
+  a migration must reason about a change.
+- **Faces are declarations.** `Plugin::face` returns a `Face`, a
   pure function of params; parts bind to params by `ParamId` and write
   only through the `Controller`, whose every edit is a host gesture
   (`stave_test::face::binds_resolve` checks every bind).
   Parts never mint a colour, a font or a coordinate: they ask the
   `Theme`. A bespoke picture is a part that paints a `Scene`.
 
-## Format wrappers (`stave_core::wrapper`, stave-vst3, stave-clap)
+## Format wrappers (`stave_core::runtime`, stave-vst3, stave-clap)
 
 - Host entry points get a raw instance pointer from any thread. Shared
   fields are atomics (`SharedState`); processor-side state sits in a
   `PluginCell` claimed by an atomic token, so a host protocol violation
   is a refused call, not a data race.
 - In-place hosts (input and output aliasing) go through preallocated
-  scratch (`ProcessorState`); `AudioBuffer` never aliases.
+  scratch (`ProcessorState`); a block's input and output buffers never
+  alias.
 - Bypass, latency and tail are framework-owned: bypass crossfades to
   latency-matched dry.
 - Both wrappers show a plugin's face, embedded in the host's NSView

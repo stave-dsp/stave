@@ -54,7 +54,7 @@ pub struct DebugLog {
     pub perf_frames: [AtomicU32; PERF_HISTORY],
     /// Plugin-reported processing latency in samples (set when the
     /// plugin is opened; remains until the next reload).
-    pub plugin_latency_samples: AtomicU32,
+    pub plugin_latency: AtomicU32,
 }
 
 impl DebugLog {
@@ -72,7 +72,7 @@ impl DebugLog {
             perf_us: std::array::from_fn(|_| AtomicU32::new(0)),
             perf_idx: AtomicU64::new(0),
             perf_frames: std::array::from_fn(|_| AtomicU32::new(0)),
-            plugin_latency_samples: AtomicU32::new(0),
+            plugin_latency: AtomicU32::new(0),
         })
     }
 

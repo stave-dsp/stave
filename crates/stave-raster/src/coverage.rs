@@ -8,9 +8,8 @@
 //! Works in a small bbox-local buffer per draw (a dot costs a dot, not a
 //! full canvas), clipped to the canvas.
 
-extern crate alloc;
-use alloc::vec;
-use alloc::vec::Vec;
+use std::vec;
+use std::vec::Vec;
 
 use stave_ui::scene::Pt;
 

@@ -2,7 +2,7 @@
 //!
 //! Hosts call `getParamStringByValue`-class APIs from arbitrary
 //! threads at arbitrary rates; formatting must not allocate. Values
-//! render into a fixed [`ValueText`] buffer. `parse` is format's
+//! format into a fixed [`ValueText`] buffer. `parse` is format's
 //! inverse for typed entry ("2.4k", "-6 dB", "35%") — forgiving about
 //! whitespace and the unit suffix, never panicking.
 
@@ -19,20 +19,20 @@ pub enum Unit {
     Db,
     /// Decibels, where values at or below the floor (dB) read "-inf".
     DbFloor(i16),
-    /// Hertz; ≥ 1000 renders as kHz ("2.40 kHz"). The switch is judged on
+    /// Hertz; ≥ 1000 reads as kHz ("2.40 kHz"). The switch is judged on
     /// the value rounded as it would show in Hz, so 999.96 reads
     /// "1.00 kHz", never "1000.0 Hz".
     Hz,
-    /// Milliseconds; ≥ 1000 renders as seconds ("1.25 s"), judged on the
+    /// Milliseconds; ≥ 1000 reads as seconds ("1.25 s"), judged on the
     /// value rounded as it would show in ms (as for [`Unit::Hz`]).
     Ms,
-    /// 0..=1 plain value rendered 0–100%.
+    /// 0..=1, read as 0–100%.
     Percent,
     /// Compression-style ratio ("4.0:1").
     Ratio,
 }
 
-/// Fixed-capacity render target: fits every format this module emits.
+/// Fixed-capacity text: fits every format this module emits.
 pub const VALUE_TEXT_BYTES: usize = 32;
 
 /// Stack string for formatted values. Derefs to `&str`.
@@ -103,8 +103,8 @@ impl Unit {
         }
     }
 
-    /// Render `plain` for host/editor display. Never allocates, never
-    /// panics; non-finite values render as "?" (they should have been
+    /// `plain` as text for a host or a face. Never allocates, never
+    /// panics; non-finite values read "?" (they should have been
     /// stopped upstream, but display is the wrong layer to trust that).
     pub fn format(&self, plain: f64) -> ValueText {
         let mut out = ValueText::new();
@@ -200,7 +200,7 @@ impl Unit {
     }
 }
 
-/// `plain` exactly as `{:.decimals$}` renders it, read back: unit
+/// `plain` exactly as `{:.decimals$}` formats it, read back: unit
 /// switches (ms → s, Hz → kHz, the dB floor) are decided on the shown
 /// value, so a value that rounds onto a boundary reads the same as the
 /// boundary itself and format → parse → format is a fixpoint.

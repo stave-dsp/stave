@@ -8,8 +8,7 @@
 //! These graduated from the first five photoreal faces (heirloom,
 //! revenant, ribbon, aeolian, engram), where each had its own copy.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use crate::photo::*;
 use stave_ui::scene::Image;
@@ -27,7 +26,7 @@ fn workers() -> usize {
 /// (alpha); the result is premultiplied sRGB8.
 pub fn bake_rgba(w: f64, h: f64, scale: f64, f: impl Fn(f64, f64) -> (Rgb, f64) + Sync) -> Image {
     let (pw, ph) = ((w * scale).round().max(1.0) as usize, (h * scale).round().max(1.0) as usize);
-    let mut px = alloc::vec![0u8; pw * ph * 4];
+    let mut px = std::vec![0u8; pw * ph * 4];
     let rows_per = ph.div_ceil(workers());
     std::thread::scope(|s| {
         for (band, chunk) in px.chunks_mut(rows_per * pw * 4).enumerate() {
@@ -264,7 +263,7 @@ impl Shadows {
     pub fn new(w: f64, h: f64, occluders: &[Occluder]) -> Self {
         let cell = 48.0;
         let (cols, rows) = ((w / cell).ceil().max(1.0) as usize, (h / cell).ceil().max(1.0) as usize);
-        let mut buckets = alloc::vec![Vec::new(); cols * rows];
+        let mut buckets = std::vec![Vec::new(); cols * rows];
         for o in occluders {
             let (x0, y0, x1, y1) = o.bounds();
             let (c0, r0) = ((x0 / cell).floor().max(0.0) as usize, (y0 / cell).floor().max(0.0) as usize);

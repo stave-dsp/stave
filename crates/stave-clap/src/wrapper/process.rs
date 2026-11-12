@@ -77,7 +77,7 @@ fn process_block<P: ClapExport>(
     let (mut param_count, mut params_dropped, mut event_count) = (0, 0, 0);
     if let Some(events) = process.in_events() {
         (param_count, params_dropped) =
-            apply_param_events(&events, inst.param_table.as_ref(), &mut param_buf);
+            apply_param_events(&events, inst.params.as_ref(), &mut param_buf);
         // In place: the standard stable sort may allocate.
         stave_core::runtime::sort_param_changes(&mut param_buf[..param_count]);
         let events_dropped;
@@ -112,7 +112,7 @@ fn process_block<P: ClapExport>(
 
     // Aux inputs: declared aux ports follow the main input in
     // declaration order. A missing port becomes a zero-channel buffer —
-    // the AuxIn contract (plugin fully functional without).
+    // the `Aux` contract (plugin fully functional without).
     const MAX_AUX: usize = stave_core::runtime::MAX_AUX_PORTS;
     let n_aux = want.aux.len().min(MAX_AUX);
     let main_ports = usize::from(want.input_channels() > 0);
@@ -134,7 +134,7 @@ fn process_block<P: ClapExport>(
     let run = io.frames;
 
     // The bypass param from the table's cached index (no scan).
-    let bypass = inst.bypass_id.and_then(|_| inst.param_table.bypass());
+    let bypass = inst.bypass_id.and_then(|_| inst.params.bypass());
     let bypassed = bypass.is_some_and(|p| p.value() >= 0.5);
     if bypass.is_some() {
         // SAFETY: `split_for_block` lists are valid for `run` frames.

@@ -1,8 +1,7 @@
 //! Factory presets: named sets of parameter values, declared against the
 //! plugin's typed params.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use crate::params::ParamId;
 

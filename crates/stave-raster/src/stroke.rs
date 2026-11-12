@@ -5,8 +5,7 @@
 //! Every polygon is wound the SAME way, so the nonzero union of
 //! overlapping pieces is exact.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use core::f64::consts::TAU;
 
@@ -70,11 +69,11 @@ fn miter_join(a: Pt, v: Pt, b: Pt, hw: f64) -> Option<Vec<Pt>> {
     let blen = bx.hypot(by);
     let cos_half = blen / (2.0 * hw);
     if cos_half < 1e-9 || 1.0 / cos_half > MITER_LIMIT {
-        return Some(alloc::vec![v, p1, p2]);
+        return Some(std::vec![v, p1, p2]);
     }
     let reach = hw / cos_half;
     let tip = Pt { x: v.x + bx / blen * reach, y: v.y + by / blen * reach };
-    Some(alloc::vec![v, p1, tip, p2])
+    Some(std::vec![v, p1, tip, p2])
 }
 
 /// The polygons of `polys` stroked at `width` px with `cap`.
@@ -102,7 +101,7 @@ pub fn stroke(polys: &[Poly], width: f64, cap: Cap) -> Vec<Vec<Pt>> {
                 continue;
             }
             let (nx, ny) = (-dy / len * hw, dx / len * hw);
-            out.push(orient(alloc::vec![
+            out.push(orient(std::vec![
                 Pt { x: a.x + nx, y: a.y + ny },
                 Pt { x: b.x + nx, y: b.y + ny },
                 Pt { x: b.x - nx, y: b.y - ny },

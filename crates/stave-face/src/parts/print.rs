@@ -1,6 +1,5 @@
 //! Print on the face: the product title and small captions.
 
-extern crate alloc;
 
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, TextAlign};
@@ -40,7 +39,7 @@ impl Title {
         let est = |s: &str, size: f64, track: f64| s.chars().count() as f64 * size * (0.64 + track);
         let w = est(self.name, ty.title_size, ty.title.tracking)
             .max(self.tagline.map_or(0.0, |t| est(t, ty.tagline_size, ty.tagline.tracking)));
-        stave_ui::column(alloc::vec![leaf(self, 0.0, h).width(Dim::Fill(1.0)), stave_ui::boxed(alloc::vec![]).size(w, 0.0)])
+        stave_ui::column(std::vec![leaf(self, 0.0, h).width(Dim::Fill(1.0)), stave_ui::boxed(std::vec![]).size(w, 0.0)])
             .width(Dim::Fill(1.0))
             .align(stave_ui::Align::Stretch)
     }

@@ -12,27 +12,91 @@ The plugins built on it live in
 [stave-plugins](https://github.com/stave-dsp/stave-plugins); the website
 in [stave-dsp.github.io](https://github.com/stave-dsp/stave-dsp.github.io).
 
+## A plugin
+
+One dependency, one import, one trait, one macro:
+
+```rust
+use stave::prelude::*;
+
+#[derive(Params)]
+pub struct GainParams {
+    pub gain: FloatParam,
+    pub bypass: BoolParam,
+}
+
+impl Default for GainParams {
+    fn default() -> Self {
+        GainParams {
+            gain: FloatParam::new(ParamId(1), "Gain", Range::linear(-24.0, 24.0))
+                .unit(Unit::Db)
+                .smooth(Smooth::ms(10.0)),
+            bypass: BoolParam::bypass(ParamId(2)),
+        }
+    }
+}
+
+pub struct Gain {
+    params: Arc<GainParams>,
+    gain: Smoother,
+}
+
+impl Plugin for Gain {
+    const INFO: Info = Info { id: "com.example.gain", name: "Gain", vendor: "Example", ..Info::EFFECT };
+    type Params = GainParams;
+
+    fn new(params: &Arc<GainParams>, _telemetry: &Telemetry) -> Self {
+        Gain { params: params.clone(), gain: Smoother::new(&params.gain) }
+    }
+
+    fn prepare(&mut self, env: &Environment) {
+        self.gain.prepare(env);
+    }
+
+    fn process(&mut self, block: &mut Block<'_>) {
+        let mut gain = self.gain.ramp(block, &self.params.gain);
+        block.lanes::<2>().run(|frame| {
+            let g = db_to_amp(gain.next());
+            for lane in 0..frame.lanes() {
+                frame.write(lane, frame.input(lane) * g);
+            }
+        });
+    }
+}
+
+stave::export!(Gain);   // a VST3 and a CLAP plugin, from one cdylib
+```
+
+The framework owns everything around `process`: click-free bypass,
+automation and state, presets, the face's window, denormals, and panics
+at the host boundary.
+
 ## What's in the box
 
 ### The worked example (`examples/tilt`)
 
-Stave Tilt, a one-knob tilt EQ in ~450 lines including its whole test
-suite. It ships as native macOS `.vst3` + `.clap` bundles from one
-cdylib and passes the in-house validation suite, the Steinberg VST3
-validator and clap-validator (`scripts/validate-formats.sh` runs both
-locally). The host's own tests load it through the full VST3 path.
+Stave Tilt, a one-knob tilt EQ: params, processing and face in one
+file, from `use stave::prelude::*`, and the shape every plugin copies.
+It ships as native macOS `.vst3` + `.clap` bundles from one cdylib and
+passes the in-house validation suite, the Steinberg VST3 validator and
+clap-validator (`scripts/validate-formats.sh` runs both locally). The
+host's own tests load it through the full VST3 path.
 
 ### Framework crates (`crates/`)
 
 The contracts they keep are in **docs/architecture.md**.
 
-- **`stave-core`** — the plugin model: `Processor` (the realtime
-  half) + `Spec` (the declarations half) composed by
-  `StavePlugin<E>`; typed params (`FloatParam`/`BoolParam`/
-  `EnumParam`, `#[derive(Params)]`, declaration-owned smoothing and
-  ranges), presets, state chunks, events.
+- **`stave`** — the one dependency an author takes: the `Plugin` trait,
+  `stave::prelude`, `stave::export!` (VST3 + CLAP, class ids derived
+  from `Info::id`), and re-exports of the model, the DSP library and the
+  design system.
+- **`stave-core`** — the plugin model, UI-free: typed params
+  (`FloatParam`/`BoolParam`/`EnumParam`, `#[derive(Params)]`,
+  declaration-owned smoothing and ranges), `Smoother`/`Steps`, `Block`,
+  presets, state chunks, events, the `Controller` a face edits through,
+  and the erased runtime the format wrappers drive.
 - **`stave-vst3`** / **`stave-clap`** — the plugin side of each
-  hand-written ABI; one export macro each.
+  hand-written ABI (authors never name them: `stave::export!` does).
 - **`stave-vst3-sys`** / **`stave-clap-sys`** — the raw ABIs alone
   (types, constants, vtables, IIDs, layout assertions; `no_std`), shared
   by the wrappers and by `stave-host`.
@@ -44,13 +108,17 @@ The contracts they keep are in **docs/architecture.md**.
   `circuit` (device models, solvers and schematic-derived topologies)
   and `structures`. `tests/datasheet.rs` prints the measured
   ns/sample price of every primitive.
-- **`stave-telemetry`** — `Telemetry`, the plugin → editor/tool
+- **`stave-telemetry`** — `Telemetry`, the plugin → face/tool
   channel: typed `Tap`s (`#[derive(Taps)]`, read by `TapId`) that feed
-  every meter and scope, capture, log messages; lock-free.
+  every meter and scope, capture, log messages; lock-free. A plugin gets
+  its telemetry in `Plugin::new`.
 - **`stave-face`** — the design system: a plugin's editor is a `Face`
-  — `Part`s (knobs, switches, lamps, displays, `Plate`s) laid out in
-  rows and columns inside a `Panel`, on a `Theme` that holds the whole
-  look as data. `tools/storybook` shows every part on every theme.
+  (`Plugin::face`, a pure function of the params) — `Part`s (knobs,
+  switches, lamps, displays, `Plate`s) laid out in rows and columns
+  inside a `Panel`, on a `Theme` that holds the whole look as data
+  (finish, palette, hardware, typography, spacing, coverings). Parts are
+  addressed by name (`PartId`), grabbed through `Grab`s.
+  `tools/storybook` shows every part on every theme.
 - **`stave-ui`** — the OS-agnostic look layer: the layout tree and its
   flexbox solver, and the `Scene` vector vocabulary;
   **`stave-ui-cocoa`** — the macOS platform that shows a face
@@ -59,7 +127,7 @@ The contracts they keep are in **docs/architecture.md**.
   draws a `Scene` into an RGBA pixel buffer identically on every
   platform (text is left to the OS).
 - **`stave-macros`** — `#[derive(Params)]` and `#[derive(Taps)]`
-  (re-exported by `stave-core`; proc-macros need a crate of their own).
+  (re-exported by `stave`; proc-macros need a crate of their own).
 - **`stave-measure`** — audio measurement as pure functions: levels,
   spectra, THD, latency, transfer functions, aliasing/IMD, dynamics,
   modulation, zipper, reverb-tail metrics (no file I/O: WAV lives in
@@ -107,9 +175,13 @@ cargo run --release -p stave-play -- build/StaveTilt.vst3
 Every commit runs, in one chain:
 
 ```sh
-scripts/gates.sh            # tree rules, every test in parallel, doctests (~40 s warm)
+scripts/gates.sh            # tree rules (incl. the glossary), every test, doctests (~40 s warm)
 scripts/gates.sh affected   # only the packages the change can reach
 ```
+
+`scripts/check-vocabulary.sh` holds the code to the glossary
+(docs/overhaul.md): retired names and the words it reserves are
+rejected.
 
 Tests run under [cargo-nextest](https://nexte.st) (`cargo install cargo-nextest`).
 
@@ -129,9 +201,9 @@ Steinberg validator and clap-validator on every push to main.
 
 ## Writing a plugin
 
-Read **docs/writing-a-plugin.md** (the two-halves model, the kernel
-vocabulary, and why every project writes its own properties) with
-**examples/tilt** open beside it as the worked example. Its
+Read **docs/writing-a-plugin.md** (the `Plugin` trait, params,
+processing, the face, and why every project writes its own properties)
+with **examples/tilt** open beside it as the worked example. Its
 `tests/properties.rs` tells the story of why projects write their own
 properties: tilt's first build shipped with its one knob backwards, past
 every generic gate — only a measurement caught it.

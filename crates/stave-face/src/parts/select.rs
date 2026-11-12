@@ -3,9 +3,8 @@
 //! ◀ ▶ for long lists), the [`Presets`] readout, and the [`Pager`] that
 //! flips editor-local pages.
 
-extern crate alloc;
-use alloc::string::String;
-use alloc::vec::Vec;
+use std::string::String;
+use std::vec::Vec;
 
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke, TextAlign};

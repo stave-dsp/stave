@@ -1,5 +1,5 @@
 //! Stave Tilt — a one-knob tilt EQ, and the shape every stave plugin
-//! copies: params, engine and face, top to bottom, from one import.
+//! copies: params, processing and face, top to bottom, from one import.
 //!
 //! A complementary shelving pair per lane — the low shelf at −tilt dB,
 //! the high shelf at +tilt dB — tips the spectrum around 650 Hz.

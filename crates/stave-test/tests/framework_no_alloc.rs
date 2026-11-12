@@ -26,7 +26,7 @@ fn the_guard_itself_works() {
     });
 }
 
-/// Framework-level generalization of the forge structural check:
+/// The structural no-alloc check, at the framework level:
 /// the swap primitive ITSELF, hammered directly under the guard —
 /// engage in both directions every iteration, zero allocations. Any
 /// future project using SwapPoint inherits this proof.

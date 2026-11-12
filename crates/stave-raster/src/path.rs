@@ -8,8 +8,7 @@
 //! sweep of a full turn or more draws the whole circle. As in CG, an arc
 //! with a current point first draws a line to its start.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use core::f64::consts::TAU;
 
@@ -51,14 +50,14 @@ pub fn flatten(path: &Path, scale: f64) -> Vec<Poly> {
                     out.push(poly);
                 }
                 let p = s(p);
-                cur = Some(Poly { pts: alloc::vec![p], closed: false });
+                cur = Some(Poly { pts: std::vec![p], closed: false });
                 last = p;
                 start = p;
             }
             Seg::LineTo(p) => {
                 let p = s(p);
                 if cur.is_none() {
-                    cur = Some(Poly { pts: alloc::vec![last], closed: false });
+                    cur = Some(Poly { pts: std::vec![last], closed: false });
                 }
                 push(&mut cur, p);
                 last = p;
@@ -66,7 +65,7 @@ pub fn flatten(path: &Path, scale: f64) -> Vec<Poly> {
             Seg::QuadTo(c, p) => {
                 let (c, p) = (s(c), s(p));
                 if cur.is_none() {
-                    cur = Some(Poly { pts: alloc::vec![last], closed: false });
+                    cur = Some(Poly { pts: std::vec![last], closed: false });
                 }
                 let dd = ((last.x - 2.0 * c.x + p.x).powi(2) + (last.y - 2.0 * c.y + p.y).powi(2)).sqrt();
                 let n = ((dd / (4.0 * TOLERANCE)).sqrt().ceil() as usize).clamp(1, 256);
@@ -79,7 +78,7 @@ pub fn flatten(path: &Path, scale: f64) -> Vec<Poly> {
             Seg::CubicTo(c1, c2, p) => {
                 let (c1, c2, p) = (s(c1), s(c2), s(p));
                 if cur.is_none() {
-                    cur = Some(Poly { pts: alloc::vec![last], closed: false });
+                    cur = Some(Poly { pts: std::vec![last], closed: false });
                 }
                 let d1 = ((last.x - 2.0 * c1.x + c2.x).powi(2) + (last.y - 2.0 * c1.y + c2.y).powi(2)).sqrt();
                 let d2 = ((c1.x - 2.0 * c2.x + p.x).powi(2) + (c1.y - 2.0 * c2.y + p.y).powi(2)).sqrt();
@@ -100,7 +99,7 @@ pub fn flatten(path: &Path, scale: f64) -> Vec<Poly> {
                 match cur.as_mut() {
                     Some(_) => push(&mut cur, first),
                     None => {
-                        cur = Some(Poly { pts: alloc::vec![first], closed: false });
+                        cur = Some(Poly { pts: std::vec![first], closed: false });
                         start = first;
                     }
                 }

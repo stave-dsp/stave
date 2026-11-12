@@ -116,7 +116,7 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // parameter changes (validator: "Parameters Flush").
     if let Some(changes) = process.param_changes() {
         (param_count, params_dropped) =
-            events::drain_param_changes(&changes, inst.param_table.as_ref(), &mut param_buf);
+            events::drain_param_changes(&changes, inst.params.as_ref(), &mut param_buf);
         // In place: the standard stable sort may allocate.
         stave_core::runtime::sort_param_changes(&mut param_buf[..param_count]);
         inst.diagnostics
@@ -184,7 +184,7 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
 
     // Aux inputs: aux buses follow the main input, declaration
     // order. An inactive/absent bus (hosts routinely leave sidechains
-    // unconnected) becomes a zero-channel buffer — the AuxIn contract.
+    // unconnected) becomes a zero-channel buffer — the `Aux` contract.
     const MAX_AUX: usize = stave_core::runtime::MAX_AUX_PORTS;
     let n_aux = ports.aux.len().min(MAX_AUX);
     let main_ins = usize::from(ports.input_channels() > 0);
@@ -212,7 +212,7 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // Bypass dry capture BEFORE the plugin runs (post-staging, so the
     // dry path survives in-place processing). The bypass param comes
     // from the table's cached index (no scan).
-    let bypass = inst.bypass_id.and_then(|_| inst.param_table.bypass());
+    let bypass = inst.bypass_id.and_then(|_| inst.params.bypass());
     let bypassed = bypass.is_some_and(|p| p.value() >= 0.5);
     if bypass.is_some() {
         // SAFETY: `split_for_block` lists are valid for `run` frames.
@@ -275,7 +275,8 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     {
         // Capture-frame write (before mute, so the inspector sees the
         // plugin's true output even while audio is muted). Skipped when
-        // the plugin owns the capture and writes its own pairs (e.g. Forge captures shaper input vs chain output for the scope).
+        // the plugin owns the capture and writes its own pairs (a
+        // shaper's input against its output, for a transfer scope).
         let plugin_owns_capture = inst.telemetry.plugin_owns_capture();
         let chans = output_ptrs.len().min(stave_core::telemetry::CAPTURE_CHANNELS);
         if chans > 0 && !plugin_owns_capture {

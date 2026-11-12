@@ -60,7 +60,7 @@
 //!
 //! The pieces, when you need more than the prelude:
 //! [`params`], [`dsp`] (the DSP library), [`face`] (the design system),
-//! [`telemetry`] (engine → face values).
+//! [`telemetry`] (plugin → face values).
 
 #![forbid(unsafe_code)]
 #![deny(rust_2018_idioms)]

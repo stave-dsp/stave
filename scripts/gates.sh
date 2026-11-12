@@ -11,6 +11,7 @@ cd "$ROOT"
 bash scripts/check-file-sizes.sh
 bash scripts/check-view-bindings.sh
 bash scripts/check-plugin-rules.sh
+bash scripts/check-vocabulary.sh
 if [[ "${1:-}" == affected ]]; then
   python3 scripts/test-affected.py "${2:-HEAD}"
 else

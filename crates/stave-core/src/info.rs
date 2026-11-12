@@ -95,8 +95,8 @@ impl Feature {
 }
 
 /// The channels of one bus, named by their speaker meaning (never a bare
-/// count): what hosts negotiate. Engines lift them into their own lane
-/// semantics (stereo → mid/side is an engine's adapter, not a bus).
+/// count): what hosts negotiate. Plugins lift them into their own lane
+/// semantics (stereo → mid/side is a plugin's adapter, not a bus).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Channels {
     Mono,

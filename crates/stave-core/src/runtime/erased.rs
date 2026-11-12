@@ -3,9 +3,8 @@
 //! shared list. `stave::export!` implements it for an author's
 //! `stave::Plugin`; the wrappers' own tests implement it directly.
 
-extern crate alloc;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use std::sync::Arc;
+use std::vec::Vec;
 
 use stave_telemetry::Telemetry;
 

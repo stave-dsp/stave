@@ -19,8 +19,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-extern crate alloc;
-use alloc::boxed::Box;
+use std::boxed::Box;
 
 use stave_core::Controller;
 use stave_face::{Cursor, Face, Mods, Runtime};

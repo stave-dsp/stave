@@ -27,7 +27,7 @@ impl Erased for TwoConfig {
         vendor: "stave tests",
         version: "0.0.0",
         url: "",
-        description: "K4d negotiation fixture",
+        description: "layout negotiation fixture",
         features: &[],
     };
 

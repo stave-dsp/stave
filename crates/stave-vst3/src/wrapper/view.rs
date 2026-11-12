@@ -65,10 +65,10 @@ pub(super) fn new_view<P: Vst3Export>(
     };
     let gestures = Vst3Gestures {
         handler: inst.handler.clone(),
-        table: inst.param_table.clone(),
+        table: inst.params.clone(),
     };
     let controller = PluginController::new(
-        inst.param_table.clone(),
+        inst.params.clone(),
         inst.telemetry.clone(),
         inst.programs.presets().clone(),
         Box::new(gestures),

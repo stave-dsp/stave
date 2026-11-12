@@ -86,8 +86,8 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
     taps.publish_peaks(floor, floor);
 
     let plugin_obj = P::new(&telemetry);
-    let param_table = plugin_obj.params();
-    if let Err(e) = param_table.validate() {
+    let params = plugin_obj.params();
+    if let Err(e) = params.validate() {
         Diagnostics::new(&P::INFO).log.write(
             stave_core::diagnostics::Severity::PluginMisbehaving,
             &format_args!("param table invalid: {e}"),
@@ -140,14 +140,14 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         latency_vtable: sys::ClapPluginLatency {
             get: Some(latency_get::<P>),
         },
-        bypass_id: (0..param_table.count())
-            .filter_map(|i| param_table.by_index(i))
+        bypass_id: (0..params.count())
+            .filter_map(|i| params.by_index(i))
             .find(|p| p.meta().flags.bypass)
             .map(|p| p.meta().id),
         tail: core::sync::atomic::AtomicU32::new(0),
         shared: SharedState::new(44_100.0),
         plugin: PluginCell::new(plugin_obj),
-        param_table,
+        params,
         state_store: std::sync::Mutex::new(StateStore::default()),
         gestures: Arc::new(GestureQueue::new()),
         #[cfg(target_os = "macos")]

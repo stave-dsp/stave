@@ -4,8 +4,7 @@
 //! crate never learns what a param is. Nodes carry layout only: what a
 //! leaf looks like is the leaf's business.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use crate::style::{Dim, Dir, Edges, Justify, Style};
 

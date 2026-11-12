@@ -11,7 +11,7 @@ pub struct Description {
     pub plugin: Option<PluginInfo>,
     pub host: Option<HostStats>,
     pub layout: Layout,
-    pub latency_samples: u32,
+    pub latency: u32,
     pub tail: Tail,
     pub controls: Vec<Control>,
     pub presets: Vec<String>,
@@ -23,7 +23,7 @@ pub fn describe(inst: &dyn Instance) -> Description {
         plugin: None,
         host: None,
         layout: inst.layout(),
-        latency_samples: inst.latency(),
+        latency: inst.latency(),
         tail: inst.tail(),
         controls: inst.controls(),
         presets: crate::instance::presets(inst),
@@ -69,6 +69,6 @@ mod tests {
     #[test]
     fn latency_and_tail_come_from_the_instance() {
         let d = describe(&Delay::new(1, 9));
-        assert_eq!((d.latency_samples, d.tail), (9, Tail::Samples(9)));
+        assert_eq!((d.latency, d.tail), (9, Tail::Samples(9)));
     }
 }

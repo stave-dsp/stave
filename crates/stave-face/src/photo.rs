@@ -8,9 +8,8 @@
 //! light it with the same studio — consistency is what reads as real.
 //! Bake once (memoize the result), animate with sprites and vectors.
 
-extern crate alloc;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use std::sync::Arc;
+use std::vec::Vec;
 
 use stave_ui::scene::Image;
 

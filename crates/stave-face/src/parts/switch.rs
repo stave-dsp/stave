@@ -1,9 +1,8 @@
 //! Switches: the bat toggle for two- and three-way choices, the
 //! footswitch, and the indicator lamp.
 
-extern crate alloc;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
+use std::string::{String, ToString};
+use std::vec::Vec;
 
 use stave_core::telemetry::TapId;
 use stave_core::Controller;

@@ -1,7 +1,7 @@
-//! The processor's side of parameters: a [`Smoother`] runs a
+//! The plugin's side of parameters: a [`Smoother`] runs a
 //! [`FloatParam`]'s declared glide, [`Steps`] follows a stepped param
 //! (bool, enum) at its exact frames. Parameters hold the shared target
-//! (hosts, faces, state); these hold the per-plugin render state.
+//! (hosts, faces, state); these hold the per-plugin running state.
 
 use super::{BoolParam, EnumParam, FloatParam, ParamEnum, ParamId, Range, Smooth};
 use crate::environment::Environment;
@@ -447,7 +447,7 @@ mod tests {
         assert_eq!(
             b.current(),
             0.0,
-            "another processor has independent history"
+            "another plugin has independent history"
         );
     }
 
@@ -466,7 +466,7 @@ mod tests {
         (p, control)
     }
 
-    fn render(control: &mut Smoother, p: &FloatParam, target: f64, n: usize) -> Vec<f64> {
+    fn run(control: &mut Smoother, p: &FloatParam, target: f64, n: usize) -> Vec<f64> {
         p.set_value(target);
         let mut block = control.ramp_over(ParamBlock::empty(), p);
         (0..n).map(|_| block.next_f64()).collect()
@@ -484,14 +484,14 @@ mod tests {
     #[test]
     fn off_yields_the_target_immediately() {
         let (p, mut c) = prepared(Smooth::Off, 48_000.0, 0.0);
-        assert_eq!(render(&mut c, &p, 1.0, 4), [1.0; 4]);
+        assert_eq!(run(&mut c, &p, 1.0, 4), [1.0; 4]);
     }
 
     #[test]
     fn exp_time_constant_is_rate_derived() {
         let (p, mut c) = prepared(Smooth::ms(15.0), 48_000.0, 0.0);
         let tau = (0.015 * 48_000.0) as usize;
-        let after_tau = render(&mut c, &p, 1.0, tau)[tau - 1];
+        let after_tau = run(&mut c, &p, 1.0, tau)[tau - 1];
         assert!(
             (after_tau - (1.0 - (-1.0f64).exp())).abs() < 0.01,
             "{after_tau}"
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn linear_arrives_exactly_and_holds() {
         let (p, mut c) = prepared(Smooth::linear_ms(10.0), 1_000.0, 0.0);
-        let out = render(&mut c, &p, 1.0, 12);
+        let out = run(&mut c, &p, 1.0, 12);
         assert!((out[4] - 0.5).abs() < 1e-12, "midpoint {}", out[4]);
         assert_eq!(out[9..], [1.0; 3], "exact arrival, then hold");
     }
@@ -509,8 +509,8 @@ mod tests {
     #[test]
     fn a_glide_continues_across_blocks() {
         let (p, mut c) = prepared(Smooth::linear_ms(10.0), 1_000.0, 0.0);
-        let a = render(&mut c, &p, 1.0, 4);
-        let b = render(&mut c, &p, 1.0, 6);
+        let a = run(&mut c, &p, 1.0, 4);
+        let b = run(&mut c, &p, 1.0, 6);
         assert!((a[3] - 0.4).abs() < 1e-12);
         assert!((b[0] - 0.5).abs() < 1e-12, "block 2 continues: {}", b[0]);
         assert_eq!(b[5], 1.0);
@@ -519,8 +519,8 @@ mod tests {
     #[test]
     fn a_linear_retarget_restarts_from_the_current_value() {
         let (p, mut c) = prepared(Smooth::linear_ms(10.0), 1_000.0, 0.0);
-        render(&mut c, &p, 1.0, 5);
-        let out = render(&mut c, &p, 0.0, 10);
+        run(&mut c, &p, 1.0, 5);
+        let out = run(&mut c, &p, 0.0, 10);
         assert!(
             (out[0] - 0.45).abs() < 1e-12,
             "restarts from 0.5: {}",
@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn exp_settles_onto_the_target() {
         let (p, mut c) = prepared(Smooth::ms(1.0), 48_000.0, 0.0);
-        render(&mut c, &p, 1.0, 4_800);
+        run(&mut c, &p, 1.0, 4_800);
         assert_eq!(
             c.current(),
             1.0,

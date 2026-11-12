@@ -2,7 +2,7 @@
 //! 8-bit RGBA, unfiltered rows, zlib "stored" blocks. Files are larger
 //! than a real compressor makes, and nothing else is needed.
 
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use crate::Canvas;
 
@@ -57,7 +57,7 @@ pub fn encode(canvas: &Canvas) -> Vec<u8> {
             }
         }
     }
-    let mut z = alloc::vec![0x78, 0x01];
+    let mut z = std::vec![0x78, 0x01];
     let blocks = raw.chunks(65_535).count().max(1);
     for (i, block) in raw.chunks(65_535).enumerate() {
         z.push(u8::from(i + 1 == blocks));
@@ -68,7 +68,7 @@ pub fn encode(canvas: &Canvas) -> Vec<u8> {
     }
     z.extend_from_slice(&adler32(&raw).to_be_bytes());
 
-    let mut out = alloc::vec![0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n'];
+    let mut out = std::vec![0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n'];
     let mut ihdr = Vec::with_capacity(13);
     ihdr.extend_from_slice(&(w as u32).to_be_bytes());
     ihdr.extend_from_slice(&(h as u32).to_be_bytes());

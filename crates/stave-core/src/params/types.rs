@@ -17,10 +17,9 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use crate::params::ParamId;
 
-extern crate alloc;
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use std::boxed::Box;
+use std::sync::Arc;
+use std::vec::Vec;
 
 use super::display::{Unit, ValueText};
 use super::smooth::Smooth;
@@ -950,7 +949,7 @@ mod tests {
         assert_eq!(c.value(), 2.0);
     }
 
-    /// Host thread writes targets while the audio thread renders
+    /// Host thread writes targets while the audio thread runs
     /// ramps — the exact production concurrency. Values must stay
     /// finite and in range under Miri's race detection.
     #[test]

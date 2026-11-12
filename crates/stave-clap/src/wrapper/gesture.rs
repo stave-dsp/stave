@@ -22,7 +22,7 @@ pub(super) fn controller_of<P: ClapExport>(inst: &Instance<P>) -> PluginControll
         host: inst.host,
     };
     PluginController::new(
-        inst.param_table.clone(),
+        inst.params.clone(),
         inst.telemetry.clone(),
         inst.presets.clone(),
         Box::new(gestures),

@@ -9,8 +9,7 @@ use core::mem;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-extern crate alloc;
-use alloc::sync::Arc;
+use std::sync::Arc;
 
 use stave_core::diagnostics::{CallError, Diagnostics, ProcessFault, Severity, TelemetrySink};
 use stave_core::params::Params;
@@ -149,7 +148,7 @@ pub struct Instance<P: Vst3Export> {
     /// The typed parameter table, served with STABLE wire ids. Shared
     /// with the plugin via Arc — host threads read it without touching
     /// the claimed processor.
-    pub param_table: Arc<dyn Params>,
+    pub params: Arc<dyn Params>,
     /// Factory presets (one list, shared with every face), exposed as the
     /// program-change parameter and the root unit's program list.
     pub(crate) programs: crate::programs::Programs,

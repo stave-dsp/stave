@@ -35,6 +35,7 @@ jobs:
       - run: scripts/check-file-sizes.sh
       - run: scripts/check-view-bindings.sh
       - run: scripts/check-plugin-rules.sh
+      - run: scripts/check-vocabulary.sh
       - run: cargo build --workspace --locked
       - run: cargo nextest run --workspace --locked --profile ci
       - run: cargo test --workspace --doc --locked

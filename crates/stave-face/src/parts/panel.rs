@@ -1,9 +1,8 @@
 //! The enclosure and the recessed plates that group controls on it.
 
-extern crate alloc;
-use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
+use std::sync::Arc;
+use std::vec;
+use std::vec::Vec;
 
 use stave_ui::layout::Rect;
 use crate::photo::{mix, mul, smoothstep, Rgb};

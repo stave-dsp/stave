@@ -1,7 +1,7 @@
 //! A parameter's declared smoothing. The host/state-visible value is
-//! always the unsmoothed target; the glide is render state, owned by the
+//! always the unsmoothed target; the glide is running state, owned by the
 //! plugin ([`Smoother`](super::Smoother)). Time
-//! constants are rate-derived (`1 − exp(−1/(τ·fs))`), never bare
+//! constants are rate-derived (`1 − exp(−1/(τ·sample_rate))`), never bare
 //! per-sample coefficients.
 
 /// How a parameter's audio-rate value approaches its target.

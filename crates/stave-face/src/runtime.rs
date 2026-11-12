@@ -4,9 +4,8 @@
 //! into parameter edits. The platform's view feeds it events and blits
 //! its canvas; everything here is portable and testable headless.
 
-extern crate alloc;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use std::sync::Arc;
+use std::vec::Vec;
 use std::collections::HashMap;
 
 use stave_core::telemetry::TapId;

@@ -3,59 +3,76 @@
 *The walkthrough for starting a new project. Read
 **docs/glossary.md** first — the domain concepts in plain words,
 with the web-dev bridges. **Start with `bash scripts/new-plugin.sh
-<name>`** in [stave-plugins](https://github.com/stave-dsp/stave-plugins) — it stamps a complete gate-passing project. **Tilt (`examples/tilt`) is the
-minimal worked example** (a real, validated plugin in ~450 lines
-INCLUDING its whole test suite; its `tests/properties.rs` is the
-cautionary tale below) and stave-plugins' forge is the full-scale reference; copy their **shape**,
-never their DSP. Everything here is enforced by a gate, a property test,
+<name>`** in [stave-plugins](https://github.com/stave-dsp/stave-plugins) — it stamps a complete gate-passing project (the
+plugins move to this API in the overhaul's phase P). **Tilt
+(`examples/tilt`) is the worked example**: params, processing and face
+in one file from `use stave::prelude::*`, and a test suite whose
+`tests/properties.rs` is the cautionary tale below. Copy its **shape**,
+never its DSP. Everything here is enforced by a gate, a property test,
 or a validator — nothing is advisory.*
 
-## A plugin is two halves
+## A plugin is one trait
 
-**Declarations** — pure data and pure functions of params: who you
-are, what the host can negotiate, what the knobs are, what the
-editor looks like, what the presets say. No behavior, no state.
+A plugin is a type that implements `stave::Plugin`, beside a params
+struct, in a crate that ends with `stave::export!(MyPlugin);`. That
+crate depends on `stave` alone and starts with `use stave::prelude::*;`
+— if a plugin needs anything beyond the prelude, that is a framework
+bug to fix, not an import to add.
 
-**The engine** — the realtime half: a `Processor` whose every piece
-is a named kernel form, a declared plane, or a leaf (docs/architecture.md;
-anything that can't say which it is gets deleted).
+```rust
+impl Plugin for Tilt {
+    const INFO: Info = Info { id: "com.example.tilt", name: "Tilt", vendor: "Example", ..Info::EFFECT };
+    type Params = TiltParams;                       // #[derive(Params)] + Default
+    fn new(params: &Arc<TiltParams>, telemetry: &Telemetry) -> Self { /* smoothers, taps */ }
+    fn prepare(&mut self, env: &Environment) { /* everything rate-derived; may allocate */ }
+    fn process(&mut self, block: &mut Block<'_>) { /* realtime */ }
+    fn face(p: &TiltParams) -> Option<Face> { /* a pure function of the params */ }
+}
 
-The framework shell composes them: you export
-`StavePlugin<YourEngine>` and write no glue.
+stave::export!(Tilt);   // VST3 + CLAP; class ids derived from INFO.id
+```
+
+Everything else has a default: `LAYOUTS` (`[Layout::STEREO]`),
+`STATE_VERSION`, `reset`, `latency`, `tail`, `presets`, `migrations`,
+`save`/`load` (state beyond params, rare). The framework owns the rest:
+bypass, automation and state, presets as the host's program list, the
+face's window, denormals, panics at the host boundary.
+
+**Declarations are data.** `INFO`, `LAYOUTS`, the params' `Default`,
+`face` and `presets` are pure: no behaviour, no state. **The plugin
+value is the realtime half**: what `new` builds, `prepare` sizes and
+`process` runs — every piece a named kernel form, a declared plane, or
+a leaf (docs/architecture.md; anything that can't say which it is gets
+deleted).
 
 ## The shape
 
 ```
-plugins/<name>/
-  Cargo.toml            # dev-deps: stave-test (+ assert_no_alloc)
+<name>/
+  Cargo.toml            # [dependencies] stave; dev-deps: stave-test (+ assert_no_alloc)
   src/
-    lib.rs              # THE ROOT — narrated: opens with the tree
-                        #   (every file, one line each) so reading
-                        #   top-to-bottom then clicking down IS the
-                        #   walk; declarations only, < 100 lines
-    params.rs           # THE identity table (ids are forever)
-    editor.rs           # the face, pure fn of params
+    lib.rs              # THE ROOT — params, the Plugin impl, export!;
+                        #   small plugins are this one file (Tilt)
+    params.rs           # when the table grows: ids are forever
+    face.rs             # when the face grows: a pure fn of params
     presets.rs          # factory presets, pure fn of params
-    engine.rs           # small engines: one file
-    engine/             # big engines: a directory of COMPONENTS,
+    dsp/                # big plugins: a directory of COMPONENTS,
                         #   each file named for the interface it
-                        #   defines (forge's, as the example):
+                        #   defines:
       mod.rs            #   the component struct + process(), the
                         #   orchestration in named phases
       strip.rs          #   Strip — the audio lane
       bindings.rs       #   Bindings::apply_changes — params→structure
       modulation.rs     #   Modulation — drivers, routes, displacement
-      process.rs        #   process_block — the audio block
-      telemetry.rs      #   Telemetry::publish — taps, scope, feeds
-      voicing.rs        #   engine vocabulary lives UNDER the engine
+      taps.rs           #   the #[derive(Taps)] table and its publishing
   tests/                # the COLOCATED suite (see below)
 ```
 
 **The tree rules.** `lib.rs` narrates the whole plugin — a reader
-who opens it sees every file and both halves before clicking
-anywhere. Engine files are real COMPONENTS, never distributed
-`impl Engine` blocks: each concept is a type that owns its state
-(`Bindings`, `Modulation`, `Telemetry`), passes are functions whose
+who opens it sees every file and the `Plugin` impl before clicking
+anywhere. Big plugins split into real COMPONENTS, never distributed
+`impl` blocks: each concept is a type that owns its state
+(`Bindings`, `Modulation`, its taps), passes are functions whose
 **signature is the access list** (what a pass may touch is its
 arguments, not hidden `self` reach-through), and `process()` is the
 one orchestration point where the data flow is visible. **File
@@ -68,20 +85,20 @@ the parent module exports composition, never a grab-bag of shared
 constants (a constant lives with the structure that knows it:
 region factors on the strip, selector positions beside the
 selector). Data RECORDS the passes operate on (`Strip`) may stay
-open within the engine — the rule is for behavior components. Names are DOMAIN
-words, never positions or private verbs: `primary`/`voicing`/
-`post`, not `stage_a`/`filt1`; the audio block is `process` (the
-`Processor` contract), never "render" — render is a UI word;
-telemetry matches the framework's `attach_telemetry` seam; driver
-lanes and detector feeds are named constants, never bare indices.
-Milestone tags (K2, G6…) stay out of code comments — provenance
-lives in commits and docs.
+open — the rule is for behavior components. Names are the glossary's
+words (docs/overhaul.md, enforced by `scripts/check-vocabulary.sh`),
+never positions or private verbs: `primary`/`voicing`/`post`, not
+`stage_a`/`filt1`; the audio block is `process`, never "render" —
+render is a pixel word; taps are a `#[derive(Taps)]` table built in
+`Plugin::new`; driver lanes and detector feeds are named constants,
+never bare indices. Milestone tags stay out of code comments —
+provenance lives in commits and docs.
 
-**The growth rule.** The scaffold's single-file engine is a
-STARTING POINT, not a destination: when the second concept arrives
-(a modulator joins a delay, a splitter joins a compressor), the
-engine becomes `engine/` components THAT DAY — drift happens in the
-gap between "small enough" and "should have split already".
+**The growth rule.** The single-file plugin is a STARTING POINT, not a
+destination: when the second concept arrives (a modulator joins a
+delay, a splitter joins a compressor), the processing becomes `dsp/`
+components THAT DAY — drift happens in the gap between "small enough"
+and "should have split already".
 
 **The enforcement ladder.** Rules live at the strongest rung that
 can hold them, and get pushed UP when a stronger one opens:
@@ -93,10 +110,10 @@ can hold them, and get pushed UP when a stronger one opens:
 3. **Gates** (`scripts/check-plugin-rules.sh`, in the chain and CI) — for
    exactly what Rust cannot express: comment content, file
    organization, the choice between two type-identical APIs. Fails
-   on distributed `impl Engine` blocks, milestone tags in project
-   comments, and `plain() as f32` reads. A large single-file
-   engine is a printed SIGNAL, never a failure — line count is a
-   proxy, and the split decision is human.
+   on distributed `impl` blocks, milestone tags in project
+   comments, and retired names (`scripts/check-vocabulary.sh`). A
+   large single file is a printed SIGNAL, never a failure — line
+   count is a proxy, and the split decision is human.
 Every gate check exists because its violation actually happened; a
 convention without at least a gate is a deferred failure.
 
@@ -126,43 +143,62 @@ what's over threshold; you decide on concept seams.
   mount a `Meter::unit(WrapperTaps::CPU)`, and a glance answers "is something
   suddenly expensive."
 - **Profiling**: attach Instruments (or `samply record`) to the
-  release perf report — it is a clean hot loop of exactly the engine:
+  release perf report — it is a clean hot loop of exactly the plugin:
   `cargo test --release -p <crate> --test perf` and sample that
   process. Flag-level tuning is DONE (thin LTO + codegen-units 1 +
   apple-m1 baseline, measured; fat LTO measured and rejected — see
   .cargo/config.toml); the remaining frontier is algorithmic, and
   the rule is: schedule it when a measured need shows up.
 
-## The declarations half
+## Params
 
-- `lib.rs`: the `Spec` impl — `DESCRIPTOR`, explicit `CONFIGS` (the
-  negotiation SET, preference order; state it even when it's the
-  default), `params()`, `presets()`; the `FaceSpec` impl — `face()`;
-  plus the two export macros. Nothing else.
-- `params.rs`: every param with a stable id. **Ids are forever** —
-  never reuse, never renumber (docs/architecture.md). Declared
-  smoothing (`with_smooth`) for audio-rate gain paths; engine-owned
-  motion only when the glide IS the instrument (document which).
-  Selector labels live here — the face and the host read the same
-  declaration.
-- `editor.rs`: the **face** — a pure function of params returning a
-  `Face` (`use stave_face::prelude::*`). Parts (`Knob`,
-  `Footswitch`, `Toggle`, `Selector`, `Lamp`, displays, `Title`) bind
-  to params with `p.x.bind()` and read taps by `TapId`
-  (`Meter::db(MyTaps::LEVEL)`); `row`/`column`/`stack` lay them out;
-  `Plate`s group them and a `Panel` is the enclosure. The `Theme` is
-  the whole look — parts never mint a colour, a font or a coordinate.
-  `examples/tilt/src/editor.rs` is the worked example and
-  `tools/storybook` shows every part on every theme. Paged views are
-  declared: a `Pager` part plus `pages(key, …)` overlays the pages in
-  one rect. A bespoke display starts IN YOUR PROJECT as your own
-  `Part` that paints a `Scene` from the values its `Frame` reads; the
-  catalogue is for second-consumer graduates.
+Every param is a field of the params struct (`#[derive(Params)]`),
+built in its `Default` with a stable id. **Ids are forever** — never
+reuse, never renumber (docs/architecture.md).
 
-## The engine half
+```rust
+FloatParam::new(ParamId(1), "Tilt", Range::linear(-6.0, 6.0))   // also Range::log, Range::skewed
+    .unit(Unit::Db).smooth(Smooth::ms(30.0)).group("Tone");      // .default(x): else the value nearest 0
+BoolParam::new(ParamId(4), "Hold", false);
+BoolParam::bypass(ParamId(3));                                   // the one way to declare bypass
+EnumParam::<Mode>::new(ParamId(5), "Mode", Mode(0));             // param_enum! declares Mode and its labels
+```
 
-Map every piece to its form before writing it (forge's
-`engine/mod.rs` header is the worked example):
+`p.tilt.value()` reads any param in its natural type (`f32`, `bool`,
+the enum) — bounded by the declaration; never restate a range at a read
+site. A per-frame glide is a `Smoother` built from the param
+(`Smoother::new(&p.tilt)` in `new`, `prepare(env)` in `prepare`,
+`ramp(block, &p.tilt)` once per block, `next()` per frame); a stepped
+param's changes at their exact frames are `Steps`. Declared smoothing
+for audio-rate gain paths; plugin-owned motion only when the glide IS
+the instrument (document which). Selector labels live in the
+`param_enum!` — the face and the host read the same declaration.
+Old sessions load through `migrations()` (`Migrations::default()
+.renamed(ParamId(4), ParamId(9))`, rescales), versioned by
+`STATE_VERSION`.
+
+## The face
+
+`Plugin::face` is a pure function of params returning a `Face`. Parts
+(`Knob`, `Footswitch`, `Toggle`, `Selector`, `Lamp`, displays,
+`Title`) bind to params with `p.x.bind()` and read taps by `TapId`
+(`Meter::db(MyTaps::LEVEL)`); `row`/`column`/`stack` lay them out;
+`Plate`s group them and a `Panel` is the enclosure. The `Theme` is the
+whole look — parts never mint a colour, a font or a coordinate. Tilt's
+`face` is the worked example and `tools/storybook` shows every part on
+every theme. Paged views are declared: a `Pager` part plus
+`pages(key, …)` overlays the pages in one rect; content that follows a
+selector is `on_step(node, p.algo.bind(), step)`. Every part has a
+name (`PartId`: its bound param, its role, or `node.id("…")`), so tests
+address parts by name, not coordinates. A bespoke display starts IN
+YOUR PROJECT as your own `Part` — `reads()` declares the params and
+taps it paints from, `paint` draws a `Scene` from its `Frame`, `grabs`
+says where it can be grabbed; the catalogue is for second-consumer
+graduates.
+
+## Processing
+
+Map every piece to its form before writing it:
 
 | You need | You use |
 |---|---|
@@ -171,17 +207,19 @@ Map every piece to its form before writing it (forge's
 | per-channel state | `PerChannel` — lanes never cross-index |
 | feedback | `Loop` (explicit delay, required) |
 | detectors/LFO → knob displacement | `Router`/`ModMatrix` — routes as data, displace-from-base |
-| param change detection | `Watch` / `ModalWatch` (poll unconditionally, gate by mode) — and RESET EVERY WATCH IN `activate()`: a re-prepare wipes rate-derived coefficients and param-applied structure the params can't see |
+| param change detection | `Watch` / `ModalWatch` (poll unconditionally, gate by mode) — and RESET EVERY WATCH IN `prepare()`: a re-prepare wipes rate-derived coefficients and param-applied structure the params can't see |
 | structural switches | `SwapPoint` (moves, never allocs) |
 | latency-matched dry | `Compensator` |
 | M/S or fold-down | the kernel adapters (`ms_encode`/`downmix_51`) |
-| meters/viz out | declared `Tap` handles — never name strings |
-| read a knob (block rate) | `p.x.value()` / `p.sel.index()` — typed, BOUNDED BY THE DECLARATION; never restate a range at a read site (a clamp beside a read is a drift hazard) |
-| the block loop's plumbing | `ctx.lanes::<MAX>()` — channel clamping, lane reads/writes, undriven-output zeroing, block peak metering, all framework-owned; the engine keeps only the per-lane-count DECISION and the DSP |
+| meters/viz out | a `#[derive(Taps)]` table, built in `new` from its `&Telemetry` — never name strings |
+| read a knob (block rate) | `p.x.value()` — typed, BOUNDED BY THE DECLARATION |
+| a knob per frame | `Smoother::ramp(block, &p.x)` — honours the block's timed changes and session restores |
+| the block loop's plumbing | `block.lanes::<MAX>().run(|frame| …)` — channel clamping, lane reads/writes, undriven-output zeroing, block peak metering, all framework-owned; the plugin keeps only the per-lane-count DECISION and the DSP. Whole channels: `block.io()` (an input to read, an output whose `channels_mut()` lends every channel at once) |
 
-`run()` is an orchestration script: **bind → render → observe**.
-Block-rate decisions in bind, per-sample work in render, publishing
-in observe. If run() reads a field directly, something is mislayered.
+`process()` is an orchestration script: **bind → process → observe**.
+Block-rate decisions in bind, per-frame work in process, publishing
+in observe. If `process()` reads a field directly, something is
+mislayered.
 
 Rules that are not negotiable: no allocation, locks, or blocking in
 `process` (the colocated no-alloc check enforces it); dense
@@ -204,7 +242,7 @@ Every project ships `tests/` with at least:
   30-second `stave-bench` sine measurement caught it; the sign property
   now makes it unshippable. Measure first, then code to the
   measurement (in stave-plugins): forge's voicing suites, multiband's sidechain
-  duck + AuxIn contract, smear's garden and surround-lift bit-exactness,
+  duck + `Aux` contract, smear's garden and surround-lift bit-exactness,
   eddy's field topology properties. A project without its own
   property tests is not done.
 - `validation.rs` — `stave_test::validation::assert_passes(
@@ -213,19 +251,23 @@ Every project ships `tests/` with at least:
   admission to a plugin suite.
 - `editor.rs` — `stave_test::face::binds_resolve::<YourPlugin>(name)`:
   every bind resolves against the table, and stepped gestures bind
-  stepped params, continuous ones continuous params.
+  stepped params, continuous ones continuous params; and
+  `stave_test::face::grabs_land::<YourPlugin>(name)`: every part lies
+  inside the face, and a press at the centre of each grab grabs that
+  part.
 - `no_alloc.rs` — `stave_test::no_alloc` with YOUR wiggle list:
   sweep the params that rebuild tables and switch structure, not
   just the easy trims. The test binary installs `AllocDisabler`.
 
-Shared machinery lives in the `stave-test` LIB (harness, validation,
-face bindings, no-alloc check); `crates/stave-test/tests/` holds the
+Shared machinery lives in the `stave-test` LIB (`PluginHarness` —
+drive your `Plugin` in-process, no FFI — validation, face checks,
+no-alloc check); `crates/stave-test/tests/` holds the
 framework-level checks and the kernel/primitive conformance suites — they
 test the vocabulary, not you.
 
 **Refactors of shipped DSP use the bit-pin method**:
 write a throwaway FNV-hash pin over real configs BEFORE the change
-(include automation and mid-render structural flips), prove
+(include automation and mid-block structural flips), prove
 bit-exactness after, delete the scratch before commit. If bits are
 SUPPOSED to move, say so in the commit and re-pin.
 

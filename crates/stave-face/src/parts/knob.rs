@@ -1,8 +1,7 @@
 //! The rotary knob: a lit cap in the theme's style, an engraved scale,
 //! a pointer, and a legend that shows the value while you touch it.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke};
@@ -104,7 +103,7 @@ impl Knob {
         let rad = self.size.radius();
         pt(r.x + r.w / 2.0, r.y + rad + RING + 5.0)
     }
-    fn legend(&self) -> alloc::string::String {
+    fn legend(&self) -> std::string::String {
         self.label.unwrap_or(self.bind.name).to_uppercase()
     }
 }

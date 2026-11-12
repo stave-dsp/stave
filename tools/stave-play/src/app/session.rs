@@ -79,7 +79,7 @@ impl Session {
         ns_view: *mut std::ffi::c_void,
     ) -> Result<Self, SessionError> {
         let log = shared.log.clone();
-        log.plugin_latency_samples
+        log.plugin_latency
             .store(plugin.latency(), Ordering::Relaxed);
         for s in plugin.info().load.steps() {
             let line = format!("load: {} {} ({} µs)", s.step, s.detail, s.micros);

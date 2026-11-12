@@ -17,7 +17,7 @@ pub(super) unsafe extern "C" fn state_save<P: ClapExport>(
         let result = stream.and_then(|stream| {
             stream.write_all(&wrapper_state::save(
                 &inst.plugin,
-                inst.param_table.as_ref(),
+                inst.params.as_ref(),
                 &inst.state_store,
                 &inst.diagnostics,
             ))
@@ -42,7 +42,7 @@ pub(super) unsafe extern "C" fn state_load<P: ClapExport>(
             wrapper_state::load(
                 &stream.read_to_end(MAX_STATE_BYTES)?,
                 &inst.plugin,
-                inst.param_table.as_ref(),
+                inst.params.as_ref(),
                 &inst.state_store,
             )
         });

@@ -316,7 +316,7 @@ unsafe extern "C" fn me_get(l: *const ClapInputEvents, index: u32) -> *const Cla
 }
 
 // ===========================================================================
-// Step 3: outbound gestures + sample-accurate events
+// Outbound gestures + sample-accurate events
 // ===========================================================================
 
 unsafe extern "C" fn oc_push(list: *const ClapOutputEvents, event: *const ClapEventHeader) -> bool {

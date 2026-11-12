@@ -3,8 +3,7 @@
 //! transfer curve, an ADSR envelope. Each draws into a screen rect in the
 //! theme's phosphor.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke};
@@ -42,7 +41,7 @@ pub fn glow_line(f: &Frame<'_>, s: &mut Scene, pts: &[Pt]) {
 /// The captured audio of `channel` as a scope trace.
 pub fn scope(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize) {
     grid(f, r, s, 8, 4);
-    let mut buf = alloc::vec![0f32; 2048];
+    let mut buf = std::vec![0f32; 2048];
     let n = f.controller.capture(channel, &mut buf);
     if n < 2 {
         return;
@@ -62,7 +61,7 @@ pub fn scope(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize) {
 /// frequency (20 Hz – 20 kHz at `sample_rate`), −90…0 dB.
 pub fn spectrum(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize, sample_rate: f64) {
     grid(f, r, s, 10, 6);
-    let mut buf = alloc::vec![0f32; 2048];
+    let mut buf = std::vec![0f32; 2048];
     let n = f.controller.capture(channel, &mut buf).min(2048);
     let size = if n >= 2048 { 2048 } else if n >= 1024 { 1024 } else { return };
     let mut re: Vec<f32> = buf[..size]
@@ -70,7 +69,7 @@ pub fn spectrum(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize, sample_ra
         .enumerate()
         .map(|(i, &v)| v * (0.5 - 0.5 * (core::f32::consts::TAU * i as f32 / size as f32).cos()))
         .collect();
-    let mut im = alloc::vec![0f32; size];
+    let mut im = std::vec![0f32; size];
     fft(&mut re, &mut im);
     let mags: Vec<f64> = (0..size / 2)
         .map(|k| {
