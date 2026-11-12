@@ -27,7 +27,7 @@ pub mod runtime;
 pub mod screens;
 pub mod theme;
 
-pub use part::{leaf, on_page, step_of, step_value, Bind, Control, FaceNode, Focus, Frame, Gesture, Hit, Host, Part};
+pub use part::{leaf, on_page, pages, step_of, step_value, Bind, Control, FaceNode, Focus, Frame, Gesture, Hit, Host, Part};
 pub use parts::*;
 pub use runtime::{Cursor, Face, Mods, Runtime};
 pub use theme::{CapStyle, Finish, Theme, Typography};
@@ -35,7 +35,7 @@ pub use theme::{CapStyle, Finish, Theme, Typography};
 /// Everything a face definition needs in one import.
 pub mod prelude {
     pub use crate::parts::*;
-    pub use crate::{on_page, screens, Bind, Face, FaceNode, Frame, Theme};
+    pub use crate::{on_page, pages, screens, Bind, Face, FaceNode, Frame, Theme};
     pub use stave_ui::layout::Rect;
     pub use stave_ui::scene::{pt, Path, Scene, Stroke};
     pub use stave_ui::style::Color;

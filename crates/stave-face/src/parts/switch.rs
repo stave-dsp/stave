@@ -138,6 +138,10 @@ pub struct Footswitch {
     pub invert: bool,
     /// The nut's radius: 21 for a stomp switch, 14 for a panel button.
     pub radius: f64,
+    /// Held, not latched: 1 while pressed, 0 on release.
+    pub momentary: bool,
+    /// The lamp's colour (the theme's lamp when None).
+    pub color: Option<stave_ui::photo::Rgb>,
 }
 
 impl Footswitch {
@@ -147,6 +151,8 @@ impl Footswitch {
             label: None,
             invert: false,
             radius: 21.0,
+            momentary: false,
+            color: None,
         }
     }
     /// A bypass switch: lit while the effect is engaged.
@@ -156,10 +162,22 @@ impl Footswitch {
             label: Some("BYPASS"),
             invert: true,
             radius: 21.0,
+            momentary: false,
+            color: None,
         }
     }
     pub fn label(mut self, l: &'static str) -> Self {
         self.label = Some(l);
+        self
+    }
+    /// Held, not latched (a FORGET or TAP button).
+    pub fn momentary(mut self) -> Self {
+        self.momentary = true;
+        self
+    }
+    /// The lamp's colour (linear RGB; may exceed 1 for a hot core).
+    pub fn color(mut self, c: stave_ui::photo::Rgb) -> Self {
+        self.color = Some(c);
         self
     }
     /// A smaller switch for a studio panel.
@@ -209,7 +227,7 @@ impl Part for Footswitch {
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let on = (f.value(self.bind) >= 0.5) != self.invert;
         if on {
-            lamp(f, s, self.lamp(r));
+            lamp_in(f, s, self.lamp(r), self.color.unwrap_or(f.theme.lamp));
         }
     }
 
@@ -219,14 +237,22 @@ impl Part for Footswitch {
                 c: self.button(r),
                 r: self.radius + 2.0,
             },
-            gesture: Gesture::Latch { bind: self.bind },
+            gesture: if self.momentary {
+                Gesture::Momentary { bind: self.bind }
+            } else {
+                Gesture::Latch { bind: self.bind }
+            },
         }]
     }
 }
 
 /// Draw a lit LED (theme lamp colour) at `c`.
 pub fn lamp(f: &Frame<'_>, s: &mut Scene, c: Pt) {
-    let col = f.theme.lamp;
+    lamp_in(f, s, c, f.theme.lamp);
+}
+
+/// Draw a lit LED of colour `col` (linear RGB) at `c`.
+pub fn lamp_in(f: &Frame<'_>, s: &mut Scene, c: Pt, col: stave_ui::photo::Rgb) {
     let key = sprite_key(("lamp", col.map(f64::to_bits)));
     f.sprite(s, c, 44.0, key, |scale| {
         material::sprite(44.0, scale, |dx, dy| material::lamp_glow(dx, dy, col, 4.2, scale))
@@ -251,6 +277,8 @@ pub struct Lamp {
     pub label: Option<&'static str>,
     /// A faceted jewel pilot lamp (amps) instead of an LED.
     pub jewel: bool,
+    /// The lamp's colour (the theme's lamp when None).
+    pub color: Option<stave_ui::photo::Rgb>,
 }
 
 const JEWEL_R: f64 = 10.0;
@@ -261,6 +289,7 @@ impl Lamp {
             source: LampSource::Param(b),
             label: None,
             jewel: false,
+            color: None,
         }
     }
     pub fn probe(name: &'static str, threshold: f64) -> Self {
@@ -268,10 +297,16 @@ impl Lamp {
             source: LampSource::Probe(name, threshold),
             label: None,
             jewel: false,
+            color: None,
         }
     }
     pub fn label(mut self, l: &'static str) -> Self {
         self.label = Some(l);
+        self
+    }
+    /// The lamp's colour (linear RGB; may exceed 1 for a hot core).
+    pub fn color(mut self, c: stave_ui::photo::Rgb) -> Self {
+        self.color = Some(c);
         self
     }
     /// A jewel pilot lamp, lit whenever its source is on.
@@ -285,6 +320,7 @@ impl Lamp {
             source: LampSource::Probe("", f64::NEG_INFINITY),
             label: None,
             jewel: true,
+            color: None,
         }
     }
     pub fn node(self) -> FaceNode {
@@ -304,7 +340,7 @@ impl Part for Lamp {
         let scale = cx.scale;
         let c = self.centre(r);
         let below = if self.jewel {
-            let col = th.lamp;
+            let col = self.color.unwrap_or(th.lamp);
             let size = 2.0 * JEWEL_R + 2.0;
             let j = material::sprite(size, scale, |dx, dy| material::jewel(dx, dy, JEWEL_R, col, false, scale));
             cx.image(c.x - size / 2.0, c.y - size / 2.0, size, size, j);
@@ -329,15 +365,15 @@ impl Part for Lamp {
         if !on {
             return;
         }
+        let col = self.color.unwrap_or(f.theme.lamp);
         if self.jewel {
-            let col = f.theme.lamp;
             let size = 2.0 * JEWEL_R * 3.0;
             let key = sprite_key(("jewel", col.map(f64::to_bits)));
             f.sprite(s, self.centre(r), size, key, |scale| {
                 material::sprite(size, scale, |dx, dy| material::jewel(dx, dy, JEWEL_R, col, true, scale))
             });
         } else {
-            lamp(f, s, self.centre(r));
+            lamp_in(f, s, self.centre(r), col);
         }
     }
 

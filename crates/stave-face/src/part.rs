@@ -145,9 +145,16 @@ pub struct Frame<'a> {
     pub sprites: &'a Sprites,
     /// Editor-local page state (see `Pager`).
     pub pages: &'a HashMap<u32, u32>,
+    /// The parameters a display declared it reads (`Display::reads`),
+    /// in order — so a draw fn never hard-codes ids.
+    pub binds: &'a [Bind],
 }
 
 impl Frame<'_> {
+    /// The `i`th declared bind's normalized value (see `binds`).
+    pub fn bound(&self, i: usize) -> f64 {
+        self.binds.get(i).map_or(0.0, |b| self.host.normalized(b.id))
+    }
     /// The page shown for page set `key`.
     pub fn page(&self, key: u32) -> u32 {
         self.pages.get(&key).copied().unwrap_or(0)
@@ -271,6 +278,12 @@ pub trait Part: Send + Sync + 'static {
     fn controls(&self, _r: Rect) -> Vec<Control> {
         Vec::new()
     }
+    /// A grab target placed from LIVE values (a node that moves, a
+    /// handle on a curve): the gesture a press at `p` makes, if any.
+    /// Tried before the fixed `controls`.
+    fn hit(&self, _r: Rect, _f: &Frame<'_>, _p: Pt) -> Option<Gesture> {
+        None
+    }
     /// Probes `paint` reads (so the host can resolve them up front).
     fn probes(&self) -> Vec<&'static str> {
         Vec::new()
@@ -297,4 +310,15 @@ pub fn leaf(part: impl Part, w: f64, h: f64) -> FaceNode {
 /// Show `node` only while page set `key` shows `page` (see `Pager`).
 pub fn on_page(node: FaceNode, key: u32, page: u32) -> FaceNode {
     node.when_key(key, page as u16)
+}
+
+/// The pages of page set `key`, overlaid, each stretched to the size of
+/// the largest (so flipping pages never moves the rest of the face).
+pub fn pages(key: u32, nodes: Vec<FaceNode>) -> FaceNode {
+    let kids = nodes
+        .into_iter()
+        .enumerate()
+        .map(|(i, n)| on_page(n.width(stave_ui::Dim::Fill(1.0)).height(stave_ui::Dim::Fill(1.0)), key, i as u32))
+        .collect();
+    stave_ui::stack(kids)
 }

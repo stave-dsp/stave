@@ -155,12 +155,12 @@ fn content_size<W>(
             // the stack, it does not size it.
             for c in &node.children {
                 let (cw, ch) = outer_size(c, avail, text, m);
-                if !matches!(c.style.width, Dim::Fill(_)) {
-                    w = w.max(cw + c.style.margin.h());
-                }
-                if !matches!(c.style.height, Dim::Fill(_)) {
-                    h = h.max(ch + c.style.margin.v());
-                }
+                // A Fill child counts with its min-content only.
+                let (mw, mh) = outer_size(c, (0.0, 0.0), text, m);
+                let cw = if matches!(c.style.width, Dim::Fill(_)) { mw } else { cw };
+                let ch = if matches!(c.style.height, Dim::Fill(_)) { mh } else { ch };
+                w = w.max(cw + c.style.margin.h());
+                h = h.max(ch + c.style.margin.v());
             }
             (w, h)
         }
@@ -252,7 +252,12 @@ fn flow_lines<W>(
         // A Fill on the cross axis stretches to the line; it never
         // sizes it (a spacer in a row must not make the row tall).
         let cross_dim = if row { c.style.height } else { c.style.width };
-        if !matches!(cross_dim, Dim::Fill(_)) {
+        if matches!(cross_dim, Dim::Fill(_)) {
+            // Counts with its min-content only.
+            let (mw, mh) = outer_size(c, (0.0, 0.0), text, m);
+            let min = if row { mh + c.style.margin.v() } else { mw + c.style.margin.h() };
+            cur.cross = cur.cross.max(min);
+        } else {
             cur.cross = cur.cross.max(ccross);
         }
         cur.idx.push(i);

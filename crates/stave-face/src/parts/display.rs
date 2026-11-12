@@ -84,8 +84,9 @@ impl Part for Display {
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let sc = Self::screen(r);
-        (self.draw)(f, sc, s);
-        glass_over(f, s, sc, RADIUS);
+        let f = Frame { binds: &self.reads, ..*f };
+        (self.draw)(&f, sc, s);
+        glass_over(&f, s, sc, RADIUS);
     }
 
     fn probes(&self) -> Vec<&'static str> {

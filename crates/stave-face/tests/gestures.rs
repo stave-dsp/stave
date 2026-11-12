@@ -144,11 +144,11 @@ fn a_footswitch_latches() {
 #[test]
 fn hover_sets_the_cursor_and_misses_change_nothing() {
     let (mut rt, mut t, k, _, f) = rig();
-    assert!(rt.pointer_move(k));
+    assert!(rt.pointer_move(&t, k));
     assert_eq!(rt.cursor(), stave_face::Cursor::Grab);
-    rt.pointer_move(f);
+    rt.pointer_move(&t, f);
     assert_eq!(rt.cursor(), stave_face::Cursor::Point);
-    rt.pointer_move(pt(-50.0, -50.0));
+    rt.pointer_move(&t, pt(-50.0, -50.0));
     assert_eq!(rt.cursor(), stave_face::Cursor::Arrow);
     assert!(!rt.pointer_down(&mut t, pt(-50.0, -50.0), Mods::default(), 1));
     assert!(t.log.is_empty());

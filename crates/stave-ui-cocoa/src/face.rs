@@ -492,7 +492,7 @@ unsafe extern "C" fn mouse_up(this: Id, _cmd: Sel, event: Id) {
     unsafe {
         with_target(this, |st, host| {
             st.runtime.pointer_up(host);
-            st.runtime.pointer_move(p);
+            st.runtime.pointer_move(&*host, p);
             set_cursor(st.runtime.cursor());
         });
         redraw(this);
@@ -503,8 +503,8 @@ unsafe extern "C" fn mouse_moved(this: Id, _cmd: Sel, event: Id) {
     let p = unsafe { point_in(this, event) };
     let mut changed = false;
     unsafe {
-        with_target(this, |st, _| {
-            changed = st.runtime.pointer_move(p);
+        with_target(this, |st, host| {
+            changed = st.runtime.pointer_move(&*host, p);
             set_cursor(st.runtime.cursor());
         });
         if changed {

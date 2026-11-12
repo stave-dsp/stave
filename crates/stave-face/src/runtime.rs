@@ -66,8 +66,15 @@ struct Ctl {
 }
 
 /// A gesture in flight.
+/// What the pointer is on: a part and the gesture a grab there makes.
+#[derive(Clone, Debug, PartialEq)]
+struct Target {
+    item: usize,
+    gesture: Gesture,
+}
+
 struct Drag {
-    ctl: usize,
+    target: Target,
     from: Pt,
     /// The value(s) at the grab, re-anchored when Shift toggles.
     start: f64,
@@ -83,7 +90,7 @@ pub struct Runtime {
     baked: Option<(u64, Canvas)>,
     sprites: Sprites,
     drag: Option<Drag>,
-    hover: Option<usize>,
+    hover: Option<Target>,
     memo: Vec<u64>,
     pages: HashMap<u32, u32>,
 }
@@ -191,10 +198,9 @@ impl Runtime {
     }
 
     fn focus(&self, item: usize) -> Focus {
-        let owns = |c: Option<usize>| c.is_some_and(|c| self.ctls[c].item == item);
         Focus {
-            hover: owns(self.hover),
-            active: owns(self.drag.as_ref().map(|d| d.ctl)),
+            hover: self.hover.as_ref().is_some_and(|t| t.item == item),
+            active: self.drag.as_ref().is_some_and(|d| d.target.item == item),
         }
     }
 
@@ -250,6 +256,7 @@ impl Runtime {
                 focus: self.focus(i),
                 sprites: &self.sprites,
                 pages: &self.pages,
+                binds: &[],
             };
             it.part.paint(it.rect, &f, &mut scene);
         }
@@ -260,10 +267,10 @@ impl Runtime {
     fn observe(&self, host: &dyn Host, time: f64) -> Vec<u64> {
         let mut v: Vec<u64> = self.binds().iter().map(|b| host.normalized(b.id).to_bits()).collect();
         v.extend(self.probes().iter().map(|p| host.probe(p).to_bits()));
-        v.push(self.hover.map_or(u64::MAX, |h| h as u64));
+        v.push(self.hover.as_ref().map_or(u64::MAX, |t| crate::part::sprite_key((t.item, format!("{:?}", t.gesture)))));
         v.push(self.page_key());
         v.push(host.preset().map_or(u64::MAX, |p| p as u64));
-        v.push(self.drag.as_ref().map_or(u64::MAX, |d| d.ctl as u64));
+        v.push(self.drag.as_ref().map_or(u64::MAX, |d| d.target.item as u64));
         let animating = self.items.iter().enumerate().any(|(i, it)| {
             it.part.animating(&Frame {
                 theme: &self.face.theme,
@@ -273,6 +280,7 @@ impl Runtime {
                 focus: self.focus(i),
                 sprites: &self.sprites,
                 pages: &self.pages,
+                binds: &[],
             })
         });
         if animating {
@@ -287,17 +295,40 @@ impl Runtime {
         self.baked.is_none() || self.observe(host, time) != self.memo
     }
 
-    fn hit(&self, p: Pt) -> Option<usize> {
-        // Topmost first: later parts paint over earlier ones.
+    fn hit(&self, host: &dyn Host, p: Pt) -> Option<Target> {
+        // Parts that place their grab targets from live values first
+        // (topmost first), then the fixed controls.
+        for (i, it) in self.items.iter().enumerate().rev() {
+            if !self.shown(i) {
+                continue;
+            }
+            let f = Frame {
+                theme: &self.face.theme,
+                host,
+                scale: 1.0,
+                time: 0.0,
+                focus: self.focus(i),
+                sprites: &self.sprites,
+                pages: &self.pages,
+                binds: &[],
+            };
+            if let Some(gesture) = it.part.hit(it.rect, &f, p) {
+                return Some(Target { item: i, gesture });
+            }
+        }
         (0..self.ctls.len())
             .rev()
             .find(|&i| self.shown(self.ctls[i].item) && self.ctls[i].control.hit.contains(p))
+            .map(|i| Target {
+                item: self.ctls[i].item,
+                gesture: self.ctls[i].control.gesture.clone(),
+            })
     }
 
     /// The pointer moved with no button down. Returns true if the hover
     /// target changed.
-    pub fn pointer_move(&mut self, p: Pt) -> bool {
-        let h = self.hit(p);
+    pub fn pointer_move(&mut self, host: &dyn Host, p: Pt) -> bool {
+        let h = self.hit(host, p);
         let changed = h != self.hover;
         self.hover = h;
         changed
@@ -314,7 +345,7 @@ impl Runtime {
         if self.drag.is_some() {
             return Cursor::Grabbing;
         }
-        match self.hover.map(|c| &self.ctls[c].control.gesture) {
+        match self.hover.as_ref().map(|t| &t.gesture) {
             Some(Gesture::Rotary { .. } | Gesture::Stepped { .. } | Gesture::Pad { .. }) => Cursor::Grab,
             Some(_) => Cursor::Point,
             None => Cursor::Arrow,
@@ -323,11 +354,11 @@ impl Runtime {
 
     /// Button down at `p`; `clicks` is the click count (2 = double).
     pub fn pointer_down(&mut self, host: &mut dyn Host, p: Pt, mods: Mods, clicks: u32) -> bool {
-        let Some(ci) = self.hit(p) else {
+        let Some(target) = self.hit(&*host, p) else {
             return false;
         };
-        self.hover = Some(ci);
-        let gesture = self.ctls[ci].control.gesture.clone();
+        self.hover = Some(target.clone());
+        let gesture = target.gesture.clone();
         match gesture {
             Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } if clicks >= 2 || mods.reset => {
                 let d = host.default_normalized(bind.id);
@@ -338,7 +369,7 @@ impl Runtime {
             Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } => {
                 host.begin(bind.id);
                 self.drag = Some(Drag {
-                    ctl: ci,
+                    target: target.clone(),
                     from: p,
                     start: host.normalized(bind.id),
                     fine: mods.fine,
@@ -361,7 +392,7 @@ impl Runtime {
                 host.begin(bind.id);
                 host.set(bind.id, 1.0);
                 self.drag = Some(Drag {
-                    ctl: ci,
+                    target: target.clone(),
                     from: p,
                     start: 0.0,
                     fine: false,
@@ -389,7 +420,7 @@ impl Runtime {
                 host.begin(x.id);
                 host.begin(y.id);
                 self.drag = Some(Drag {
-                    ctl: ci,
+                    target: target.clone(),
                     from: p,
                     start: 0.0,
                     fine: mods.fine,
@@ -405,7 +436,7 @@ impl Runtime {
         let Some(d) = self.drag.as_mut() else {
             return;
         };
-        let gesture = self.ctls[d.ctl].control.gesture.clone();
+        let gesture = d.target.gesture.clone();
         match gesture {
             Gesture::Rotary { bind, travel } => {
                 if mods.fine != d.fine {
@@ -442,7 +473,7 @@ impl Runtime {
         let Some(d) = self.drag.take() else {
             return;
         };
-        match self.ctls[d.ctl].control.gesture.clone() {
+        match d.target.gesture.clone() {
             Gesture::Rotary { bind, .. } => host.end(bind.id),
             Gesture::Stepped { bind, .. } => {
                 if !d.moved {
@@ -470,10 +501,10 @@ impl Runtime {
         if self.drag.is_some() {
             return;
         }
-        let Some(ci) = self.hit(p) else {
+        let Some(target) = self.hit(&*host, p) else {
             return;
         };
-        match self.ctls[ci].control.gesture.clone() {
+        match target.gesture {
             Gesture::Rotary { bind, .. } => {
                 let k = if mods.fine { 0.002 } else { 0.01 };
                 let v = (host.normalized(bind.id) + dy * k).clamp(0.0, 1.0);
