@@ -339,6 +339,16 @@ fn fmt_us(us: u32) -> String {
     }
 }
 
+/// pprof samples with signals: unix only.
+#[cfg(not(unix))]
+fn spawn_capture(state: &mut PerfState, log: Arc<DebugLog>) {
+    log.error("flamegraph: sampling needs a unix (pprof)".to_string());
+    if let Ok(mut g) = state.status.lock() {
+        *g = "flamegraph capture is unix-only".to_string();
+    }
+}
+
+#[cfg(unix)]
 fn spawn_capture(state: &mut PerfState, log: Arc<DebugLog>) {
     state.busy.store(true, Ordering::Relaxed);
     let status = state.status.clone();

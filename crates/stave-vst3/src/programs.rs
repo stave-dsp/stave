@@ -42,7 +42,6 @@ impl Programs {
         self.exposed().then_some(PROGRAM_LIST_ID)
     }
 
-    #[cfg(target_os = "macos")]
     /// The list, shared (every face holds the same one).
     pub fn presets(&self) -> &Arc<[Preset]> {
         &self.presets

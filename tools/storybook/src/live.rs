@@ -2,14 +2,28 @@
 //! the stand-in controller. Everything drags; ←/→ step through the
 //! stories (when no control has the keyboard); Esc or ⌘Q quits.
 
-use stave_ui_cocoa::FaceView;
+#[cfg(target_os = "macos")]
+mod shell {
+    pub use stave_ui_cocoa::{run_app, FaceView};
+    // macOS virtual key codes.
+    pub const ESCAPE: u16 = 53;
+    pub const LEFT: u16 = 123;
+    pub const RIGHT: u16 = 124;
+}
+#[cfg(windows)]
+mod shell {
+    pub use stave_ui_win32::keys::{ESCAPE, LEFT, RIGHT};
+    pub use stave_ui_win32::{run_app, FaceView};
+}
+#[cfg(all(unix, not(target_os = "macos")))]
+mod shell {
+    pub use stave_ui_x11::keys::{ESCAPE, LEFT, RIGHT};
+    pub use stave_ui_x11::{run_app, FaceView};
+}
 
+use shell::{FaceView, ESCAPE, LEFT, RIGHT};
 use stave_storybook::controller::StoryController;
 use stave_storybook::stories;
-
-const ESCAPE: u16 = 53;
-const LEFT: u16 = 123;
-const RIGHT: u16 = 124;
 
 pub fn run() {
     let controller = StoryController::new();
@@ -26,5 +40,5 @@ pub fn run() {
         }
         Some(stories::all(&params).swap_remove(at).1)
     });
-    stave_ui_cocoa::run_app("stave storybook  (←/→ story)", view);
+    shell::run_app("stave storybook  (←/→ story)", view);
 }

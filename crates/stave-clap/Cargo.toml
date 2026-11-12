@@ -14,8 +14,13 @@ stave-clap-sys.workspace = true
 stave-face.workspace = true
 
 # Faces show in an NSView; elsewhere a plugin has no GUI (yet).
+# The face's platform shell.
 [target.'cfg(target_os = "macos")'.dependencies]
 stave-ui-cocoa.workspace = true
+[target.'cfg(windows)'.dependencies]
+stave-ui-win32.workspace = true
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+stave-ui-x11.workspace = true
 
 [lints]
 workspace = true

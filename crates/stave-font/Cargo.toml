@@ -1,0 +1,18 @@
+[package]
+name = "stave-font"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Portable text for stave's software renderer: embedded open-licence fonts, outlines filled by stave-raster."
+# The embedded fonts are IBM Plex (SIL Open Font License 1.1, fonts/OFL.txt).
+include = ["src/**", "fonts/**", "Cargo.toml"]
+
+[dependencies]
+stave-ui.workspace = true
+stave-raster.workspace = true
+skrifa = { version = "0.40", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true
