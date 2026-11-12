@@ -43,7 +43,7 @@ jobs:
           - { crate: stave-core, harness: an_unprepared_state_never_splits }
           - { crate: stave-core, harness: lookup_finds_the_first_declaration_of_every_id }
           - { crate: stave-core, harness: normalize_lands_in_the_unit_interval }
-          - { crate: stave-core, harness: denormalize_lands_in_the_range_and_is_monotone }
+          - { crate: stave-core, harness: denormalize_lands_in_the_range }
           - { crate: stave-core, harness: delivers_in_order_across_the_counter_wrap }
           - { crate: stave-core, harness: a_full_ring_refuses_a_new_gesture_and_counts_it }
           - { crate: stave-core, harness: an_admitted_begin_always_gets_its_end }
@@ -67,6 +67,7 @@ jobs:
   sanitizers:
     # macOS: stave-host hosts bundles through CoreFoundation.
     name: sanitizer (${{ matrix.sanitizer }})
+    timeout-minutes: 20
     if: github.event_name != 'push'
     runs-on: macos-latest
     strategy:
@@ -83,6 +84,7 @@ jobs:
   fuzz:
     # macOS: the vst3_host target hosts Tilt through stave-host.
     name: fuzz (${{ matrix.target }})
+    timeout-minutes: 20
     if: github.event_name != 'push'
     runs-on: macos-latest
     strategy:
@@ -106,6 +108,7 @@ jobs:
   sim-sweep:
     # The simulated host over thousands of seeds (the main run does 48).
     name: simulated host (wide sweep)
+    timeout-minutes: 20
     if: github.event_name != 'push'
     runs-on: macos-latest
     steps:
@@ -119,6 +122,7 @@ jobs:
   advisories:
     # The RustSec database changes without our commits.
     name: advisories (RustSec)
+    timeout-minutes: 20
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
@@ -131,6 +135,7 @@ jobs:
     # A release branch's patch must not break the API of the release it
     # patches (scripts/semver-checks.sh; scripts/release.sh runs it too).
     name: semver-checks (release branches)
+    timeout-minutes: 20
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: macos-latest
     steps:

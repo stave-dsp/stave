@@ -251,11 +251,14 @@ mod proofs {
     }
 
     /// A full ring refuses a new gesture, counts it, and keeps the oldest
-    /// event at the head — at any counter position.
+    /// event at the head — at counter positions up to and across the
+    /// `u32` wrap (a fully symbolic start blows the solver up on the
+    /// 64-slot arrays; the FIFO harness covers every start).
     #[kani::proof]
+    #[kani::unwind(10)]
     fn a_full_ring_refuses_a_new_gesture_and_counts_it() {
         let q = GestureQueue::new();
-        let start: u32 = kani::any();
+        let start: u32 = u32::MAX - u32::from(kani::any::<u8>());
         q.head.store(start, Ordering::Relaxed);
         q.tail.store(start.wrapping_add(GESTURE_CAP as u32), Ordering::Relaxed);
         let slot = start as usize % GESTURE_CAP;

@@ -124,6 +124,20 @@ impl Unit {
             let _ = out.write_str("?");
             return out;
         }
+        // A number of 1e15 or more is far outside any sane range and too
+        // long for fixed notation: scientific, unit kept, still
+        // parseable. Judged on the fixed text as it would read back (as
+        // the unit switches are), so what it parses to formats the same
+        // way (found by the `param_text` fuzz target).
+        let (shown_value, sep) = match self {
+            Unit::Percent => (plain * 100.0, ""),
+            Unit::Ratio => (plain, ""),
+            _ => (plain, if self.label().is_empty() { "" } else { " " }),
+        };
+        let huge = |v: f64| match self {
+            Unit::Percent => (v * 100.0).abs() >= 1e15,
+            _ => v.abs() >= 1e15,
+        };
         let written = match self {
             Unit::Plain { decimals } => {
                 write!(out, "{:.*}", *decimals as usize, plain)
@@ -158,17 +172,9 @@ impl Unit {
                 write!(out, "{:.*} {label}", *decimals as usize, plain)
             }
         };
-        if written.is_err() {
-            // Too long for the fixed text (a value far outside any sane
-            // range): scientific notation, unit kept, still parseable.
-            // Found by the `param_text` fuzz target.
+        if written.is_err() || self.parse(&out).is_some_and(huge) {
             out = ValueText::new();
-            let (value, sep) = match self {
-                Unit::Percent => (plain * 100.0, ""),
-                Unit::Ratio => (plain, ""),
-                _ => (plain, if self.label().is_empty() { "" } else { " " }),
-            };
-            let _ = write!(out, "{value:.3e}{sep}{}", self.label());
+            let _ = write!(out, "{shown_value:.3e}{sep}{}", self.label());
         }
         out
     }
@@ -284,7 +290,7 @@ mod tests {
     #[test]
     fn an_overlong_value_keeps_its_unit_in_scientific_notation() {
         for unit in [Unit::Ms, Unit::Hz, Unit::Db, Unit::Percent, Unit::Ratio, Unit::Plain { decimals: 6 }] {
-            for v in [9.111_888_119_111_9e31, -3.0e300, 1.0e40] {
+            for v in [9.111_888_119_111_9e31, -3.0e300, 1.0e40, 1.000_000_000_084_669_2e28, 1e15, -1e15] {
                 let shown = unit.format(v);
                 let back = unit.parse(&shown).unwrap_or_else(|| panic!("{unit:?} {shown:?}"));
                 assert_eq!(&*unit.format(back), &*shown, "{unit:?}");
