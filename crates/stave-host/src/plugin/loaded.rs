@@ -24,7 +24,7 @@ use super::telemetry::TelemetryRef;
 use super::trace::LoadTrace;
 use super::transport::Transport;
 use crate::control::{Control, ControlError};
-use crate::instance::{Instance, Layout, PluginMessage, Probe, StateError, Tail};
+use crate::instance::{Instance, Layout, PluginMessage, TapReading, StateError, Tail};
 use crate::note::NoteEvent;
 
 /// How the plugin's parameters are reached.
@@ -334,8 +334,8 @@ impl Instance for LoadedPlugin {
         Ok(())
     }
 
-    fn probes(&self) -> Vec<Probe> {
-        self.telemetry().map(TelemetryRef::probes).unwrap_or_default()
+    fn taps(&self) -> Vec<TapReading> {
+        self.telemetry().map(TelemetryRef::taps).unwrap_or_default()
     }
 
     fn messages(&self, from: u64) -> Vec<PluginMessage> {

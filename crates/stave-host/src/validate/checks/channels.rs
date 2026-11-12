@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::level::{db, rms};
 use stave_measure::signal::{db_to_amp, Mono, Signal};
@@ -10,7 +10,7 @@ use stave_measure::stereo::StereoAnalysis;
 /// every channel, unless the processor means to differ (a widener, a
 /// ping-pong delay); a difference is reported as `info` with the image.
 #[derive(Copy, Clone, Debug)]
-pub struct ChannelsPolicy {
+pub struct ChannelsConfig {
     pub render_seconds: f64,
     /// How long channels run apart after the split.
     pub split_seconds: f64,
@@ -23,7 +23,7 @@ pub struct ChannelsPolicy {
     pub max_split_difference_db: f64,
 }
 
-impl Default for ChannelsPolicy {
+impl Default for ChannelsConfig {
     fn default() -> Self {
         Self {
             render_seconds: 0.5,
@@ -54,7 +54,7 @@ impl<S: Signal> Signal for Split<S> {
 }
 
 pub fn channels_linked(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.channels);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.channels);
     let mut inst = ctx.fresh()?;
     if inst.layout().outputs < 2 {
         return Ok(Outcome::not_applicable("fewer than two outputs"));
@@ -62,7 +62,7 @@ pub fn channels_linked(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let (signal, notes) = excitation.for_instance(inst.as_ref());
     let mono = Mono(signal);
     let mut d = Driver::new(inst.as_mut());
-    let n = d.frames_for(policy.render_seconds);
+    let n = d.frames_for(config.render_seconds);
     let cap = d.capture(n, &mono, &notes);
     let first = cap.channel(0);
     let differing: Vec<usize> = (1..cap.channels.len())
@@ -94,7 +94,7 @@ pub fn channels_linked(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
 /// a processor that runs one lane for both while the inputs match, and
 /// starts the second only when they diverge, wakes it from rest.
 pub fn channels_split(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.channels);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.channels);
     let mut inst = ctx.fresh()?;
     let layout = inst.layout();
     if layout.inputs < 2 || layout.outputs < 2 {
@@ -104,8 +104,8 @@ pub fn channels_split(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let mut d = Driver::new(inst.as_mut());
     let split = Split {
         signal,
-        at: d.frames_for(policy.render_seconds),
-        difference: db_to_amp(policy.split_difference_db) as f32,
+        at: d.frames_for(config.render_seconds),
+        difference: db_to_amp(config.split_difference_db) as f32,
     };
     let before = d.capture(split.at, &split, &notes);
     if before.channel(0) != before.channel(1) {
@@ -113,12 +113,12 @@ pub fn channels_split(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
             "channels differ on identical input",
         ));
     }
-    let after = d.capture(d.frames_for(policy.split_seconds), &split, &notes);
+    let after = d.capture(d.frames_for(config.split_seconds), &split, &notes);
     let (left, right) = (after.channel(0), after.channel(1));
     let difference: Vec<f32> = left.iter().zip(right).map(|(l, r)| r - l).collect();
     let difference_db = db(rms(&difference)) - db(rms(left));
     let details = json!({ "split_difference_db": difference_db });
-    Ok(if difference_db > policy.max_split_difference_db {
+    Ok(if difference_db > config.max_split_difference_db {
         Outcome::fail(details)
     } else {
         Outcome::pass(details)

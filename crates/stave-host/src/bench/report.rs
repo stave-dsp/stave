@@ -1,7 +1,7 @@
 //! What a bench run reports. Every field is measured, never inferred;
 //! `phases` and `warnings` say how the numbers were obtained.
 
-use crate::instance::Probe;
+use crate::instance::TapReading;
 use stave_measure::latency::ImpulseLatency;
 use stave_measure::loudness::Reading;
 use stave_measure::stats::Summary;
@@ -19,9 +19,9 @@ pub struct BenchReport {
     pub cpu: Option<CpuReport>,
     pub latency: LatencyReport,
     pub output: OutputReport,
-    /// The plugin's own probes, read right after the timed run (so
+    /// The plugin's own taps, read right after the timed run (so
     /// they describe it, not a later pass).
-    pub probes: Vec<Probe>,
+    pub taps: Vec<TapReading>,
     pub phases: Vec<PhaseTiming>,
     pub warnings: Vec<String>,
 }

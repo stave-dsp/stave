@@ -459,7 +459,7 @@ mod tests {
     use super::*;
     use crate::circuit::topologies::triode_stage::Bias;
 
-    fn render(pp: &mut PushPull, amp: f64, n: usize) -> Vec<f32> {
+    fn run(pp: &mut PushPull, amp: f64, n: usize) -> Vec<f32> {
         let fs = 48_000.0f64;
         (0..n)
             .map(|i| {
@@ -489,7 +489,7 @@ mod tests {
         pp.prepare(48_000.0);
         pp.set_class_ab(2.0);
         pp.set_drive_db(12.0);
-        let out = render(&mut pp, 0.5, 16_384);
+        let out = run(&mut pp, 0.5, 16_384);
         let h2 = goertzel(&out[8_192..], 440.0, 48_000.0);
         let h3 = goertzel(&out[8_192..], 660.0, 48_000.0);
         // 0.25: the tabulation floor — the crossover (sharpest
@@ -505,7 +505,7 @@ mod tests {
         pp2.set_class_ab(2.0);
         pp2.set_drive_db(12.0);
         pp2.set_imbalance(0.12);
-        let out2 = render(&mut pp2, 0.5, 16_384);
+        let out2 = run(&mut pp2, 0.5, 16_384);
         let h2b = goertzel(&out2[8_192..], 440.0, 48_000.0);
         assert!(
             h2b > h2 * 3.0,
@@ -553,7 +553,7 @@ mod tests {
             // Land the fundamental near -14 dBFS either way (fair
             // fight: same OUTPUT level, not same input).
             let amp = 10f64.powf((-14.0 - f64::from(pp.small_signal_gain_db())) / 20.0);
-            let out = render(&mut pp, amp, 16_384);
+            let out = run(&mut pp, amp, 16_384);
             let h1 = goertzel(&out[8_192..], 220.0, 48_000.0);
             let h3 = goertzel(&out[8_192..], 660.0, 48_000.0);
             h3 / h1.max(1e-12)
@@ -571,7 +571,7 @@ mod tests {
         pp.set_drive_db(12.0);
         pp.set_feedback_db(10.0);
         let reported = f64::from(pp.small_signal_gain_db());
-        let out = render(&mut pp, 0.0005, 16_384);
+        let out = run(&mut pp, 0.0005, 16_384);
         let g = goertzel(&out[8_192..], 220.0, 48_000.0) / 0.0005;
         let measured = 20.0 * g.max(1e-12).log10();
         assert!(
@@ -594,7 +594,7 @@ mod tests {
                 pp.set_drive_db(12.0);
                 pp.set_feedback_db(fb);
                 let amp = 10f64.powf((out_db - f64::from(pp.small_signal_gain_db())) / 20.0);
-                let out = render(&mut pp, amp, 16_384);
+                let out = run(&mut pp, amp, 16_384);
                 let h1 = goertzel(&out[8_192..], 220.0, 48_000.0);
                 20.0 * (h1 / amp).max(1e-12).log10()
             };
@@ -632,7 +632,7 @@ mod tests {
             pp.tick(0.0);
         }
         assert!(pp.cathode_shift().abs() < 0.01, "moved on silence");
-        render(&mut pp, 0.6, 24_000);
+        run(&mut pp, 0.6, 24_000);
         let slammed = pp.cathode_shift();
         assert!(
             slammed > 1.0,
@@ -648,7 +648,7 @@ mod tests {
         );
         let mut fixed = PushPull::new();
         fixed.prepare(48_000.0);
-        render(&mut fixed, 0.6, 24_000);
+        run(&mut fixed, 0.6, 24_000);
         assert_eq!(fixed.cathode_shift(), 0.0);
     }
 
@@ -668,7 +668,7 @@ mod tests {
             if cathode {
                 self_biased(&mut pp, 30.0);
             }
-            let out = render(&mut pp, 0.8, 48_000);
+            let out = run(&mut pp, 0.8, 48_000);
             let tail = &out[32_768..];
             let h1 = goertzel(tail, 220.0, 48_000.0);
             (h1, goertzel(tail, 660.0, 48_000.0) / h1)
@@ -701,7 +701,7 @@ mod tests {
         pp.set_class_ab(1.0);
         pp.set_drive_db(6.0);
         let reported = f64::from(pp.small_signal_gain_db());
-        let out = render(&mut pp, 0.0005, 16_384);
+        let out = run(&mut pp, 0.0005, 16_384);
         let g = goertzel(&out[8_192..], 220.0, 48_000.0) / 0.0005;
         let measured = 20.0 * g.max(1e-12).log10();
         assert!(
@@ -713,7 +713,7 @@ mod tests {
         pp2.prepare(48_000.0);
         pp2.set_class_ab(1.0);
         pp2.set_drive_db(24.0);
-        let out2 = render(&mut pp2, 1.0, 16_384);
+        let out2 = run(&mut pp2, 1.0, 16_384);
         let pk = out2[8_192..].iter().fold(0.0f32, |a, x| a.max(x.abs()));
         assert!(
             (20.0 * f64::from(pk).log10() - f64::from(pp2.ceiling_db())).abs() < 1.5,

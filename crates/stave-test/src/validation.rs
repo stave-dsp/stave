@@ -3,7 +3,7 @@
 //! too.
 
 use stave_host::config::HostConfig;
-use stave_host::loaded::LoadError;
+use stave_host::opened::OpenError;
 use stave_host::plugin::{EntryPoints, LoadedPlugin};
 use stave_host::validate::{Status, Suite};
 
@@ -13,7 +13,7 @@ pub fn assert_passes(entry: EntryPoints) {
     let mut fresh = || {
         LoadedPlugin::from_entry_points(entry, HostConfig::default())
             .map(|p| Box::new(p) as _)
-            .map_err(LoadError::Linked)
+            .map_err(OpenError::Linked)
     };
     let report = Suite::default().run(&mut fresh, |_| {});
     let failures: Vec<String> = report

@@ -211,7 +211,7 @@ impl fmt::Display for Stimulus {
     }
 }
 
-/// A stimulus ready to render.
+/// A stimulus ready to run.
 pub struct Built {
     pub signal: Box<dyn Signal>,
     /// The exact tone fed in, when the stimulus is a sine.

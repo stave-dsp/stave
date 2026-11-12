@@ -3,7 +3,7 @@
 //! alias rejection versus a Butterworth IIR oversampler.
 
 use stave_dsp::{Biquad, FilterSpec, Oversampled2x, Stage};
-use stave_measure::tone_test::ToneTest;
+use stave_measure::tone_window::ToneWindow;
 
 /// The interior that passes its input through.
 struct Identity;
@@ -72,7 +72,7 @@ fn fir_round_trip_flat_to_20k_at_44k1_and_48k() {
         for &m in &bins {
             let mut os = Oversampled2x::front(Identity);
             os.prepare(fs as f32);
-            let g = ToneTest {
+            let g = ToneWindow {
                 bin: m,
                 window: n,
                 sample_rate: fs,
@@ -106,7 +106,7 @@ fn nested_4x_is_transparent_with_exact_integer_latency() {
     let stack = || Oversampled2x::front(Oversampled2x::nested(Identity));
     let mut os = stack();
     os.prepare(fs as f32);
-    let r = ToneTest {
+    let r = ToneWindow {
         bin: m,
         window: n,
         sample_rate: fs,

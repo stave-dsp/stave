@@ -1,5 +1,5 @@
 //! A waveform from an external simulator (ngspice's `wrdata`: time and
-//! value columns, parsed from text the caller read), and how far a render
+//! value columns, parsed from text the caller read), and how far a run
 //! differs from it.
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,14 +45,14 @@ impl Waveform {
         Ok(waveform)
     }
 
-    /// How far `render`, sampled at this waveform's times, differs from it.
-    pub fn difference(&self, render: &[f64]) -> Difference {
-        let points = render.len().min(self.value.len());
+    /// How far `run`, sampled at this waveform's times, differs from it.
+    pub fn difference(&self, run: &[f64]) -> Difference {
+        let points = run.len().min(self.value.len());
         let (mut error, mut power, mut largest) = (0.0, 0.0, 0.0f64);
-        for (rendered, expected) in render[..points].iter().zip(&self.value[..points]) {
-            error += (rendered - expected).powi(2);
+        for (processed, expected) in run[..points].iter().zip(&self.value[..points]) {
+            error += (processed - expected).powi(2);
             power += expected * expected;
-            largest = largest.max((rendered - expected).abs());
+            largest = largest.max((processed - expected).abs());
         }
         Difference {
             normalized_rms: if power > 0.0 {

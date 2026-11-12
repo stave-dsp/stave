@@ -7,10 +7,10 @@
 //! instance   the Instance trait: the seam everything measures through
 //! adapt      Instance ↔ System, and any stave-dsp Stage as an Instance
 //! control    one parameter model (Control), lookup by name
-//! modules    stave-dsp modules by name, loadable like plugins
+//! stages     stave-dsp stages by name, loadable like plugins
 //! note       note events and schedules
-//! render     Driver: run an Instance from a Signal + notes
-//! loaded     what a tool opens: a bundle or module:<name>
+//! drive      Driver: run an Instance from a Signal + notes
+//! opened     what a tool opens: a bundle or stage:<name>
 //! response   frequency response by log sweep (H1)
 //! bench/     the bench: phases, reports, the describe dump
 //! validate/  the validation suite: one file per check
@@ -22,11 +22,11 @@ pub mod bench;
 pub mod config;
 pub mod control;
 pub mod instance;
-pub mod loaded;
-pub mod modules;
+pub mod opened;
+pub mod stages;
 pub mod note;
 pub mod plugin;
-pub mod render;
+pub mod drive;
 pub mod response;
 pub mod validate;
 pub mod wav;

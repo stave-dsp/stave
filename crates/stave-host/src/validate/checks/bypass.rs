@@ -1,17 +1,17 @@
 use serde_json::json;
 
 use crate::control::Control;
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::compare::null_test;
 
 #[derive(Copy, Clone, Debug)]
-pub struct BypassPolicy {
+pub struct BypassConfig {
     pub crossfade_settle_seconds: f64,
     pub capture_seconds: f64,
 }
 
-impl Default for BypassPolicy {
+impl Default for BypassConfig {
     fn default() -> Self {
         Self {
             crossfade_settle_seconds: 0.3,
@@ -21,7 +21,7 @@ impl Default for BypassPolicy {
 }
 
 pub fn bypass_honest(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.bypass);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.bypass);
     let mut inst = ctx.fresh()?;
     let controls = inst.controls();
     let Some(bypass) = find_bypass(&controls) else {
@@ -33,12 +33,12 @@ pub fn bypass_honest(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let latency = inst.latency() as u64;
     let mut d = Driver::new(inst.as_mut());
     d.skip(
-        d.frames_for(policy.crossfade_settle_seconds),
+        d.frames_for(config.crossfade_settle_seconds),
         signal.as_ref(),
         &notes,
     );
     let cap = d.capture(
-        d.frames_for(policy.capture_seconds),
+        d.frames_for(config.capture_seconds),
         signal.as_ref(),
         &notes,
     );

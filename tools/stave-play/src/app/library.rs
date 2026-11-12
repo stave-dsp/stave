@@ -30,16 +30,16 @@ pub fn is_vst3(p: &Path) -> bool {
     p.extension().is_some_and(|e| e == "vst3")
 }
 
-/// Every catalog module, as the `module:<name>` path that opens it.
-pub fn modules() -> impl Iterator<Item = PathBuf> {
-    stave_host::modules::CATALOG
+/// Every catalog stage, as the `stage:<name>` path that opens it.
+pub fn stages() -> impl Iterator<Item = PathBuf> {
+    stave_host::stages::CATALOG
         .iter()
-        .map(|m| PathBuf::from(format!("{}{}", stave_host::modules::PREFIX, m.name)))
+        .map(|m| PathBuf::from(format!("{}{}", stave_host::stages::PREFIX, m.name)))
 }
 
-/// "Foo" for ".../Foo.vst3"; the whole `module:<name>` for a module.
+/// "Foo" for ".../Foo.vst3"; the whole `stage:<name>` for a catalog stage.
 pub fn display_name(p: &Path) -> String {
-    if stave_host::loaded::module_name(p).is_some() {
+    if stave_host::opened::stage_name(p).is_some() {
         return p.display().to_string();
     }
     p.file_stem()
@@ -74,8 +74,8 @@ mod tests {
     }
 
     #[test]
-    fn modules_are_listed_by_their_full_name() {
-        let first = modules().next().unwrap();
-        assert_eq!(display_name(&first), "module:filter/peak");
+    fn stages_are_listed_by_their_full_name() {
+        let first = stages().next().unwrap();
+        assert_eq!(display_name(&first), "stage:filter/peak");
     }
 }

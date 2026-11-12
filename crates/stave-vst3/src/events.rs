@@ -10,7 +10,7 @@ use crate::host::{EventList, ParamChanges};
 use crate::sys::*;
 
 /// Every input param queue into `dst`, the block's timeline that
-/// processor-owned controls render sample-accurately; the LAST point
+/// processor-owned controls run sample-accurately; the LAST point
 /// becomes the table's target. Normalized on the wire (VST3), plain in
 /// the store. Returns (written into `dst`, dropped for want of room).
 pub(crate) fn drain_param_changes(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render every netlist in crates/stave-test/spice/ through ngspice into a
+"""Run every netlist in crates/stave-test/spice/ through ngspice into a
 waveform next to it (<name>.ngspice.txt: time and value columns at 48 kHz).
 
 Drives the shared library (brew install libngspice: a prebuilt bottle with

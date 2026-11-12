@@ -13,11 +13,11 @@ from Rust directly.
 plugin/    VST3 hosting → LoadedPlugin (an Instance), over stave-vst3-sys
 instance   the Instance trait — the seam everything measures through
 control    one parameter model (Control), lookup by name
-modules/   stave-dsp modules by name: the model, the static catalog,
-           ModuleInstance
-loaded     what a tool opens: a bundle or module:<name>
+stages/    stave-dsp stages by name: the model, the static catalog,
+           StageInstance
+opened     what a tool opens: a bundle or stage:<name>
 note       note events + schedules
-render     Driver: run an Instance from a Signal + notes, block by block
+drive      Driver: run an Instance from a Signal + notes, block by block
 response   frequency response by log sweep
 bench/     the bench: phases, typed reports, the describe dump, text output
 validate/  the validation suite: one file per check
@@ -88,7 +88,7 @@ cargo run --release -p stave-play -- <bundle.vst3>
 ## stave-bench (headless, the agent API)
 
 ```
-stave-bench <bundle.vst3 | module:NAME> [--rate 48000] [--block 256] [--seconds 3]
+stave-bench <bundle.vst3 | stage:NAME> [--rate 48000] [--block 256] [--seconds 3]
             [--signal sine[:FREQ[:DBFS]] | impulse | silence | noise[:DBFS]
                       | sweep[:F0:F1[:DBFS]] | wav:PATH]
             [--set name=value ...] [--preset NAME] [--notes P@ON:OFF[:V],...]
@@ -96,8 +96,8 @@ stave-bench <bundle.vst3 | module:NAME> [--rate 48000] [--block 256] [--seconds 
             [--response-levels -36,-24,-12,-6,0] [--json]
 ```
 
-`module:NAME` runs a stave-dsp module from `stave_host::modules::CATALOG`
-(e.g. `module:filter/peak`); its settings are controls, so `--set`,
+`stage:NAME` runs a stave-dsp stage from `stave_host::stages::CATALOG`
+(e.g. `stage:filter/peak`); its settings are controls, so `--set`,
 `--list` and `--validate` work as they do for a plugin.
 
 Malformed arguments are errors that name the flag (exit 2). stdout
@@ -107,7 +107,7 @@ version) is redirected to stderr.
 - `--describe` → JSON: identity (class, vendor, version, SDK,
   controller kind), the load trace, layout, latency, tail, every
   control (name/value/min/max/default/unit/group/steps + names/flags),
-  presets, probes, host counters. **Agents start here** — control
+  presets, taps, host counters. **Agents start here** — control
   names are what `--set` takes. `--list` is the same as text.
 - default run (`--json` for JSON) → phases `latency`, `timed`,
   `silence`, each with frames and wall time:
@@ -117,7 +117,7 @@ version) is redirected to stderr.
   * output: peak/RMS per channel, non-finite sample count, silence
     residual per channel, and for a sine a coherent Goertzel report
     per channel (gain, THD, THD+N, every harmonic in dBc);
-  * probes, read right after the timed run (so they describe it).
+  * taps, read right after the timed run (so they describe it).
 - `--set` / `--preset` → any control state (plain units). `--notes`
   sends sample-accurate note events; instruments are driven by notes
   (the impulse-latency phase is skipped — no input to put it in).
@@ -127,7 +127,7 @@ version) is redirected to stderr.
   * `reproducible` — two instances, identical input, bit-compared;
   * `no_nan_inf` — full output scan;
   * `param_sweep` — every sweepable control to min and max while
-    rendering (NaN/∞, peaks past +24 dBFS). Nothing to sweep is
+    processing (NaN/∞, peaks past +24 dBFS). Nothing to sweep is
     `info`, never a vacuous pass;
   * `silence_tail` — after a burst (an instrument's notes end), quiet
     below −60 dBFS within reported tail + latency + 2 s (`info` if not);
@@ -150,7 +150,7 @@ stave-bench build/StaveEddy.vst3 --describe | jq '.controls[].name'
 # Why won't it load?
 STAVE_HOST_TRACE=1 stave-bench Some.vst3 --list
 
-# Render a config and listen/diff
+# Run a config and listen/diff
 stave-bench build/StaveEddy.vst3 --seconds 4 \
   --set heat=0.9 --set feedback=0.8 --out /tmp/take.wav
 

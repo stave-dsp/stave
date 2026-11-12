@@ -631,7 +631,7 @@ static MS_VTBL: IBStreamVtbl = IBStreamVtbl {
 };
 
 /// Session save → fresh instance → load → bit-exact
-/// params AND bit-exact render, through the real get/setState ABI.
+/// params AND bit-exact run, through the real get/setState ABI.
 #[test]
 fn state_round_trip_is_bit_exact() {
     unsafe {
@@ -672,9 +672,9 @@ fn state_round_trip_is_bit_exact() {
             (cb.get_param_normalized)(b.controller, ID_DRIVE).to_bits()
         );
 
-        // Render null: both instances produce identical output.
+        // Run null: both instances produce identical output.
         let sig = test_signal(FRAMES, 3);
-        let render = |inst: &HostInstance| -> Vec<f32> {
+        let run = |inst: &HostInstance| -> Vec<f32> {
             let mut in_l = sig.clone();
             let mut in_r = sig.clone();
             let mut out_l = vec![0.0f32; FRAMES];
@@ -684,8 +684,8 @@ fn state_round_trip_is_bit_exact() {
             inst.process_block(&mut ins, &mut outs, FRAMES);
             out_l
         };
-        let out_a = render(&a);
-        let out_b = render(&b);
+        let out_a = run(&a);
+        let out_b = run(&b);
         for (i, (x, y)) in out_a.iter().zip(&out_b).enumerate() {
             assert_eq!(
                 x.to_bits(),

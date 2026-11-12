@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use stave::prelude::*;
 use stave_host::instance::Instance;
 use stave_host::note::NoteSchedule;
-use stave_host::render::Driver;
+use stave_host::drive::Driver;
 use stave_measure::signal::Impulse;
 use stave_test::{checks, PluginHarness};
 

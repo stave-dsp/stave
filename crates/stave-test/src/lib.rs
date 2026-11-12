@@ -39,5 +39,5 @@ pub use stave as __stave;
 pub use stave_host as __host;
 pub use harness::{change, HarnessBuilder, PluginHarness};
 pub use stability::{
-    assert_no_pump, energy_trend, resonant_tone, StabilityPolicy, StabilityReport,
+    assert_no_pump, energy_trend, resonant_tone, StabilityConfig, StabilityReport,
 };

@@ -1,4 +1,4 @@
-//! Debugger view. Renders live taps (and tooling probes), breakpoint
+//! Debugger view. Draws live taps (and tooling probes), breakpoint
 //! controls, the plugin's last captured output block, and a pause/resume
 //! control that flips telemetry's `paused` flag (the wrapper mutes audio
 //! while paused, but the plugin keeps running so its internal state stays

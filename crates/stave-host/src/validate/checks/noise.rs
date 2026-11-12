@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::note::NoteSchedule;
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::level::{db, Meter};
 use stave_measure::signal::Silence;
@@ -10,13 +10,13 @@ use stave_measure::signal::Silence;
 /// must stay below `max_dbfs`. A higher floor is hiss, hum, a DC offset
 /// or a denormal storm.
 #[derive(Copy, Clone, Debug)]
-pub struct NoisePolicy {
+pub struct NoiseConfig {
     pub settle_seconds: f64,
     pub listen_seconds: f64,
     pub max_dbfs: f64,
 }
 
-impl Default for NoisePolicy {
+impl Default for NoiseConfig {
     fn default() -> Self {
         Self {
             settle_seconds: 0.1,
@@ -27,17 +27,17 @@ impl Default for NoisePolicy {
 }
 
 pub fn self_noise(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let policy = ctx.policy.noise;
+    let config = ctx.config.noise;
     let mut inst = ctx.fresh()?;
     let quiet = NoteSchedule::default();
     let mut d = Driver::new(inst.as_mut());
-    d.skip(d.frames_for(policy.settle_seconds), &Silence, &quiet);
+    d.skip(d.frames_for(config.settle_seconds), &Silence, &quiet);
     let mut meter = Meter::default();
-    let n = d.frames_for(policy.listen_seconds);
+    let n = d.frames_for(config.listen_seconds);
     d.run(n, &Silence, &quiet, |b| meter.add(&b.outputs()));
     let peak_dbfs = db(meter.peak());
-    let details = json!({ "peak_dbfs": peak_dbfs, "max_dbfs": policy.max_dbfs });
-    Ok(if meter.non_finite() == 0 && peak_dbfs < policy.max_dbfs {
+    let details = json!({ "peak_dbfs": peak_dbfs, "max_dbfs": config.max_dbfs });
+    Ok(if meter.non_finite() == 0 && peak_dbfs < config.max_dbfs {
         Outcome::pass(details)
     } else {
         Outcome::fail(details)

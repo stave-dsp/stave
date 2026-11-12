@@ -1,5 +1,5 @@
 //! Profile gallery: frequency-response curves of the loaded plugin AS
-//! CURRENTLY SET, side by side. Render loads a fresh instance of the
+//! CURRENTLY SET, side by side. Run loads a fresh instance of the
 //! bundle, copies the live controls onto it, and measures it offline
 //! (`stave_host::response`: log sweep + H1) — deterministic, independent
 //! of the audio device and the frame rate, and the live instance is
@@ -13,7 +13,7 @@ use eframe::egui::{self, Color32, RichText, ScrollArea, Vec2};
 use stave_host::config::HostConfig;
 use stave_host::control::{Control, ControlError};
 use stave_host::instance::Instance;
-use stave_host::loaded::{LoadError, Loaded};
+use stave_host::opened::{OpenError, Opened};
 use stave_host::response::{self, ResponseConfig};
 
 const MAX_PROFILES: usize = 24;
@@ -54,7 +54,7 @@ impl Default for ProfilesState {
     }
 }
 
-/// What a render needs: the bundle, how to host it, the live controls.
+/// What a run needs: the bundle, how to host it, the live controls.
 pub struct Source<'a> {
     pub bundle: &'a Path,
     pub config: HostConfig,
@@ -66,7 +66,7 @@ pub fn ui(ui: &mut egui::Ui, source: Source<'_>, state: &mut ProfilesState) {
     ui.add_space(6.0);
     if let Some(e) = &state.error {
         ui.label(
-            RichText::new(format!("render failed: {e}")).color(Color32::from_rgb(230, 110, 110)),
+            RichText::new(format!("run failed: {e}")).color(Color32::from_rgb(230, 110, 110)),
         );
     }
     if let Some(i) = state.expanded.filter(|&i| i < state.profiles.len()) {
@@ -84,7 +84,7 @@ pub fn ui(ui: &mut egui::Ui, source: Source<'_>, state: &mut ProfilesState) {
     state.expanded = None;
     if state.profiles.is_empty() {
         ui.label(
-            RichText::new("(no profiles yet — set the controls, then Render)")
+            RichText::new("(no profiles yet — set the controls, then Run profile)")
                 .italics()
                 .weak(),
         );
@@ -95,11 +95,11 @@ pub fn ui(ui: &mut egui::Ui, source: Source<'_>, state: &mut ProfilesState) {
 
 fn toolbar(ui: &mut egui::Ui, source: &Source<'_>, state: &mut ProfilesState) {
     ui.horizontal(|ui| {
-        let render = egui::Button::new(RichText::new("⏺  Render profile").strong())
+        let run = egui::Button::new(RichText::new("⏺  Run profile").strong())
             .min_size(Vec2::new(160.0, 28.0))
             .fill(Color32::from_rgb(50, 110, 80));
         let hint = "measures a fresh instance with the current control values (2 s log sweep)";
-        if ui.add(render).on_hover_text(hint).clicked() {
+        if ui.add(run).on_hover_text(hint).clicked() {
             match render_profile(source) {
                 Ok(p) => {
                     state.profiles.push(p);
@@ -160,7 +160,7 @@ fn gallery(ui: &mut egui::Ui, state: &mut ProfilesState) {
 #[derive(Debug, thiserror::Error)]
 enum ProfileError {
     #[error(transparent)]
-    Load(#[from] LoadError),
+    Load(#[from] OpenError),
     #[error("could not copy a control onto the fresh instance")]
     Control(#[from] ControlError),
     #[error("plugin has no outputs")]
@@ -168,7 +168,7 @@ enum ProfileError {
 }
 
 fn render_profile(source: &Source<'_>) -> Result<Profile, ProfileError> {
-    let mut inst = Loaded::open(source.bundle, source.config)?.into_instance();
+    let mut inst = Opened::open(source.bundle, source.config)?.into_instance();
     let writable = source
         .controls
         .iter()

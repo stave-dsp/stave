@@ -28,12 +28,12 @@ fn the_jiles_atherton_core_matches_the_reference() {
     let deviation = |oversample: usize| {
         let rate = 48_000.0 * oversample as f64;
         let mut core = JilesAthertonCore::new(model, Default::default());
-        let render: Vec<f64> = (0..(r.value.len() - 1) * oversample + 1)
+        let run: Vec<f64> = (0..(r.value.len() - 1) * oversample + 1)
             .map(|n| core.step(5_000.0 * (std::f64::consts::TAU * 50.0 * n as f64 / rate).sin()))
             .step_by(oversample)
             .collect();
         assert_eq!(core.stats().capped, 0);
-        let d = r.difference(&render);
+        let d = r.difference(&run);
         d.normalized_rms
     };
     let (coarse, fine) = (deviation(1), deviation(2));
@@ -67,12 +67,12 @@ fn the_transformer_matches_the_reference() {
         let rate = 48_000.0 * oversample as f64;
         let mut t = Transformer::new(config);
         t.prepare(rate as f32);
-        let render: Vec<f64> = (0..(r.value.len() - 1) * oversample + 1)
+        let run: Vec<f64> = (0..(r.value.len() - 1) * oversample + 1)
             .map(|n| t.tick_f64(400.0 * (std::f64::consts::TAU * 50.0 * n as f64 / rate).sin()))
             .step_by(oversample)
             .collect();
         assert_eq!(t.stats().capped, 0);
-        let d = r.difference(&render);
+        let d = r.difference(&run);
         d.normalized_rms
     };
     let (coarse, fine) = (deviation(1), deviation(2));

@@ -15,7 +15,7 @@ fn goertzel(buf: &[f32], f: f64, fs: f64) -> f64 {
     (re * re + im * im).sqrt() / (buf.len() as f64 * 0.5)
 }
 
-fn render<F: FnMut(f32) -> f32>(f0: f64, fs: f64, amp: f32, n: usize, mut f: F) -> Vec<f32> {
+fn run<F: FnMut(f32) -> f32>(f0: f64, fs: f64, amp: f32, n: usize, mut f: F) -> Vec<f32> {
     for i in 0..n {
         let _ = f(amp * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32);
     }
@@ -190,7 +190,7 @@ fn per_block_param_updates_dont_zipper() {
     // The plugin re-applies every setter each block. Re-applying the
     // SAME value must not disturb filter state — resetting the
     // companding shelves every buffer was a per-block discontinuity =
-    // zipper on the top end. Render a steady tone while re-applying the
+    // zipper on the top end. Run a steady tone while re-applying the
     // params every 256 samples and confirm no broadband grain appears.
     use crate::primitives::resample::Oversampler2x;
     let fs = 48_000.0;
@@ -265,7 +265,7 @@ fn pushed_high_harmonics_decay() {
     s.set_drive(3.0);
     s.set_smoothness(0.7);
     s.set_hf_smoothing(0.0);
-    let out = render(f1, fs, 0.6, n, |x| s.tick(x));
+    let out = run(f1, fs, 0.6, n, |x| s.tick(x));
     let h1 = goertzel(&out, f1, fs).max(1e-12);
     let h = |k: usize| 20.0 * (goertzel(&out, k as f64 * f1, fs) / h1).log10();
     let tail = (6..=10).map(h).fold(f64::NEG_INFINITY, f64::max);
@@ -453,7 +453,7 @@ fn harmonic_profile_is_warm_and_smooth() {
         s.set_drive(1.0); // stays in range ⇒ pure Chebyshev profile
         s.set_hf_smoothing(0.0); // isolate the Chebyshev profile
         s.set_smoothness(smoothness);
-        let out = render(f0, fs, 0.9, n, |x| s.tick(x));
+        let out = run(f0, fs, 0.9, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
         let mut h = [0.0f64; 8];
         for k in 2..=8 {
@@ -521,7 +521,7 @@ fn highs_distort_less_than_lows() {
         s.prepare(fs as f32);
         s.set_drive(1.6);
         s.set_hf_smoothing(8.0);
-        let out = render(f0, fs, 0.6, n, |x| s.tick(x));
+        let out = run(f0, fs, 0.6, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
         (2..=5)
             .map(|k| goertzel(&out, k as f64 * f0, fs))
@@ -640,7 +640,7 @@ fn bias_creates_even_harmonic_asymmetry() {
         s.set_smoothness(0.6);
         s.set_hf_smoothing(0.0);
         s.set_bias(bias);
-        let out = render(f0, fs, 0.7, n, |x| s.tick(x));
+        let out = run(f0, fs, 0.7, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
         20.0 * (goertzel(&out, 2.0 * f0, fs) / h1).log10()
     };
@@ -685,7 +685,7 @@ fn stable_and_level_sane() {
     s.prepare(fs as f32);
     s.set_drive(4.0);
     s.set_hf_smoothing(12.0);
-    let out = render(220.0, fs, 0.95, 16_384, |x| s.tick(x));
+    let out = run(220.0, fs, 0.95, 16_384, |x| s.tick(x));
     assert!(out.iter().all(|x| x.is_finite()));
     let mx = out.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
     assert!(mx < 6.0, "runaway: {mx}");

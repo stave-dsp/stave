@@ -127,7 +127,7 @@ mod tests {
         kind: NoteKind::On,
     };
 
-    fn render(bank: &mut SineBank, frames: usize) -> Vec<f32> {
+    fn run(bank: &mut SineBank, frames: usize) -> Vec<f32> {
         let mut buf = vec![vec![0.0; frames]];
         bank.mix_into(&mut buf, frames);
         buf.remove(0)
@@ -137,15 +137,15 @@ mod tests {
     fn held_note_sounds_then_release_dies_out() {
         let mut b = SineBank::new(48_000.0);
         b.handle(&A4);
-        let held = render(&mut b, 4_800);
+        let held = run(&mut b, 4_800);
         assert!(held.iter().fold(0.0f32, |m, v| m.max(v.abs())) > 0.25);
         b.handle(&NoteEvent {
             kind: NoteKind::Off,
             ..A4
         });
-        render(&mut b, 48_000);
+        run(&mut b, 48_000);
         assert!(
-            render(&mut b, 480).iter().all(|&v| v == 0.0),
+            run(&mut b, 480).iter().all(|&v| v == 0.0),
             "voice freed after release"
         );
     }
@@ -158,7 +158,7 @@ mod tests {
                 pitch: 60 + p,
                 ..A4
             });
-            render(&mut b, 100); // later notes have less envelope
+            run(&mut b, 100); // later notes have less envelope
         }
         b.handle(&NoteEvent { pitch: 100, ..A4 });
         let pitches: Vec<i16> = b.voices.iter().map(|v| v.pitch).collect();

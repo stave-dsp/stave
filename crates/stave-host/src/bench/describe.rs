@@ -2,7 +2,7 @@
 //! loaded, its shape, and its whole control surface.
 
 use crate::control::Control;
-use crate::instance::{Instance, Layout, Probe, Tail};
+use crate::instance::{Instance, Layout, TapReading, Tail};
 use crate::plugin::{HostStats, PluginInfo};
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -15,7 +15,7 @@ pub struct Description {
     pub tail: Tail,
     pub controls: Vec<Control>,
     pub presets: Vec<String>,
-    pub probes: Vec<Probe>,
+    pub taps: Vec<TapReading>,
 }
 
 pub fn describe(inst: &dyn Instance) -> Description {
@@ -27,7 +27,7 @@ pub fn describe(inst: &dyn Instance) -> Description {
         tail: inst.tail(),
         controls: inst.controls(),
         presets: crate::instance::presets(inst),
-        probes: inst.probes(),
+        taps: inst.taps(),
     }
 }
 
@@ -40,11 +40,11 @@ pub fn describe_plugin(p: &crate::plugin::LoadedPlugin) -> Description {
     }
 }
 
-/// Whatever a tool opened: a plugin with its identity, or a module.
-pub fn describe_loaded(loaded: &crate::loaded::Loaded) -> Description {
+/// Whatever a tool opened: a plugin with its identity, or a catalog stage.
+pub fn describe_opened(loaded: &crate::opened::Opened) -> Description {
     match loaded {
-        crate::loaded::Loaded::Plugin(p) => describe_plugin(p),
-        crate::loaded::Loaded::Module(m) => describe(m),
+        crate::opened::Opened::Plugin(p) => describe_plugin(p),
+        crate::opened::Opened::Stage(m) => describe(m),
     }
 }
 

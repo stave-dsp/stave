@@ -14,7 +14,7 @@
 //! latency     onset + peak of an impulse response
 //! transfer    H(f) from input/output (H1, Welch-averaged)
 //! compare     bitwise divergence; null-test residuals
-//! tone_test   a bin-centred tone (or two) through a system: alias, gain, IMD
+//! tone_window   a bin-centred tone (or two) through a system: alias, gain, IMD
 //! nonlinear   alias floor, gain surfaces, hysteresis
 //! dynamics    gain trajectories, time constants, residuals, decay
 //! modulation  sidebands, subharmonics, period multiplication
@@ -70,7 +70,7 @@ pub mod stereo;
 pub mod system;
 pub mod tail;
 pub mod tone;
-pub mod tone_test;
+pub mod tone_window;
 pub mod transfer;
 pub mod waveform;
 pub mod window;

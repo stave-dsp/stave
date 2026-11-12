@@ -1,5 +1,5 @@
 //! Time-domain oscilloscope. Reads a window from the analysis ring per frame
-//! and renders a per-channel waveform with optional rising zero-cross trigger
+//! and draws a per-channel waveform with optional rising zero-cross trigger
 //! so periodic signals don't slide across the screen.
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
@@ -102,7 +102,7 @@ pub fn ui(ui: &mut egui::Ui, ring: &AnalysisRing, state: &mut ScopeState) {
 }
 
 /// Find the first rising zero-crossing in the first half of `buf`. Falls
-/// back to 0 if nothing found, so the trace still renders.
+/// back to 0 if nothing found, so the trace still draws.
 fn find_trigger(buf: &[f32]) -> usize {
     let half = buf.len() / 2;
     for i in 1..half {

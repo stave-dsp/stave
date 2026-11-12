@@ -16,9 +16,9 @@ use cli::{Cli, Mode, USAGE};
 use stave_host::bench::{self, text};
 use stave_host::config::HostConfig;
 use stave_host::instance::{apply_preset, Instance};
-use stave_host::loaded::Loaded;
+use stave_host::opened::Opened;
 use stave_host::note::NoteSchedule;
-use stave_host::render::Driver;
+use stave_host::drive::Driver;
 use stave_host::validate;
 use stave_measure::signal::Silence;
 use stave_host::wav;
@@ -63,11 +63,11 @@ fn run(cli: &Cli, out: &mut File) -> Result<ExitCode, Box<dyn Error>> {
         max_block: cli.block,
         ..HostConfig::default()
     };
-    let open = || Loaded::open(&cli.load, config);
+    let open = || Opened::open(&cli.load, config);
     match cli.mode {
         Mode::Help => emit(out, USAGE)?,
         Mode::Validate => {
-            let mut fresh = || open().map(Loaded::into_instance);
+            let mut fresh = || open().map(Opened::into_instance);
             let report = validate::Suite::default().run(&mut fresh, |r| {
                 eprintln!(
                     "[validate] {:<18} {:?} ({:.0} ms)",
@@ -82,7 +82,7 @@ fn run(cli: &Cli, out: &mut File) -> Result<ExitCode, Box<dyn Error>> {
             });
         }
         Mode::Response => {
-            let mut fresh = || open().map(Loaded::into_instance);
+            let mut fresh = || open().map(Opened::into_instance);
             let r = stave_host::response::measure_levels(&mut fresh, &cli.response)?;
             if cli.json {
                 emit(out, &json(&r)?)?;
@@ -93,7 +93,7 @@ fn run(cli: &Cli, out: &mut File) -> Result<ExitCode, Box<dyn Error>> {
         Mode::Describe | Mode::List => {
             let mut loaded = open()?;
             warm_up(loaded.instance());
-            let d = bench::describe::describe_loaded(&loaded);
+            let d = bench::describe::describe_opened(&loaded);
             if cli.mode == Mode::Describe {
                 emit(out, &json(&d)?)?;
             } else {

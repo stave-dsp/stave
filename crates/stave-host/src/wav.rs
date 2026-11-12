@@ -46,7 +46,7 @@ pub struct Info {
 }
 
 /// The header of a WAV: rate, channels, length in frames.
-pub fn probe(path: &Path) -> Result<Info, WavError> {
+pub fn read_info(path: &Path) -> Result<Info, WavError> {
     let reader = open(path)?;
     let spec = reader.spec();
     Ok(Info {
@@ -58,7 +58,7 @@ pub fn probe(path: &Path) -> Result<Info, WavError> {
 
 /// Read at most `frames` frames starting at frame `start` (clamped to
 /// the file), seeking past the rest. Memory is bounded by the window,
-/// not the file — a multi-hour render costs what its slice costs.
+/// not the file — a multi-hour run costs what its slice costs.
 pub fn read_range(path: &Path, start: usize, frames: usize) -> Result<Audio, WavError> {
     let read_failed = |source| WavError::Read {
         path: path.to_path_buf(),
@@ -213,7 +213,7 @@ mod tests {
             channels: vec![ramp.clone(), ramp.iter().map(|v| -v).collect()],
         };
         write(&p, &a).unwrap();
-        let info = probe(&p).unwrap();
+        let info = read_info(&p).unwrap();
         assert_eq!((info.sample_rate, info.channels, info.frames), (48_000, 2, 100));
         let r = read_range(&p, 40, 10).unwrap();
         assert_eq!(r.channels[0], ramp[40..50]);

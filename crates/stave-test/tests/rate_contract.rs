@@ -10,7 +10,7 @@
 //!     normalized cutoff fixed and the Hz cutoff would double.
 
 use stave_dsp::{Biquad, FilterSpec, Stage};
-use stave_measure::tone_test::ToneTest;
+use stave_measure::tone_window::ToneWindow;
 
 const N: usize = 8192;
 const CUT_HZ: f32 = 1_000.0;
@@ -20,7 +20,7 @@ const CUT_HZ: f32 = 1_000.0;
 fn resp_at(stage: &mut Biquad, fs: f64, hz: f64) -> f64 {
     let m = (hz * N as f64 / fs).round() as usize;
     stage.reset();
-    ToneTest {
+    ToneWindow {
         bin: m,
         window: N,
         sample_rate: fs,
@@ -45,7 +45,7 @@ fn reprepare_equals_fresh_prepare() {
     let _ = resp_at(&mut reprepared, 48_000.0, 1_000.0);
     reprepared.prepare(96_000.0);
 
-    // ...must render bit-identically to one born at 96 k.
+    // ...must run bit-identically to one born at 96 k.
     let mut fresh = lowpass();
     fresh.prepare(96_000.0);
 

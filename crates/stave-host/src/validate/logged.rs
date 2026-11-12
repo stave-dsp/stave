@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::control::{Control, ControlError};
-use crate::instance::{Instance, Layout, PluginMessage, Probe, StateError, Tail};
+use crate::instance::{Instance, Layout, PluginMessage, TapReading, StateError, Tail};
 use crate::note::NoteEvent;
 
 pub(super) struct Logged {
@@ -44,8 +44,8 @@ impl Instance for Logged {
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), StateError> {
         self.inner.load_state(bytes)
     }
-    fn probes(&self) -> Vec<Probe> {
-        self.inner.probes()
+    fn taps(&self) -> Vec<TapReading> {
+        self.inner.taps()
     }
     fn messages(&self, from: u64) -> Vec<PluginMessage> {
         self.inner.messages(from)

@@ -14,7 +14,7 @@
 //! 0..1, so no second kind is earned.
 //!
 //! Deterministic: same seed, same sequence — walks are part of the
-//! sound and must survive a bit-compare (validation renders twice).
+//! sound and must survive a bit-compare (validation runs twice).
 
 use crate::kernel::control::Source;
 use crate::kernel::node::{Stage, Tail};

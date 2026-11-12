@@ -13,14 +13,14 @@
 
 use stave_dsp::FilterSpec;
 use stave_dsp::{Biquad, Stage};
-use stave_measure::tone_test::ToneTest;
+use stave_measure::tone_window::ToneWindow;
 
 const FS: f64 = 48_000.0;
 const N: usize = 8192;
 
 fn resp(bq: &mut Biquad, m: usize) -> f64 {
     let mut b = *bq;
-    ToneTest {
+    ToneWindow {
         bin: m,
         window: N,
         sample_rate: FS,

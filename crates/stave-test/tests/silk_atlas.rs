@@ -1,6 +1,6 @@
 //! Silk behaviour atlas — data dumps for offline plotting/analysis.
 //!
-//! Everything renders through the SHIPPED `SmoothSat` with Ember's exact
+//! Everything runs through the SHIPPED `SmoothSat` with Ember's exact
 //! knob mappings (drive knob 3 → 2.05, warmth 0.35 → even 0.21, body
 //! 0.2 → odd 0.12, silk knob → geometric decay-base taper), so the
 //! numbers are the plugin's numbers, not a model's.

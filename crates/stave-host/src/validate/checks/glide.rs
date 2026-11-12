@@ -1,16 +1,16 @@
 use serde_json::json;
 
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::level::{db, peak, rms};
 use stave_measure::signal::db_to_amp;
 
 /// A host move of a continuous control should glide, not step. Two
-/// identical renders differ only by one move of the control between
+/// identical runs differ only by one move of the control between
 /// blocks; their difference is the control's own effect. A glide starts
 /// that effect near zero, a step starts it at full size (a click).
 #[derive(Copy, Clone, Debug)]
-pub struct GlidePolicy {
+pub struct GlideConfig {
     pub settle_seconds: f64,
     pub window_seconds: f64,
     /// The move, as positions across the control's range.
@@ -29,7 +29,7 @@ pub struct GlidePolicy {
     pub min_effect_db: f64,
 }
 
-impl Default for GlidePolicy {
+impl Default for GlideConfig {
     fn default() -> Self {
         Self {
             settle_seconds: 0.2,
@@ -45,9 +45,9 @@ impl Default for GlidePolicy {
 }
 
 pub fn controls_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.glide);
-    let probe = ctx.fresh()?;
-    let controls: Vec<_> = probe
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.glide);
+    let instance = ctx.fresh()?;
+    let controls: Vec<_> = instance
         .controls()
         .into_iter()
         .filter(|c| c.flags.automatable && c.sweepable() && c.steps == 0 && !c.flags.bypass)
@@ -60,31 +60,31 @@ pub fn controls_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let mut steps = vec![];
     let mut measured = 0;
     for c in &controls {
-        let mut renders = vec![];
+        let mut runs = vec![];
         for moved in [false, true] {
             let mut inst = ctx.fresh()?;
             let (signal, notes) = excitation.for_instance(inst.as_ref());
-            inst.set_control(&c.name, c.lerp(policy.from))?;
+            inst.set_control(&c.name, c.lerp(config.from))?;
             let mut d = Driver::new(inst.as_mut());
-            d.skip(d.frames_for(policy.settle_seconds), signal.as_ref(), &notes);
+            d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
             if moved {
-                d.instance().set_control(&c.name, c.lerp(policy.to))?;
+                d.instance().set_control(&c.name, c.lerp(config.to))?;
             }
-            let n = d.frames_for(policy.window_seconds);
-            renders.push(d.capture(n, signal.as_ref(), &notes).channel(0).to_vec());
+            let n = d.frames_for(config.window_seconds);
+            runs.push(d.capture(n, signal.as_ref(), &notes).channel(0).to_vec());
         }
-        let (held, moved) = (&renders[0], &renders[1]);
+        let (held, moved) = (&runs[0], &runs[1]);
         let effect: Vec<f32> = moved.iter().zip(held).map(|(m, h)| m - h).collect();
         let settled = peak(&effect[effect.len() / 2..]);
-        if db(settled) - db(rms(held)) < policy.min_effect_db {
+        if db(settled) - db(rms(held)) < config.min_effect_db {
             continue;
         }
         measured += 1;
-        let floor = (settled * db_to_amp(policy.appear_db)) as f32;
+        let floor = (settled * db_to_amp(config.appear_db)) as f32;
         let appears = effect.iter().position(|e| e.abs() >= floor).unwrap_or(0);
-        let onset = &effect[appears..(appears + policy.onset_samples).min(effect.len())];
+        let onset = &effect[appears..(appears + config.onset_samples).min(effect.len())];
         let onset_db = db(peak(onset)) - db(settled);
-        if onset_db > policy.max_onset_db {
+        if onset_db > config.max_onset_db {
             steps.push(json!({ "control": c.name, "onset_db": onset_db }));
         }
     }

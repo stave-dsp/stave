@@ -77,7 +77,7 @@ pub fn start<P: Instance + Send + 'static>(
     let err_log = log.clone();
     let stream = device.build_output_stream(
         &config,
-        move |buf: &mut [f32], _| engine.render(buf, channels),
+        move |buf: &mut [f32], _| engine.fill(buf, channels),
         move |e| err_log.error(format!("stream error: {e}")),
         None,
     )?;

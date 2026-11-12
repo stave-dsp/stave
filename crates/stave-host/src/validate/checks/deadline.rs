@@ -1,19 +1,19 @@
 use serde_json::json;
 
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome, Status};
 use stave_measure::stats::Summary;
 
 /// `p99 / budget` below `pass_below` passes, at or above `fail_at` fails.
 #[derive(Copy, Clone, Debug)]
-pub struct DeadlinePolicy {
+pub struct DeadlineConfig {
     pub warmup_seconds: f64,
     pub run_seconds: f64,
     pub pass_below: f64,
     pub fail_at: f64,
 }
 
-impl Default for DeadlinePolicy {
+impl Default for DeadlineConfig {
     fn default() -> Self {
         Self {
             warmup_seconds: 0.5,
@@ -24,7 +24,7 @@ impl Default for DeadlinePolicy {
     }
 }
 
-impl DeadlinePolicy {
+impl DeadlineConfig {
     fn classify(&self, fraction_of_budget: f64) -> Status {
         if fraction_of_budget < self.pass_below {
             Status::Pass
@@ -37,21 +37,21 @@ impl DeadlinePolicy {
 }
 
 pub fn deadline_headroom(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.deadline);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.deadline);
     let mut inst = ctx.fresh()?;
     let (signal, notes) = excitation.for_instance(inst.as_ref());
     let rate = inst.layout().sample_rate;
     let mut d = Driver::new(inst.as_mut());
-    d.skip(d.frames_for(policy.warmup_seconds), signal.as_ref(), &notes);
+    d.skip(d.frames_for(config.warmup_seconds), signal.as_ref(), &notes);
     let mut ns = vec![];
-    let n = d.frames_for(policy.run_seconds);
+    let n = d.frames_for(config.run_seconds);
     d.run(n, signal.as_ref(), &notes, |b| {
         ns.push(b.process_time.as_nanos() as f64)
     });
     let budget = d.block() as f64 / rate * 1e9;
     let p99 = Summary::of(&ns).map_or(0.0, |s| s.p99);
     let frac = p99 / budget;
-    let status = policy.classify(frac);
+    let status = config.classify(frac);
     let details = json!({ "p99_ns_per_block": p99, "budget_ns": budget, "p99_of_budget": frac });
     Ok(Outcome { status, details })
 }
@@ -64,10 +64,10 @@ mod tests {
 
     #[test]
     fn thresholds() {
-        let policy = DeadlinePolicy::default();
-        assert_eq!(policy.classify(0.1), Status::Pass);
-        assert_eq!(policy.classify(0.5), Status::Info);
-        assert_eq!(policy.classify(1.0), Status::Fail);
+        let config = DeadlineConfig::default();
+        assert_eq!(config.classify(0.1), Status::Pass);
+        assert_eq!(config.classify(0.5), Status::Info);
+        assert_eq!(config.classify(1.0), Status::Fail);
     }
 
     #[test]

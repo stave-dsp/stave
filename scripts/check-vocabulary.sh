@@ -10,9 +10,9 @@
 #   * a `Host` on the editor side (the face's side is the Controller;
 #     Host is the DAW).
 #
-# Words still used for another concept elsewhere ("render" for audio in
-# stave-host, stave-measure and the test drivers) are the T6 ledger item;
-# when it lands, widen AUTHOR to the whole tree.
+# "render" is checked across the whole tree: it means pixels, so only
+# the code that makes pixels (the raster, the face, the platform view, the
+# storybook, golden pictures, plots) says it.
 #
 #   scripts/check-vocabulary.sh
 set -euo pipefail
@@ -46,8 +46,11 @@ report "\`Host\` names the DAW; the editor's side is \`Controller\`" \
 # The author surface: what a plugin author reads.
 AUTHOR=(crates/stave/ crates/stave-core/src/ examples/ ':!crates/stave-core/src/runtime/')
 
+PIXELS=(':!crates/stave-raster/' ':!crates/stave-face/' ':!crates/stave-ui/' ':!crates/stave-ui-cocoa/'
+  ':!tools/storybook/' ':!crates/stave-test/src/face/' ':!crates/stave-test/src/image.rs' ':!*/tests/golden.rs'
+  ':!scripts/plot_silk_atlas.py' ':!docs/overhaul.md' ':!scripts/check-vocabulary.sh' ':!*.lock')
 report "\"render\" means pixels; audio is processed (process, run)" \
-  -i '\brender(s|ed|ing)?\b' -- "${AUTHOR[@]}" ':!*/tests/golden.rs'
+  -i '(?<!")\brender(s|ed|ing)?\b(?!")' -- . "${PIXELS[@]}"
 # (diagnostics report what a host did, in the host ABI's words.)
 report "the lifecycle is prepare / reset / process (activate is the wrappers')" \
   -i '\b(activate|deactivate|activation|activated)\b' -- "${AUTHOR[@]}" ':!crates/stave-core/src/diagnostics/'

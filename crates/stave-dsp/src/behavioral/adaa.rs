@@ -216,7 +216,7 @@ mod tests {
         let fs = 48_000.0;
         let f0 = 5_000.0;
         let n = 16_384;
-        let render = |use_adaa: bool| -> Vec<f64> {
+        let run = |use_adaa: bool| -> Vec<f64> {
             let mut a = Adaa::new(AdaaOrder::First);
             let mut out = vec![0.0f64; n];
             for i in 0..2 * n {
@@ -233,8 +233,8 @@ mod tests {
             }
             out
         };
-        let raw = goertzel(&render(false), 3_000.0, fs);
-        let adaa = goertzel(&render(true), 3_000.0, fs);
+        let raw = goertzel(&run(false), 3_000.0, fs);
+        let adaa = goertzel(&run(true), 3_000.0, fs);
         let gain_db = 20.0 * (raw / adaa.max(1e-12)).log10();
         println!("alias @3 kHz: raw {raw:.2e}, ADAA {adaa:.2e} ({gain_db:.1} dB better)");
         assert!(

@@ -1,4 +1,4 @@
-//! Debug view. Renders the captured log lines, audio-thread stats, and
+//! Debug view. Draws the captured log lines, audio-thread stats, and
 //! current device/plugin lifecycle info. Read-only; "clear log" is the only
 //! action.
 

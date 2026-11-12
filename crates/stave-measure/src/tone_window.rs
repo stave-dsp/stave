@@ -1,4 +1,4 @@
-//! Tone tests: a bin-centred stimulus played through a sample-by-sample
+//! Tone windows: a bin-centred stimulus played through a sample-by-sample
 //! system, captured as one steady-state window. Because the tone repeats
 //! exactly every window, harmonics and alias products land on exact bins
 //! and no window function is needed.
@@ -10,7 +10,7 @@ use crate::AUDIBLE_MAX_HZ;
 
 /// One sine at `bin` cycles per `window` samples.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct ToneTest {
+pub struct ToneWindow {
     pub bin: usize,
     pub window: usize,
     pub sample_rate: f64,
@@ -20,7 +20,7 @@ pub struct ToneTest {
     pub warmup_windows: usize,
 }
 
-impl Default for ToneTest {
+impl Default for ToneWindow {
     fn default() -> Self {
         Self {
             bin: 171,
@@ -32,7 +32,7 @@ impl Default for ToneTest {
     }
 }
 
-impl ToneTest {
+impl ToneWindow {
     /// The bin of `window` whose tone is nearest `hz`.
     pub(crate) fn bin_near(hz: f64, window: usize, sample_rate: f64) -> usize {
         ((hz * window as f64 / sample_rate).round() as usize).max(1)
@@ -74,7 +74,7 @@ impl ToneTest {
 
 /// Two sines, at `low_bin` and `high_bin` cycles per `window`.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct TwoToneTest {
+pub struct TwoToneWindow {
     pub low_bin: usize,
     pub high_bin: usize,
     pub window: usize,
@@ -82,7 +82,7 @@ pub struct TwoToneTest {
     pub warmup_windows: usize,
 }
 
-impl TwoToneTest {
+impl TwoToneWindow {
     fn sine(&self, bin: usize, i: usize) -> f64 {
         (std::f64::consts::TAU * bin as f64 * i as f64 / self.window as f64).sin()
     }
@@ -144,10 +144,10 @@ mod tests {
 
     #[test]
     fn gain_of_a_halving_system_is_minus_six_db() {
-        let test = ToneTest {
+        let test = ToneWindow {
             bin: 85,
             window: 4096,
-            ..ToneTest::default()
+            ..ToneWindow::default()
         };
         assert!((test.gain_db(|x: f32| 0.5 * x) + 6.0206).abs() < 1e-6);
         assert!((test.frequency() - 85.0 * 48_000.0 / 4096.0).abs() < 1e-9);
@@ -155,11 +155,11 @@ mod tests {
 
     #[test]
     fn a_linear_system_has_no_alias_and_a_clipper_does() {
-        let test = ToneTest {
+        let test = ToneWindow {
             bin: 41,
             window: 4096,
             amplitude: 0.9,
-            ..ToneTest::default()
+            ..ToneWindow::default()
         };
         assert!(
             test.alias(|x: f32| x).full_db < -120.0,
@@ -174,11 +174,11 @@ mod tests {
 
     #[test]
     fn capture_continues_the_warmup_phase() {
-        let tone = |warmup_windows| ToneTest {
+        let tone = |warmup_windows| ToneWindow {
             bin: 3,
             window: 64,
             warmup_windows,
-            ..ToneTest::default()
+            ..ToneWindow::default()
         };
         let (a, b) = (tone(2).capture(|x: f32| x), tone(0).capture(|x: f32| x));
         assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-6));
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn intermodulation_of_linear_and_squaring_systems() {
-        let test = TwoToneTest {
+        let test = TwoToneWindow {
             low_bin: 8,
             high_bin: 100,
             window: 2048,

@@ -3,7 +3,7 @@
 
 use stave_telemetry::Telemetry;
 
-use crate::instance::{PluginMessage, Probe};
+use crate::instance::{PluginMessage, TapReading};
 use stave_core::diagnostics::Severity;
 
 /// Borrowed telemetry, valid while its plugin instance lives.
@@ -11,11 +11,11 @@ use stave_core::diagnostics::Severity;
 pub(crate) struct TelemetryRef<'a>(pub &'a Telemetry);
 
 impl<'a> TelemetryRef<'a> {
-    pub fn probes(self) -> Vec<Probe> {
+    pub fn taps(self) -> Vec<TapReading> {
         self.0
             .taps()
             .into_iter()
-            .map(|t| Probe {
+            .map(|t| TapReading {
                 name: t.name,
                 latest: t.latest,
                 min: t.min,
@@ -45,13 +45,13 @@ mod tests {
     use stave_telemetry::{Tap, TapId};
 
     #[test]
-    fn probes_carry_latest_min_and_max() {
+    fn taps_carry_latest_min_and_max() {
         let telemetry = Telemetry::new();
         let cpu = Tap::register(&telemetry, TapId::new("cpu"));
         for v in [0.5, -1.0, 2.0, 0.25] {
             cpu.set(v);
         }
-        let p = &TelemetryRef(&telemetry).probes()[0];
+        let p = &TelemetryRef(&telemetry).taps()[0];
         assert_eq!(
             (p.name.as_str(), p.latest, p.min, p.max),
             ("cpu", 0.25, -1.0, 2.0)
@@ -61,6 +61,6 @@ mod tests {
     #[test]
     fn empty_telemetry_has_nothing() {
         let telemetry = Telemetry::new();
-        assert!(TelemetryRef(&telemetry).probes().is_empty());
+        assert!(TelemetryRef(&telemetry).taps().is_empty());
     }
 }

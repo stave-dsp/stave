@@ -19,12 +19,12 @@ fn tone(i: usize, amp: f64) -> f64 {
     amp * (2.0 * std::f64::consts::PI * M as f64 * i as f64 / N as f64).sin()
 }
 
-/// Steady-state one-window capture of `render` under the standard tone.
-fn capture<F: FnMut(f64) -> f64>(amp: f64, mut render: F) -> Vec<f64> {
+/// Steady-state one-window capture of `run` under the standard tone.
+fn capture<F: FnMut(f64) -> f64>(amp: f64, mut run: F) -> Vec<f64> {
     for i in 0..N {
-        let _ = render(tone(i, amp));
+        let _ = run(tone(i, amp));
     }
-    (N..2 * N).map(|i| render(tone(i, amp))).collect()
+    (N..2 * N).map(|i| run(tone(i, amp))).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ fn envelope_compression_flattens_program_sidebands() {
         let carrier = pow(M).max(1e-300);
         10.0 * ((pow(b) + pow(2 * M - b)) / carrier).max(1e-30).log10()
     };
-    let render = |depth: f64| -> Vec<f64> {
+    let run = |depth: f64| -> Vec<f64> {
         let mut cs = CurveStage::from_fn(-4.0, 4.0, 0.0, shapes::knee(2.0));
         cs.prepare(FS as f32);
         let mut env = EnvelopeFollower::new(EnvelopeTimes {
@@ -264,8 +264,8 @@ fn envelope_compression_flattens_program_sidebands() {
         }
         (0..N).map(|_| f(0.0)).collect()
     };
-    let quiet = band_db(&render(0.0), M + fm_bin);
-    let deep = band_db(&render(0.6), M + fm_bin);
+    let quiet = band_db(&run(0.0), M + fm_bin);
+    let deep = band_db(&run(0.6), M + fm_bin);
     println!("program ±fm sidebands: depth 0 → {quiet:.2} dB, depth 0.6 → {deep:.2} dB");
     assert!(
         deep < quiet - 2.0,
@@ -279,7 +279,7 @@ fn envelope_compression_flattens_program_sidebands() {
 fn lfo_driver_gain_route_makes_gated_ghost_sidebands() {
     use stave_dsp::{Chain, Driver, ModMatrix, Route, StageKind, StageTarget, Target};
     let f_lfo = 32.0 * FS / N as f64; // bin-centred 46.875 Hz
-    let render = |amount: f32, amp: f64| -> Vec<f64> {
+    let run = |amount: f32, amp: f64| -> Vec<f64> {
         let mut ch = Chain::<2>::new();
         let id = ch
             .push(StageKind::Curve(CurveStage::from_fn(
@@ -317,9 +317,9 @@ fn lfo_driver_gain_route_makes_gated_ghost_sidebands() {
             },
         )
     };
-    let hot = sbr(&render(0.5, 0.4));
-    let small = sbr(&render(0.05, 0.4));
-    let quiet = sbr(&render(0.5, 0.04));
+    let hot = sbr(&run(0.5, 0.4));
+    let small = sbr(&run(0.05, 0.4));
+    let quiet = sbr(&run(0.5, 0.04));
     println!(
         "ghost sidebands: hot {:.1} dB (worst {:?}), amount/10 {:.1} dB, program −20 dB {:.1} dB",
         hot.total_db, hot.worst, small.total_db, quiet.total_db

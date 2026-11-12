@@ -86,7 +86,7 @@ impl<P: Instance> Engine<P> {
     }
 
     /// Fill one interleaved device buffer of `channels` channels.
-    pub fn render(&mut self, out: &mut [f32], channels: usize) {
+    pub fn fill(&mut self, out: &mut [f32], channels: usize) {
         let t0 = Instant::now();
         let channels = channels.max(1);
         let total = out.len() / channels;
@@ -273,7 +273,7 @@ mod tests {
         };
         sh.events.push(a4).unwrap();
         let mut out = vec![0.0; 2 * 1000]; // not a multiple of the block
-        e.render(&mut out, 2);
+        e.fill(&mut out, 2);
         assert!(out.iter().any(|&v| v.abs() > 0.1));
         assert_eq!(sh.log.consumed_events.load(Ordering::Relaxed), 1);
         assert!(f32::from_bits(sh.peak.load(Ordering::Relaxed)) > 0.1);
@@ -283,7 +283,7 @@ mod tests {
     fn mono_plugin_fills_every_device_channel() {
         let mut e = Engine::new(Pass(layout(0, 1)), shared());
         let mut out = vec![0.0; 3 * 10];
-        e.render(&mut out, 3);
+        e.fill(&mut out, 3);
         assert!(out.iter().all(|&v| v == 0.25));
     }
 
@@ -296,10 +296,10 @@ mod tests {
             .push(SampleTrigger { data, channels: 1 })
             .unwrap();
         let mut out = vec![0.0; 128];
-        e.render(&mut out, 1);
+        e.fill(&mut out, 1);
         assert!(out[..100].iter().all(|&v| v == 0.5) && out[100..].iter().all(|&v| v == 0.0));
         let mut again = vec![1.0; 64];
-        e.render(&mut again, 1);
+        e.fill(&mut again, 1);
         assert!(again.iter().all(|&v| v == 0.0), "one-shot");
     }
 }

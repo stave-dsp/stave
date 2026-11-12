@@ -1,6 +1,6 @@
 //! The bench: one instance, a stimulus, and everything measurable about
 //! the pair — CPU, latency (reported vs measured), output levels, tone
-//! gain/THD, silence residual, the plugin's own probes. Pure library:
+//! gain/THD, silence residual, the plugin's own taps. Pure library:
 //! `stave-bench` parses its own arguments and prints [`BenchReport`]s.
 
 pub mod describe;
@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use crate::instance::Instance;
 use crate::note::{Note, NoteSchedule};
-use crate::render::Driver;
+use crate::drive::Driver;
 use stave_measure::loudness;
 
 pub use report::BenchReport;
@@ -68,7 +68,7 @@ pub enum BenchError {
     Measures(#[from] loudness::UnknownMeasures),
 }
 
-/// Times each phase in wall-clock time and frames rendered.
+/// Times each phase in wall-clock time and frames processed.
 #[derive(Default)]
 struct PhaseClock {
     phases: Vec<report::PhaseTiming>,
@@ -81,11 +81,11 @@ impl PhaseClock {
         phase: &'static str,
         run: impl FnOnce(&mut Driver) -> T,
     ) -> T {
-        let (started, frames_before) = (Instant::now(), d.rendered());
+        let (started, frames_before) = (Instant::now(), d.processed());
         let result = run(d);
         self.phases.push(report::PhaseTiming {
             phase,
-            frames: d.rendered() - frames_before,
+            frames: d.processed() - frames_before,
             wall_ms: started.elapsed().as_secs_f64() * 1e3,
         });
         result
@@ -100,7 +100,7 @@ pub fn run(inst: &mut dyn Instance, cfg: &BenchConfig) -> Result<BenchRun, Bench
     let notes = NoteSchedule::new(&cfg.notes, rate);
     let mut warnings: Vec<String> = built.warning.into_iter().collect();
     if layout.is_instrument() && cfg.notes.is_empty() {
-        warnings.push("instrument with no notes renders silence — add --notes".into());
+        warnings.push("instrument with no notes runs silence — add --notes".into());
     }
     let reported = inst.latency();
     let mut d = Driver::new(inst);
@@ -116,7 +116,7 @@ pub fn run(inst: &mut dyn Instance, cfg: &BenchConfig) -> Result<BenchRun, Bench
             cfg.analysis_window
         ));
     }
-    let (timed, probes) = clock.time(&mut d, "timed", |d| {
+    let (timed, taps) = clock.time(&mut d, "timed", |d| {
         let timed = phases::timed(
             d,
             &phases::TimedRun {
@@ -129,7 +129,7 @@ pub fn run(inst: &mut dyn Instance, cfg: &BenchConfig) -> Result<BenchRun, Bench
                 capture: cfg.capture,
             },
         );
-        (timed, d.instance().probes())
+        (timed, d.instance().taps())
     });
     let residual = clock.time(&mut d, "silence", |d| {
         phases::silence_residual(d, &cfg.phases)
@@ -152,7 +152,7 @@ pub fn run(inst: &mut dyn Instance, cfg: &BenchConfig) -> Result<BenchRun, Bench
             dc: timed.dc,
             step,
         },
-        probes,
+        taps,
         phases,
         warnings,
     };

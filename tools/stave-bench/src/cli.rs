@@ -12,9 +12,9 @@ use stave_host::note::Note;
 use stave_host::response::LevelResponseConfig;
 
 pub const USAGE: &str = "\
-usage: stave-bench <bundle.vst3 | module:NAME> [options]
+usage: stave-bench <bundle.vst3 | stage:NAME> [options]
 
-module:NAME runs a stave-dsp module from the catalog (e.g. module:coupler);
+stage:NAME runs a stave-dsp stage from the catalog (e.g. stage:coupler);
 its settings are controls, so --set, --list and --validate work unchanged.
 
 modes (default: bench):
@@ -90,7 +90,7 @@ pub enum CliError {
     UnknownOption(String),
     #[error("unexpected argument '{0}' (already given what to load)")]
     UnexpectedArgument(String),
-    #[error("missing <bundle.vst3 | module:NAME>")]
+    #[error("missing <bundle.vst3 | stage:NAME>")]
     MissingLoad,
     #[error("--set wants NAME=VALUE, got '{0}'")]
     MalformedSet(String),
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn response_mode_takes_its_levels() {
-        let c = p("module:coupler --response --response-levels -30,-6").unwrap();
+        let c = p("stage:coupler --response --response-levels -30,-6").unwrap();
         assert_eq!(c.mode, Mode::Response);
         assert_eq!(c.response.levels_db, [-30.0, -6.0]);
         assert!(p("X.vst3 --response-levels 3").is_err());

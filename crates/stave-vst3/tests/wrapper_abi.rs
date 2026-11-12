@@ -4,7 +4,7 @@
 //! process. No harness shortcuts.
 //!
 //! Covers two acceptance checks:
-//! - In-place processing: a host passing `in == out` pointers renders
+//! - In-place processing: a host passing `in == out` pointers runs
 //!   bit-identically to the split-buffer run, for a plugin that is both
 //!   linear (gain) and stateful (16-tap delay).
 //! - Two-instance isolation: simultaneously-live instances keep
@@ -300,7 +300,7 @@ fn in_place_processing_matches_split_buffers() {
 }
 
 /// Block-size invariance at the ABI level. The same
-/// signal chopped into hostile block sizes (1, 16, 333, …) renders
+/// signal chopped into hostile block sizes (1, 16, 333, …) runs
 /// bit-identically to the contiguous reference — no state skew, no
 /// boundary artifacts, for a STATEFUL plugin.
 #[test]
@@ -310,7 +310,7 @@ fn hostile_block_sizes_render_bit_identically() {
     let sig_l = test_signal(TOTAL, 11);
     let sig_r = test_signal(TOTAL, 12);
 
-    let render = |sizes: &[usize]| -> Vec<f32> {
+    let run = |sizes: &[usize]| -> Vec<f32> {
         unsafe {
             let inst = create_instance();
             let mut setup = ProcessSetup {
@@ -348,9 +348,9 @@ fn hostile_block_sizes_render_bit_identically() {
         }
     };
 
-    let reference = render(&[512]);
+    let reference = run(&[512]);
     for sizes in [&[1usize][..], &[16], &[333], &[1, 16, 64, 333, 7, 128]] {
-        let split = render(sizes);
+        let split = run(sizes);
         for (i, (a, b)) in reference.iter().zip(&split).enumerate() {
             assert_eq!(
                 a.to_bits(),
@@ -383,7 +383,7 @@ fn two_instances_are_isolated() {
         // DSP isolation: same input, different params, different output;
         // and the delayed tap proves state isn't shared either.
         let sig = test_signal(FRAMES, 7);
-        let render = |inst: &HostInstance| -> Vec<f32> {
+        let run = |inst: &HostInstance| -> Vec<f32> {
             let mut in_l = sig.clone();
             let mut in_r = sig.clone();
             let mut out_l = vec![0.0f32; FRAMES];
@@ -393,8 +393,8 @@ fn two_instances_are_isolated() {
             inst.process(&mut ins, &mut outs, FRAMES);
             out_l
         };
-        let out_a = render(&a);
-        let out_b = render(&b);
+        let out_a = run(&a);
+        let out_b = run(&b);
 
         // gain=1: y[0] = x[0] (delay line starts empty).
         assert_eq!(out_a[0].to_bits(), sig[0].to_bits());
@@ -441,11 +441,11 @@ fn refusals_and_process_faults_are_logged() {
 /// A host's null channel pointer never reaches the plugin as a slice
 /// (Miri checks no slice is built from null): a null input reads as
 /// silence, a null output is written to scratch, and the real channels
-/// render exactly as with real buffers.
+/// run exactly as with real buffers.
 #[test]
 fn null_channel_pointers_read_silence_and_write_scratch() {
     let signal = test_signal(FRAMES * BLOCKS, 3);
-    let render = |null_in_l: bool, null_out_l: bool| -> (Vec<f32>, Vec<f32>) {
+    let run = |null_in_l: bool, null_out_l: bool| -> (Vec<f32>, Vec<f32>) {
         unsafe {
             let inst = create_instance();
             inst.setup(48_000.0, FRAMES as i32);
@@ -476,14 +476,14 @@ fn null_channel_pointers_read_silence_and_write_scratch() {
             (all_l, all_r)
         }
     };
-    let (ref_l, ref_r) = render(false, false);
-    let (null_in_l, null_in_r) = render(true, false);
+    let (ref_l, ref_r) = run(false, false);
+    let (null_in_l, null_in_r) = run(true, false);
     assert!(
         null_in_l.iter().all(|&v| v == 0.0),
         "a null input is silence"
     );
     assert_eq!(null_in_r, ref_r, "the real channel is untouched");
-    let (null_out_l, null_out_r) = render(false, true);
+    let (null_out_l, null_out_r) = run(false, true);
     assert!(
         null_out_l.iter().all(|&v| v == 0.0),
         "the host buffer was never written"
@@ -491,6 +491,6 @@ fn null_channel_pointers_read_silence_and_write_scratch() {
     assert_eq!(null_out_r, ref_r);
     assert!(
         ref_l.iter().any(|&v| v != 0.0),
-        "precondition: the fixture renders"
+        "precondition: the fixture runs"
     );
 }

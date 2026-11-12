@@ -106,7 +106,7 @@ mod tests {
     use crate::testing::Gain;
     use crate::validate::{self, Status};
     use stave_dsp::{Biquad, FilterSpec};
-    use stave_measure::tone_test::ToneTest;
+    use stave_measure::tone_window::ToneWindow;
 
     fn peak_filter(channels: usize) -> StageInstance<Biquad> {
         let peak = FilterSpec::Peak {
@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn a_dsp_stage_measured_through_the_host_reads_its_own_boost() {
         let mut filter = peak_filter(2);
-        let at_centre = ToneTest {
+        let at_centre = ToneWindow {
             bin: 100,
             window: 4800,
             sample_rate: 48_000.0,

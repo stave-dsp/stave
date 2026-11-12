@@ -1,4 +1,4 @@
-//! The catalog: every stave-dsp module a host can open by name, with its
+//! The catalog: every stave-dsp stage a host can open by name, with its
 //! settings and how they build and reconfigure the stage. Static data.
 
 use stave_dsp::{
@@ -9,10 +9,10 @@ use stave_dsp::{
 };
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
 
-use super::{BoxedModule, Configurable, Module, Range, Setting, SettingValues};
+use super::{BoxedStage, Configurable, StageSpec, Range, Setting, SettingValues};
 
 /// A stage plus how its settings apply to it.
-struct ModuleStage<S> {
+struct CatalogStage<S> {
     stage: S,
     configure: fn(&mut S, &SettingValues),
     solver: Option<fn(&S) -> NewtonStats>,
@@ -21,8 +21,8 @@ struct ModuleStage<S> {
 fn stage<S: Stage + Send + 'static>(
     stage: S,
     configure: fn(&mut S, &SettingValues),
-) -> BoxedModule {
-    Box::new(ModuleStage {
+) -> BoxedStage {
+    Box::new(CatalogStage {
         stage,
         configure,
         solver: None,
@@ -33,15 +33,15 @@ fn stage_with_solver<S: Stage + Send + 'static>(
     stage: S,
     configure: fn(&mut S, &SettingValues),
     solver: fn(&S) -> NewtonStats,
-) -> BoxedModule {
-    Box::new(ModuleStage {
+) -> BoxedStage {
+    Box::new(CatalogStage {
         stage,
         configure,
         solver: Some(solver),
     })
 }
 
-impl<S: Stage + Send> Stage for ModuleStage<S> {
+impl<S: Stage + Send> Stage for CatalogStage<S> {
     fn prepare(&mut self, sample_rate: f32) {
         self.stage.prepare(sample_rate);
     }
@@ -62,7 +62,7 @@ impl<S: Stage + Send> Stage for ModuleStage<S> {
     }
 }
 
-impl<S: Stage + Send> Configurable for ModuleStage<S> {
+impl<S: Stage + Send> Configurable for CatalogStage<S> {
     fn configure(&mut self, values: &SettingValues) {
         (self.configure)(&mut self.stage, values);
     }
@@ -142,8 +142,8 @@ fn lowpass(v: &SettingValues) -> FilterSpec {
     }
 }
 
-pub const CATALOG: &[Module] = &[
-    Module {
+pub const CATALOG: &[StageSpec] = &[
+    StageSpec {
         name: "filter/peak",
         settings: &[
             Setting {
@@ -176,7 +176,7 @@ pub const CATALOG: &[Module] = &[
         ],
         build: |v| stage(Biquad::new(peak(v)), |f, v| f.set(peak(v))),
     },
-    Module {
+    StageSpec {
         name: "filter/lowpass",
         settings: &[
             Setting {
@@ -200,7 +200,7 @@ pub const CATALOG: &[Module] = &[
         ],
         build: |v| stage(Biquad::new(lowpass(v)), |f, v| f.set(lowpass(v))),
     },
-    Module {
+    StageSpec {
         name: "coupler",
         settings: &[Setting {
             name: "hz",
@@ -213,7 +213,7 @@ pub const CATALOG: &[Module] = &[
         }],
         build: |v| stage(Coupler::new(v.f32("hz")), |c, v| c.set_hz(v.f32("hz"))),
     },
-    Module {
+    StageSpec {
         name: "slew",
         settings: &[
             Setting {
@@ -241,7 +241,7 @@ pub const CATALOG: &[Module] = &[
             })
         },
     },
-    Module {
+    StageSpec {
         name: "clipper/diode",
         settings: &[
             Setting {
@@ -290,7 +290,7 @@ pub const CATALOG: &[Module] = &[
             )
         },
     },
-    Module {
+    StageSpec {
         name: "circuit/diode_clipper",
         settings: &[
             Setting {
@@ -325,7 +325,7 @@ pub const CATALOG: &[Module] = &[
             )
         },
     },
-    Module {
+    StageSpec {
         name: "circuit/opamp_clipper",
         settings: &[Setting {
             name: "drive",
@@ -344,7 +344,7 @@ pub const CATALOG: &[Module] = &[
             )
         },
     },
-    Module {
+    StageSpec {
         name: "circuit/transformer",
         settings: &[Setting {
             name: "source",
@@ -363,7 +363,7 @@ pub const CATALOG: &[Module] = &[
             )
         },
     },
-    Module {
+    StageSpec {
         name: "circuit/common_cathode",
         settings: &[
             Setting {
@@ -446,7 +446,7 @@ pub const CATALOG: &[Module] = &[
             )
         },
     },
-    Module {
+    StageSpec {
         name: "hysteresis",
         settings: &[
             Setting {

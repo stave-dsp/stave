@@ -49,14 +49,14 @@ fn severity_name<S: serde::Serializer>(severity: &Severity, s: S) -> Result<S::O
 
 /// A plugin-side measurement (a stave plugin's taps).
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct Probe {
+pub struct TapReading {
     pub name: String,
     pub latest: f64,
     pub min: f64,
     pub max: f64,
 }
 
-impl Probe {
+impl TapReading {
     pub const NEWTON_SOLVES: &'static str = "newton.solves";
     pub const NEWTON_MEAN_ITERATIONS: &'static str = "newton.mean_iterations";
     pub const NEWTON_CAPPED: &'static str = "newton.capped";
@@ -123,7 +123,7 @@ pub trait Instance {
         Err(StateError::Unsupported)
     }
 
-    fn probes(&self) -> Vec<Probe> {
+    fn taps(&self) -> Vec<TapReading> {
         Vec::new()
     }
 
@@ -188,8 +188,8 @@ impl<T: Instance + ?Sized> Instance for Box<T> {
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), StateError> {
         (**self).load_state(bytes)
     }
-    fn probes(&self) -> Vec<Probe> {
-        (**self).probes()
+    fn taps(&self) -> Vec<TapReading> {
+        (**self).taps()
     }
     fn messages(&self, from: u64) -> Vec<PluginMessage> {
         (**self).messages(from)

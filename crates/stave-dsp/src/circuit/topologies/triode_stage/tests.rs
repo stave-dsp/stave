@@ -79,7 +79,7 @@ fn fft(re: &mut [f64], im: &mut [f64]) {
     }
 }
 
-/// Alias-to-signal ratio in dB for a bin-centred sine through `render`.
+/// Alias-to-signal ratio in dB for a bin-centred sine through `run`.
 /// Energy at exact harmonic bins (m·k) is "signal"; all other bins in
 /// (0, N/2) are alias + noise. Lower dB = cleaner. `m` is the
 /// fundamental's FFT bin (so the tone is exactly periodic — no leakage).
@@ -88,18 +88,18 @@ fn alias_to_signal_db<F: FnMut(f32) -> f32>(
     n: usize,
     fs: f64,
     amp: f32,
-    mut render: F,
+    mut run: F,
 ) -> f64 {
     // warm up, then capture one periodic block
     for i in 0..n {
         let s = amp * (2.0 * core::f64::consts::PI * m as f64 * i as f64 / n as f64).sin() as f32;
-        let _ = render(s);
+        let _ = run(s);
     }
     let mut re = vec![0.0f64; n];
     let mut im = vec![0.0f64; n];
     for i in 0..n {
         let s = amp * (2.0 * core::f64::consts::PI * m as f64 * i as f64 / n as f64).sin() as f32;
-        re[i] = render(s) as f64;
+        re[i] = run(s) as f64;
     }
     let _ = fs;
     fft(&mut re, &mut im);
@@ -126,17 +126,17 @@ fn noise_floor_db_upto<F: FnMut(f32) -> f32>(
     n: usize,
     amp: f32,
     max_bin: usize,
-    mut render: F,
+    mut run: F,
 ) -> f64 {
     for i in 0..n {
         let s = amp * (2.0 * core::f64::consts::PI * m as f64 * i as f64 / n as f64).sin() as f32;
-        let _ = render(s);
+        let _ = run(s);
     }
     let mut re = vec![0.0f64; n];
     let mut im = vec![0.0f64; n];
     for i in 0..n {
         let s = amp * (2.0 * core::f64::consts::PI * m as f64 * i as f64 / n as f64).sin() as f32;
-        re[i] = render(s) as f64;
+        re[i] = run(s) as f64;
     }
     fft(&mut re, &mut im);
     let (mut sig, mut noise) = (0.0f64, 0.0f64);
@@ -155,16 +155,16 @@ fn noise_floor_db_upto<F: FnMut(f32) -> f32>(
 /// LOW fundamental, where a memoryless nonlinearity produces NO
 /// aliasing — so any non-harmonic energy is artifact (crackle/noise)
 /// injected by the ADAA machinery itself. `m` = fundamental bin.
-fn noise_floor_db<F: FnMut(f32) -> f32>(m: usize, n: usize, amp: f32, mut render: F) -> f64 {
+fn noise_floor_db<F: FnMut(f32) -> f32>(m: usize, n: usize, amp: f32, mut run: F) -> f64 {
     for i in 0..n {
         let s = amp * (2.0 * core::f64::consts::PI * m as f64 * i as f64 / n as f64).sin() as f32;
-        let _ = render(s);
+        let _ = run(s);
     }
     let mut re = vec![0.0f64; n];
     let mut im = vec![0.0f64; n];
     for i in 0..n {
         let s = amp * (2.0 * core::f64::consts::PI * m as f64 * i as f64 / n as f64).sin() as f32;
-        re[i] = render(s) as f64;
+        re[i] = run(s) as f64;
     }
     fft(&mut re, &mut im);
     let (mut sig, mut noise) = (0.0f64, 0.0f64);
@@ -266,7 +266,7 @@ fn oversampler_net_verdict() {
     use crate::primitives::resample::Oversampler2x;
     let fs = 48_000.0;
     let n = 8192usize;
-    let render = |adaa: bool, os: bool, m: usize, amp: f32, drv: f32| -> f64 {
+    let run = |adaa: bool, os: bool, m: usize, amp: f32, drv: f32| -> f64 {
         let mut t = Triode::new();
         t.prepare(fs as f32);
         t.set_grid_drive(knob(drv));
@@ -290,8 +290,8 @@ fn oversampler_net_verdict() {
         let m = ((f0 as f64) * n as f64 / fs).round() as usize;
         for &amp in &[0.25f32, 0.5] {
             for (di, &drv) in drvs.iter().enumerate() {
-                let alone = render(true, false, m, amp, drv);
-                let both = render(true, true, m, amp, drv);
+                let alone = run(true, false, m, amp, drv);
+                let both = run(true, true, m, amp, drv);
                 let d = alone - both; // both lower(better) ⇒ d>0 ⇒ OS helps
                 deltas.push(d);
                 if d.is_finite() {
@@ -497,7 +497,7 @@ fn adaa_reduces_aliasing() {
     let alias_bin = 3_000.0;
     let n = 16_384;
 
-    let render = |adaa: bool| -> Vec<f32> {
+    let run = |adaa: bool| -> Vec<f32> {
         let mut t = Triode::new();
         t.prepare(fs as f32);
         t.set_grid_drive(knob(18.0));
@@ -514,8 +514,8 @@ fn adaa_reduces_aliasing() {
         }
         out
     };
-    let off = render(false);
-    let on = render(true);
+    let off = run(false);
+    let on = run(true);
     let a_off = goertzel(&off, alias_bin, fs);
     let a_on = goertzel(&on, alias_bin, fs);
     println!(
@@ -531,14 +531,14 @@ fn adaa_reduces_aliasing() {
 }
 
 /// ADAA's in-band harmonics match the alias-free truth (the same
-/// stage rendered at 8× and measured there). The naive 48 kHz render
+/// stage processed at 8× and measured there). The naive 48 kHz run
 /// is no reference: folded images move its h4 by 2.4 dB.
 #[test]
 fn adaa_preserves_inband_harmonics() {
     let fs = 48_000.0;
     let f0 = 1_000.0;
     let n = 16_384;
-    let render = |rate: f64, adaa: bool| -> Vec<f32> {
+    let run = |rate: f64, adaa: bool| -> Vec<f32> {
         let mut t = Triode::new();
         t.prepare(rate as f32);
         t.set_grid_drive(knob(12.0));
@@ -551,8 +551,8 @@ fn adaa_preserves_inband_harmonics() {
         }
         (0..frames).map(|i| t.tick(sine(i))).collect()
     };
-    let truth = render(fs * 8.0, false);
-    let on = render(fs, true);
+    let truth = run(fs * 8.0, false);
+    let on = run(fs, true);
     for k in 2..=5 {
         let f = k as f64 * f0;
         let r_truth = goertzel(&truth, f, fs * 8.0) / goertzel(&truth, f0, fs * 8.0);
@@ -1128,7 +1128,7 @@ fn rebind_is_a_no_op() {
     let fs = 48_000.0f64;
     let f0 = 220.0;
     let n = 8_192;
-    let render = |rebind: bool| -> Vec<f32> {
+    let run = |rebind: bool| -> Vec<f32> {
         let mut t = Triode::new();
         t.prepare(fs as f32);
         t.set_grid_drive(knob(12.0));
@@ -1143,8 +1143,8 @@ fn rebind_is_a_no_op() {
             })
             .collect()
     };
-    let a = render(false);
-    let b = render(true);
+    let a = run(false);
+    let b = run(true);
     assert!(
         a.iter().zip(&b).all(|(x, y)| x == y),
         "re-binding an unchanged drive perturbed the stream"

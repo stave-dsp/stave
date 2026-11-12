@@ -9,16 +9,16 @@ mod state;
 mod sweep;
 mod tail;
 
-pub use bypass::BypassPolicy;
-pub use channels::ChannelsPolicy;
-pub use deadline::DeadlinePolicy;
-pub use glide::GlidePolicy;
-pub use noise::NoisePolicy;
-pub use output::OutputPolicy;
-pub use solver::SolverPolicy;
-pub use state::StatePolicy;
-pub use sweep::SweepPolicy;
-pub use tail::TailPolicy;
+pub use bypass::BypassConfig;
+pub use channels::ChannelsConfig;
+pub use deadline::DeadlineConfig;
+pub use glide::GlideConfig;
+pub use noise::NoiseConfig;
+pub use output::OutputConfig;
+pub use solver::SolverConfig;
+pub use state::StateConfig;
+pub use sweep::SweepConfig;
+pub use tail::TailConfig;
 
 use super::Check;
 
@@ -79,10 +79,10 @@ pub(crate) fn outcome(
     make: impl Fn() -> Box<dyn crate::instance::Instance>,
 ) -> super::Outcome {
     let mut f = || Ok(make());
-    let policy = super::SuitePolicy::default();
+    let config = super::SuiteConfig::default();
     check(&mut super::Ctx {
         factory: &mut f,
-        policy: &policy,
+        config: &config,
         logged: Default::default(),
     })
     .unwrap()

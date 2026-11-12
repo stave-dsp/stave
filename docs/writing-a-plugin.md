@@ -89,7 +89,7 @@ open — the rule is for behavior components. Names are the glossary's
 words (docs/overhaul.md, enforced by `scripts/check-vocabulary.sh`),
 never positions or private verbs: `primary`/`voicing`/`post`, not
 `stage_a`/`filt1`; the audio block is `process`, never "render" —
-render is a pixel word; taps are a `#[derive(Taps)]` table built in
+the r-word is for pixels; taps are a `#[derive(Taps)]` table built in
 `Plugin::new`; driver lanes and detector feeds are named constants,
 never bare indices. Milestone tags stay out of code comments —
 provenance lives in commits and docs.

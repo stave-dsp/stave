@@ -4,9 +4,9 @@
 //! playing.
 
 use crate::instance::Instance;
-use crate::loaded::LoadError;
+use crate::opened::OpenError;
 use crate::note::NoteSchedule;
-use crate::render::Driver;
+use crate::drive::Driver;
 use stave_measure::signal::{db_to_amp, Gate, LogSweep, Signal};
 use stave_measure::transfer::{self, TransferFunction};
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
@@ -116,13 +116,13 @@ pub struct LevelResponse {
 #[derive(Debug, thiserror::Error)]
 pub enum ResponseError {
     #[error(transparent)]
-    Load(#[from] LoadError),
+    Load(#[from] OpenError),
     #[error("the instance has no outputs")]
     NoOutputs,
 }
 
 pub fn measure_levels(
-    fresh: &mut dyn FnMut() -> Result<Box<dyn Instance>, LoadError>,
+    fresh: &mut dyn FnMut() -> Result<Box<dyn Instance>, OpenError>,
     cfg: &LevelResponseConfig,
 ) -> Result<LevelResponse, ResponseError> {
     let mut gain_db = Vec::with_capacity(cfg.levels_db.len());
@@ -199,13 +199,13 @@ mod tests {
         let flat = measure_levels(&mut gain, &cfg).unwrap();
         assert!(flat.spread_db[0].unwrap() < 0.01, "{flat:?}");
 
-        let module = crate::modules::find("clipper/diode").unwrap();
+        let stage = crate::stages::find("clipper/diode").unwrap();
         let mut clipper = || {
             let mono = crate::config::HostConfig {
                 channels: std::num::NonZeroUsize::new(1).unwrap(),
                 ..crate::config::HostConfig::default()
             };
-            Ok(Box::new(crate::modules::ModuleInstance::new(module, &mono)) as Box<dyn Instance>)
+            Ok(Box::new(crate::stages::CatalogInstance::new(stage, &mono)) as Box<dyn Instance>)
         };
         let driven = measure_levels(&mut clipper, &cfg).unwrap();
         assert!(driven.spread_db[0].unwrap() > 1.0, "{driven:?}");

@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Host any VST3 plugin, drive it, and measure it: loading, rendering, analysis, the bench and the validation suite"
+description = "Host any VST3 plugin, drive it, and measure it: loading, processing, analysis, the bench and the validation suite"
 
 [dependencies]
 thiserror.workspace = true

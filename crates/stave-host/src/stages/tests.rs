@@ -2,9 +2,9 @@ use super::*;
 use crate::adapt::InstanceChannel;
 use crate::config::HostConfig;
 use crate::control::ControlError;
-use crate::instance::{Instance, Probe};
+use crate::instance::{Instance, TapReading};
 use crate::validate::{Status, Suite};
-use stave_measure::tone_test::ToneTest;
+use stave_measure::tone_window::ToneWindow;
 
 fn config() -> HostConfig {
     HostConfig {
@@ -13,8 +13,8 @@ fn config() -> HostConfig {
     }
 }
 
-fn tone() -> ToneTest {
-    ToneTest {
+fn tone() -> ToneWindow {
+    ToneWindow {
         bin: 100,
         window: 4800,
         sample_rate: 48_000.0,
@@ -35,10 +35,10 @@ fn names_are_unique_and_defaults_in_range() {
 
 #[test]
 fn settings_are_controls_and_a_change_reaches_the_audio() {
-    let mut peak = ModuleInstance::new(find("filter/peak").unwrap(), &config());
+    let mut peak = CatalogInstance::new(find("filter/peak").unwrap(), &config());
     let names: Vec<_> = peak.controls().into_iter().map(|c| c.name).collect();
     assert_eq!(names, ["hz", "db", "q"]);
-    let gain = |inst: &mut ModuleInstance| {
+    let gain = |inst: &mut CatalogInstance| {
         tone().gain_db(InstanceChannel {
             instance: inst,
             channel: 0,
@@ -51,7 +51,7 @@ fn settings_are_controls_and_a_change_reaches_the_audio() {
 
 #[test]
 fn out_of_range_and_unknown_settings_are_refused() {
-    let mut m = ModuleInstance::new(find("coupler").unwrap(), &config());
+    let mut m = CatalogInstance::new(find("coupler").unwrap(), &config());
     assert!(matches!(
         m.set_control("hz", 1e6),
         Err(ControlError::OutOfRange { .. })
@@ -64,31 +64,31 @@ fn out_of_range_and_unknown_settings_are_refused() {
 
 #[test]
 fn the_diode_clipper_reports_its_solver() {
-    let mut clipper = ModuleInstance::new(find("clipper/diode").unwrap(), &config());
+    let mut clipper = CatalogInstance::new(find("clipper/diode").unwrap(), &config());
     let input = vec![0.8f32; 64];
     let (mut l, mut r) = (vec![0.0f32; 64], vec![0.0f32; 64]);
     clipper.process(&[&input, &input], &mut [&mut l, &mut r], &[]);
-    let probes = clipper.probes();
-    let read = |n: &str| probes.iter().find(|p| p.name == n).unwrap().latest;
-    assert_eq!(read(Probe::NEWTON_SOLVES), 128.0);
-    assert!((1.0..=3.0).contains(&read(Probe::NEWTON_MEAN_ITERATIONS)));
-    assert_eq!(read(Probe::NEWTON_CAPPED), 0.0);
+    let taps = clipper.taps();
+    let read = |n: &str| taps.iter().find(|p| p.name == n).unwrap().latest;
+    assert_eq!(read(TapReading::NEWTON_SOLVES), 128.0);
+    assert!((1.0..=3.0).contains(&read(TapReading::NEWTON_MEAN_ITERATIONS)));
+    assert_eq!(read(TapReading::NEWTON_CAPPED), 0.0);
     assert!(find("filter/peak")
-        .map(|m| ModuleInstance::new(m, &config()).probes().is_empty())
+        .map(|m| CatalogInstance::new(m, &config()).taps().is_empty())
         .unwrap());
 }
 
 #[test]
 fn every_module_passes_validation() {
-    for module in CATALOG {
+    for stage in CATALOG {
         let mut fresh =
-            || Ok(Box::new(ModuleInstance::new(module, &config())) as Box<dyn Instance>);
+            || Ok(Box::new(CatalogInstance::new(stage, &config())) as Box<dyn Instance>);
         let report = Suite::default().run(&mut fresh, |_| {});
         let failed: Vec<_> = report
             .checks
             .iter()
             .filter(|c| c.status == Status::Fail)
             .collect();
-        assert!(failed.is_empty(), "{}: {failed:#?}", module.name);
+        assert!(failed.is_empty(), "{}: {failed:#?}", stage.name);
     }
 }

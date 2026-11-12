@@ -1,4 +1,4 @@
-//! Comparing two renders: bit-exact divergence, and the residual of a
+//! Comparing two runs: bit-exact divergence, and the residual of a
 //! null test (how far apart, in dB, two signals that should match are).
 
 use crate::level::{db, mean_square, power_db};
@@ -12,7 +12,7 @@ pub struct Divergence {
 
 /// First bitwise difference, comparing channels pairwise over their
 /// common length. (Bitwise: −0.0 ≠ 0.0, and a NaN never matches — a
-/// render that differs in either is not reproducible.)
+/// run that differs in either is not reproducible.)
 pub fn first_divergence(a: &[Vec<f32>], b: &[Vec<f32>]) -> Option<Divergence> {
     if a.len() != b.len() {
         return Some(Divergence {

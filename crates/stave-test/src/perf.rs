@@ -4,7 +4,7 @@
 //! Every project declares its representative configurations; the
 //! report measures them the way the doctrine demands (single-run
 //! numbers on a desktop carry ±5–8% noise — measured):
-//! * warm-up first, then REPEATED timed renders, MEDIAN taken;
+//! * warm-up first, then REPEATED timed runs, MEDIAN taken;
 //! * ns/frame printed beside the realtime budget so the number
 //!   means something (48 kHz = 20 833 ns/frame);
 //! * spread printed so a noisy run discredits itself.
@@ -30,9 +30,9 @@ pub struct PerfCase {
 pub struct PerfConfig {
     pub sample_rate: f32,
     pub block_size: usize,
-    /// Untimed, before the first timed render: caches, parameter ramps.
+    /// Untimed, before the first timed run: caches, parameter ramps.
     pub warmup_blocks: usize,
-    /// Timed renders per case; the median is reported.
+    /// Timed runs per case; the median is reported.
     pub repeats: usize,
     pub seconds_per_repeat: f32,
     /// Every input channel, effects only.
@@ -92,7 +92,7 @@ pub fn perf_report<P: Plugin>(project: &str, cases: &[PerfCase], config: &PerfCo
             }),
         })
         .collect();
-    let input: Vec<f32> = config.input.render(
+    let input: Vec<f32> = config.input.samples(
         0,
         (config.seconds_per_repeat * config.sample_rate) as usize + block,
     );

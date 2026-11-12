@@ -1,11 +1,11 @@
 use serde_json::json;
 
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::level::{db, Meter};
 
 #[derive(Copy, Clone, Debug)]
-pub struct SweepPolicy {
+pub struct SweepConfig {
     /// Values per continuous control (see [`Control::sweep_values`]).
     ///
     /// [`Control::sweep_values`]: crate::control::Control::sweep_values
@@ -20,7 +20,7 @@ pub struct SweepPolicy {
     pub runaway_growth_db: f64,
 }
 
-impl Default for SweepPolicy {
+impl Default for SweepConfig {
     fn default() -> Self {
         Self {
             points: 9,
@@ -33,7 +33,7 @@ impl Default for SweepPolicy {
 }
 
 pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.sweep);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.sweep);
     let mut inst = ctx.fresh()?;
     let (signal, notes) = excitation.for_instance(inst.as_ref());
     let controls: Vec<_> = inst
@@ -42,17 +42,17 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         .filter(|c| c.sweepable())
         .collect();
     let mut d = Driver::new(inst.as_mut());
-    d.skip(d.frames_for(policy.settle_seconds), signal.as_ref(), &notes);
+    d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
     if controls.is_empty() {
         return Ok(Outcome::not_applicable("no sweepable controls"));
     }
     let mut offenders = vec![];
     let mut loudest = (f64::NEG_INFINITY, json!(null));
     for c in &controls {
-        for v in c.sweep_values(policy.points) {
+        for v in c.sweep_values(config.points) {
             d.instance().set_control(&c.name, v)?;
-            let n = d.frames_for(policy.hold_seconds) / policy.windows as u64;
-            let windows: Vec<Meter> = (0..policy.windows)
+            let n = d.frames_for(config.hold_seconds) / config.windows as u64;
+            let windows: Vec<Meter> = (0..config.windows)
                 .map(|_| {
                     let mut m = Meter::default();
                     d.run(n, signal.as_ref(), &notes, |b| m.add(&b.outputs()));
@@ -60,10 +60,10 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
                 })
                 .collect();
             let non_finite: u64 = windows.iter().map(Meter::non_finite).sum();
-            let quarter = (policy.windows / 4).max(1);
+            let quarter = (config.windows / 4).max(1);
             let level = |w: &[Meter]| db(w.iter().map(Meter::rms).fold(0.0, f64::max));
             let growth_db =
-                level(&windows[policy.windows - quarter..]) - level(&windows[..quarter]);
+                level(&windows[config.windows - quarter..]) - level(&windows[..quarter]);
             let peak_dbfs = db(windows.iter().map(Meter::peak).fold(0.0, f64::max));
             if peak_dbfs > loudest.0 {
                 loudest = (
@@ -71,7 +71,7 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
                     json!({ "control": c.name, "value": v, "peak_dbfs": peak_dbfs }),
                 );
             }
-            if non_finite > 0 || growth_db > policy.runaway_growth_db {
+            if non_finite > 0 || growth_db > config.runaway_growth_db {
                 offenders.push(json!({
                     "control": c.name, "value": v,
                     "non_finite_samples": non_finite, "growth_db": growth_db,
@@ -79,7 +79,7 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
             }
         }
         d.instance().set_control(&c.name, c.default)?;
-        d.skip(d.frames_for(policy.settle_seconds), signal.as_ref(), &notes);
+        d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
     }
     let swept = controls.len();
     Ok(if offenders.is_empty() {

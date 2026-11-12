@@ -1,4 +1,4 @@
-//! Test signals as pure functions of (channel, frame): a render is
+//! Test signals as pure functions of (channel, frame): a run is
 //! reproducible by construction, and a check can regenerate exactly
 //! what was fed in (the bypass check compares against it bit for bit).
 
@@ -9,7 +9,7 @@ pub trait Signal: Send + Sync {
     fn at(&self, channel: usize, frame: u64) -> f32;
 
     /// One channel's first `frames` frames, as a buffer.
-    fn render(&self, channel: usize, frames: usize) -> Vec<f32> {
+    fn samples(&self, channel: usize, frames: usize) -> Vec<f32> {
         (0..frames as u64).map(|f| self.at(channel, f)).collect()
     }
 

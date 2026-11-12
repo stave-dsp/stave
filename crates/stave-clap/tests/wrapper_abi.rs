@@ -296,11 +296,11 @@ fn two_instances_keep_independent_state() {
 /// A host's null channel pointer never reaches the plugin as a slice
 /// (Miri checks no slice is built from null): a null input reads as
 /// silence, a null output is written to scratch, and the real channels
-/// render exactly as with real buffers.
+/// run exactly as with real buffers.
 #[test]
 fn null_channel_pointers_read_silence_and_write_scratch() {
     let signal = test_signal(FRAMES * BLOCKS, 3);
-    let render = |null_in_l: bool, null_out_l: bool| -> (Vec<f32>, Vec<f32>) {
+    let run = |null_in_l: bool, null_out_l: bool| -> (Vec<f32>, Vec<f32>) {
         unsafe {
             let inst = create_instance();
             inst.activate(48_000.0, FRAMES as u32);
@@ -331,14 +331,14 @@ fn null_channel_pointers_read_silence_and_write_scratch() {
             (all_l, all_r)
         }
     };
-    let (ref_l, ref_r) = render(false, false);
-    let (null_in_l, null_in_r) = render(true, false);
+    let (ref_l, ref_r) = run(false, false);
+    let (null_in_l, null_in_r) = run(true, false);
     assert!(
         null_in_l.iter().all(|&v| v == 0.0),
         "a null input is silence"
     );
     assert_eq!(null_in_r, ref_r, "the real channel is untouched");
-    let (null_out_l, null_out_r) = render(false, true);
+    let (null_out_l, null_out_r) = run(false, true);
     assert!(
         null_out_l.iter().all(|&v| v == 0.0),
         "the host buffer was never written"
@@ -346,6 +346,6 @@ fn null_channel_pointers_read_silence_and_write_scratch() {
     assert_eq!(null_out_r, ref_r);
     assert!(
         ref_l.iter().any(|&v| v != 0.0),
-        "precondition: the fixture renders"
+        "precondition: the fixture runs"
     );
 }

@@ -8,7 +8,7 @@ use std::num::NonZeroUsize;
 
 use stave_host::config::{HostConfig, SampleRate};
 use stave_host::plugin::{ControllerKind, LoadedPlugin};
-use stave_host::render::Driver;
+use stave_host::drive::Driver;
 use stave_measure::signal::{db_to_amp, Silence, Sine};
 use stave_measure::tone;
 

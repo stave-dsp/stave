@@ -1,5 +1,5 @@
 //! The harness as a stave-host [`Instance`]: everything stave-host
-//! measures, drives and validates — `render::Driver`, the frequency
+//! measures, drives and validates — `drive::Driver`, the frequency
 //! response, the bench phases, the validation checks — runs on a linked
 //! plugin in-process, through its Rust interface, with no bundle.
 //! Notes and parameters convert here, at the edge.

@@ -2,7 +2,7 @@ use serde_json::json;
 
 use crate::instance::Tail;
 use crate::note::{Note, NoteSchedule};
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::level::{mean_square, power_db};
 use stave_measure::signal::Silence;
@@ -10,7 +10,7 @@ use stave_measure::signal::Silence;
 /// A never-quiet output is `info`, not `fail`: a long tail or
 /// self-noise is a judgment call.
 #[derive(Copy, Clone, Debug)]
-pub struct TailPolicy {
+pub struct TailConfig {
     pub burst_seconds: f64,
     pub window_seconds: f64,
     pub quiet_dbfs: f64,
@@ -18,7 +18,7 @@ pub struct TailPolicy {
     pub infinite_tail_seconds: f64,
 }
 
-impl Default for TailPolicy {
+impl Default for TailConfig {
     fn default() -> Self {
         Self {
             burst_seconds: 0.5,
@@ -31,16 +31,16 @@ impl Default for TailPolicy {
 }
 
 pub fn silence_tail(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.tail);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.tail);
     let mut inst = ctx.fresh()?;
     let (signal, _) = excitation.for_instance(inst.as_ref());
     let layout = inst.layout();
     let rate = layout.sample_rate;
     let allowed = match inst.tail() {
         Tail::Samples(n) => {
-            (f64::from(n) + f64::from(inst.latency())) / rate + policy.margin_seconds
+            (f64::from(n) + f64::from(inst.latency())) / rate + config.margin_seconds
         }
-        Tail::Infinite => policy.infinite_tail_seconds,
+        Tail::Infinite => config.infinite_tail_seconds,
     };
     let notes = if layout.is_instrument() {
         let chord: Vec<Note> = excitation
@@ -50,7 +50,7 @@ pub fn silence_tail(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
                 pitch,
                 velocity: excitation.velocity,
                 on_s: 0.0,
-                off_s: policy.burst_seconds,
+                off_s: config.burst_seconds,
             })
             .collect();
         NoteSchedule::new(&chord, rate)
@@ -58,17 +58,17 @@ pub fn silence_tail(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         NoteSchedule::default()
     };
     let mut d = Driver::new(inst.as_mut());
-    d.skip(d.frames_for(policy.burst_seconds), signal.as_ref(), &notes);
+    d.skip(d.frames_for(config.burst_seconds), signal.as_ref(), &notes);
     let (mut t, mut last_db) = (0.0, f64::INFINITY);
     while t < allowed {
-        let w = d.capture(d.frames_for(policy.window_seconds), &Silence, &notes);
+        let w = d.capture(d.frames_for(config.window_seconds), &Silence, &notes);
         last_db = w
             .channels
             .iter()
             .map(|c| power_db(mean_square(c)))
             .fold(f64::MIN, f64::max);
-        t += policy.window_seconds;
-        if last_db < policy.quiet_dbfs {
+        t += config.window_seconds;
+        if last_db < config.quiet_dbfs {
             return Ok(Outcome::pass(
                 json!({ "quiet_after_s": t, "allowed_s": allowed }),
             ));
@@ -76,7 +76,7 @@ pub fn silence_tail(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     }
     Ok(Outcome::info(json!({
         "note": "still above the quiet level at the end of the allowed tail",
-        "quiet_dbfs": policy.quiet_dbfs,
+        "quiet_dbfs": config.quiet_dbfs,
         "allowed_s": allowed,
         "last_rms_dbfs": last_db,
     })))
@@ -97,7 +97,7 @@ mod tests {
             assert_eq!(v.status, Status::Pass, "{:?}", v.details);
             assert_eq!(
                 v.details["quiet_after_s"],
-                TailPolicy::default().window_seconds
+                TailConfig::default().window_seconds
             );
         }
     }

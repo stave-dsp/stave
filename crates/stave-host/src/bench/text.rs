@@ -154,9 +154,9 @@ pub fn bench(r: &BenchReport, title: &str) -> String {
             }
         );
     }
-    if !r.probes.is_empty() {
-        let _ = writeln!(w, "\nPlugin probes (read after the timed run):");
-        for p in &r.probes {
+    if !r.taps.is_empty() {
+        let _ = writeln!(w, "\nPlugin taps (read after the timed run):");
+        for p in &r.taps {
             let _ = writeln!(
                 w,
                 "   {:<22} {:>12.4}  min {:>12.4}  max {:>12.4}",

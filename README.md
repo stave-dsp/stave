@@ -143,7 +143,7 @@ The contracts they keep are in **docs/architecture.md**.
 One library, two apps — see **docs/host.md** for the full surface:
 
 - **`stave-host`** — host any VST3 (stave-built or third-party),
-  drive it, measure it: loading, rendering, the bench and the
+  drive it, measure it: loading, processing, the bench and the
   validation suite, as a library.
 - **`stave-play`** (`tools/stave-play`) — windowed host: the plugin's
   own editor bound to the live instance, a playable sine bank + MIDI
@@ -153,7 +153,7 @@ One library, two apps — see **docs/host.md** for the full surface:
   or just the plugin editor.
 - **`stave-bench`** (`tools/stave-bench`) — the agent API:
   `--describe` (identity, load trace, every control, probe, preset as
-  JSON), offline renders with CPU / latency / THD / silence reports,
+  JSON), offline runs with CPU / latency / THD / silence reports,
   `--validate` (the pluginval-style suite).
 - **`stave-storybook`** (`tools/storybook`) — the design system's
   native storybook: every component live and draggable, no plugin

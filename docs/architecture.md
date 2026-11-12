@@ -50,7 +50,7 @@ stave-measure ── stave-host ── stave-test, tools/*
   messages; string-keyed `probe!`/`brk_if!` for tooling only. Lock-free,
   private fields; zero cost unattached.
 - **stave-ui** — the layout tree (`Node`, layout only) with its flexbox
-  solver, and the `Scene` vector IR. **stave-raster** renders a Scene to
+  solver, and the `Scene` vector IR. **stave-raster** rasterises a Scene to
   pixels, identically on every OS.
 - **stave-face** — the design system: a plugin's editor is a `Face`, a
   layout tree of `Part`s (knobs, switches, lamps, displays, `Plate`s,
@@ -68,7 +68,7 @@ stave-measure ── stave-host ── stave-test, tools/*
 - **stave-measure** — measurement as pure functions over buffers and
   signals.
 - **stave-host** — loads any VST3 (or any stave-dsp module) as an
-  `Instance`; bench, validation suite, rendering. `tools/stave-bench` and
+  `Instance`; bench, validation suite, processing. `tools/stave-bench` and
   `tools/stave-play` are its CLI and GUI.
 - **stave-test** — shared plugin checks (`validation`, `face`,
   `no_alloc`, `perf`, `stability`) and, under `tests/`, conformance
@@ -165,7 +165,7 @@ lines, Newton with junction limiting and backtracking, wave digital
 filters, Wright-ω closed forms), `topologies/` (common cathode, triode
 stage, push-pull pair, power supply, coupler, tone stack, diode clipper,
 op-amp diode clipper, transformer). Topologies are checked against
-ngspice waveforms rendered by `scripts/ngspice-render.py`
+ngspice waveforms processed by `scripts/ngspice-simulate.py`
 (`stave-test/tests/matches_ngspice.rs`); what SPICE has no model for
 (the magnetic core) against SciPy solutions of its equations from
 `scripts/ja-reference.py` (`matches_reference.rs`). Dynamic components
@@ -285,5 +285,5 @@ stave-host reads it across dlopen through the exported
 - Time constants are rate-derived (`tau_coeff(τ, fs)` = `1 − e^(−1/(τ·fs))`),
   never bare per-sample coefficients.
 - Bounded queues never drop silently: saturating counters, surfaced.
-- Randomness is seeded (`primitives::random`): a render reproduces from its
+- Randomness is seeded (`primitives::random`): a run reproduces from its
   seed.

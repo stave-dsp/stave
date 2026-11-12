@@ -1,5 +1,5 @@
 //! Tabbed analysis views. Each view borrows the shared `AnalysisRing` (for
-//! audio data) and `DebugLog` (for stats / log lines), and renders its slice
+//! audio data) and `DebugLog` (for stats / log lines), and draws its slice
 //! of the central panel.
 
 pub mod debug;

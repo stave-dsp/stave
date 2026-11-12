@@ -1,6 +1,6 @@
 //! Spectrogram: time × frequency × level (colour) of the plugin output.
 //! One column per frame; the oldest scrolls off the left. **Hold**
-//! freezes the buffer for static study of a finished render.
+//! freezes the buffer for static study of a finished run.
 
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 

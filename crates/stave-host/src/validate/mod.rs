@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use crate::control::ControlError;
 use crate::instance::{Instance, PluginMessage, StateError};
-use crate::loaded::LoadError;
+use crate::opened::OpenError;
 use crate::note::{Note, NoteSchedule};
 use stave_core::diagnostics::Severity;
 use stave_measure::signal::{Noise, Signal, Silence};
@@ -15,8 +15,8 @@ use stave_measure::signal::{Noise, Signal, Silence};
 use logged::Logged;
 
 pub use checks::{
-    BypassPolicy, ChannelsPolicy, DeadlinePolicy, GlidePolicy, NoisePolicy, OutputPolicy,
-    SolverPolicy, StatePolicy, SweepPolicy, TailPolicy, ALL,
+    BypassConfig, ChannelsConfig, DeadlineConfig, GlideConfig, NoiseConfig, OutputConfig,
+    SolverConfig, StateConfig, SweepConfig, TailConfig, ALL,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -92,13 +92,13 @@ impl SuiteReport {
     }
 }
 
-pub type Factory<'a> = dyn FnMut() -> Result<Box<dyn Instance>, LoadError> + 'a;
+pub type Factory<'a> = dyn FnMut() -> Result<Box<dyn Instance>, OpenError> + 'a;
 
 /// Why a check could not run to a verdict.
 #[derive(Debug, thiserror::Error)]
 pub enum CheckError {
     #[error("could not load a fresh instance")]
-    Load(#[from] LoadError),
+    Load(#[from] OpenError),
     #[error(transparent)]
     Control(#[from] ControlError),
     #[error(transparent)]
@@ -107,12 +107,12 @@ pub enum CheckError {
 
 pub struct Ctx<'a, 'f> {
     factory: &'a mut Factory<'f>,
-    pub policy: &'a SuitePolicy,
+    pub config: &'a SuiteConfig,
     logged: Rc<RefCell<Vec<PluginMessage>>>,
 }
 
 impl Ctx<'_, '_> {
-    pub fn fresh(&mut self) -> Result<Box<dyn Instance>, LoadError> {
+    pub fn fresh(&mut self) -> Result<Box<dyn Instance>, OpenError> {
         Ok(Box::new(Logged {
             inner: (self.factory)()?,
             into: Rc::clone(&self.logged),
@@ -135,18 +135,18 @@ pub struct Check {
 
 /// Every threshold and duration the checks judge by.
 #[derive(Clone, Debug, Default)]
-pub struct SuitePolicy {
+pub struct SuiteConfig {
     pub excitation: Excitation,
-    pub output: OutputPolicy,
-    pub sweep: SweepPolicy,
-    pub glide: GlidePolicy,
-    pub noise: NoisePolicy,
-    pub channels: ChannelsPolicy,
-    pub solver: SolverPolicy,
-    pub tail: TailPolicy,
-    pub deadline: DeadlinePolicy,
-    pub state: StatePolicy,
-    pub bypass: BypassPolicy,
+    pub output: OutputConfig,
+    pub sweep: SweepConfig,
+    pub glide: GlideConfig,
+    pub noise: NoiseConfig,
+    pub channels: ChannelsConfig,
+    pub solver: SolverConfig,
+    pub tail: TailConfig,
+    pub deadline: DeadlineConfig,
+    pub state: StateConfig,
+    pub bypass: BypassConfig,
 }
 
 /// What drives the instance under test: noise for an effect, a held
@@ -186,14 +186,14 @@ impl Excitation {
 
 pub struct Suite {
     pub checks: &'static [Check],
-    pub policy: SuitePolicy,
+    pub config: SuiteConfig,
 }
 
 impl Default for Suite {
     fn default() -> Self {
         Self {
             checks: ALL,
-            policy: SuitePolicy::default(),
+            config: SuiteConfig::default(),
         }
     }
 }
@@ -221,7 +221,7 @@ impl Suite {
         let logged = Rc::default();
         let mut ctx = Ctx {
             factory,
-            policy: &self.policy,
+            config: &self.config,
             logged: Rc::clone(&logged),
         };
         let outcome = (check.run)(&mut ctx)
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn load_failure_fails_every_check_with_the_error() {
         let mut f = || {
-            Err::<Box<dyn Instance>, _>(LoadError::Plugin {
+            Err::<Box<dyn Instance>, _>(OpenError::Plugin {
                 path: "/x.vst3".into(),
                 source: crate::plugin::HostError::DlopenFailed("no such file".into()),
             })

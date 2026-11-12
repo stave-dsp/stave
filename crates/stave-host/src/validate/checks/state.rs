@@ -1,18 +1,18 @@
 use serde_json::json;
 
 use crate::instance::StateError;
-use crate::render::Driver;
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 
 /// Controls are parked at `nudge` through their range, far from any
 /// default, so a state that ignores them shows.
 #[derive(Copy, Clone, Debug)]
-pub struct StatePolicy {
+pub struct StateConfig {
     pub nudge: f64,
     pub settle_seconds: f64,
 }
 
-impl Default for StatePolicy {
+impl Default for StateConfig {
     fn default() -> Self {
         Self {
             nudge: 0.618,
@@ -22,18 +22,18 @@ impl Default for StatePolicy {
 }
 
 pub fn state_roundtrip(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.state);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.state);
     let (mut a, mut b) = (ctx.fresh()?, ctx.fresh()?);
     let (signal, notes) = excitation.for_instance(a.as_ref());
     let nudged: Vec<_> = a
         .controls()
         .into_iter()
         .filter(|c| c.sweepable() && !c.flags.bypass)
-        .filter(|c| a.set_control(&c.name, c.lerp(policy.nudge)).is_ok())
+        .filter(|c| a.set_control(&c.name, c.lerp(config.nudge)).is_ok())
         .map(|c| c.name)
         .collect();
     let mut d = Driver::new(a.as_mut());
-    d.skip(d.frames_for(policy.settle_seconds), signal.as_ref(), &notes);
+    d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
     let blob = match a.save_state() {
         Ok(blob) => blob,
         Err(StateError::Unsupported) => {

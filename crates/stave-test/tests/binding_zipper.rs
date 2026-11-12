@@ -24,9 +24,9 @@ const M: usize = 683; // ~1 kHz, bin-centred
 const GUARD_HZ: f64 = 200.0;
 const BLOCK: usize = 64;
 
-/// Render a tone through the param's declared-smoothing read path,
+/// Run a tone through the param's declared-smoothing read path,
 /// with the target stepped at block rate by `automation(i)`.
-fn render(p: &FloatParam, automation: impl Fn(usize) -> f64) -> Vec<f64> {
+fn run(p: &FloatParam, automation: impl Fn(usize) -> f64) -> Vec<f64> {
     let mut control = Smoother::new(p);
     control.prepare(&Environment::new(FS as f32, BLOCK));
     let two_pi = 2.0 * std::f64::consts::PI;
@@ -63,7 +63,7 @@ fn declared_smoothing_meets_the_zipper_limit() {
     let p = FloatParam::new(ParamId(1), "gain", Range::linear(0.0, 1.0)).default(0.25)
         .smooth(Smooth::ms(15.0));
     let r = zipper_report(
-        &render(&p, glide_lane),
+        &run(&p, glide_lane),
         &ZipperConfig {
             carrier_bin: M,
             sample_rate: FS,
@@ -85,7 +85,7 @@ fn smoothing_separates_from_raw_steps() {
     let raw = FloatParam::new(ParamId(2), "gain", Range::linear(0.0, 1.0)).default(0.25)
         .smooth(Smooth::Off);
     let r_s = zipper_report(
-        &render(&smoothed, square_lane),
+        &run(&smoothed, square_lane),
         &ZipperConfig {
             carrier_bin: M,
             sample_rate: FS,
@@ -94,7 +94,7 @@ fn smoothing_separates_from_raw_steps() {
         },
     );
     let r_r = zipper_report(
-        &render(&raw, square_lane),
+        &run(&raw, square_lane),
         &ZipperConfig {
             carrier_bin: M,
             sample_rate: FS,

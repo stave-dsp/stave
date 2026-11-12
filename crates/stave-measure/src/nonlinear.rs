@@ -3,7 +3,7 @@
 
 use crate::spectrum::fft;
 use crate::system::System;
-use crate::tone_test::ToneTest;
+use crate::tone_window::ToneWindow;
 
 /// Alias-to-signal classification of a bin-centred capture. Signal = bins
 /// that are multiples of `m` (the true harmonic series); alias = every
@@ -99,11 +99,11 @@ pub struct GainSurface {
 
 impl GainSurface {
     pub fn measure<S: System>(&self, make_system: impl Fn() -> S) -> Surface {
-        let tones: Vec<ToneTest> = self
+        let tones: Vec<ToneWindow> = self
             .freqs_hz
             .iter()
-            .map(|&hz| ToneTest {
-                bin: ToneTest::bin_near(hz, self.window, self.sample_rate),
+            .map(|&hz| ToneWindow {
+                bin: ToneWindow::bin_near(hz, self.window, self.sample_rate),
                 window: self.window,
                 sample_rate: self.sample_rate,
                 amplitude: 1.0,
@@ -118,7 +118,7 @@ impl GainSurface {
                 tones
                     .iter()
                     .map(|t| {
-                        ToneTest { amplitude, ..*t }
+                        ToneWindow { amplitude, ..*t }
                             .gain_db(make_system())
                             .max(-240.0)
                     })
@@ -126,7 +126,7 @@ impl GainSurface {
             })
             .collect();
         Surface {
-            freqs_hz: tones.iter().map(ToneTest::frequency).collect(),
+            freqs_hz: tones.iter().map(ToneWindow::frequency).collect(),
             levels_db: self.levels_db.clone(),
             gains_db,
         }
@@ -144,22 +144,22 @@ pub struct HysteresisTest {
 }
 
 impl HysteresisTest {
-    pub fn loop_area(&self, render: impl System) -> f64 {
-        hysteresis_loop_area(render, self.frequency_hz, self.sample_rate, self.amplitude)
+    pub fn loop_area(&self, run: impl System) -> f64 {
+        hysteresis_loop_area(run, self.frequency_hz, self.sample_rate, self.amplitude)
     }
 }
 
-fn hysteresis_loop_area(mut render: impl System, f0: f64, fs: f64, amp: f64) -> f64 {
+fn hysteresis_loop_area(mut run: impl System, f0: f64, fs: f64, amp: f64) -> f64 {
     let period = (fs / f0).round() as usize;
     let sig = |i: usize| amp * (2.0 * core::f64::consts::PI * i as f64 / period as f64).sin();
     for i in 0..period * 8 {
-        let _ = render.tick(sig(i) as f32);
+        let _ = run.tick(sig(i) as f32);
     }
     let mut xs = Vec::with_capacity(period);
     let mut ys = Vec::with_capacity(period);
     for i in period * 8..period * 9 {
         xs.push(sig(i));
-        ys.push(render.tick(sig(i) as f32) as f64);
+        ys.push(run.tick(sig(i) as f32) as f64);
     }
     let n = xs.len();
     let mut a = 0.0;

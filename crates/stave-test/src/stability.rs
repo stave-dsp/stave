@@ -13,7 +13,7 @@
 use stave_measure::signal::{Signal, Sine};
 
 #[derive(Clone, Copy, Debug)]
-pub struct StabilityPolicy {
+pub struct StabilityConfig {
     /// Before the first window. 15 s: τ = 3 s at feedback 0.95, past 4τ.
     pub settle_seconds: f32,
     pub window_seconds: f32,
@@ -29,7 +29,7 @@ pub struct StabilityPolicy {
     pub tone_amplitude: f64,
 }
 
-impl Default for StabilityPolicy {
+impl Default for StabilityConfig {
     fn default() -> Self {
         Self {
             settle_seconds: 15.0,
@@ -42,7 +42,7 @@ impl Default for StabilityPolicy {
     }
 }
 
-impl StabilityPolicy {
+impl StabilityConfig {
     /// Audio the trend needs: settle, then both windows.
     pub fn seconds(&self) -> f32 {
         self.settle_seconds + self.spacing_seconds + self.window_seconds
@@ -57,15 +57,15 @@ pub struct StabilityReport {
     pub ratio: f64,
 }
 
-pub fn energy_trend(out: &[f32], sample_rate: f32, policy: &StabilityPolicy) -> StabilityReport {
+pub fn energy_trend(out: &[f32], sample_rate: f32, config: &StabilityConfig) -> StabilityReport {
     let frames = |s: f32| (s * sample_rate) as usize;
-    let w = frames(policy.window_seconds);
-    let early_at = frames(policy.settle_seconds);
-    let late_at = frames(policy.settle_seconds + policy.spacing_seconds);
+    let w = frames(config.window_seconds);
+    let early_at = frames(config.settle_seconds);
+    let late_at = frames(config.settle_seconds + config.spacing_seconds);
     assert!(
         out.len() >= late_at + w,
         "stability check needs {} s of audio ({} frames given, {} required)",
-        policy.seconds(),
+        config.seconds(),
         out.len(),
         late_at + w
     );
@@ -84,24 +84,24 @@ pub fn energy_trend(out: &[f32], sample_rate: f32, policy: &StabilityPolicy) -> 
     }
 }
 
-/// The policy's tone, as long as the trend needs.
-pub fn resonant_tone(sample_rate: f32, policy: &StabilityPolicy) -> Vec<f32> {
+/// The config's tone, as long as the trend needs.
+pub fn resonant_tone(sample_rate: f32, config: &StabilityConfig) -> Vec<f32> {
     let tone = Sine {
-        frequency_hz: policy.tone_hz,
-        amplitude: policy.tone_amplitude,
+        frequency_hz: config.tone_hz,
+        amplitude: config.tone_amplitude,
         sample_rate: f64::from(sample_rate),
     };
-    tone.render(0, (policy.seconds() * sample_rate) as usize)
+    tone.samples(0, (config.seconds() * sample_rate) as usize)
 }
 
 /// The invariant: sustained drive must not TREND up. Panics with the
 /// measured ratio; `label` names the configuration under torture.
-pub fn assert_no_pump(out: &[f32], sample_rate: f32, policy: &StabilityPolicy, label: &str) {
-    let r = energy_trend(out, sample_rate, policy);
+pub fn assert_no_pump(out: &[f32], sample_rate: f32, config: &StabilityConfig, label: &str) {
+    let r = energy_trend(out, sample_rate, config);
     assert!(
-        r.ratio < policy.max_growth,
+        r.ratio < config.max_growth,
         "{label}: sustained drive TRENDING UP ({:.3}× over {} s — a pump, not wander)",
         r.ratio,
-        policy.spacing_seconds
+        config.spacing_seconds
     );
 }

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Color32, RichText, ScrollArea};
 use stave_host::config::HostConfig;
-use stave_host::loaded::Loaded;
+use stave_host::opened::Opened;
 use stave_host::validate::{CheckResult, Status, Suite, SuiteReport};
 
 #[derive(Default)]
@@ -31,7 +31,7 @@ impl Run {
             return;
         };
         let (bundle, config) = (self.bundle.clone(), self.config);
-        let mut fresh = move || Loaded::open(&bundle, config).map(Loaded::into_instance);
+        let mut fresh = move || Opened::open(&bundle, config).map(Opened::into_instance);
         let result = self.suite.run_check(&mut fresh, check);
         self.results.push(result);
     }

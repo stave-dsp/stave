@@ -14,10 +14,10 @@ const M: usize = 683; // ~1 kHz, bin-centred
 const BLOCK: usize = 64;
 const GUARD_HZ: f64 = 200.0;
 
-/// Render a sine through a FloatParam-controlled gain, with the host
+/// Run a sine through a FloatParam-controlled gain, with the host
 /// delivering block-rate target updates along an exp trajectory —
 /// exactly what DAW automation playback does.
-fn render(param: &FloatParam) -> Vec<f64> {
+fn run(param: &FloatParam) -> Vec<f64> {
     let any = param as &dyn AnyParam;
     let mut control = Smoother::new(param);
     control.prepare(&Environment::new(FS as f32, BLOCK));
@@ -43,7 +43,7 @@ fn default_smoothing_meets_the_limit_and_off_is_worse() {
         .smooth(Smooth::Off);
 
     let r_smooth = zipper_report(
-        &render(&smoothed),
+        &run(&smoothed),
         &ZipperConfig {
             carrier_bin: M,
             sample_rate: FS,
@@ -52,7 +52,7 @@ fn default_smoothing_meets_the_limit_and_off_is_worse() {
         },
     );
     let r_off = zipper_report(
-        &render(&unsmoothed),
+        &run(&unsmoothed),
         &ZipperConfig {
             carrier_bin: M,
             sample_rate: FS,

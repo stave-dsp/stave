@@ -2,7 +2,7 @@
 //! returns what it measured.
 
 use crate::note::NoteSchedule;
-use crate::render::Driver;
+use crate::drive::Driver;
 use stave_measure::latency::{impulse_latency, ImpulseLatency};
 use stave_measure::level::{mean_square, power_db, windowed_dc};
 use stave_measure::loudness::{LevelMeasure, MeterSet, Outside, Reading, StreamSpec};
@@ -87,7 +87,7 @@ pub struct Timed {
 }
 
 /// Pre-roll one analysis window of the signal (untimed, no notes) to
-/// reach steady state, then render `run.frames` from the stimulus's
+/// reach steady state, then run `run.frames` from the stimulus's
 /// start, timing every `process` call. The last analysis window of each
 /// channel feeds the tone analysis.
 ///

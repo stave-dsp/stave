@@ -1,7 +1,7 @@
 //! The ngspice waveforms are only worth comparing against if ngspice is
 //! right on circuits with exact answers; this pins that before any
 //! stave topology is judged by them. Regenerate with
-//! scripts/ngspice-render.py.
+//! scripts/ngspice-simulate.py.
 
 use std::path::PathBuf;
 
@@ -35,7 +35,7 @@ fn diode_clipper_clips_symmetrically_near_a_diode_drop() {
 
 /// The WDF clipper at 4× the waveform's rate, read at its instants:
 /// ngspice samples a continuous waveform, so a decimated
-/// render without anti-alias filtering is the like-for-like comparison.
+/// run without anti-alias filtering is the like-for-like comparison.
 fn wdf_clipper_deviation(solver: stave_dsp::PairSolver) -> stave_measure::waveform::Difference {
     use stave_dsp::{DiodeClipper, DiodeClipperConfig, Shockley, Stage};
     let g = ngspice("diode_clipper");
@@ -49,7 +49,7 @@ fn wdf_clipper_deviation(solver: stave_dsp::PairSolver) -> stave_measure::wavefo
     });
     clipper.prepare(rate as f32);
     let frames = g.value.len() * oversample;
-    let render: Vec<f64> = (0..frames)
+    let run: Vec<f64> = (0..frames)
         .map(|n| {
             let t = n as f64 / rate;
             f64::from(clipper.tick((std::f64::consts::TAU * 1_000.0 * t).sin() as f32))
@@ -57,7 +57,7 @@ fn wdf_clipper_deviation(solver: stave_dsp::PairSolver) -> stave_measure::wavefo
         .step_by(oversample)
         .collect();
     assert_eq!(clipper.stats().capped, 0);
-    g.difference(&render)
+    g.difference(&run)
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn the_common_cathode_stage_matches_spice() {
         "operating point"
     );
     let frames = g.value.len() * oversample;
-    let render: Vec<f64> = (0..frames)
+    let run: Vec<f64> = (0..frames)
         .map(|n| {
             let grid = 0.5 * (std::f64::consts::TAU * 1_000.0 * n as f64 / rate).sin();
             f64::from(stage.tick(grid as f32))
@@ -101,7 +101,7 @@ fn the_common_cathode_stage_matches_spice() {
         time_s: g.time_s.clone(),
         value: swing(&g.value),
     };
-    let d = ac.difference(&swing(&render));
+    let d = ac.difference(&swing(&run));
     assert!(d.normalized_rms < 1e-4, "{d:?}");
     assert_eq!(stage.stats().capped, 0);
 }
@@ -132,7 +132,7 @@ fn the_common_cathode_stage_with_grid_current_matches_spice() {
         g.value[0]
     );
     let frames = g.value.len() * oversample;
-    let render: Vec<f64> = (0..frames)
+    let run: Vec<f64> = (0..frames)
         .map(|n| {
             let input = 3.0 * (std::f64::consts::TAU * 1_000.0 * n as f64 / rate).sin();
             f64::from(stage.tick(input as f32))
@@ -144,7 +144,7 @@ fn the_common_cathode_stage_with_grid_current_matches_spice() {
         time_s: g.time_s.clone(),
         value: swing(&g.value),
     };
-    let d = ac.difference(&swing(&render));
+    let d = ac.difference(&swing(&run));
     assert!(d.normalized_rms < 1e-4, "{d:?}");
     assert_eq!(stage.stats().capped, 0);
 }
@@ -168,12 +168,12 @@ fn the_power_supply_matches_spice() {
         }
     };
     // Tick i ends at (i + 1)/rate; ngspice's points are at k/48 kHz, k ≥ 1.
-    let render: Vec<f64> = (0..g.value.len() * oversample)
+    let run: Vec<f64> = (0..g.value.len() * oversample)
         .map(|i| supply.tick_f64(load((i + 1) as f64 / rate)))
         .skip(oversample - 1)
         .step_by(oversample)
         .collect();
-    let d = g.difference(&render);
+    let d = g.difference(&run);
     assert!(d.normalized_rms < 1e-4, "{d:?}");
     assert_eq!(supply.stats().capped, 0);
 }
@@ -219,12 +219,12 @@ fn the_coupler_matches_spice() {
     let corner_hz = 1.0 / (std::f64::consts::TAU * 22e-9 * 1e6);
     let mut coupler = Coupler::new(corner_hz as f32);
     coupler.prepare(48_000.0);
-    let render: Vec<f64> = g
+    let run: Vec<f64> = g
         .time_s
         .iter()
         .map(|&t| f64::from(coupler.tick((std::f64::consts::TAU * 50.0 * t).sin() as f32)))
         .collect();
-    let d = g.difference(&render);
+    let d = g.difference(&run);
     assert!(d.normalized_rms < 1e-5, "{d:?}");
 }
 
@@ -313,14 +313,14 @@ fn the_opamp_clipper_matches_spice() {
         let rate = 48_000.0 * oversample as f64;
         let mut stage = OpAmpClipper::new(OpAmpClipperConfig::TS808);
         stage.prepare(rate as f32);
-        let render: Vec<f64> = (0..g.value.len() * oversample)
+        let run: Vec<f64> = (0..g.value.len() * oversample)
             .map(|n| {
                 stage.tick_f64(0.5 * (std::f64::consts::TAU * 1_000.0 * n as f64 / rate).sin())
             })
             .step_by(oversample)
             .collect();
         assert_eq!(stage.stats().capped, 0);
-        g.difference(&render).normalized_rms
+        g.difference(&run).normalized_rms
     };
     let (coarse, fine) = (deviation(16), deviation(32));
     assert!(coarse < 5e-5, "16x: {coarse}");

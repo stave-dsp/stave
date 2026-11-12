@@ -1,4 +1,4 @@
-//! Rendering: drive any [`Instance`] block by block from a [`Signal`]
+//! Running: drive any [`Instance`] block by block from a [`Signal`]
 //! and a [`NoteSchedule`], handing each processed block to a callback
 //! (with the CPU time `process` took). Bench phases and validation checks are
 //! all a `Driver` plus what they do with the blocks.
@@ -22,7 +22,7 @@ fn thread_cpu_time() -> Duration {
     Duration::new(now.tv_sec as u64, now.tv_nsec as u32)
 }
 
-/// One processed block, as handed to a render callback.
+/// One processed block, as handed to a run callback.
 pub struct BlockOut<'a> {
     /// Absolute frame of the block's first sample (driver-relative).
     pub start: u64,
@@ -57,7 +57,7 @@ pub struct Driver<'i> {
     outputs: Vec<Vec<f32>>,
     notes: Vec<NoteEvent>,
     frame: u64,
-    rendered: u64,
+    processed: u64,
 }
 
 impl<'i> Driver<'i> {
@@ -77,7 +77,7 @@ impl<'i> Driver<'i> {
             outputs: vec![vec![0.0; block]; l.outputs],
             notes: Vec::new(),
             frame: 0,
-            rendered: 0,
+            processed: 0,
         }
     }
 
@@ -91,13 +91,13 @@ impl<'i> Driver<'i> {
         self.frame
     }
 
-    /// Frames rendered in total (never reset).
-    pub fn rendered(&self) -> u64 {
-        self.rendered
+    /// Frames processed in total (never reset).
+    pub fn processed(&self) -> u64 {
+        self.processed
     }
 
     /// Restart the clock at 0 (the instance keeps its state): the next
-    /// render plays its signal and notes from their beginning.
+    /// run plays its signal and notes from their beginning.
     pub fn reset_clock(&mut self) {
         self.frame = 0;
     }
@@ -106,7 +106,7 @@ impl<'i> Driver<'i> {
         self.block
     }
 
-    /// Render `frames` frames, calling `on_block` after each block.
+    /// Run `frames` frames, calling `on_block` after each block.
     pub fn run(
         &mut self,
         frames: u64,
@@ -133,16 +133,16 @@ impl<'i> Driver<'i> {
                 process_time,
             });
             self.frame += n as u64;
-            self.rendered += n as u64;
+            self.processed += n as u64;
         }
     }
 
-    /// Render and discard (warm-up, settling).
+    /// Run and discard (warm-up, settling).
     pub fn skip(&mut self, frames: u64, signal: &dyn Signal, notes: &NoteSchedule) {
         self.run(frames, signal, notes, |_| {});
     }
 
-    /// Render and keep every output channel.
+    /// Run and keep every output channel.
     pub fn capture(&mut self, frames: u64, signal: &dyn Signal, notes: &NoteSchedule) -> Capture {
         let channels = self.outputs.len();
         let mut out = vec![Vec::with_capacity(frames as usize); channels];

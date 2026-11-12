@@ -240,7 +240,7 @@ mod tests {
         let fs = 48_000.0f64;
         let n = 8192usize;
         let m = 683usize;
-        let render = |fir: bool| -> Vec<f32> {
+        let run = |fir: bool| -> Vec<f32> {
             let mut t = Triode::new();
             t.prepare(fs as f32 * 2.0);
             t.set_grid_drive(37.11);
@@ -266,7 +266,7 @@ mod tests {
             (0..n).map(|i| step(sig(i))).collect()
         };
         for fir in [false, true] {
-            let out = render(fir);
+            let out = run(fir);
             let mut re: Vec<f64> = out.iter().map(|&x| x as f64).collect();
             let mut im = vec![0.0f64; n];
             // radix-2 fft (local copy)

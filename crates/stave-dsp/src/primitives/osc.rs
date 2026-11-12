@@ -172,7 +172,7 @@ mod tests {
         (re * re + im * im).sqrt() / n
     }
 
-    fn render(shape: Waveform, hz: f32, n: usize, blep: bool) -> Vec<f32> {
+    fn run(shape: Waveform, hz: f32, n: usize, blep: bool) -> Vec<f32> {
         let mut o = Osc::new(shape);
         o.prepare(SR);
         o.set_hz(hz);
@@ -203,7 +203,7 @@ mod tests {
             Waveform::Saw,
             Waveform::Square,
         ] {
-            let w = render(shape, 440.0, 48_000, true);
+            let w = run(shape, 440.0, 48_000, true);
             let on = mag_at(&w, 440.0);
             let off = mag_at(&w, 440.0 * 1.03);
             assert!(
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn sine_harmonics_are_at_the_floor() {
-        let w = render(Waveform::Sine, 997.0, 48_000, true);
+        let w = run(Waveform::Sine, 997.0, 48_000, true);
         let h1 = mag_at(&w, 997.0);
         let h2 = mag_at(&w, 2.0 * 997.0);
         let h3 = mag_at(&w, 3.0 * 997.0);
@@ -237,8 +237,8 @@ mod tests {
         // masked; the EXPOSED midband folds (< 8 kHz — where naive
         // saws audibly ring) win ≥ 20 dB.
         let (f0, fs) = (2_093.0f64, f64::from(SR));
-        let naive = render(Waveform::Saw, f0 as f32, 48_000, false);
-        let blep = render(Waveform::Saw, f0 as f32, 48_000, true);
+        let naive = run(Waveform::Saw, f0 as f32, 48_000, false);
+        let blep = run(Waveform::Saw, f0 as f32, 48_000, true);
         let mut alias_freqs = Vec::new();
         for k in 1..200 {
             let f = k as f64 * f0;

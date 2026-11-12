@@ -1,12 +1,12 @@
-//! stave-dsp modules by name, so every host tool loads a module the way
-//! it loads a plugin: `module:<name>` with its settings as controls.
+//! stave-dsp stages by name, so every host tool loads a stage the way
+//! it loads a plugin: `stage:<name>` with its settings as controls.
 //! A setting change is applied in place at the next block: no
 //! allocation, state kept, safe from any thread.
 //!
 //! ```text
-//! mod.rs       the module model: Module, Setting, Range, SettingValues
-//! catalog.rs   the static catalog: every module, its settings and builder
-//! instance.rs  ModuleInstance / ModuleHandle: a catalog module running
+//! mod.rs       the stage model: StageSpec, Setting, Range, SettingValues
+//! catalog.rs   the static catalog: every stage, its settings and builder
+//! instance.rs  CatalogInstance / CatalogHandle: a catalog stage running
 //! ```
 
 mod catalog;
@@ -15,11 +15,11 @@ mod instance;
 mod tests;
 
 pub use catalog::CATALOG;
-pub use instance::{ModuleHandle, ModuleInstance};
+pub use instance::{CatalogHandle, CatalogInstance};
 
 use stave_dsp::{NewtonStats, Stage};
 
-pub const PREFIX: &str = "module:";
+pub const PREFIX: &str = "stage:";
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Setting {
@@ -106,15 +106,15 @@ pub trait Configurable: Stage + Send {
     }
 }
 
-pub type BoxedModule = Box<dyn Configurable>;
+pub type BoxedStage = Box<dyn Configurable>;
 
-pub struct Module {
+pub struct StageSpec {
     pub name: &'static str,
     pub settings: &'static [Setting],
-    pub build: fn(&SettingValues) -> BoxedModule,
+    pub build: fn(&SettingValues) -> BoxedStage,
 }
 
-/// A module's current setting values, read by name.
+/// A stage's current setting values, read by name.
 pub struct SettingValues<'a> {
     pub(crate) settings: &'a [Setting],
     pub(crate) values: &'a [f64],
@@ -126,7 +126,7 @@ impl SettingValues<'_> {
             .settings
             .iter()
             .position(|s| s.name == name)
-            .unwrap_or_else(|| panic!("module reads undeclared setting '{name}'"));
+            .unwrap_or_else(|| panic!("stage reads undeclared setting '{name}'"));
         self.values[i]
     }
 
@@ -140,6 +140,6 @@ impl SettingValues<'_> {
     }
 }
 
-pub fn find(name: &str) -> Option<&'static Module> {
+pub fn find(name: &str) -> Option<&'static StageSpec> {
     CATALOG.iter().find(|m| m.name == name)
 }

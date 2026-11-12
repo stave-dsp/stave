@@ -182,7 +182,7 @@ pub(super) unsafe extern "C" fn params_flush<P: ClapExport>(
 }
 
 /// CLAP param events (plain values) into `dst`, the block's timeline
-/// that processor-owned controls render sample-accurately; the last
+/// that processor-owned controls run sample-accurately; the last
 /// value per param becomes the table's target. Returns (written into
 /// `dst`, dropped for want of room).
 pub(super) fn apply_param_events(

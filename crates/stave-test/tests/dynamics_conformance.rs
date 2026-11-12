@@ -59,7 +59,7 @@ fn comp(atk_ms: f32, rel_ms: f32, amount: f32) -> (Chain<2>, StageId, ModMatrix<
 #[test]
 fn modmatrix_gain_route_is_an_honest_compressor() {
     let base = Frame::NEUTRAL;
-    let render = |ff: bool| {
+    let run = |ff: bool| {
         let (mut ch, id, mut mm) = comp(5.0, 100.0, 0.6);
         move |x: f32| {
             let det = if ff { x.abs() } else { ch.sense_out().abs() };
@@ -68,7 +68,7 @@ fn modmatrix_gain_route_is_an_honest_compressor() {
         }
     };
     // 1 ms windows resolve the 5 ms attack.
-    let trajectory = STEP.run(render(true));
+    let trajectory = STEP.run(run(true));
     let (gains, hold) = (&trajectory.gains_db, trajectory.hold_windows);
     let gr_settled = gains[2 * hold - 2] - gains[hold - 2];
     println!("feed-forward: settled GR {gr_settled:.2} dB");
@@ -101,12 +101,12 @@ fn feedback_detection_differs_and_is_stable() {
     let base = Frame::NEUTRAL;
     let settled_gr = |ff: bool| -> (f64, f64) {
         let (mut ch, id, mut mm) = comp(5.0, 100.0, 0.6);
-        let mut render = move |x: f32| {
+        let mut run = move |x: f32| {
             let det = if ff { x.abs() } else { ch.sense_out().abs() };
             mm.tick(&[det], &mut ch, &[(id, base)], &[]);
             ch.tick(x)
         };
-        let trajectory = STEP.run(&mut render);
+        let trajectory = STEP.run(&mut run);
         let (gains, hold) = (&trajectory.gains_db, trajectory.hold_windows);
         // settle variance over the last quarter of the hot step — the
         // stability check (limit cycles would thrash the gain).
@@ -176,7 +176,7 @@ fn sense_driven_route_reproduces_blocking() {
         gain: 1.0,
     };
 
-    let render = |amp: f64, n: usize, ch: &mut Chain<2>, mm: &mut ModMatrix<1, 2>| -> f64 {
+    let run = |amp: f64, n: usize, ch: &mut Chain<2>, mm: &mut ModMatrix<1, 2>| -> f64 {
         let mut acc = 0.0f64;
         for i in 0..n {
             let x = (amp * (2.0 * core::f64::consts::PI * 220.0 * i as f64 / FS).sin()) as f32;
@@ -194,9 +194,9 @@ fn sense_driven_route_reproduces_blocking() {
         (acc / (n / 2) as f64).sqrt()
     };
     // Quiet: below the conduction threshold — no choke, reference level.
-    let quiet_rms = render(0.15, 24_000, &mut ch, &mut mm);
+    let quiet_rms = run(0.15, 24_000, &mut ch, &mut mm);
     // Hot sustained: conduction charges the driver, bias chokes the stage.
-    let hot_rms = render(0.9, 24_000, &mut ch, &mut mm);
+    let hot_rms = run(0.9, 24_000, &mut ch, &mut mm);
     let bias_hot = if let Some(StageKind::Curve(cs)) = ch.stage_mut(id) {
         cs.pending_mut().bias
     } else {

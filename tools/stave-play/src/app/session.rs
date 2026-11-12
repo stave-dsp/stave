@@ -1,4 +1,4 @@
-//! One live plugin or module: loaded, playing, with its editor and
+//! One live plugin or catalog stage: loaded, playing, with its editor and
 //! handles. The fields are in teardown order — the editor (which binds
 //! the live instance) detaches first, then the stream drops the
 //! instance it owns — so "zero the telemetry pointer before dropping the
@@ -12,8 +12,8 @@ use stave_telemetry::Telemetry;
 use stave_host::config::HostConfig;
 use stave_host::control::{Control, ControlError};
 use stave_host::instance::Instance;
-use stave_host::loaded::{LoadError, Loaded};
-use stave_host::modules::ModuleHandle;
+use stave_host::opened::{OpenError, Opened};
+use stave_host::stages::CatalogHandle;
 use stave_host::plugin::{ControllerHandle, LoadedPlugin};
 
 use crate::audio::{self, AudioError, AudioStream, Shared};
@@ -22,14 +22,14 @@ use crate::editor_view::EditorView;
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
     #[error(transparent)]
-    Load(#[from] LoadError),
+    Load(#[from] OpenError),
     #[error("could not start audio")]
     Audio(#[from] AudioError),
 }
 
 enum Controls {
     Plugin(Option<ControllerHandle>),
-    Module(ModuleHandle),
+    Stage(CatalogHandle),
 }
 
 pub struct Session {
@@ -43,7 +43,7 @@ pub struct Session {
 }
 
 impl Session {
-    /// Open `path` (a bundle or `module:<name>`), start it on the
+    /// Open `path` (a bundle or `stage:<name>`), start it on the
     /// default device, and attach its editor under `ns_view` (null: no
     /// editor).
     pub fn start(
@@ -52,14 +52,14 @@ impl Session {
         shared: Shared,
         ns_view: *mut std::ffi::c_void,
     ) -> Result<Self, SessionError> {
-        let loaded = Loaded::open(path, config)?;
+        let loaded = Opened::open(path, config)?;
         let name = loaded.name();
         match loaded {
-            Loaded::Plugin(plugin) => Self::start_plugin(*plugin, name, shared, ns_view),
-            Loaded::Module(module) => {
-                let controls = Controls::Module(module.handle());
-                let outputs = module.layout().outputs;
-                let stream = audio::start(module, shared)?;
+            Opened::Plugin(plugin) => Self::start_plugin(*plugin, name, shared, ns_view),
+            Opened::Stage(stage) => {
+                let controls = Controls::Stage(stage.handle());
+                let outputs = stage.layout().outputs;
+                let stream = audio::start(stage, shared)?;
                 Ok(Self {
                     editor: None,
                     controls,
@@ -123,17 +123,17 @@ impl Session {
     pub fn controls(&self) -> Vec<Control> {
         match &self.controls {
             Controls::Plugin(c) => c.as_ref().map(|c| c.controls()).unwrap_or_default(),
-            Controls::Module(m) => m.controls(),
+            Controls::Stage(m) => m.controls(),
         }
     }
 
     /// Write a control: through the controller for a plugin (the real
-    /// ABI path), through the module's handle for a module.
+    /// ABI path), through the stage's handle for a catalog stage.
     pub fn set(&self, name: &str, plain: f64) -> Result<(), ControlError> {
         match &self.controls {
             Controls::Plugin(Some(c)) => c.set(name, plain),
             Controls::Plugin(None) => Err(ControlError::NotFound(name.into())),
-            Controls::Module(m) => m.set(name, plain),
+            Controls::Stage(m) => m.set(name, plain),
         }
     }
 
@@ -142,7 +142,7 @@ impl Session {
         match &self.controls {
             Controls::Plugin(Some(c)) => c.set_normalized(name, normalized),
             Controls::Plugin(None) => Err(ControlError::NotFound(name.into())),
-            Controls::Module(m) => m.set_normalized(name, normalized),
+            Controls::Stage(m) => m.set_normalized(name, normalized),
         }
     }
 
@@ -151,7 +151,7 @@ impl Session {
         match &self.controls {
             Controls::Plugin(Some(c)) => c.display(name, normalized),
             Controls::Plugin(None) => None,
-            Controls::Module(m) => m.display(name, normalized),
+            Controls::Stage(m) => m.display(name, normalized),
         }
         .unwrap_or_default()
     }

@@ -95,7 +95,7 @@ impl HostApp {
             .show_ui(ui, |ui| {
                 for p in library::scan_vst3(&library::vst3_dirs())
                     .into_iter()
-                    .chain(library::modules())
+                    .chain(library::stages())
                 {
                     let label = library::display_name(&p);
                     if ui

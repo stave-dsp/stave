@@ -1,26 +1,26 @@
 use serde_json::json;
 
-use crate::instance::{Instance, Probe};
-use crate::render::Driver;
+use crate::instance::{Instance, TapReading};
+use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 
 /// Every sweepable control is held at each end of its range while the
 /// stimulus plays, since solvers fail at the extremes, not the defaults.
 #[derive(Copy, Clone, Debug)]
-pub struct SolverPolicy {
+pub struct SolverConfig {
     pub hold_seconds: f64,
 }
 
-impl Default for SolverPolicy {
+impl Default for SolverConfig {
     fn default() -> Self {
         Self { hold_seconds: 0.25 }
     }
 }
 
 pub fn solver_converges(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
-    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.solver);
+    let (excitation, config) = (&ctx.config.excitation, ctx.config.solver);
     let mut inst = ctx.fresh()?;
-    if read(inst.as_ref(), Probe::NEWTON_SOLVES).is_none() {
+    if read(inst.as_ref(), TapReading::NEWTON_SOLVES).is_none() {
         return Ok(Outcome::not_applicable("no solver telemetry"));
     }
     let (signal, notes) = excitation.for_instance(inst.as_ref());
@@ -30,7 +30,7 @@ pub fn solver_converges(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         .filter(|c| c.sweepable())
         .collect();
     let mut d = Driver::new(inst.as_mut());
-    let hold = d.frames_for(policy.hold_seconds);
+    let hold = d.frames_for(config.hold_seconds);
     d.skip(hold, signal.as_ref(), &notes);
     for c in &controls {
         for v in [c.min, c.max, c.default] {
@@ -39,13 +39,13 @@ pub fn solver_converges(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         }
     }
     let inst = d.instance();
-    let solves = read(inst, Probe::NEWTON_SOLVES).unwrap_or(0.0);
-    let capped = read(inst, Probe::NEWTON_CAPPED).unwrap_or(0.0);
+    let solves = read(inst, TapReading::NEWTON_SOLVES).unwrap_or(0.0);
+    let capped = read(inst, TapReading::NEWTON_CAPPED).unwrap_or(0.0);
     let details = json!({
         "solves": solves,
         "capped": capped,
-        "mean_iterations": read(inst, Probe::NEWTON_MEAN_ITERATIONS),
-        "max_final_step": read(inst, Probe::NEWTON_MAX_FINAL_STEP),
+        "mean_iterations": read(inst, TapReading::NEWTON_MEAN_ITERATIONS),
+        "max_final_step": read(inst, TapReading::NEWTON_MAX_FINAL_STEP),
         "controls_swept": controls.len(),
     });
     Ok(if capped == 0.0 {
@@ -56,7 +56,7 @@ pub fn solver_converges(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
 }
 
 fn read(inst: &dyn Instance, name: &str) -> Option<f64> {
-    inst.probes()
+    inst.taps()
         .into_iter()
         .find(|p| p.name == name)
         .map(|p| p.latest)
@@ -85,8 +85,8 @@ mod tests {
             o[0].copy_from_slice(i[0]);
             self.solves += i[0].len() as u64;
         }
-        fn probes(&self) -> Vec<Probe> {
-            let probe = |name: &str, v: f64| Probe {
+        fn taps(&self) -> Vec<TapReading> {
+            let tap = |name: &str, v: f64| TapReading {
                 name: name.into(),
                 latest: v,
                 min: v,
@@ -94,8 +94,8 @@ mod tests {
             };
             let capped = self.solves.checked_div(self.every).unwrap_or(0);
             vec![
-                probe(Probe::NEWTON_SOLVES, self.solves as f64),
-                probe(Probe::NEWTON_CAPPED, capped as f64),
+                tap(TapReading::NEWTON_SOLVES, self.solves as f64),
+                tap(TapReading::NEWTON_CAPPED, capped as f64),
             ]
         }
     }

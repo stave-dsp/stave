@@ -81,7 +81,7 @@ mod tests {
     const RATE: f64 = 48_000.0;
     const N: usize = 16_384;
 
-    fn render(f: impl Fn(u64) -> f32) -> Vec<f32> {
+    fn run(f: impl Fn(u64) -> f32) -> Vec<f32> {
         (0..N as u64).map(f).collect()
     }
 
@@ -93,7 +93,7 @@ mod tests {
             sample_rate: RATE,
         }
         .bin_snapped(N);
-        let x = render(|t| s.at(0, t));
+        let x = run(|t| s.at(0, t));
         assert!((goertzel(&x, s.frequency_hz / RATE) - s.amplitude).abs() < 1e-6);
         assert!(goertzel(&x, (s.frequency_hz * 2.0) / RATE) < 1e-6);
     }
@@ -106,7 +106,7 @@ mod tests {
             sample_rate: RATE,
         }
         .bin_snapped(N);
-        let x = render(|t| 2.0 * s.at(0, t));
+        let x = run(|t| 2.0 * s.at(0, t));
         let r = analyze(
             &x,
             &ToneAnalysis {
@@ -132,7 +132,7 @@ mod tests {
         }
         .bin_snapped(N);
         let w = std::f64::consts::TAU * s.frequency_hz / RATE;
-        let x = render(|t| ((w * t as f64).sin() + 0.1 * (3.0 * w * t as f64).sin()) as f32);
+        let x = run(|t| ((w * t as f64).sin() + 0.1 * (3.0 * w * t as f64).sin()) as f32);
         let r = analyze(
             &x,
             &ToneAnalysis {
