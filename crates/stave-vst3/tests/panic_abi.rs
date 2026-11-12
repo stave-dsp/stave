@@ -8,10 +8,10 @@
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard};
 
-use stave_core::params::{AnyParam, Params};
 use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
+use stave_vst3::stave_face;
 use stave_vst3::sys::*;
 use stave_vst3::wrapper::FactoryObj;
 
@@ -19,8 +19,8 @@ struct Panics;
 
 /// Arms a panic in `Panics::new()`.
 static PANIC_IN_NEW: AtomicBool = AtomicBool::new(false);
-/// Arms a panic in the param table's `count()` (reached from editor code).
-static PANIC_IN_TABLE: AtomicBool = AtomicBool::new(false);
+/// Arms a panic in the face's part (reached when a view is made).
+static PANIC_IN_FACE: AtomicBool = AtomicBool::new(false);
 /// The tests share the arming statics and run on parallel threads.
 static SERIAL: Mutex<()> = Mutex::new(());
 
@@ -30,16 +30,14 @@ fn serial() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// An empty table whose `count()` panics while armed.
-struct TrapTable;
+/// A part whose grab regions panic while armed (the runtime asks for
+/// them when a view is made).
+struct TrapPart;
 
-impl Params for TrapTable {
-    fn count(&self) -> usize {
-        assert!(!PANIC_IN_TABLE.load(Ordering::SeqCst), "a param table bug");
-        0
-    }
-    fn by_index(&self, _index: usize) -> Option<&dyn AnyParam> {
-        None
+impl stave_face::Part for TrapPart {
+    fn controls(&self, _r: stave_face::prelude::Rect) -> Vec<stave_face::Control> {
+        assert!(!PANIC_IN_FACE.load(Ordering::SeqCst), "a face bug");
+        Vec::new()
     }
 }
 
@@ -59,13 +57,15 @@ impl Plugin for Panics {
         Self
     }
 
-    fn param_table(&self) -> Arc<dyn Params> {
-        Arc::new(TrapTable)
-    }
-
     fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
         ctx.output.channel(0).fill(0.5);
         panic!("a plugin bug");
+    }
+}
+
+impl stave_face::HasFace for Panics {
+    fn face(&self) -> Option<stave_face::Face> {
+        Some(stave_face::Face::new(stave_face::Theme::graphite(), stave_face::leaf(TrapPart, 10.0, 10.0)))
     }
 }
 
@@ -192,8 +192,9 @@ fn a_panicking_constructor_fails_create_instance() {
     }
 }
 
-/// S8: a panic inside an `IPlugView` call is an error code; the instance
-/// is disabled, and the view and instance still release cleanly.
+/// S8: a panic while making a view (the face's part code) is a null view,
+/// not an unwind; the instance is disabled, every later view call fails
+/// safe, and the views and instance still release cleanly.
 #[test]
 fn a_panicking_view_call_fails_safe() {
     let _serial = serial();
@@ -212,14 +213,10 @@ fn a_panicking_view_call_fails_safe() {
         assert!(!view.is_null());
         let vt = &*(*view.cast::<RawObj<IPlugViewVtbl>>()).vtbl;
 
-        // `attached` asks the table for its size before touching the
-        // parent view, so the armed panic fires first and the bogus
-        // (never dereferenced) parent is safe.
-        PANIC_IN_TABLE.store(true, Ordering::SeqCst);
-        let bogus_parent = ptr::NonNull::<c_void>::dangling().as_ptr();
-        let result = (vt.attached)(view, bogus_parent, c"NSView".as_ptr());
-        PANIC_IN_TABLE.store(false, Ordering::SeqCst);
-        assert_eq!(result, K_INTERNAL_ERROR);
+        PANIC_IN_FACE.store(true, Ordering::SeqCst);
+        let second = (ec.create_view)(controller, c"editor".as_ptr());
+        PANIC_IN_FACE.store(false, Ordering::SeqCst);
+        assert!(second.is_null());
 
         // Disabled: later calls fail without running plugin code.
         let mut rect = ViewRect {

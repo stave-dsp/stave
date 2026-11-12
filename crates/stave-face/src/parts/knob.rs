@@ -171,7 +171,7 @@ impl Part for Knob {
         let ty = &th.type_;
         let base = pt(r.x + r.w / 2.0, r.y + r.h - 5.0);
         if lit {
-            s.text_in(base, f.host.value_text(self.bind.id), ty.value_size, accent, ty.value);
+            s.text_in(base, f.controller.value_text(self.bind.id), ty.value_size, accent, ty.value);
         } else {
             s.text_in(base, self.legend(), ty.legend_size, th.ink, ty.legend);
         }

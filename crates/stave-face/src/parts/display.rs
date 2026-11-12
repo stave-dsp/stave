@@ -6,6 +6,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
+use stave_core::telemetry::TapId;
 use stave_ui::layout::Rect;
 use stave_ui::scene::{Path, Scene};
 
@@ -22,8 +23,8 @@ pub struct Display {
     pub w: f64,
     pub h: f64,
     pub draw: Draw,
-    /// Probes the picture reads.
-    pub probes: &'static [&'static str],
+    /// Taps the picture reads.
+    pub taps: &'static [TapId],
     /// Parameters the picture reads.
     pub reads: Vec<Bind>,
     /// Repaint every frame (the picture moves with time alone).
@@ -39,13 +40,13 @@ impl Display {
             w,
             h,
             draw,
-            probes: &[],
+            taps: &[],
             reads: Vec::new(),
             animated: false,
         }
     }
-    pub fn probes(mut self, p: &'static [&'static str]) -> Self {
-        self.probes = p;
+    pub fn taps(mut self, t: &'static [TapId]) -> Self {
+        self.taps = t;
         self
     }
     pub fn reads(mut self, b: &[Bind]) -> Self {
@@ -89,8 +90,8 @@ impl Part for Display {
         glass_over(&f, s, sc, RADIUS);
     }
 
-    fn probes(&self) -> Vec<&'static str> {
-        self.probes.to_vec()
+    fn taps(&self) -> Vec<TapId> {
+        self.taps.to_vec()
     }
 
     fn reads(&self) -> Vec<Bind> {

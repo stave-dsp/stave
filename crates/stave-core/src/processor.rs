@@ -8,11 +8,12 @@
 //!  - `Processor` is REALTIME-ONLY: construct from the typed params,
 //!    activate at a rate, process blocks. Nothing about descriptors,
 //!    editors, or state formats.
-//!  - The editor is a PURE FUNCTION of params (`Spec::face`) — no
-//!    JUCE-style mutable pointer from the editor back into the
-//!    processor; gestures flow through the framework.
-//!  - `Spec` carries the declarations (descriptor, editor, presets,
-//!    state versioning) as associated items — data, not state.
+//!  - The editor is a PURE FUNCTION of params (`stave_face::FaceSpec`,
+//!    beside `Spec`: core is UI-free) — no JUCE-style mutable pointer
+//!    from the editor back into the processor; edits flow through the
+//!    framework's [`Controller`](crate::Controller).
+//!  - `Spec` carries the declarations (descriptor, presets, state
+//!    versioning) as associated items — data, not state.
 //!
 //! The shell is also the optimization seam: it owns construction and
 //! lifecycle, so allocation pooling, layout tricks, or processor
@@ -82,10 +83,6 @@ pub trait Spec: Processor {
     /// Construct the param table (identity lives in params.rs).
     fn params() -> Arc<Self::Params>;
 
-    /// The editor as a design-system face — a pure function of params.
-    fn face(_params: &Self::Params) -> Option<stave_face::Face> {
-        None
-    }
     /// Factory presets — pure function of params (presets.rs).
     fn presets(_params: &Self::Params) -> Vec<Preset> {
         Vec::new()
@@ -118,6 +115,11 @@ impl<E: Spec> StavePlugin<E> {
     pub fn engine_mut(&mut self) -> &mut E {
         &mut self.engine
     }
+    /// The typed parameters the engine was built from (a face is a pure
+    /// function of these).
+    pub fn params(&self) -> &Arc<E::Params> {
+        &self.params
+    }
 }
 
 impl<E: Spec> Plugin for StavePlugin<E> {
@@ -137,9 +139,6 @@ impl<E: Spec> Plugin for StavePlugin<E> {
 
     fn param_table(&self) -> Arc<dyn Params> {
         self.table.clone()
-    }
-    fn editor_face(&self) -> Option<stave_face::Face> {
-        E::face(&self.params)
     }
     fn presets(&self) -> Vec<Preset> {
         E::presets(&self.params)

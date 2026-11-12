@@ -2,8 +2,7 @@
 //! and a bypass switch over one plate holding the two knobs. Layout is
 //! rows and columns; the look is the theme's.
 
-use stave_core::face::prelude::*;
-use stave_core::params::BindParam;
+use stave_face::prelude::*;
 
 use crate::params::TiltParams;
 

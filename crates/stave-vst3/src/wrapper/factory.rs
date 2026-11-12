@@ -217,7 +217,7 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
     plugin_obj.attach_telemetry(telemetry.clone());
     let diagnostics = Diagnostics::new(&P::DESCRIPTOR);
     diagnostics.log.add(Box::new(TelemetrySink(telemetry.clone())));
-    let (param_table, editor_face) = (plugin_obj.param_table(), plugin_obj.editor_face());
+    let (param_table, face) = (plugin_obj.param_table(), plugin_obj.face());
     if let Err(e) = param_table.validate() {
         // Author bug (duplicate or reserved ids): refuse the instance
         // loudly rather than corrupt automation.
@@ -267,11 +267,11 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
         units: crate::units::Units::new(param_table.as_ref()),
         param_table,
         programs,
-        editor_face,
+        face,
         state_store: std::sync::Mutex::new(StateStore::default()),
         diagnostics,
         guard: PanicGuard::default(),
-        handler: ComponentHandler::none(),
+        handler: Arc::new(ComponentHandler::none()),
         tail: AtomicU32::new(0),
         telemetry,
         taps,

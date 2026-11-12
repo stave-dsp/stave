@@ -1,16 +1,15 @@
 //! The live storybook: one window showing the showcase face, driven by
-//! the stand-in host. Everything drags; ←/→ step through the themes;
-//! Esc or ⌘Q quits.
+//! the stand-in controller. Everything drags; ←/→ step through the
+//! stories; Esc or ⌘Q quits.
 
 // Objective-C runtime calls for a minimal AppKit app.
 #![allow(clippy::undocumented_unsafe_blocks)]
 
 use std::ffi::{c_char, c_void, CString};
 
-use stave_face::Host;
-use stave_ui_cocoa::face::{FaceMount, FaceState, FaceTarget};
+use stave_ui_cocoa::FaceView;
 
-use crate::host::StoryHost;
+use crate::controller::StoryController;
 use crate::stories;
 
 type Id = *mut c_void;
@@ -59,45 +58,6 @@ unsafe fn ns_string(s: &str) -> Id {
     unsafe { f(class("NSString"), sel("stringWithUTF8String:"), c.as_ptr()) }
 }
 
-/// The story behind the window: the stand-in host and the current theme.
-struct Story {
-    host: StoryHost,
-    count: usize,
-    at: usize,
-    state: FaceState,
-    window: Id,
-}
-
-impl Story {
-    fn load(&mut self) {
-        let (name, face) = stories::all(&self.host).swap_remove(self.at);
-        self.state = FaceState::new(face);
-        if !self.window.is_null() {
-            unsafe {
-                send1(self.window, "setTitle:", ns_string(&format!("stave storybook — {name}  (←/→ story)")));
-            }
-        }
-    }
-}
-
-impl FaceTarget for Story {
-    fn with(&mut self, f: &mut dyn FnMut(&mut FaceState, &mut dyn Host)) {
-        self.host.time.set(self.state.opened.elapsed().as_secs_f64());
-        f(&mut self.state, &mut self.host);
-    }
-    fn key(&mut self, code: u16) -> bool {
-        let n = self.count;
-        match code {
-            53 => std::process::exit(0),
-            123 => self.at = (self.at + n - 1) % n,
-            124 => self.at = (self.at + 1) % n,
-            _ => return false,
-        }
-        self.load();
-        true
-    }
-}
-
 pub fn run() {
     unsafe {
         let app = send(class("NSApplication"), "sharedApplication");
@@ -121,16 +81,20 @@ pub fn run() {
         send1(app_item, "setSubmenu:", app_menu);
         send1(app, "setMainMenu:", bar);
 
-        let host = StoryHost::new();
-        let count = stories::all(&host).len();
-        let state = FaceState::new(stories::all(&host).swap_remove(0).1);
-        let (w, h) = state.runtime.size();
-        let mut story = Box::new(Story {
-            host,
-            count,
-            at: 0,
-            state,
-            window: std::ptr::null_mut(),
+        let controller = StoryController::new();
+        let params = controller.params.clone();
+        let count = stories::all(&params).len();
+        let mut view = FaceView::new(stories::all(&params).swap_remove(0).1, Box::new(controller));
+        let (w, h) = view.size();
+        let mut at = 0;
+        view.on_key(move |code| {
+            match code {
+                53 => std::process::exit(0),
+                123 => at = (at + count - 1) % count,
+                124 => at = (at + 1) % count,
+                _ => return None,
+            }
+            Some(stories::all(&params).swap_remove(at).1)
         });
 
         let init: unsafe extern "C" fn(Id, Sel, Rect, u64, u64, bool) -> Id = std::mem::transmute(objc_msgSend as *const ());
@@ -142,16 +106,16 @@ pub fn run() {
             2,         // buffered
             false,
         );
-        story.window = window;
-        story.load();
+        send1(window, "setTitle:", ns_string("stave storybook  (←/→ story)"));
         send(window, "center");
-        let content = send(window, "contentView");
-        let mount = FaceMount::new(content, story, (w, h));
-        send1(window, "makeFirstResponder:", mount.view());
+        view.attach(send(window, "contentView"));
+        if let Some(v) = view.ns_view() {
+            send1(window, "makeFirstResponder:", v);
+        }
         send1(window, "makeKeyAndOrderFront:", std::ptr::null_mut());
         let activate: unsafe extern "C" fn(Id, Sel, bool) = std::mem::transmute(objc_msgSend as *const ());
         activate(app, sel("activateIgnoringOtherApps:"), true);
         send(app, "run");
-        drop(mount);
+        drop(view);
     }
 }

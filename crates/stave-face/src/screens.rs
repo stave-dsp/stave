@@ -43,7 +43,7 @@ pub fn glow_line(f: &Frame<'_>, s: &mut Scene, pts: &[Pt]) {
 pub fn scope(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize) {
     grid(f, r, s, 8, 4);
     let mut buf = alloc::vec![0f32; 2048];
-    let n = f.host.capture(channel, &mut buf);
+    let n = f.controller.capture(channel, &mut buf);
     if n < 2 {
         return;
     }
@@ -63,7 +63,7 @@ pub fn scope(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize) {
 pub fn spectrum(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize, sample_rate: f64) {
     grid(f, r, s, 10, 6);
     let mut buf = alloc::vec![0f32; 2048];
-    let n = f.host.capture(channel, &mut buf).min(2048);
+    let n = f.controller.capture(channel, &mut buf).min(2048);
     let size = if n >= 2048 { 2048 } else if n >= 1024 { 1024 } else { return };
     let mut re: Vec<f32> = buf[..size]
         .iter()
@@ -103,7 +103,7 @@ pub fn curve(f: &Frame<'_>, r: Rect, s: &mut Scene) {
     grid(f, r, s, 4, 4);
     let faint = alpha(f.theme.phosphor, 0.2);
     s.stroke(Path::new().move_to(pt(r.x, r.y + r.h)).line_to(pt(r.x + r.w, r.y)), Stroke::new(faint, 1.0));
-    let ys = f.host.curve();
+    let ys = f.controller.curve();
     if ys.len() < 2 {
         return;
     }

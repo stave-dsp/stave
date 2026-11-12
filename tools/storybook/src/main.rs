@@ -1,6 +1,6 @@
 //! stave-storybook — the design system's storybook: a showcase face
 //! using every part, on every built-in theme, driven by a stand-in
-//! plugin (an in-memory parameter table and probes that move with time).
+//! plugin (an in-memory parameter table and taps that move with time).
 //!
 //! Usage:
 //!   stave-storybook                                # live: drag everything; ←/→ change theme, Esc quits
@@ -9,7 +9,7 @@
 //! Screenshots are rendered offscreen through the real face runtime and
 //! the platform's text, so they show exactly what a plugin window shows.
 
-mod host;
+mod controller;
 mod live;
 mod stories;
 
@@ -17,13 +17,15 @@ use std::path::PathBuf;
 
 use stave_face::Runtime;
 
+use crate::controller::StoryController;
+
 fn screenshot(dir: PathBuf, scale: f64) {
     std::fs::create_dir_all(&dir).expect("create screenshot dir");
-    let names: Vec<String> = stories::all(&host::StoryHost::new()).into_iter().map(|(n, _)| n).collect();
+    let names: Vec<String> = stories::all(&StoryController::new().params).into_iter().map(|(n, _)| n).collect();
     for (i, name) in names.iter().enumerate() {
-        let host = host::StoryHost::new();
-        host.time.set(1.7);
-        let face = stories::all(&host).swap_remove(i).1;
+        let controller = StoryController::new();
+        controller.freeze(1.7);
+        let face = stories::all(&controller.params).swap_remove(i).1;
         let mut rt = Runtime::new(face);
         if std::env::var_os("STAVE_FACE_DEBUG").is_some() {
             for r in rt.rects() {
@@ -32,10 +34,10 @@ fn screenshot(dir: PathBuf, scale: f64) {
         }
         let mut canvas = stave_raster::Canvas::new(0, 0);
         let t0 = std::time::Instant::now();
-        rt.render(&host, scale, host.time.get(), &mut canvas, &mut stave_ui_cocoa::offscreen::CoreText::new(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut stave_ui_cocoa::offscreen::CoreText::new(scale));
         let first = t0.elapsed();
         let t1 = std::time::Instant::now();
-        rt.render(&host, scale, host.time.get(), &mut canvas, &mut stave_ui_cocoa::offscreen::CoreText::new(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut stave_ui_cocoa::offscreen::CoreText::new(scale));
         let frame = t1.elapsed();
         let path = dir.join(format!("story_{name}.png"));
         std::fs::write(&path, stave_raster::png::encode(&canvas)).expect("write png");

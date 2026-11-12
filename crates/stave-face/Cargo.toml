@@ -9,6 +9,7 @@ rust-version.workspace = true
 description = "Stave's design system: themed, physically lit instrument faces composed from parts, with framework-owned layout, rendering and interaction."
 
 [dependencies]
+stave-core.workspace = true
 stave-ui.workspace = true
 stave-raster.workspace = true
 

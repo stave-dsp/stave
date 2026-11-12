@@ -61,6 +61,8 @@ impl Plugin for TwoConfig {
     }
 }
 
+impl stave_vst3::stave_face::HasFace for TwoConfig {}
+
 stave_vst3::stave_vst3_export!(
     raw TwoConfig,
     component_cid: (0x7e57_0011, 0x7e57_0012, 0x7e57_0013, 0x7e57_0014),

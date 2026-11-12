@@ -1,5 +1,5 @@
 //! Instruments: the segmented level [`Meter`], the moving [`Trace`] of a
-//! probe over time, and the XY [`Pad`].
+//! tap over time, and the XY [`Pad`].
 
 extern crate alloc;
 use alloc::collections::VecDeque;
@@ -9,6 +9,8 @@ use std::sync::Mutex;
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Scene, Stroke};
 use stave_ui::style::Color;
+
+use stave_core::telemetry::TapId;
 
 use crate::part::{leaf, Bake, Bind, Control, FaceNode, Frame, Gesture, Hit, Part};
 use crate::parts::display::{bake_window, glass_over};
@@ -20,21 +22,21 @@ fn with_alpha(c: Color, a: f64) -> Color {
 
 // ------------------------------------------------------------------ meter
 
-/// How a meter's probe reads.
+/// How a meter's tap reads.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Reading {
-    /// The probe is in dB already.
+    /// The tap is in dB already.
     Db,
-    /// The probe is a linear amplitude (1 = 0 dBFS).
+    /// The tap is a linear amplitude (1 = 0 dBFS).
     Linear,
-    /// The probe is 0..1 (a gain reduction depth, a position).
+    /// The tap is 0..1 (a gain reduction depth, a position).
     Unit,
 }
 
-/// A vertical LED bar meter reading a probe, with an optional legend.
+/// A vertical LED bar meter reading a tap, with an optional legend.
 #[derive(Copy, Clone, Debug)]
 pub struct Meter {
-    pub probe: &'static str,
+    pub tap: TapId,
     pub reading: Reading,
     /// dB at the bottom and top of the scale (Db/Linear readings).
     pub range: (f64, f64),
@@ -45,25 +47,25 @@ pub struct Meter {
 const SEGMENTS: usize = 24;
 
 impl Meter {
-    pub fn db(probe: &'static str) -> Self {
+    pub fn db(tap: TapId) -> Self {
         Meter {
-            probe,
+            tap,
             reading: Reading::Db,
             range: (-60.0, 6.0),
             label: None,
             height: 150.0,
         }
     }
-    pub fn linear(probe: &'static str) -> Self {
+    pub fn linear(tap: TapId) -> Self {
         Meter {
             reading: Reading::Linear,
-            ..Self::db(probe)
+            ..Self::db(tap)
         }
     }
-    pub fn unit(probe: &'static str) -> Self {
+    pub fn unit(tap: TapId) -> Self {
         Meter {
             reading: Reading::Unit,
-            ..Self::db(probe)
+            ..Self::db(tap)
         }
     }
     pub fn label(mut self, l: &'static str) -> Self {
@@ -105,7 +107,7 @@ impl Part for Meter {
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let th = f.theme;
         let win = self.window(r);
-        let lvl = self.level(f.probe(self.probe));
+        let lvl = self.level(f.tap(self.tap));
         let lit = (lvl * SEGMENTS as f64).round() as usize;
         let seg_h = (win.h - 4.0) / SEGMENTS as f64;
         for i in 0..SEGMENTS {
@@ -118,8 +120,8 @@ impl Part for Meter {
         glass_over(f, s, win, 3.0);
     }
 
-    fn probes(&self) -> Vec<&'static str> {
-        alloc::vec![self.probe]
+    fn taps(&self) -> Vec<TapId> {
+        alloc::vec![self.tap]
     }
 
     fn animating(&self, _f: &Frame<'_>) -> bool {
@@ -129,21 +131,21 @@ impl Part for Meter {
 
 // ------------------------------------------------------------------ trace
 
-/// A probe's recent history, scrolling on a screen.
+/// A tap's recent history, scrolling on a screen.
 pub struct Trace {
-    pub probe: &'static str,
+    pub tap: TapId,
     pub w: f64,
     pub h: f64,
-    /// The probe values at the bottom and top of the screen.
+    /// The tap values at the bottom and top of the screen.
     pub range: (f64, f64),
     pub label: Option<&'static str>,
     history: Mutex<VecDeque<f64>>,
 }
 
 impl Trace {
-    pub fn new(probe: &'static str, w: f64, h: f64, range: (f64, f64)) -> Self {
+    pub fn new(tap: TapId, w: f64, h: f64, range: (f64, f64)) -> Self {
         Trace {
-            probe,
+            tap,
             w,
             h,
             range,
@@ -175,7 +177,7 @@ impl Part for Trace {
         screens::grid(f, sc, s, 8, 4);
         let n = (sc.w / 2.0) as usize;
         let mut h = self.history.lock().unwrap_or_else(|e| e.into_inner());
-        h.push_back(f.probe(self.probe));
+        h.push_back(f.tap(self.tap));
         while h.len() > n {
             h.pop_front();
         }
@@ -199,8 +201,8 @@ impl Part for Trace {
         glass_over(f, s, sc, 6.0);
     }
 
-    fn probes(&self) -> Vec<&'static str> {
-        alloc::vec![self.probe]
+    fn taps(&self) -> Vec<TapId> {
+        alloc::vec![self.tap]
     }
 
     fn animating(&self, _f: &Frame<'_>) -> bool {
@@ -264,6 +266,6 @@ impl Part for Pad {
 }
 
 fn format_xy(f: &Frame<'_>, x: Bind, y: Bind) -> alloc::string::String {
-    alloc::format!("{}  {}", f.host.value_text(x.id), f.host.value_text(y.id))
+    alloc::format!("{}  {}", f.controller.value_text(x.id), f.controller.value_text(y.id))
 }
 

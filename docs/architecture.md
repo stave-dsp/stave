@@ -10,19 +10,20 @@ History lives in git; product design lives with each plugin (`plugins/<name>/doc
 ```
 stave-macros ────┐
 stave-telemetry ─┼─ stave-core ─┬─ stave-vst3 ─┐
-stave-face ──────┘              ├─ stave-clap ─┼─ examples/tilt, stave-plugins
-                                └─ stave-dsp ──┘
+stave-dsp ───────┘   (no UI)    ├─ stave-clap ─┼─ examples/tilt, stave-plugins
+                                └─ stave-face ─┘
 stave-vst3-sys ── stave-vst3, stave-host     (raw ABI only)
 stave-clap-sys ── stave-clap
-stave-ui ── stave-raster ── stave-face
-stave-ui-cocoa ── stave-vst3 (editor view)
+stave-ui ── stave-raster ── stave-face ── stave-ui-cocoa ── stave-vst3, stave-clap
 stave-measure ── stave-host ── stave-test, tools/*
 ```
 
 - **stave-core** — the plugin model: `Processor` (realtime half) and
   `Spec` (declarations half) composed by `StavePlugin<E>`; typed params;
-  presets; state; events; `wrapper`, the machinery both format wrappers
-  share.
+  presets; state; events; the editor contract (`Controller`, and
+  `PluginController` over the table, the telemetry and a wrapper's
+  `GestureSink`); `wrapper`, the machinery both format wrappers share.
+  No UI dependency.
 - **stave-dsp** — the DSP vocabulary (below). Depends on nothing in the
   plugin model: it never sees hosts, params or events.
 - **stave-vst3-sys / stave-clap-sys** — the raw ABIs and nothing else:
@@ -48,10 +49,14 @@ stave-measure ── stave-host ── stave-test, tools/*
   layout tree of `Part`s (knobs, switches, lamps, displays, `Plate`s,
   print) inside a `Panel`, on a `Theme` that is the whole look as data.
   Its `Runtime` lays out, bakes the static layer, paints live values and
-  turns pointer input into parameter gestures.
-- **stave-ui-cocoa** — the macOS host of a face: one NSView that blits
-  the runtime's canvas, forwards the pointer, and sets text with
-  CoreText.
+  turns pointer input into parameter gestures, all through the plugin's
+  `&dyn Controller` (params by `ParamId`, taps by `TapId`). A plugin
+  declares its face with `FaceSpec` beside `Spec`; wrappers ask through
+  `HasFace`.
+- **stave-ui-cocoa** — the macOS platform of a face: `FaceView`, one
+  NSView that blits the runtime's canvas, forwards the pointer, and sets
+  text with CoreText — a window, a pointer, a blit and text; no
+  parameter logic.
 - **stave-measure** — measurement as pure functions over buffers and
   signals.
 - **stave-host** — loads any VST3 (or any stave-dsp module) as an
@@ -176,9 +181,10 @@ exaggeration owns it in its own engine.
   remaps users' curves. Change a range with a new id plus
   `Migrations::renamed`/`rescaled`; bump `state_version` whenever
   `migrate()` must reason about a change.
-- **Editors are declarations.** `Spec::face` returns a `Face`, a pure
-  function of params; parts bind to params by id and write only through
-  host gestures (`stave_test::face::binds_resolve` checks every bind).
+- **Editors are declarations.** `FaceSpec::face` returns a `Face`, a
+  pure function of params; parts bind to params by `ParamId` and write
+  only through the `Controller`, whose every edit is a host gesture
+  (`stave_test::face::binds_resolve` checks every bind).
   Parts never mint a colour, a font or a coordinate: they ask the
   `Theme`. A bespoke picture is a part that paints a `Scene`.
 

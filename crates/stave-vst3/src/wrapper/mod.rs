@@ -18,13 +18,12 @@ use stave_core::state::StateStore;
 use stave_core::wrapper::state::{self as wrapper_state, MAX_STATE_BYTES};
 use stave_core::wrapper::{PanicGuard, WrapperTaps};
 use stave_core::{
-    AudioBuffer, Event as StaveEvent, EventKind, Plugin, PluginCell, ProcessCtx, SharedState,
-    Telemetry,
+    AudioBuffer, Event as StaveEvent, EventKind, Plugin, PluginCell, PluginController, ProcessCtx,
+    SharedState, Telemetry,
 };
 
 use crate::buses;
-use crate::editor_bridge::Vst3EditorHost;
-pub use crate::editor_bridge::{gesture_begin, gesture_end, gesture_perform};
+use crate::gestures::Vst3Gestures;
 use crate::events;
 use crate::host::{out_param, string128, tchar_str, ComponentHandler, Process, Stream};
 pub(crate) use crate::host_context::{build_pcr_vtbl, translate_transport};
@@ -54,7 +53,7 @@ use view::*;
 /// Implemented by the `stave_vst3_export!` macro for the user's plugin type.
 /// Lets generic wrapper code reach the per-type statics (factory, class IDs)
 /// that have to live in the user's crate (Rust statics can't be generic).
-pub trait Vst3Export: Plugin {
+pub trait Vst3Export: Plugin + stave_face::HasFace {
     /// 16-byte TUID identifying this plugin's IComponent class. Must be
     /// unique across all VST3 plugins on the user's system.
     const COMPONENT_CID: Tuid;
@@ -142,16 +141,17 @@ pub struct Instance<P: Vst3Export> {
     pub(crate) programs: crate::programs::Programs,
     /// Parameter groups as VST3 units (folders).
     pub(crate) units: crate::units::Units,
-    /// The project's design-system face; None = no editor view.
-    pub editor_face: Option<stave_core::face::Face>,
+    /// The plugin's face; None = no editor view.
+    pub face: Option<stave_face::Face>,
     /// Unknown-content retention across state load→save cycles
     /// Mutex: state calls are non-realtime
     /// host threads; the audio path never touches this.
     pub state_store: std::sync::Mutex<StateStore>,
     /// The host's IComponentHandler: GUI edits round-trip
     /// through beginEdit/performEdit/endEdit so the DAW records and
-    /// undoes them. AddRef'd on store, released on replace/drop.
-    pub(crate) handler: ComponentHandler,
+    /// undoes them. AddRef'd on store, released on replace/drop; shared
+    /// with every open face's gesture sink.
+    pub(crate) handler: Arc<ComponentHandler>,
     /// Id of the param flagged `bypass`, if any — drives the
     /// framework-owned click-free bypass gate.
     pub bypass_id: Option<u32>,
@@ -248,7 +248,7 @@ pub struct EditorBox<P: Vst3Export> {
     pub vtbl: *const IPlugViewVtbl,
     pub(crate) ref_count: AtomicU32,
     pub(crate) inst: *mut Instance<P>,
-    pub view: Box<crate::cocoa_view::PluginEditorView>,
+    pub view: stave_ui_cocoa::FaceView,
 }
 
 /// Stable C ABI helper: return a raw pointer to the instance's telemetry.

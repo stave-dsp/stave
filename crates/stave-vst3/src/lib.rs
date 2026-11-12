@@ -9,8 +9,8 @@
 #![deny(rust_2018_idioms)]
 
 pub(crate) mod buses;
-pub(crate) mod editor_bridge;
 pub(crate) mod events;
+pub(crate) mod gestures;
 pub(crate) mod host;
 pub(crate) mod host_context;
 pub mod ids;
@@ -22,9 +22,11 @@ mod units;
 pub(crate) mod wire_strings;
 pub mod wrapper;
 
+extern crate alloc;
+
 pub use stave_core;
-/// The macOS editor host (view layer moved out — ABI-agnostic).
-pub use stave_ui_cocoa as cocoa_view;
+/// The design system, for a plugin's face (`FaceSpec`, `HasFace`).
+pub use stave_face;
 
 /// Exports a type implementing `stave_core::Plugin` as a VST3 plugin.
 ///

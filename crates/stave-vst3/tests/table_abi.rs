@@ -19,6 +19,7 @@ use stave_core::params::{
 };
 use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
 use stave_vst3::sys::*;
+use stave_vst3::stave_face;
 use stave_vst3::wrapper::FactoryObj;
 
 // Deliberately non-contiguous, non-ordered ids: the wire must carry
@@ -126,6 +127,14 @@ impl Plugin for TableGain {
                 ctx.output.channel(c)[f] = g * x;
             }
         }
+    }
+}
+
+/// A face, so `createView` makes a view.
+impl stave_vst3::stave_face::HasFace for TableGain {
+    fn face(&self) -> Option<stave_face::Face> {
+        use stave_face::prelude::*;
+        Some(Face::new(Theme::graphite(), Knob::new(self.params.drive.bind()).node()))
     }
 }
 
@@ -868,54 +877,6 @@ static MH_VTBL: IComponentHandlerVtbl = IComponentHandlerVtbl {
     restart_component: mh_restart,
 };
 
-/// A GUI gesture reaches the host as
-/// beginEdit → performEdit(normalized) → endEdit, and the table holds
-/// the value — the DAW can record AND undo it.
-#[test]
-fn gestures_round_trip_through_the_component_handler() {
-    unsafe {
-        let inst = create_instance();
-        let mut handler = MockHandler {
-            vtbl: &MH_VTBL,
-            log: Vec::new(),
-        };
-        assert_eq!(
-            (inst.ctl_vtbl().set_component_handler)(
-                inst.controller,
-                ptr::addr_of_mut!(handler).cast()
-            ),
-            K_RESULT_OK
-        );
-        let instance =
-            &*(*(inst.component as *mut stave_vst3::wrapper::ComponentObj<TableGain>)).parent;
-        stave_vst3::wrapper::gesture_begin(instance, ID_DRIVE);
-        stave_vst3::wrapper::gesture_perform(instance, ID_DRIVE, 12.0); // plain dB
-        stave_vst3::wrapper::gesture_perform(instance, ID_DRIVE, -6.0);
-        stave_vst3::wrapper::gesture_end(instance, ID_DRIVE);
-        assert_eq!(
-            handler.log,
-            vec![
-                "begin 7".to_string(),
-                "perform 7 0.5".to_string(),   // 12 dB on −12..36 → 0.5
-                "perform 7 0.125".to_string(), // −6 dB → 0.125
-                "end 7".to_string(),
-            ],
-            "gesture sequence as the DAW sees it"
-        );
-        // The table holds the final value.
-        assert_eq!(
-            (inst.ctl_vtbl().get_param_normalized)(inst.controller, ID_DRIVE),
-            0.125
-        );
-        // Detach before the stack mock dies.
-        assert_eq!(
-            (inst.ctl_vtbl().set_component_handler)(inst.controller, ptr::null_mut()),
-            K_RESULT_OK
-        );
-        inst.release();
-    }
-}
-
 /// Block-rate host automation through the REAL ABI path
 /// sprays < −60 dBc with default smoothing (the params check,
 /// re-measured end to end).
@@ -1196,9 +1157,11 @@ fn block_size_guards_hold() {
     }
 }
 
-/// Headless (PluginEditorView touches no Cocoa until attach): an editor
-/// knob write routes begin/perform/end through the REAL
-/// IComponentHandler and lands in the table, the editor's only source.
+/// Headless (a `FaceView` touches no Cocoa until attached): a face edit
+/// goes through the view's controller, reaches the host as
+/// beginEdit → performEdit(normalized) → endEdit through the REAL
+/// IComponentHandler, and lands in the table — the DAW can record AND
+/// undo it.
 #[test]
 fn editor_writes_reach_the_host_and_the_table() {
     unsafe {
@@ -1220,14 +1183,14 @@ fn editor_writes_reach_the_host_and_the_table() {
         let view_ptr = ((inst.ctl_vtbl()).create_view)(inst.controller, name.as_ptr() as FidString);
         assert!(!view_ptr.is_null(), "createView");
         let editor_box = view_ptr as *mut stave_vst3::wrapper::EditorBox<TableGain>;
-        let view = &mut (*editor_box).view;
+        let controller = (*editor_box).view.controller();
 
-        // Knob drag on control 1 ("drive"): the gesture conversation
-        // and the table update.
-        view.begin_control(1);
-        view.write_control_plain(1, 12.0, false);
-        view.write_control_plain(1, -6.0, false);
-        view.end_control(1);
+        // A knob drag on "drive": the gesture conversation and the table.
+        let drive = stave_core::ParamId(ID_DRIVE);
+        controller.begin(drive);
+        controller.set(drive, 0.5); // 12 dB on −12..36
+        controller.set(drive, 0.125); // −6 dB
+        controller.end(drive);
         assert_eq!(
             handler.log,
             vec![

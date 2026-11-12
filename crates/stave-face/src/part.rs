@@ -11,15 +11,18 @@
 //!   scroll, stepping, latching.
 //!
 //! Parts bind parameters by [`Bind`] (a ParamId and its name) and read
-//! telemetry by probe name; they never see the plugin.
+//! taps by [`TapId`], both through the plugin's [`Controller`]; they
+//! never see the plugin.
 
 extern crate alloc;
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use std::collections::HashMap;
 
+use stave_core::params::{AnyParam, ParamId};
+use stave_core::telemetry::TapId;
+use stave_core::Controller;
 use stave_ui::layout::Rect;
 use stave_ui::scene::{Image, Op, Pt, Scene};
 
@@ -29,54 +32,26 @@ use crate::theme::Theme;
 /// A parameter a part reads or moves: its ParamId and display name.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bind {
-    pub id: u32,
+    pub id: ParamId,
     pub name: &'static str,
 }
 
 impl Bind {
-    pub const fn new(id: u32, name: &'static str) -> Self {
+    pub const fn new(id: ParamId, name: &'static str) -> Self {
         Bind { id, name }
     }
 }
 
-/// What a face reads and writes, supplied by the platform host over the
-/// plugin's parameter table and telemetry. Values are NORMALIZED (0–1,
-/// the parameter's own taper); stepped parameters land on `i / (n−1)`.
-pub trait Host {
-    fn normalized(&self, id: u32) -> f64;
-    fn default_normalized(&self, id: u32) -> f64;
-    /// Number of discrete steps, 0 for a continuous parameter.
-    fn steps(&self, id: u32) -> u32;
-    fn step_name(&self, id: u32, index: u32) -> Option<String>;
-    /// The current value as the plugin formats it ("1.20 s", "VINYL").
-    fn value_text(&self, id: u32) -> String;
-    /// The latest value of a named probe (0 if unknown).
-    fn probe(&self, name: &str) -> f64;
-    /// Open, move and close an edit gesture (the host's automation bracket).
-    fn begin(&mut self, id: u32);
-    fn set(&mut self, id: u32, normalized: f64);
-    fn end(&mut self, id: u32);
+/// A parameter as a face binds it: `p.drive.bind()`.
+pub trait BindParam {
+    fn bind(&self) -> Bind;
+}
 
-    /// The latest captured audio of `channel` into `out`; returns how
-    /// many frames were written (0 when nothing is captured).
-    fn capture(&self, _channel: usize, _out: &mut [f32]) -> usize {
-        0
+impl<T: AnyParam + ?Sized> BindParam for T {
+    fn bind(&self) -> Bind {
+        let m = self.meta();
+        Bind::new(m.id, m.name)
     }
-    /// The plugin's published transfer curve (output values over the
-    /// input span), empty when it publishes none.
-    fn curve(&self) -> Vec<f32> {
-        Vec::new()
-    }
-    /// Factory preset names.
-    fn presets(&self) -> Vec<String> {
-        Vec::new()
-    }
-    /// The preset last applied, if any.
-    fn preset(&self) -> Option<usize> {
-        None
-    }
-    /// Apply factory preset `index` (every value through the gesture path).
-    fn apply_preset(&mut self, _index: usize) {}
 }
 
 /// The step a normalized value sits on, for an `n`-step parameter.
@@ -136,7 +111,8 @@ pub fn sprite_key(parts: impl core::hash::Hash) -> u64 {
 /// Everything a part's live `paint` may read.
 pub struct Frame<'a> {
     pub theme: &'a Theme,
-    pub host: &'a dyn Host,
+    /// The plugin's parameters, taps, capture and presets.
+    pub controller: &'a dyn Controller,
     /// Device pixels per point.
     pub scale: f64,
     /// Seconds since the face opened (for animation).
@@ -153,17 +129,19 @@ pub struct Frame<'a> {
 impl Frame<'_> {
     /// The `i`th declared bind's normalized value (see `binds`).
     pub fn bound(&self, i: usize) -> f64 {
-        self.binds.get(i).map_or(0.0, |b| self.host.normalized(b.id))
+        self.binds.get(i).map_or(0.0, |b| self.controller.normalized(b.id))
     }
     /// The page shown for page set `key`.
     pub fn page(&self, key: u32) -> u32 {
         self.pages.get(&key).copied().unwrap_or(0)
     }
+    /// `b`'s normalized value.
     pub fn value(&self, b: Bind) -> f64 {
-        self.host.normalized(b.id)
+        self.controller.normalized(b.id)
     }
-    pub fn probe(&self, name: &str) -> f64 {
-        self.host.probe(name)
+    /// The latest value of tap `id`.
+    pub fn tap(&self, id: TapId) -> f64 {
+        self.controller.tap(id)
     }
     /// Draw a cached sprite centred on `c`, `size` points square.
     pub fn sprite(&self, s: &mut Scene, c: Pt, size: f64, key: u64, make: impl FnOnce(f64) -> Image) {
@@ -187,7 +165,7 @@ pub struct Bake<'a> {
     /// Every occluder on the face, for parts that shade the surface.
     pub shadows: &'a crate::material::Shadows,
     /// For static facts only (option names); never live values.
-    pub host: &'a dyn Host,
+    pub controller: &'a dyn Controller,
     pub scene: &'a mut Scene,
 }
 
@@ -284,8 +262,8 @@ pub trait Part: Send + Sync + 'static {
     fn hit(&self, _r: Rect, _f: &Frame<'_>, _p: Pt) -> Option<Gesture> {
         None
     }
-    /// Probes `paint` reads (so the host can resolve them up front).
-    fn probes(&self) -> Vec<&'static str> {
+    /// The taps `paint` reads (so the runtime repaints when they move).
+    fn taps(&self) -> Vec<TapId> {
         Vec::new()
     }
     /// True while the part animates with time alone (a spinning

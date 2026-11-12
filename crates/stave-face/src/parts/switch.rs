@@ -2,9 +2,11 @@
 //! footswitch, and the indicator lamp.
 
 extern crate alloc;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use stave_core::telemetry::TapId;
+use stave_core::Controller;
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Pt, Scene, TextAlign};
 
@@ -44,9 +46,9 @@ impl Toggle {
         let c = self.pivot(r).y;
         c + (f64::from(i) - f64::from(n.saturating_sub(1)) / 2.0) * OPTION_PITCH
     }
-    fn names(&self, host: &dyn crate::part::Host) -> Vec<String> {
-        let n = host.steps(self.bind.id).clamp(2, 3);
-        (0..n).map(|i| host.step_name(self.bind.id, i).unwrap_or_default()).collect()
+    fn names(&self, controller: &dyn Controller) -> Vec<String> {
+        let n = controller.steps(self.bind.id).clamp(2, 3);
+        (0..n).map(|i| controller.step_name(self.bind.id, i).unwrap_or_default().to_string()).collect()
     }
 }
 
@@ -75,7 +77,7 @@ impl Part for Toggle {
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let th = f.theme;
         let ty = &th.type_;
-        let names = self.names(f.host);
+        let names = self.names(f.controller);
         let n = names.len() as u32;
         let cur = step_of(f.value(self.bind), n);
         // The lever: up for the first option, down for the last.
@@ -266,8 +268,10 @@ pub fn lamp_in(f: &Frame<'_>, s: &mut Scene, c: Pt, col: crate::photo::Rgb) {
 pub enum LampSource {
     /// A parameter at or above half.
     Param(Bind),
-    /// A probe above a threshold.
-    Probe(&'static str, f64),
+    /// A tap above a threshold.
+    Tap(TapId, f64),
+    /// Always lit (a pilot lamp: the unit is on).
+    Always,
 }
 
 /// An indicator LED with an optional legend under it.
@@ -292,9 +296,9 @@ impl Lamp {
             color: None,
         }
     }
-    pub fn probe(name: &'static str, threshold: f64) -> Self {
+    pub fn tap(id: TapId, threshold: f64) -> Self {
         Lamp {
-            source: LampSource::Probe(name, threshold),
+            source: LampSource::Tap(id, threshold),
             label: None,
             jewel: false,
             color: None,
@@ -317,7 +321,7 @@ impl Lamp {
     /// A pilot jewel that is always lit (the amp is on).
     pub fn pilot() -> Self {
         Lamp {
-            source: LampSource::Probe("", f64::NEG_INFINITY),
+            source: LampSource::Always,
             label: None,
             jewel: true,
             color: None,
@@ -359,8 +363,8 @@ impl Part for Lamp {
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let on = match self.source {
             LampSource::Param(b) => f.value(b) >= 0.5,
-            LampSource::Probe("", _) => true,
-            LampSource::Probe(name, t) => f.probe(name) > t,
+            LampSource::Tap(id, t) => f.tap(id) > t,
+            LampSource::Always => true,
         };
         if !on {
             return;
@@ -377,18 +381,17 @@ impl Part for Lamp {
         }
     }
 
-    fn probes(&self) -> Vec<&'static str> {
+    fn taps(&self) -> Vec<TapId> {
         match self.source {
-            LampSource::Probe("", _) => Vec::new(),
-            LampSource::Probe(name, _) => alloc::vec![name],
-            LampSource::Param(_) => Vec::new(),
+            LampSource::Tap(id, _) => alloc::vec![id],
+            LampSource::Param(_) | LampSource::Always => Vec::new(),
         }
     }
 
     fn reads(&self) -> Vec<Bind> {
         match self.source {
             LampSource::Param(b) => alloc::vec![b],
-            LampSource::Probe(..) => Vec::new(),
+            LampSource::Tap(..) | LampSource::Always => Vec::new(),
         }
     }
 }

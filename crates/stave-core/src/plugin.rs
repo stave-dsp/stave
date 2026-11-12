@@ -190,14 +190,9 @@ pub trait Plugin: Send + 'static {
         Arc::new(crate::params::NoParams)
     }
 
-    /// The editor as a design-system face, if the plugin declares one.
-    fn editor_face(&self) -> Option<stave_face::Face> {
-        None
-    }
-
     /// Factory presets, declared against typed params. The wrappers
-    /// publish them as the host's program list; a face's `Presets`
-    /// part steps through them.
+    /// publish them as the host's program list; an editor steps through
+    /// them (`Controller::apply_preset`).
     fn presets(&self) -> alloc::vec::Vec<crate::preset::Preset> {
         alloc::vec::Vec::new()
     }

@@ -11,6 +11,7 @@ extern crate self as stave_core;
 
 pub mod block;
 pub mod buffer;
+pub mod controller;
 pub mod diagnostics;
 pub mod environment;
 pub mod event;
@@ -25,6 +26,7 @@ pub mod wrapper;
 
 pub use block::{LaneFrame, Lanes, Peaks};
 pub use buffer::AudioBuffer;
+pub use controller::{Controller, GestureSink, PluginController};
 pub use environment::Environment;
 pub use event::{Event, EventCursor, EventKind, NoteEvent, NoteKind};
 pub use params::ParamId;
@@ -34,7 +36,6 @@ pub use process::{ParamBlock, ParamChange, ParamChangeKind, ProcessCtx, Transpor
 pub use processor::{Processor, Spec, StavePlugin};
 pub use stave_macros::Taps;
 pub use telemetry::{Scope, Tap, TapId, Telemetry};
-pub use stave_face as face;
 pub use wrapper::{
     ranges_alias, GestureEvent, GestureQueue, PluginCell, ProcessorGuard, ProcessorState,
     ScopedFtz, SharedState,

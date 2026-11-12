@@ -84,6 +84,8 @@ extern "C" {
         callout: CFRunLoopTimerCallBack,
         context: *mut CFRunLoopTimerContext,
     ) -> CFRunLoopTimerRef;
+    pub(crate) fn CFRunLoopTimerInvalidate(timer: CFRunLoopTimerRef);
+    pub(crate) fn CFRelease(cf: CFTypeRef);
     pub(crate) fn CFAbsoluteTimeGetCurrent() -> CFAbsoluteTime;
     pub(crate) static kCFRunLoopCommonModes: CFTypeRef;
 }

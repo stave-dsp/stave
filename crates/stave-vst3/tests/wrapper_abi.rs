@@ -95,6 +95,8 @@ impl Plugin for TestEcho {
     }
 }
 
+impl stave_vst3::stave_face::HasFace for TestEcho {}
+
 stave_vst3::stave_vst3_export!(
     raw TestEcho,
     component_cid: (0x7e57_0001, 0x7e57_0002, 0x7e57_0003, 0x7e57_0004),

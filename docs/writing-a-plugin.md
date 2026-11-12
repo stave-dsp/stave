@@ -123,7 +123,7 @@ what's over threshold; you decide on concept seams.
   already cost an investigation).
 - **The `cpu` tap**: the VST3 wrapper times `process` every block
   and publishes duration/budget as `WrapperTaps::CPU` — any editor can
-  mount a `Meter{probe:"cpu"}`, and a glance answers "is something
+  mount a `Meter::unit(WrapperTaps::CPU)`, and a glance answers "is something
   suddenly expensive."
 - **Profiling**: attach Instruments (or `samply record`) to the
   release perf report — it is a clean hot loop of exactly the engine:
@@ -137,8 +137,8 @@ what's over threshold; you decide on concept seams.
 
 - `lib.rs`: the `Spec` impl — `DESCRIPTOR`, explicit `CONFIGS` (the
   negotiation SET, preference order; state it even when it's the
-  default), `params()`, `face()`, `presets()` — plus the two export
-  macros. Nothing else.
+  default), `params()`, `presets()`; the `FaceSpec` impl — `face()`;
+  plus the two export macros. Nothing else.
 - `params.rs`: every param with a stable id. **Ids are forever** —
   never reuse, never renumber (docs/architecture.md). Declared
   smoothing (`with_smooth`) for audio-rate gain paths; engine-owned
@@ -146,9 +146,10 @@ what's over threshold; you decide on concept seams.
   Selector labels live here — the face and the host read the same
   declaration.
 - `editor.rs`: the **face** — a pure function of params returning a
-  `Face` (`use stave_core::face::prelude::*`). Parts (`Knob`,
+  `Face` (`use stave_face::prelude::*`). Parts (`Knob`,
   `Footswitch`, `Toggle`, `Selector`, `Lamp`, displays, `Title`) bind
-  to params with `p.x.bind()`; `row`/`column`/`stack` lay them out;
+  to params with `p.x.bind()` and read taps by `TapId`
+  (`Meter::db(MyTaps::LEVEL)`); `row`/`column`/`stack` lay them out;
   `Plate`s group them and a `Panel` is the enclosure. The `Theme` is
   the whole look — parts never mint a colour, a font or a coordinate.
   `examples/tilt/src/editor.rs` is the worked example and

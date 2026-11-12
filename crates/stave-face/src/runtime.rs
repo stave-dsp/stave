@@ -1,21 +1,23 @@
 //! The face runtime: one per open editor. It lays the tree out, bakes
 //! the static layer once per pixel scale, paints the live layer over a
 //! copy of it, decides when a repaint is due, and turns pointer input
-//! into parameter edits. Platform hosts feed it events and blit its
-//! canvas; everything here is portable and testable headless.
+//! into parameter edits. The platform's view feeds it events and blits
+//! its canvas; everything here is portable and testable headless.
 
 extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::collections::HashMap;
 
+use stave_core::telemetry::TapId;
+use stave_core::Controller;
 use stave_raster::{Canvas, TextPainter};
 use stave_ui::layout::Rect;
 use stave_ui::scene::{Pt, Scene};
 use stave_ui::{Kind, Layout};
 
 use crate::material::Shadows;
-use crate::part::{step_of, step_value, Bake, Bind, Control, FaceNode, Focus, Frame, Gesture, Host, Part, Sprites};
+use crate::part::{step_of, step_value, Bake, Bind, Control, FaceNode, Focus, Frame, Gesture, Part, Sprites};
 use crate::theme::Theme;
 
 /// A plugin's face: a theme and a part tree.
@@ -40,7 +42,7 @@ pub struct Mods {
     pub reset: bool,
 }
 
-/// The pointer shape a host should show.
+/// The pointer shape the platform view should show.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Cursor {
     Arrow,
@@ -156,11 +158,14 @@ impl Runtime {
         &self.face.theme
     }
 
-    /// Every probe any part reads (hosts resolve these up front).
-    pub fn probes(&self) -> Vec<&'static str> {
-        let mut v: Vec<&'static str> = self.items.iter().flat_map(|it| it.part.probes()).collect();
-        v.sort_unstable();
-        v.dedup();
+    /// Every tap any part reads.
+    pub fn taps(&self) -> Vec<TapId> {
+        let mut v: Vec<TapId> = Vec::new();
+        for id in self.items.iter().flat_map(|it| it.part.taps()) {
+            if !v.contains(&id) {
+                v.push(id);
+            }
+        }
         v
     }
 
@@ -173,7 +178,7 @@ impl Runtime {
     pub fn binds(&self) -> Vec<Bind> {
         let mut v: Vec<Bind> = self.ctls.iter().flat_map(|c| c.control.gesture.binds()).collect();
         v.extend(self.items.iter().flat_map(|it| it.part.reads()));
-        v.sort_unstable_by_key(|b| b.id);
+        v.sort_unstable_by_key(|b| b.id.0);
         v.dedup_by_key(|b| b.id);
         v
     }
@@ -203,7 +208,7 @@ impl Runtime {
         }
     }
 
-    fn bake(&self, host: &dyn Host, scale: f64, text: &mut dyn TextPainter) -> Canvas {
+    fn bake(&self, controller: &dyn Controller, scale: f64, text: &mut dyn TextPainter) -> Canvas {
         let mut occ = Vec::new();
         for (i, it) in self.items.iter().enumerate() {
             if self.shown(i) {
@@ -220,7 +225,7 @@ impl Runtime {
                     scale,
                     face: self.size,
                     shadows: &shadows,
-                    host,
+                    controller,
                     scene: &mut scene,
                 },
             );
@@ -231,10 +236,10 @@ impl Runtime {
     }
 
     /// Paint the whole face at `scale` px/pt into `out`.
-    pub fn render(&mut self, host: &dyn Host, scale: f64, time: f64, out: &mut Canvas, text: &mut dyn TextPainter) {
+    pub fn render(&mut self, controller: &dyn Controller, scale: f64, time: f64, out: &mut Canvas, text: &mut dyn TextPainter) {
         let key = scale.to_bits() ^ self.page_key().rotate_left(17);
         if self.baked.as_ref().is_none_or(|(k, _)| *k != key) {
-            let c = self.bake(host, scale, text);
+            let c = self.bake(controller, scale, text);
             self.baked = Some((key, c));
         }
         let base = &self.baked.as_ref().expect("baked above").1;
@@ -249,7 +254,7 @@ impl Runtime {
             }
             let f = Frame {
                 theme: &self.face.theme,
-                host,
+                controller,
                 scale,
                 time,
                 focus: self.focus(i),
@@ -260,20 +265,20 @@ impl Runtime {
             it.part.paint(it.rect, &f, &mut scene);
         }
         stave_raster::render(&scene, scale, out, text);
-        self.memo = self.observe(host, time);
+        self.memo = self.observe(controller, time);
     }
 
-    fn observe(&self, host: &dyn Host, time: f64) -> Vec<u64> {
-        let mut v: Vec<u64> = self.binds().iter().map(|b| host.normalized(b.id).to_bits()).collect();
-        v.extend(self.probes().iter().map(|p| host.probe(p).to_bits()));
+    fn observe(&self, controller: &dyn Controller, time: f64) -> Vec<u64> {
+        let mut v: Vec<u64> = self.binds().iter().map(|b| controller.normalized(b.id).to_bits()).collect();
+        v.extend(self.taps().into_iter().map(|id| controller.tap(id).to_bits()));
         v.push(self.hover.as_ref().map_or(u64::MAX, |t| crate::part::sprite_key((t.item, format!("{:?}", t.gesture)))));
         v.push(self.page_key());
-        v.push(host.preset().map_or(u64::MAX, |p| p as u64));
+        v.push(controller.preset().map_or(u64::MAX, |p| p as u64));
         v.push(self.drag.as_ref().map_or(u64::MAX, |d| d.target.item as u64));
         let animating = self.items.iter().enumerate().any(|(i, it)| {
             it.part.animating(&Frame {
                 theme: &self.face.theme,
-                host,
+                controller,
                 scale: 1.0,
                 time,
                 focus: self.focus(i),
@@ -289,12 +294,12 @@ impl Runtime {
     }
 
     /// True when something the face shows has changed since the last
-    /// `render` (a value, a probe, the pointer, or an animation).
-    pub fn needs_paint(&self, host: &dyn Host, time: f64) -> bool {
-        self.baked.is_none() || self.observe(host, time) != self.memo
+    /// `render` (a value, a tap, the pointer, or an animation).
+    pub fn needs_paint(&self, controller: &dyn Controller, time: f64) -> bool {
+        self.baked.is_none() || self.observe(controller, time) != self.memo
     }
 
-    fn hit(&self, host: &dyn Host, p: Pt) -> Option<Target> {
+    fn hit(&self, controller: &dyn Controller, p: Pt) -> Option<Target> {
         // Parts that place their grab targets from live values first
         // (topmost first), then the fixed controls.
         for (i, it) in self.items.iter().enumerate().rev() {
@@ -303,7 +308,7 @@ impl Runtime {
             }
             let f = Frame {
                 theme: &self.face.theme,
-                host,
+                controller,
                 scale: 1.0,
                 time: 0.0,
                 focus: self.focus(i),
@@ -326,8 +331,8 @@ impl Runtime {
 
     /// The pointer moved with no button down. Returns true if the hover
     /// target changed.
-    pub fn pointer_move(&mut self, host: &dyn Host, p: Pt) -> bool {
-        let h = self.hit(host, p);
+    pub fn pointer_move(&mut self, controller: &dyn Controller, p: Pt) -> bool {
+        let h = self.hit(controller, p);
         let changed = h != self.hover;
         self.hover = h;
         changed
@@ -352,44 +357,44 @@ impl Runtime {
     }
 
     /// Button down at `p`; `clicks` is the click count (2 = double).
-    pub fn pointer_down(&mut self, host: &mut dyn Host, p: Pt, mods: Mods, clicks: u32) -> bool {
-        let Some(target) = self.hit(&*host, p) else {
+    pub fn pointer_down(&mut self, controller: &dyn Controller, p: Pt, mods: Mods, clicks: u32) -> bool {
+        let Some(target) = self.hit(controller, p) else {
             return false;
         };
         self.hover = Some(target.clone());
         let gesture = target.gesture.clone();
         match gesture {
             Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } if clicks >= 2 || mods.reset => {
-                let d = host.default_normalized(bind.id);
-                host.begin(bind.id);
-                host.set(bind.id, d);
-                host.end(bind.id);
+                let d = controller.default_normalized(bind.id);
+                controller.begin(bind.id);
+                controller.set(bind.id, d);
+                controller.end(bind.id);
             }
             Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } => {
-                host.begin(bind.id);
+                controller.begin(bind.id);
                 self.drag = Some(Drag {
                     target: target.clone(),
                     from: p,
-                    start: host.normalized(bind.id),
+                    start: controller.normalized(bind.id),
                     fine: mods.fine,
                     moved: false,
                 });
             }
             Gesture::Choose { bind, step } => {
-                let n = host.steps(bind.id);
-                host.begin(bind.id);
-                host.set(bind.id, step_value(step, n));
-                host.end(bind.id);
+                let n = controller.steps(bind.id);
+                controller.begin(bind.id);
+                controller.set(bind.id, step_value(step, n));
+                controller.end(bind.id);
             }
             Gesture::Latch { bind } => {
-                let on = host.normalized(bind.id) >= 0.5;
-                host.begin(bind.id);
-                host.set(bind.id, if on { 0.0 } else { 1.0 });
-                host.end(bind.id);
+                let on = controller.normalized(bind.id) >= 0.5;
+                controller.begin(bind.id);
+                controller.set(bind.id, if on { 0.0 } else { 1.0 });
+                controller.end(bind.id);
             }
             Gesture::Momentary { bind } => {
-                host.begin(bind.id);
-                host.set(bind.id, 1.0);
+                controller.begin(bind.id);
+                controller.set(bind.id, 1.0);
                 self.drag = Some(Drag {
                     target: target.clone(),
                     from: p,
@@ -399,25 +404,25 @@ impl Runtime {
                 });
             }
             Gesture::Nudge { bind, delta } => {
-                let n = host.steps(bind.id).max(2);
-                let s = i64::from(step_of(host.normalized(bind.id), n)) + i64::from(delta);
-                host.begin(bind.id);
-                host.set(bind.id, step_value(s.clamp(0, i64::from(n) - 1) as u32, n));
-                host.end(bind.id);
+                let n = controller.steps(bind.id).max(2);
+                let s = i64::from(step_of(controller.normalized(bind.id), n)) + i64::from(delta);
+                controller.begin(bind.id);
+                controller.set(bind.id, step_value(s.clamp(0, i64::from(n) - 1) as u32, n));
+                controller.end(bind.id);
             }
             Gesture::Preset { delta } => {
-                let n = host.presets().len() as i64;
+                let n = controller.presets().len() as i64;
                 if n > 0 {
-                    let at = host.preset().map_or(if delta > 0 { -1 } else { 0 }, |p| p as i64);
-                    host.apply_preset((at + i64::from(delta)).rem_euclid(n) as usize);
+                    let at = controller.preset().map_or(if delta > 0 { -1 } else { 0 }, |p| p as i64);
+                    controller.apply_preset((at + i64::from(delta)).rem_euclid(n) as usize);
                 }
             }
             Gesture::Page { key, page } => {
                 self.pages.insert(key, page);
             }
             Gesture::Pad { x, y, area } => {
-                host.begin(x.id);
-                host.begin(y.id);
+                controller.begin(x.id);
+                controller.begin(y.id);
                 self.drag = Some(Drag {
                     target: target.clone(),
                     from: p,
@@ -425,13 +430,13 @@ impl Runtime {
                     fine: mods.fine,
                     moved: false,
                 });
-                set_pad(host, x, y, area, p);
+                set_pad(controller, x, y, area, p);
             }
         }
         true
     }
 
-    pub fn pointer_drag(&mut self, host: &mut dyn Host, p: Pt, mods: Mods) {
+    pub fn pointer_drag(&mut self, controller: &dyn Controller, p: Pt, mods: Mods) {
         let Some(d) = self.drag.as_mut() else {
             return;
         };
@@ -440,17 +445,17 @@ impl Runtime {
             Gesture::Rotary { bind, travel } => {
                 if mods.fine != d.fine {
                     // Re-anchor so switching precision never jumps.
-                    d.start = host.normalized(bind.id);
+                    d.start = controller.normalized(bind.id);
                     d.from = p;
                     d.fine = mods.fine;
                 }
                 let along = (d.from.y - p.y) + 0.5 * (p.x - d.from.x);
                 let k = if d.fine { 0.1 } else { 1.0 };
                 d.moved |= along.abs() > 0.5;
-                host.set(bind.id, (d.start + along / travel * k).clamp(0.0, 1.0));
+                controller.set(bind.id, (d.start + along / travel * k).clamp(0.0, 1.0));
             }
             Gesture::Stepped { bind, pitch } => {
-                let n = host.steps(bind.id).max(2);
+                let n = controller.steps(bind.id).max(2);
                 let along = (d.from.y - p.y) + (p.x - d.from.x);
                 let steps = (along / pitch).trunc() as i64;
                 if steps != 0 {
@@ -458,75 +463,75 @@ impl Runtime {
                 }
                 let s0 = i64::from(step_of(d.start, n));
                 let s = (s0 + steps).clamp(0, i64::from(n) - 1) as u32;
-                host.set(bind.id, step_value(s, n));
+                controller.set(bind.id, step_value(s, n));
             }
             Gesture::Pad { x, y, area } => {
                 d.moved = true;
-                set_pad(host, x, y, area, p);
+                set_pad(controller, x, y, area, p);
             }
             _ => {}
         }
     }
 
-    pub fn pointer_up(&mut self, host: &mut dyn Host) {
+    pub fn pointer_up(&mut self, controller: &dyn Controller) {
         let Some(d) = self.drag.take() else {
             return;
         };
         match d.target.gesture.clone() {
-            Gesture::Rotary { bind, .. } => host.end(bind.id),
+            Gesture::Rotary { bind, .. } => controller.end(bind.id),
             Gesture::Stepped { bind, .. } => {
                 if !d.moved {
                     // A click without a drag steps forward, wrapping.
-                    let n = host.steps(bind.id).max(2);
+                    let n = controller.steps(bind.id).max(2);
                     let s = (step_of(d.start, n) + 1) % n;
-                    host.set(bind.id, step_value(s, n));
+                    controller.set(bind.id, step_value(s, n));
                 }
-                host.end(bind.id);
+                controller.end(bind.id);
             }
             Gesture::Momentary { bind } => {
-                host.set(bind.id, 0.0);
-                host.end(bind.id);
+                controller.set(bind.id, 0.0);
+                controller.end(bind.id);
             }
             Gesture::Pad { x, y, .. } => {
-                host.end(x.id);
-                host.end(y.id);
+                controller.end(x.id);
+                controller.end(y.id);
             }
             _ => {}
         }
     }
 
     /// Scroll over the face: `dy` in lines (positive = up / increase).
-    pub fn wheel(&mut self, host: &mut dyn Host, p: Pt, dy: f64, mods: Mods) {
+    pub fn wheel(&mut self, controller: &dyn Controller, p: Pt, dy: f64, mods: Mods) {
         if self.drag.is_some() {
             return;
         }
-        let Some(target) = self.hit(&*host, p) else {
+        let Some(target) = self.hit(controller, p) else {
             return;
         };
         match target.gesture {
             Gesture::Rotary { bind, .. } => {
                 let k = if mods.fine { 0.002 } else { 0.01 };
-                let v = (host.normalized(bind.id) + dy * k).clamp(0.0, 1.0);
-                host.begin(bind.id);
-                host.set(bind.id, v);
-                host.end(bind.id);
+                let v = (controller.normalized(bind.id) + dy * k).clamp(0.0, 1.0);
+                controller.begin(bind.id);
+                controller.set(bind.id, v);
+                controller.end(bind.id);
             }
             Gesture::Stepped { bind, .. } => {
-                let n = host.steps(bind.id).max(2);
-                let s = i64::from(step_of(host.normalized(bind.id), n)) + if dy > 0.0 { 1 } else { -1 };
+                let n = controller.steps(bind.id).max(2);
+                let s = i64::from(step_of(controller.normalized(bind.id), n)) + if dy > 0.0 { 1 } else { -1 };
                 let s = s.clamp(0, i64::from(n) - 1) as u32;
-                host.begin(bind.id);
-                host.set(bind.id, step_value(s, n));
-                host.end(bind.id);
+                controller.begin(bind.id);
+                controller.set(bind.id, step_value(s, n));
+                controller.end(bind.id);
             }
             _ => {}
         }
     }
 }
 
-fn set_pad(host: &mut dyn Host, x: Bind, y: Bind, area: Rect, p: Pt) {
+fn set_pad(controller: &dyn Controller, x: Bind, y: Bind, area: Rect, p: Pt) {
     let nx = ((p.x - area.x) / area.w).clamp(0.0, 1.0);
     let ny = (1.0 - (p.y - area.y) / area.h).clamp(0.0, 1.0);
-    host.set(x.id, nx);
-    host.set(y.id, ny);
+    controller.set(x.id, nx);
+    controller.set(y.id, ny);
 }

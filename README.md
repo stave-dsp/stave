@@ -53,7 +53,8 @@ The contracts they keep are in **docs/architecture.md**.
   look as data. `tools/storybook` shows every part on every theme.
 - **`stave-ui`** — the OS-agnostic look layer: the layout tree and its
   flexbox solver, and the `Scene` vector vocabulary;
-  **`stave-ui-cocoa`** — the macOS host that shows a face.
+  **`stave-ui-cocoa`** — the macOS platform that shows a face
+  (`FaceView`).
 - **`stave-raster`** — a portable, pure-Rust software renderer that
   draws a `Scene` into an RGBA pixel buffer identically on every
   platform (text is left to the OS).

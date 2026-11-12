@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "macOS (Cocoa/CoreGraphics) host for the stave-ui view layer — ABI-agnostic"
+description = "The macOS platform for stave faces: an NSView over the face runtime (pointer, blit, CoreText) — ABI-agnostic"
 
 [dependencies]
 stave-core.workspace = true

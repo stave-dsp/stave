@@ -11,6 +11,7 @@ description = "VST3 audio plugin backend for the stave framework"
 [dependencies]
 stave-core.workspace = true
 stave-vst3-sys.workspace = true
+stave-face.workspace = true
 stave-ui-cocoa.workspace = true
 
 [dev-dependencies]

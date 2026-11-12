@@ -77,7 +77,7 @@ impl Part for Selector {
         let cap = material::sprite(size, scale, |dx, dy| material::knob(style, tint, dx, dy, SEL_R, scale));
         cx.image(c.x - size / 2.0, c.y - size / 2.0, size, size, cap);
         cx.scene.text_in(pt(c.x, r.y + 11.0), legend_of(self.label, self.bind), ty.legend_size, th.ink, ty.legend);
-        let n = cx.host.steps(self.bind.id).max(2);
+        let n = cx.controller.steps(self.bind.id).max(2);
         for i in 0..n {
             let a = Self::angle(i, n);
             let p = pt(c.x + a.cos() * (SEL_R + 6.0), c.y + a.sin() * (SEL_R + 6.0));
@@ -89,7 +89,7 @@ impl Part for Selector {
         let th = f.theme;
         let ty = &th.type_;
         let c = Self::centre(r);
-        let n = f.host.steps(self.bind.id).max(2);
+        let n = f.controller.steps(self.bind.id).max(2);
         let cur = step_of(f.value(self.bind), n);
         let a = Self::angle(cur, n);
         if th.caps == CapStyle::Chicken {
@@ -106,7 +106,7 @@ impl Part for Selector {
         let lit = f.focus.active || f.focus.hover;
         for i in 0..n {
             let a = Self::angle(i, n);
-            let name = f.host.step_name(self.bind.id, i).unwrap_or_default();
+            let name = f.controller.step_name(self.bind.id, i).unwrap_or_default();
             let rad = SEL_R + 15.0;
             let (x, y) = (c.x + a.cos() * rad, c.y + a.sin() * rad + ty.caption_size * 0.35);
             let align = if a.cos() < -0.3 {
@@ -221,7 +221,7 @@ impl Part for Stepper {
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let (win, left, right) = readout(r);
-        readout_text(f.theme, s, win, &f.host.value_text(self.bind.id));
+        readout_text(f.theme, s, win, &f.controller.value_text(self.bind.id));
         glass_over(f, s, win, 5.0);
         arrows(f.theme, s, left, right, f.focus.hover || f.focus.active);
     }
@@ -276,10 +276,10 @@ impl Part for Presets {
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let (win, left, right) = readout(r);
-        let names = f.host.presets();
-        let text = match f.host.preset() {
-            Some(i) => names.get(i).cloned().unwrap_or_default(),
-            None if names.is_empty() => String::from("—"),
+        let presets = f.controller.presets();
+        let text = match f.controller.preset() {
+            Some(i) => presets.get(i).map(|p| String::from(p.name)).unwrap_or_default(),
+            None if presets.is_empty() => String::from("—"),
             None => String::from("INIT"),
         };
         readout_text(f.theme, s, win, &text.to_uppercase());

@@ -19,7 +19,7 @@ pub trait Vst3Ids {
 
 impl<E> Vst3Export for stave_core::StavePlugin<E>
 where
-    E: stave_core::Spec + Vst3Ids,
+    E: stave_face::FaceSpec + Vst3Ids,
 {
     const COMPONENT_CID: Tuid = E::COMPONENT_CID;
     const CONTROLLER_CID: Tuid = E::CONTROLLER_CID;

@@ -11,6 +11,7 @@
 //! material.rs  lit surfaces and hardware (one studio light), parallel bakes
 //! photo.rs     the studio: vectors, light, materials, grain, distances, bakers
 //! part.rs      the Part contract: bake (static) / paint (live) / controls
+//! plugin.rs    how a plugin declares its face (FaceSpec, HasFace)
 //! parts/       the catalogue
 //! screens.rs   pictures for displays: graticule, scope, spectrum, curve, envelope
 //! runtime.rs   layout, the cached static layer, live paint, and every
@@ -18,18 +19,24 @@
 //!              stepping, latching, pads)
 //! ```
 //!
-//! The runtime is portable: a platform host feeds it pointer events and
-//! blits its canvas (`stave-ui-cocoa::face` on macOS).
+//! Parts read and write the plugin through its [`Controller`] (from
+//! `stave-core`): parameters by `ParamId`, taps by `TapId`. The runtime
+//! is portable: a platform view feeds it pointer events and blits its
+//! canvas (`stave-ui-cocoa`'s `FaceView` on macOS).
 
 pub mod material;
 pub mod part;
 pub mod photo;
+pub mod plugin;
 pub mod parts;
 pub mod runtime;
 pub mod screens;
 pub mod theme;
 
-pub use part::{leaf, on_page, pages, step_of, step_value, Bind, Control, FaceNode, Focus, Frame, Gesture, Hit, Host, Part};
+pub use part::{leaf, on_page, pages, step_of, step_value, Bind, BindParam, Control, FaceNode, Focus, Frame, Gesture, Hit, Part};
+pub use plugin::{FaceSpec, HasFace};
+pub use stave_core::telemetry::TapId;
+pub use stave_core::Controller;
 pub use parts::*;
 pub use runtime::{Cursor, Face, Mods, Runtime};
 pub use theme::{CapStyle, Finish, Theme, Typography};
@@ -37,7 +44,7 @@ pub use theme::{CapStyle, Finish, Theme, Typography};
 /// Everything a face definition needs in one import.
 pub mod prelude {
     pub use crate::parts::*;
-    pub use crate::{on_page, pages, screens, Bind, Face, FaceNode, Frame, Theme};
+    pub use crate::{on_page, pages, screens, Bind, BindParam, Face, FaceNode, FaceSpec, Frame, TapId, Theme};
     pub use stave_ui::layout::Rect;
     pub use stave_ui::scene::{pt, Path, Scene, Stroke};
     pub use stave_ui::style::Color;

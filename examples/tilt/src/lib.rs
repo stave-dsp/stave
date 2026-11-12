@@ -24,6 +24,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 
 use stave_core::{PluginDescriptor, PluginFeature, PortConfig, Spec, StavePlugin};
+use stave_face::{Face, FaceSpec};
 use stave_vst3::stave_vst3_export;
 
 mod editor;
@@ -54,7 +55,10 @@ impl Spec for TiltEngine {
     fn params() -> Arc<TiltParams> {
         TiltParams::new()
     }
-    fn face(params: &TiltParams) -> Option<stave_core::face::Face> {
+}
+
+impl FaceSpec for TiltEngine {
+    fn face(params: &TiltParams) -> Option<Face> {
         Some(editor::face(params))
     }
 }

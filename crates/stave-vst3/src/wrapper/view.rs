@@ -1,4 +1,4 @@
-//! IPlugView: the Cocoa editor view behind `EditorBox`.
+//! IPlugView: the plugin's face, in a `FaceView`, behind `EditorBox`.
 //!
 //! Lifetime: `createView` returns a fresh `EditorBox` with one reference,
 //! which itself holds one reference on the `Instance`; `sv_release` at
@@ -30,18 +30,26 @@ unsafe fn view_instance<'a, P: Vst3Export>(this: *mut FUnknown) -> &'a Instance<
 }
 
 /// A new view on `inst` with one reference (the caller's), holding one
-/// reference on `inst`.
+/// reference on `inst`; null for a plugin without a face (the host shows
+/// its own editor).
 pub(super) fn new_view<P: Vst3Export>(
     inst: &Instance<P>,
     inst_ptr: *mut Instance<P>,
 ) -> *mut FUnknown {
-    let mut view = crate::cocoa_view::PluginEditorView::new(
-        inst.telemetry.clone(),
+    let Some(face) = inst.face.clone() else {
+        return ptr::null_mut();
+    };
+    let gestures = Vst3Gestures {
+        handler: inst.handler.clone(),
+        table: inst.param_table.clone(),
+    };
+    let controller = PluginController::new(
         inst.param_table.clone(),
-        Box::new(Vst3EditorHost::<P> { inst: inst_ptr }),
+        inst.telemetry.clone(),
+        inst.programs.presets().to_vec(),
+        Box::new(gestures),
     );
-    view.set_face(inst.editor_face.clone());
-    view.set_face_presets(inst.programs.presets());
+    let view = stave_ui_cocoa::FaceView::new(face, Box::new(controller));
     // Taken only once the view exists, so a panic above leaks nothing.
     inst.ref_count.fetch_add(1, Ordering::SeqCst);
     Box::into_raw(Box::new(EditorBox::<P> {
@@ -160,8 +168,7 @@ pub(super) unsafe extern "C" fn sv_removed<P: Vst3Export>(this: *mut FUnknown) -
         || {
             // SAFETY: as in `sv_attached`.
             let editor = unsafe { &mut *this.cast::<EditorBox<P>>() };
-            // SAFETY: main thread; detaching an unattached view is a no-op.
-            unsafe { editor.view.detach() };
+            editor.view.detach();
             K_RESULT_OK
         },
     )
@@ -208,8 +215,7 @@ pub(super) unsafe extern "C" fn sv_get_size<P: Vst3Export>(
                 Ok(size) => size,
                 Err(error) => return inst.answer("IPlugView::getSize", Err(error)),
             };
-            // No face: an empty container.
-            let (w, h) = editor.view.size().unwrap_or((480.0, 320.0));
+            let (w, h) = editor.view.size();
             *size = ViewRect {
                 left: 0,
                 top: 0,

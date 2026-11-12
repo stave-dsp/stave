@@ -13,6 +13,7 @@ name = "stave-storybook"
 path = "src/main.rs"
 
 [dependencies]
+stave-core.workspace = true
 stave-face.workspace = true
 stave-raster.workspace = true
 stave-ui.workspace = true

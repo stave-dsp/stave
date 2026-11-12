@@ -6,27 +6,23 @@
 //!   bind stepped parameters, and rotaries and pads bind continuous ones;
 //! * a `Choose` gesture's step is in range.
 
-use stave_core::face::{Gesture, Runtime};
-use stave_core::params::AnyParam;
-use stave_core::Plugin;
+use stave_core::params::{AnyParam, ParamId};
+use stave_face::{Gesture, HasFace, Runtime};
 
 /// Check the face of a freshly constructed plugin `P`.
-pub fn binds_resolve<P: Plugin>(project: &str) {
+pub fn binds_resolve<P: HasFace>(project: &str) {
     let plugin = P::new();
-    let face = plugin
-        .editor_face()
-        .unwrap_or_else(|| panic!("{project}: declares no face"));
+    let face = plugin.face().unwrap_or_else(|| panic!("{project}: declares no face"));
     let table = plugin.param_table();
     let rt = Runtime::new(face);
-    let lookup = |id: u32| -> &dyn AnyParam {
-        (0..table.count())
-            .filter_map(|i| table.by_index(i))
-            .find(|p| p.meta().id.0 == id)
-            .unwrap_or_else(|| panic!("{project}: the face binds param id {id}, which the table does not declare"))
+    let lookup = |id: ParamId| -> &dyn AnyParam {
+        table
+            .by_id(id)
+            .unwrap_or_else(|| panic!("{project}: the face binds param id {}, which the table does not declare", id.0))
     };
     for b in rt.binds() {
         let p = lookup(b.id);
-        assert_eq!(p.meta().name, b.name, "{project}: param {} is bound under another name", b.id);
+        assert_eq!(p.meta().name, b.name, "{project}: param {} is bound under another name", b.id.0);
     }
     for g in rt.gestures() {
         match g {
