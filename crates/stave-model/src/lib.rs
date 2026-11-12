@@ -1,4 +1,4 @@
-//! Protocol models of stave's plugin ↔ host contracts (docs/overhaul.md
+//! Protocol models of stave's plugin ↔ host contracts (OVERHAUL.md
 //! V4), checked exhaustively by a small explicit-state model checker
 //! ([`check`]), and the same models as oracles: the simulated host
 //! (stave-host `plugin::sim`) checks a real plugin's answers against

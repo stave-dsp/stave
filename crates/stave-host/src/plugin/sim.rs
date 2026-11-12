@@ -1,4 +1,4 @@
-//! A deterministic simulated host (docs/overhaul.md V3): seeded
+//! A deterministic simulated host (OVERHAUL.md V3): seeded
 //! randomness over the VST3 call order — setup, activation, processing
 //! with any block size (0, odd, past the declared maximum), sample-rate
 //! changes, in-place and null channel lists, sample-accurate and

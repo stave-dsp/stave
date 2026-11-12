@@ -242,32 +242,11 @@ Theme { palette, finish, hardware, typography, spacing, coverings }
 
 ## Glossary (normative)
 
-| Term | Means | Never call it |
-|---|---|---|
-| **Plugin** | The author's type; the one trait an author implements | Processor, Engine, Spec, StavePlugin |
-| **Info** | A plugin's identity: id, name, vendor, version, features | Descriptor |
-| **Layout** | A supported bus configuration | PortConfig, Arrangement (in author code) |
-| **Params** / **Param** / **ParamId** | The table / one parameter / its forever id | Control, store, raw `u32` |
-| **value()** | A param's current value in its natural type | plain, get, index, current |
-| **normalized** | 0–1 in the param's own taper (the host and face language) | — |
-| **Smooth** / **Smoother** | A declared ramp / the per-plugin state that runs it | Ramp, Glide, ContinuousControl |
-| **Environment** | Conditions at prepare: sample rate, max block, layout | — |
-| **prepare / reset / process** | Plugin lifecycle (prepare may allocate; process is realtime) | activate, deactivate (outside the wrappers) |
-| **Block** | One `process` call's audio, events and param changes | ProcessCtx |
-| **frame** | One sample position across channels; counts are `usize` | sample_offset, index, `u32` counts |
-| **sample_rate** | Hz, `f32`, everywhere | sr, fs, rate |
-| **Stage** | A DSP processor: prepare / reset / tick / process / latency / tail | process_sample, process_one, advance |
-| **tick** | Advance a Stage one sample | process (for one sample) |
-| **latency** / **Tail** | Samples of delay / how long output rings after input stops | latency_samples, tail_samples |
-| **Telemetry** | The plugin → editor/tool channel (formerly DebugBus) | debug bus, bus |
-| **Tap** / **TapId** | One published value / its id (engine writes, face reads) | probe |
-| **Capture** | Audio snapshots published for displays | Scope, ring |
-| **Face** | A plugin's editor, built from Parts on a Theme | editor tree, UiNode, Widget |
-| **Part** / **Theme** / **Panel** / **Plate** | A face leaf / the look as data / the enclosure / a control group | widget, card, tokens |
-| **Grab** / **Gesture** | Where a part can be grabbed / what a grab does | Control, Hit, Target |
-| **Controller** | What a face reads and writes on its plugin (params, taps, presets, capture) — the VST3 meaning | Host (for this), EditorHost, Bridge |
-| **Host** | The DAW; `stave-host` hosts plugins | anything else |
-| **render** | Rasterise a Scene into pixels | running audio (that is `process`/`run`) |
+The glossary lives in the guide, `crates/stave-guide/src/glossary.md`
+(the docs site's Glossary page): its Terms table is the vocabulary, its
+Retired names table the names that are gone, and
+`scripts/check-vocabulary.sh` reads both, so the gate and the glossary
+are one source.
 
 ## The ledger
 

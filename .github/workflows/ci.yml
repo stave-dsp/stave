@@ -1,4 +1,4 @@
-# CI: the main signal (docs/overhaul.md C10). Every job here fits in
+# CI: the main signal (OVERHAUL.md C10). Every job here fits in
 # five minutes warm and the run's wall clock does too, so it gates every
 # push and pull request. Builds are --locked against the committed
 # Cargo.lock; every tool is pinned. macOS runners only where macOS is

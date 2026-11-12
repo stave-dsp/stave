@@ -1,4 +1,4 @@
-# Linux and Windows (docs/overhaul.md, ledger X): the whole workspace
+# Linux and Windows (OVERHAUL.md, ledger X): the whole workspace
 # builds, lints and tests there; the plugin binaries export each
 # platform's entry points, pass clap-validator and Steinberg's
 # validator, and stave-host opens them; the face shells are driven in a

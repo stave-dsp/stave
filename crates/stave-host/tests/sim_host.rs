@@ -1,4 +1,4 @@
-//! The deterministic simulated host (docs/overhaul.md V3) against a real
+//! The deterministic simulated host (OVERHAUL.md V3) against a real
 //! stave plugin (Tilt) through the full VST3 path: seeded call orders,
 //! block sizes, sample rates, buffer shapes, parameter and state
 //! traffic, legal and not. A failure prints its seed;

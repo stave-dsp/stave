@@ -41,7 +41,7 @@ report() {
 }
 
 GLOSSARY=crates/stave-guide/src/glossary.md
-LEDGER=docs/overhaul.md
+LEDGER=OVERHAUL.md
 
 # table <heading>: the rows of the one table under `## <heading>`.
 table() {

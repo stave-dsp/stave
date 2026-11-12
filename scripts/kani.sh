@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Kani proof harnesses (docs/overhaul.md V2): bounded model checking
+# The Kani proof harnesses (OVERHAUL.md V2): bounded model checking
 # of the unsafe and index-heavy core. Each `#[kani::proof]` (in
 # `#[cfg(kani)] mod proofs`) states a property over EVERY input within
 # its bounds; Kani also checks every pointer dereference, index and

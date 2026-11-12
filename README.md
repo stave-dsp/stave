@@ -18,6 +18,7 @@ are generated from the code, and nothing on it is written twice.
 - `tools/` — `stave-bench` (headless host, the agent API), `stave-play`
   (windowed host), the storybook, and the docs site generator.
 - `crates/stave-guide` — the guide's articles, in Markdown.
+- `OVERHAUL.md` — the project's working ledger.
 
 The plugins built on Stave live in
 [stave-plugins](https://github.com/stave-dsp/stave-plugins).

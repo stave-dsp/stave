@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sanitizers where Miri cannot reach (docs/overhaul.md C4): the wrappers'
+# Sanitizers where Miri cannot reach (OVERHAUL.md C4): the wrappers'
 # ABI tests, stave-host hosting a real plugin through the full VST3 path
 # (load, process, state, the simulated host), and the face runtime —
 # compiled code, real threads, real allocator.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The public crates' API against a released tag (docs/overhaul.md C9):
+# The public crates' API against a released tag (OVERHAUL.md C9):
 # a change the version number does not allow fails.
 #
 #   scripts/semver-checks.sh            # against the newest v* tag in HEAD's history

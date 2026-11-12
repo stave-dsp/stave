@@ -1,4 +1,4 @@
-# The fuzz targets (docs/overhaul.md C5): cargo-fuzz (libFuzzer) on the
+# The fuzz targets (OVERHAUL.md C5): cargo-fuzz (libFuzzer) on the
 # pinned nightly. Its own workspace, so the framework's builds never see
 # it; `scripts/fuzz.sh` runs every target.
 [package]

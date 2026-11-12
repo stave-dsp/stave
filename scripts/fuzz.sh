@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The fuzz targets (docs/overhaul.md C5), cargo-fuzz on the pinned
+# The fuzz targets (OVERHAUL.md C5), cargo-fuzz on the pinned
 # nightly. Every target for SECONDS each (default 30: the PR smoke; the
 # nightly job runs 600). The committed state fixtures seed state_load.
 #

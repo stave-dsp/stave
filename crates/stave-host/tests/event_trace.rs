@@ -1,4 +1,4 @@
-//! The event trace (docs/overhaul.md V5) of a real stave plugin (Tilt)
+//! The event trace (OVERHAUL.md V5) of a real stave plugin (Tilt)
 //! driven through the VST3 path: what the host did — activate, state
 //! saves and loads, good and garbage — is on the instance's telemetry as
 //! typed records, and the run keeps the trace's laws.

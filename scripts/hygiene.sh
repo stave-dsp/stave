@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The hygiene gates (docs/overhaul.md C9) beside the vocabulary check:
+# The hygiene gates (OVERHAUL.md C9) beside the vocabulary check:
 #
 #   scripts/hygiene.sh             # licences, duplicate versions, sources,
 #                                  # unused dependencies, rustdoc links

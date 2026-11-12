@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Functional core, imperative shell (docs/overhaul.md V6): the pure
+# Functional core, imperative shell (OVERHAUL.md V6): the pure
 # crates — DSP (stave-dsp), layout and the Scene IR (stave-ui), the
 # rasterizer (stave-raster), faces (stave-face), measurement
 # (stave-measure), the protocol models (stave-model) — compute; they do
