@@ -34,7 +34,7 @@ pub fn self_noise(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     d.skip(d.frames_for(config.settle_seconds), &Silence, &quiet);
     let mut meter = Meter::default();
     let n = d.frames_for(config.listen_seconds);
-    d.run(n, &Silence, &quiet, |b| meter.add(&b.outputs()));
+    d.run(n, &Silence, &quiet, |b| meter.add(&b.outputs().collect::<Vec<_>>()));
     let peak_dbfs = db(meter.peak());
     let details = json!({ "peak_dbfs": peak_dbfs, "max_dbfs": config.max_dbfs });
     Ok(if meter.non_finite() == 0 && peak_dbfs < config.max_dbfs {

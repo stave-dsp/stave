@@ -473,10 +473,7 @@ impl Runtime {
             self.baked = Some((key, c));
         }
         let base = &self.baked.as_ref().expect("baked above").1;
-        out.w = base.w;
-        out.h = base.h;
-        out.px.clear();
-        out.px.extend_from_slice(&base.px);
+        out.copy_from(base);
         let mut scene = Scene::new();
         for i in self.paint_order(controller) {
             self.items[i].part.paint(self.items[i].rect, &self.frame(i, controller, scale, time), &mut scene);

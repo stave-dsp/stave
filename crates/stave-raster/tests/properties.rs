@@ -12,7 +12,7 @@ fn ink(path: Path, scale: f64, size: usize) -> f64 {
     s.solid(path, Color::rgba(1.0, 1.0, 1.0, 1.0));
     let mut c = Canvas::new(size, size);
     render(&s, scale, &mut c, &mut NoText);
-    c.px.chunks_exact(4).map(|p| f64::from(p[3]) / 255.0).sum()
+    c.pixels().chunks_exact(4).map(|p| f64::from(p[3]) / 255.0).sum()
 }
 
 /// A small deterministic generator.

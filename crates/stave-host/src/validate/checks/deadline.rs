@@ -46,7 +46,7 @@ pub fn deadline_headroom(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let mut ns = vec![];
     let n = d.frames_for(config.run_seconds);
     d.run(n, signal.as_ref(), &notes, |b| {
-        ns.push(b.process_time.as_nanos() as f64)
+        ns.push(b.process_time().as_nanos() as f64)
     });
     let budget = d.block() as f64 / rate * 1e9;
     let p99 = Summary::of(&ns).map_or(0.0, |s| s.p99);

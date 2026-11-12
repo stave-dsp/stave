@@ -55,7 +55,7 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
             let windows: Vec<Meter> = (0..config.windows)
                 .map(|_| {
                     let mut m = Meter::default();
-                    d.run(n, signal.as_ref(), &notes, |b| m.add(&b.outputs()));
+                    d.run(n, signal.as_ref(), &notes, |b| m.add(&b.outputs().collect::<Vec<_>>()));
                     m
                 })
                 .collect();

@@ -24,24 +24,38 @@ fn thread_cpu_time() -> Duration {
 
 /// One processed block, as handed to a run callback.
 pub struct BlockOut<'a> {
-    /// Absolute frame of the block's first sample (driver-relative).
-    pub start: u64,
-    pub frames: usize,
-    pub inputs: &'a [Vec<f32>],
-    pub outputs: &'a [Vec<f32>],
-    /// CPU time the `process` call took on this thread. Not wall time:
-    /// other threads and processes sharing the machine (tests run in
-    /// parallel) would be charged to the plugin.
-    pub process_time: Duration,
+    start: u64,
+    frames: usize,
+    inputs: &'a [Vec<f32>],
+    outputs: &'a [Vec<f32>],
+    process_time: Duration,
 }
 
 impl BlockOut<'_> {
+    /// Absolute frame of the block's first sample (driver-relative).
+    pub fn start(&self) -> u64 {
+        self.start
+    }
+
+    /// Frames in this block.
+    pub fn frames(&self) -> usize {
+        self.frames
+    }
+
+    /// CPU time the `process` call took on this thread. Not wall time:
+    /// other threads and processes sharing the machine (tests run in
+    /// parallel) would be charged to the plugin.
+    pub fn process_time(&self) -> Duration {
+        self.process_time
+    }
+
     pub fn output(&self, channel: usize) -> &[f32] {
         &self.outputs[channel][..self.frames]
     }
 
-    pub fn outputs(&self) -> Vec<&[f32]> {
-        self.outputs.iter().map(|o| &o[..self.frames]).collect()
+    /// Every output channel, this block's frames (allocates nothing).
+    pub fn outputs(&self) -> impl ExactSizeIterator<Item = &[f32]> + Clone + '_ {
+        self.outputs.iter().map(|o| &o[..self.frames])
     }
 
     pub fn input(&self, channel: usize) -> &[f32] {
@@ -253,7 +267,7 @@ mod tests {
         let mut blocks = 0;
         drv.run(40, &Impulse { frame: 17 }, &NoteSchedule::default(), |b| {
             blocks += 1;
-            assert!(b.frames <= 16);
+            assert!(b.frames() <= 16);
             assert_eq!(b.input(0), b.output(0), "unity gain");
         });
         assert_eq!(blocks, 3);

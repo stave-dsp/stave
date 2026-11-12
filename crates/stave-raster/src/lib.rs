@@ -32,19 +32,51 @@ mod coverage;
 mod path;
 mod stroke;
 
-pub use box_text::BoxText;
-pub use coverage::Mask;
+use coverage::Mask;
 
-/// A premultiplied RGBA8 pixel buffer, row 0 at the top.
+pub use box_text::BoxText;
+
+/// A premultiplied RGBA8 pixel buffer, row 0 at the top. Its pixels
+/// are always exactly `w × h × 4` bytes: the size changes only through
+/// [`new`](Self::new), [`reset`](Self::reset) and
+/// [`copy_from`](Self::copy_from).
 pub struct Canvas {
-    pub w: usize,
-    pub h: usize,
-    pub px: Vec<u8>,
+    w: usize,
+    h: usize,
+    px: Vec<u8>,
 }
 
 impl Canvas {
     pub fn new(w: usize, h: usize) -> Self {
         Self { w, h, px: vec![0; w * h * 4] }
+    }
+
+    /// Width in pixels.
+    pub fn w(&self) -> usize {
+        self.w
+    }
+
+    /// Height in pixels.
+    pub fn h(&self) -> usize {
+        self.h
+    }
+
+    /// The pixels, row by row: `w × h` premultiplied RGBA8.
+    pub fn pixels(&self) -> &[u8] {
+        &self.px
+    }
+
+    /// The pixels, writable (never resizable).
+    pub fn pixels_mut(&mut self) -> &mut [u8] {
+        &mut self.px
+    }
+
+    /// Become a copy of `other` (reusing the allocation).
+    pub fn copy_from(&mut self, other: &Canvas) {
+        self.w = other.w;
+        self.h = other.h;
+        self.px.clear();
+        self.px.extend_from_slice(&other.px);
     }
 
     /// Clear to transparent (reuses the allocation when sizes match).
@@ -98,14 +130,28 @@ fn to8(v: f64) -> f64 {
     (v.clamp(0.0, 1.0) * 255.0).round()
 }
 
-/// Source-over one premultiplied pixel (components 0..255 as f32).
+/// Source-over one premultiplied pixel (components 0..255 as f32), in
+/// 16.16 fixed point: `dst = src + dst × (255 − a) / 255`, one rounding
+/// at the end (no float `round` per channel).
 #[inline]
 fn over(dst: &mut [u8], r: f32, g: f32, b: f32, a: f32) {
-    let k = 1.0 - a / 255.0;
-    dst[0] = (r + dst[0] as f32 * k).round().min(255.0) as u8;
-    dst[1] = (g + dst[1] as f32 * k).round().min(255.0) as u8;
-    dst[2] = (b + dst[2] as f32 * k).round().min(255.0) as u8;
-    dst[3] = (a + dst[3] as f32 * k).round().min(255.0) as u8;
+    const ONE: f32 = 65_536.0;
+    let k = ((255.0 - a.clamp(0.0, 255.0)) * (ONE / 255.0)) as u32;
+    for (c, s) in [r, g, b, a].into_iter().enumerate() {
+        let v = ((s.max(0.0) * ONE) as u32 + u32::from(dst[c]) * k + 32_768) >> 16;
+        dst[c] = v.min(255) as u8;
+    }
+}
+
+/// A linear gradient sampled at 256 points along its axis (premultiplied
+/// 0..255 components, alpha last): one table per fill, so a pixel costs a
+/// lookup, not a search through the stops.
+fn gradient_lut(stops: &[(f64, Color)]) -> [[f32; 4]; 256] {
+    core::array::from_fn(|i| {
+        let c = gradient_at(stops, i as f64 / 255.0);
+        let a = c.a.clamp(0.0, 1.0) as f32;
+        [to8(c.r) as f32 * a, to8(c.g) as f32 * a, to8(c.b) as f32 * a, 255.0 * a]
+    })
 }
 
 /// The colour of a linear gradient at `t` (stops interpolated in the
@@ -155,6 +201,7 @@ fn fill(canvas: &mut Canvas, polys: &[Vec<Pt>], brush: &Brush, scale: f64) {
             let (fx, fy) = (from.x * scale, from.y * scale);
             let (dx, dy) = (to.x * scale - fx, to.y * scale - fy);
             let len2 = (dx * dx + dy * dy).max(1e-12);
+            let lut = gradient_lut(stops);
             for my in 0..mask.h {
                 for mx in 0..mask.w {
                     let cov = mask.cov[my * mask.w + mx];
@@ -163,10 +210,9 @@ fn fill(canvas: &mut Canvas, polys: &[Vec<Pt>], brush: &Brush, scale: f64) {
                     }
                     let (px, py) = ((x0 + mx) as f64 + 0.5, (y0 + my) as f64 + 0.5);
                     let t = ((px - fx) * dx + (py - fy) * dy) / len2;
-                    let c = gradient_at(stops, t);
-                    let k = c.a.clamp(0.0, 1.0) as f32 * cov;
+                    let [r, g, b, a] = lut[(t.clamp(0.0, 1.0) * 255.0 + 0.5) as usize];
                     let i = ((y0 + my) * cw + x0 + mx) * 4;
-                    over(&mut canvas.px[i..i + 4], to8(c.r) as f32 * k, to8(c.g) as f32 * k, to8(c.b) as f32 * k, 255.0 * k);
+                    over(&mut canvas.px[i..i + 4], r * cov, g * cov, b * cov, a * cov);
                 }
             }
         }

@@ -74,17 +74,17 @@ impl CoreText {
 
     /// The context over `canvas`'s pixels, made if need be.
     fn context(&mut self, canvas: &mut Canvas) -> Option<*mut c_void> {
-        let over = canvas.px.as_ptr();
+        let over = canvas.pixels().as_ptr();
         if self.ctx.as_ref().is_none_or(|(_, p)| *p != over) {
             self.ctx = None;
-            let (w, h) = (canvas.w, canvas.h);
-            assert!(canvas.px.len() >= w * h * 4, "a canvas holds its pixels");
+            let (w, h) = (canvas.w(), canvas.h());
+            assert!(canvas.pixels().len() >= w * h * 4, "a canvas holds its pixels");
             // SAFETY: the context draws into `w × h × 4` bytes the canvas
             // owns; it is used only while those pixels stay put (the next
             // call with moved pixels replaces it).
             let ctx = unsafe {
                 let cs = CfRef::from_create(CGColorSpaceCreateDeviceRGB())?;
-                let ctx = CGBitmapContextCreate(canvas.px.as_mut_ptr().cast(), w, h, 8, w * 4, cs.as_ptr(), RGBA_PREMULTIPLIED);
+                let ctx = CGBitmapContextCreate(canvas.pixels_mut().as_mut_ptr().cast(), w, h, 8, w * 4, cs.as_ptr(), RGBA_PREMULTIPLIED);
                 CfRef::from_create(ctx)?
             };
             // SAFETY: a live context.
@@ -97,7 +97,7 @@ impl CoreText {
 
 impl TextPainter for CoreText {
     fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color, font: &stave_ui::scene::Font) {
-        let (h, k) = (canvas.h as f64, self.scale);
+        let (h, k) = (canvas.h() as f64, self.scale);
         let Some(ctx) = self.context(canvas) else {
             return;
         };
@@ -114,14 +114,14 @@ impl TextPainter for CoreText {
 /// # Safety
 /// `ctx` is a live CGContext for the current drawing pass.
 pub(crate) unsafe fn draw_canvas(ctx: *mut c_void, canvas: &Canvas, w: f64, h: f64) {
-    if canvas.w == 0 || canvas.h == 0 || canvas.px.len() < canvas.w * canvas.h * 4 {
+    if canvas.w() == 0 || canvas.h() == 0 || canvas.pixels().len() < canvas.w() * canvas.h() * 4 {
         return;
     }
     // SAFETY: the provider borrows the canvas's pixels (length checked
     // above) and the image made from it is drawn and released before this
     // returns; `ctx` is live (this function's contract).
     unsafe {
-        let Some(provider) = CfRef::from_create(CGDataProviderCreateWithData(core::ptr::null_mut(), canvas.px.as_ptr(), canvas.px.len(), None)) else {
+        let Some(provider) = CfRef::from_create(CGDataProviderCreateWithData(core::ptr::null_mut(), canvas.pixels().as_ptr(), canvas.pixels().len(), None)) else {
             return;
         };
         // sRGB: what a window context takes the scenes' (DeviceRGB) fill
@@ -129,7 +129,7 @@ pub(crate) unsafe fn draw_canvas(ctx: *mut c_void, canvas: &Canvas, w: f64, h: f
         let Some(cs) = CfRef::from_create(CGColorSpaceCreateWithName(kCGColorSpaceSRGB)) else {
             return;
         };
-        let image = CGImageCreate(canvas.w, canvas.h, 8, 32, canvas.w * 4, cs.as_ptr(), RGBA_PREMULTIPLIED, provider.as_ptr(), core::ptr::null(), false, 0);
+        let image = CGImageCreate(canvas.w(), canvas.h(), 8, 32, canvas.w() * 4, cs.as_ptr(), RGBA_PREMULTIPLIED, provider.as_ptr(), core::ptr::null(), false, 0);
         let Some(image) = CfRef::from_create(image) else {
             return;
         };

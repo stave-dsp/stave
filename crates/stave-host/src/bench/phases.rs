@@ -119,8 +119,8 @@ pub fn timed(d: &mut Driver, run: &TimedRun) -> Timed {
         .capture
         .then(|| vec![Vec::with_capacity(run.frames as usize); channels]);
     d.run(run.frames, run.signal, run.notes, |b| {
-        block_ns.push(b.process_time.as_nanos() as f64);
-        let outs = b.outputs();
+        block_ns.push(b.process_time().as_nanos() as f64);
+        let outs: Vec<&[f32]> = b.outputs().collect();
         meters.push(&outs);
         non_finite_samples += outs
             .iter()

@@ -27,8 +27,8 @@ pub struct Picture {
 impl Picture {
     /// A canvas's pixels with straight alpha (what a PNG holds).
     pub fn of(canvas: &Canvas) -> Self {
-        let mut rgba = Vec::with_capacity(canvas.px.len());
-        for px in canvas.px.chunks_exact(4) {
+        let mut rgba = Vec::with_capacity(canvas.pixels().len());
+        for px in canvas.pixels().chunks_exact(4) {
             let a = px[3];
             if a == 0 || a == 255 {
                 rgba.extend_from_slice(px);
@@ -37,7 +37,7 @@ impl Picture {
                 rgba.extend_from_slice(&[un(px[0]), un(px[1]), un(px[2]), a]);
             }
         }
-        Picture { w: canvas.w, h: canvas.h, rgba }
+        Picture { w: canvas.w(), h: canvas.h(), rgba }
     }
 }
 
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn the_rasters_own_png_reads_back() {
         let mut c = Canvas::new(5, 3);
-        c.px.iter_mut().enumerate().for_each(|(i, b)| *b = if i % 4 == 3 { 255 } else { i as u8 });
+        c.pixels_mut().iter_mut().enumerate().for_each(|(i, b)| *b = if i % 4 == 3 { 255 } else { i as u8 });
         assert_eq!(decode(&stave_raster::png::encode(&c)).unwrap(), Picture::of(&c));
     }
 

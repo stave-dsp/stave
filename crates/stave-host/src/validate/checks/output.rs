@@ -41,7 +41,7 @@ pub fn no_nan_inf(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let mut d = Driver::new(inst.as_mut());
     let mut meter = Meter::default();
     let n = d.frames_for(config.output.render_seconds);
-    d.run(n, signal.as_ref(), &notes, |b| meter.add(&b.outputs()));
+    d.run(n, signal.as_ref(), &notes, |b| meter.add(&b.outputs().collect::<Vec<_>>()));
     Ok(match meter.non_finite() {
         0 => Outcome::pass(json!({ "peak_dbfs": db(meter.peak()) })),
         bad => Outcome::fail(json!({ "non_finite_samples": bad })),
