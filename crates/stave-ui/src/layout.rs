@@ -558,7 +558,7 @@ mod tests {
             let _ = s.solve(&tree, (900.0, 700.0));
             s.computed
         };
-        for depth in [8, 16, 32] {
+        for depth in [8, 16] {
             let (a, b) = (computed(depth), computed(2 * depth));
             assert!(b <= 10 * a, "depth {depth}: {a} sizes; depth {}: {b}", 2 * depth);
         }

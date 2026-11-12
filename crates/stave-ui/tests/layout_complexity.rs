@@ -1,7 +1,7 @@
 //! `solve` is linear in the leaves and polynomial in the depth: each
-//! leaf is measured once per solve, and a deeply nested face lays out
-//! in a blink (it took minutes when every level sized its children
-//! twice over).
+//! leaf is measured exactly once per solve, however deep the face (when
+//! every level sized its children twice over, a leaf was measured 2^depth
+//! times).
 
 use std::cell::Cell;
 use std::time::Instant;
@@ -56,7 +56,12 @@ fn a_solve_measures_each_leaf_once() {
     }
 }
 
+/// A benchmark, not a gate (wall-clock time depends on the machine's
+/// load): `cargo test -p stave-ui --test layout_complexity -- --ignored`.
+/// The gates pin the cost by counting (`a_solve_measures_each_leaf_once`
+/// here, `a_solve_is_polynomial_in_depth` in the solver).
 #[test]
+#[ignore = "benchmark: wall-clock time"]
 fn a_deep_face_lays_out_in_a_blink() {
     let tree = nested(64);
     let calls = Cell::new(0);
