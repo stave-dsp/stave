@@ -75,7 +75,7 @@ impl Spec for ForgeEngine {
         name: c"Stave Forge",
         vendor: c"Ryan Bahan",
         version: c"0.0.2",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"Amp-topology saturation: discrete characters, stacks, voices and memory.",
         features: &[
             PluginFeature::AudioEffect,

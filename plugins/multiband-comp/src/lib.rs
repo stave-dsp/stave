@@ -63,7 +63,7 @@ impl stave_core::Spec for MultibandEngine {
         name: c"Stave Multiband",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"3-band multiband compressor with Linkwitz-Riley crossover.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Stereo],
     };

@@ -54,7 +54,7 @@ impl Spec for EngramEngine {
         name: c"Stave Engram",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"A reverb whose room is a neural network that remembers what you played.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Reverb, PluginFeature::Stereo],
     };

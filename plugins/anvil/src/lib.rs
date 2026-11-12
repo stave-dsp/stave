@@ -43,7 +43,7 @@ impl Spec for AnvilEngine {
         name: c"Stave Anvil",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"The impossible metalcore head.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Stereo],
     };

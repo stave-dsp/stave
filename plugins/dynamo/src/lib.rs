@@ -45,7 +45,7 @@ impl Spec for DynamoEngine {
         name: c"Stave Dynamo",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"The impossible machine: rotor, wires with memory, shared bridge and boiler.",
         features: &[
             PluginFeature::Instrument,

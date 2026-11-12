@@ -42,7 +42,7 @@ impl Spec for TiltEngine {
         name: c"Stave Tilt",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"A one-knob tilt EQ.",
         features: &[
             PluginFeature::AudioEffect,

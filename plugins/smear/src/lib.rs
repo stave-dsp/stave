@@ -62,7 +62,7 @@ impl stave_core::Spec for SmearEngine {
         name: c"Stave Smear",
         vendor: c"Ryan Bahan",
         version: c"2.0.0",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description:
             c"Sympathetic Garden — self-tuning resonator field; smear blooms across pitches.",
         features: &[

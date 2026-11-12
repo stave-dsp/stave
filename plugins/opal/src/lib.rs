@@ -49,7 +49,7 @@ impl Spec for OpalEngine {
         name: c"Stave Opal",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"A 4-operator FM synth: eight algorithms, velocity into brightness.",
         features: &[
             PluginFeature::Instrument,

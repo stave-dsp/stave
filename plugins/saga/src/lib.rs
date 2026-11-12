@@ -51,7 +51,7 @@ impl Spec for SagaEngine {
         name: c"Stave Saga",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"Reverse delays and reverbs in series, on a clock you can pull.",
         features: &[
             PluginFeature::AudioEffect,

@@ -50,7 +50,7 @@ impl Spec for RibbonEngine {
         name: c"Stave Ribbon",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"An impossible tape echo: a real loop, an erase head you can turn down.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Delay, PluginFeature::Reverb, PluginFeature::Stereo],
     };

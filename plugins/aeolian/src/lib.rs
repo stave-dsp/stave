@@ -47,7 +47,7 @@ impl Spec for AeolianEngine {
         name: c"Stave Aeolian",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"A sympathetic string harp: twelve voices that ring with what you play.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Filter, PluginFeature::Stereo],
     };

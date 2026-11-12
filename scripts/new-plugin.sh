@@ -17,7 +17,7 @@
 # for your own plugins; the defaults are the stave author's):
 #   STAVE_BUNDLE_VENDOR  reverse-DNS id prefix   (com.ryanbahan.stave)
 #   STAVE_VENDOR_NAME    vendor display name     (Ryan Bahan)
-#   STAVE_VENDOR_URL     vendor / project URL    (https://github.com/ryancbahan/stave)
+#   STAVE_VENDOR_URL     vendor / project URL    (https://github.com/stave-dsp/stave)
 
 set -euo pipefail
 
@@ -31,7 +31,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${REPO_ROOT}/scripts/lib/bundle-common.sh"
 VENDOR_NAME="${STAVE_VENDOR_NAME:-Ryan Bahan}"
-VENDOR_URL="${STAVE_VENDOR_URL:-https://github.com/ryancbahan/stave}"
+VENDOR_URL="${STAVE_VENDOR_URL:-https://github.com/stave-dsp/stave}"
 DIR="${REPO_ROOT}/plugins/${NAME}"
 CRATE="stave-${NAME}-vst3"
 UNDERSCORED="${CRATE//-/_}"

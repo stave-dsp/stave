@@ -44,7 +44,7 @@ impl Spec for VaultEngine {
         // a DAW "which vault is this?" (0.10.2 = shelf-cascade loop
         // filters: passive at EVERY dial).
         version: c"0.37.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"Stave Vault — a place, not an algorithm.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Stereo],
     };

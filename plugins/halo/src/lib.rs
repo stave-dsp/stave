@@ -29,7 +29,7 @@ impl Spec for HaloEngine {
         name: c"Stave Halo",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"The impossible high-headroom clean amplifier.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Stereo],
     };

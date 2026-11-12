@@ -43,7 +43,7 @@ members = [
 edition = "2021"
 license = "MIT"
 authors = ["Ryan Bahan <ryan@ryanbahan.com>"]
-repository = "https://github.com/ryancbahan/stave"
+repository = "https://github.com/stave-dsp/stave"
 rust-version = "1.80"
 
 [workspace.lints.rust]

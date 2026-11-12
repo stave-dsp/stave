@@ -47,7 +47,7 @@ impl Spec for RevenantEngine {
         name: c"Stave Revenant",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"A neural network that learns your playing and keeps playing when you stop.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Stereo],
     };

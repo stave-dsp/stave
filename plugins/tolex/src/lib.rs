@@ -52,7 +52,7 @@ impl Spec for TolexEngine {
         name: c"Stave Tolex",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"A guitar cabinet, built not sampled.",
         features: &[PluginFeature::AudioEffect, PluginFeature::Stereo],
     };

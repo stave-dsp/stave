@@ -43,7 +43,7 @@ impl Spec for ChimeEngine {
         name: c"Stave Chime",
         vendor: c"Ryan Bahan",
         version: c"0.0.1",
-        url: c"https://github.com/ryancbahan/stave",
+        url: c"https://github.com/stave-dsp/stave",
         description: c"A polyphonic sine/saw synth.",
         features: &[
             PluginFeature::Instrument,
