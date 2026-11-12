@@ -18,9 +18,7 @@ if [[ "${1:-}" == advisories ]]; then
 fi
 
 cargo deny --locked check bans licenses sources
-# Every crate but stave-test, whose unused `stave-telemetry` dependency
-# waits on its owner (docs/overhaul.md C9).
-cargo machete $(ls -d crates/*/ tools/*/ examples/*/ fuzz/ | grep -v '^crates/stave-test/$')
+cargo machete $(ls -d crates/*/ tools/*/ examples/*/ fuzz/)
 # `deps`: no compiling (CI's Linux `rules` job; the macOS `lint` job
 # documents the private items).
 [[ "${1:-}" == deps ]] && exit 0

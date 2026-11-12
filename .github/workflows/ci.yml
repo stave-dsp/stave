@@ -128,6 +128,30 @@ jobs:
       - run: scripts/check-golden-sizes.sh
       - run: scripts/hygiene.sh deps
 
+  plugins:
+    # Every change, before it merges: do the plugins in stave-dsp/stave-plugins
+    # still build and lint against it? Not a required check — main may
+    # break the plugin API (they pin a release tag) — but a red mark here
+    # says the next bump-framework.sh needs plugin work.
+    name: plugins against this change (Linux)
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: stave }
+      - uses: actions/checkout@v4
+        with: { repository: stave-dsp/stave-plugins, path: stave-plugins }
+      - run: rustup toolchain install
+        working-directory: stave-plugins
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stave-plugins
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
+      - run: scripts/link-framework.sh ../stave
+        working-directory: stave-plugins
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: stave-plugins
+
   portable:
     # The portable crates never grow platform assumptions: check them on
     # x86_64 Linux, and run their loom models here too.
