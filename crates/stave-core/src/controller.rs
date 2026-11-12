@@ -5,7 +5,9 @@
 //! taps by [`TapId`], the latest capture and curve, factory presets.
 //! [`PluginController`] is the one implementation, over the plugin's
 //! table and telemetry; every edit goes through a [`GestureSink`] the
-//! format wrapper supplies, so the DAW records and undoes it.
+//! format wrapper supplies, so the DAW records and undoes it. Every edit
+//! also lands in the instance's event trace (`Telemetry::events`), so a
+//! session's gestures can be checked against the laws they keep.
 
 use std::boxed::Box;
 use std::string::{String, ToString};
@@ -13,7 +15,7 @@ use std::sync::Arc;
 use std::vec::Vec;
 use core::cell::Cell;
 
-use stave_telemetry::{TapId, Telemetry, CAPTURE_LEN};
+use stave_telemetry::{Event, TapId, Telemetry, CAPTURE_LEN};
 
 use crate::params::{AnyParam, ParamId, Params};
 use crate::preset::Preset;
@@ -121,7 +123,19 @@ impl PluginController {
         let (lo, hi) = (p.denormalize(0.0), p.denormalize(1.0));
         let value = value.clamp(lo.min(hi), lo.max(hi));
         p.set_value(value);
-        self.sink.perform(p.meta().id, value);
+        let id = p.meta().id;
+        self.telemetry.event(Event::Perform(id.0, p.normalized()));
+        self.sink.perform(id, value);
+    }
+
+    fn open(&self, id: ParamId) {
+        self.telemetry.event(Event::Begin(id.0));
+        self.sink.begin(id);
+    }
+
+    fn close(&self, id: ParamId) {
+        self.telemetry.event(Event::End(id.0));
+        self.sink.end(id);
     }
 }
 
@@ -131,7 +145,7 @@ impl Controller for PluginController {
     }
     fn begin(&self, id: ParamId) {
         if self.table.by_id(id).is_some() {
-            self.sink.begin(id);
+            self.open(id);
         }
     }
     fn set(&self, id: ParamId, normalized: Normalized) {
@@ -141,7 +155,7 @@ impl Controller for PluginController {
     }
     fn end(&self, id: ParamId) {
         if self.table.by_id(id).is_some() {
-            self.sink.end(id);
+            self.close(id);
         }
     }
     fn tap(&self, id: TapId) -> f64 {
@@ -169,12 +183,13 @@ impl Controller for PluginController {
         };
         for &(id, value) in &preset.values {
             if let Some(p) = self.table.by_id(id) {
-                self.sink.begin(id);
+                self.open(id);
                 self.perform(p, value);
-                self.sink.end(id);
+                self.close(id);
             }
         }
         self.current.set(Some(index));
+        self.telemetry.event(Event::Preset(index as u32));
     }
 }
 
@@ -254,5 +269,27 @@ mod tests {
         c.apply_preset(5);
         assert_eq!(*log.lock().unwrap(), ["begin 7", "perform 7 12", "end 7"]);
         assert_eq!(c.preset(), Some(0));
+    }
+
+    #[test]
+    fn every_edit_lands_in_the_event_trace_and_keeps_its_laws() {
+        use stave_telemetry::events::{check, quiescent, Recorder};
+        let table: Arc<dyn Params> = Arc::new(Drive(FloatParam::new(ParamId(7), "Drive", Range::linear(-12.0, 12.0))));
+        let telemetry = Telemetry::new();
+        let presets: Arc<[Preset]> = vec![Preset::from_pairs("Hot", &[(ParamId(7), 12.0)])].into();
+        let c = PluginController::new(table, telemetry.clone(), presets, Box::new(Log::default()));
+        c.begin(ParamId(7));
+        c.set(ParamId(7), Normalized::new(0.75));
+        c.end(ParamId(7));
+        c.apply_preset(0);
+        let mut rec = Recorder::new();
+        rec.drain(telemetry.events());
+        let trace = rec.trace();
+        assert_eq!(
+            trace.events(),
+            [Event::Begin(7), Event::Perform(7, 0.75), Event::End(7), Event::Begin(7), Event::Perform(7, 1.0), Event::End(7), Event::Preset(0)]
+        );
+        assert_eq!(check(&trace), vec![]);
+        assert_eq!(quiescent(&trace), Ok(()));
     }
 }

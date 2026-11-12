@@ -56,6 +56,10 @@ pub(super) unsafe extern "C" fn comp_set_active<P: Vst3Export>(
                     .with_layout(crate::buses::accepted(inst));
                 // Prepared and reset: stale DSP state must not ring in.
                 let new_latency = proc.prepare(&env, max_in_channels::<P>());
+                inst.diagnostics.event(stave_core::telemetry::Event::Prepare {
+                    sample_rate: env.sample_rate,
+                    max_block: max_frames as u32,
+                });
                 // Latency changed across activations: tell the host to re-query.
                 if new_latency != inst.shared.latency() {
                     inst.handler.restart_component(RESTART_LATENCY_CHANGED);
@@ -66,6 +70,7 @@ pub(super) unsafe extern "C" fn comp_set_active<P: Vst3Export>(
                 inst.shared.set_activated(true);
             } else {
                 proc.release();
+                inst.diagnostics.event(stave_core::telemetry::Event::Release);
                 inst.shared.set_activated(false);
             }
             K_RESULT_OK
@@ -92,6 +97,7 @@ pub(super) unsafe extern "C" fn comp_set_state<P: Vst3Export>(
                     &inst.state_store,
                 )
             });
+            inst.diagnostics.event(stave_core::telemetry::Event::Restore(result.is_ok()));
             inst.answer("setState", result)
         },
     )

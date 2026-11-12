@@ -10,6 +10,7 @@ use crate::sync::zeroed_array;
 use crate::breakpoint::BreakpointSlot;
 use crate::capture::CaptureFrame;
 use crate::slot::TapSlot;
+use crate::events::{Event, Events};
 use crate::{Messages, ABI_VERSION, CURVE_POINTS, MAX_BREAKPOINTS, MAX_TAPS};
 
 const PLUGIN_CAPTURE: u8 = 1;
@@ -39,6 +40,7 @@ pub struct Telemetry {
     /// L/R, the default) or the plugin (`claim_capture`).
     capture_owner: AtomicU8,
     messages: Messages,
+    events: Events,
     /// This block's own `Arc`, so a [`Tap`](crate::Tap) registered
     /// through `&Telemetry` keeps the block alive. Last: the layout a
     /// host reads ends before it.
@@ -62,6 +64,7 @@ impl Telemetry {
             capture: CaptureFrame::zeroed(),
             capture_owner: AtomicU8::new(0),
             messages: Messages::zeroed(),
+            events: Events::zeroed(),
             me: me.clone(),
         })
     }
@@ -132,5 +135,16 @@ impl Telemetry {
     /// The plugin's recent log messages.
     pub fn messages(&self) -> &Messages {
         &self.messages
+    }
+
+    /// The instance's event trace ([`crate::events`]).
+    pub fn events(&self) -> &Events {
+        &self.events
+    }
+
+    /// Record `event` in the trace, as landing in the current block. Any
+    /// thread, lock-free, never allocates.
+    pub fn event(&self, event: Event) {
+        self.events.push(self.block(), event);
     }
 }

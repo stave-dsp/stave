@@ -97,6 +97,8 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
     }
 
     let (face, presets) = (plugin_obj.face(), plugin_obj.presets());
+    let diagnostics = Diagnostics::new(&P::INFO);
+    diagnostics.watch(&telemetry);
     let instance = Box::new(Instance::<P> {
         clap_plugin: sys::ClapPlugin {
             desc: descriptor::<P>(),
@@ -164,7 +166,7 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         taps,
         // SAFETY: clap.h: the host outlives the instances it creates.
         host: unsafe { Host::new(host) },
-        diagnostics: Diagnostics::new(&P::INFO),
+        diagnostics,
         guard: PanicGuard::default(),
     });
 

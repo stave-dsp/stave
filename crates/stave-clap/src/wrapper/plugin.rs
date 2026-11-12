@@ -59,6 +59,10 @@ pub(super) unsafe extern "C" fn plugin_activate<P: ClapExport>(
             let env = stave_core::Environment::new(sample_rate as f32, max_frames as usize)
                 .with_layout(crate::ports::selected(inst));
             let latency = proc.prepare(&env, max_in_channels::<P>());
+            inst.diagnostics.event(stave_core::telemetry::Event::Prepare {
+                sample_rate: sample_rate as f32,
+                max_block: max_frames,
+            });
             inst.shared.set_latency(latency);
             inst.tail.store(
                 stave_core::runtime::tail_wire(proc.plugin.tail()),
@@ -94,6 +98,7 @@ pub(super) unsafe extern "C" fn plugin_deactivate<P: ClapExport>(plugin: *const 
                 return inst.report("deactivate", &CallError::ProcessorBusy);
             };
             proc.release();
+            inst.diagnostics.event(stave_core::telemetry::Event::Release);
             inst.shared.set_activated(false);
         },
     );
