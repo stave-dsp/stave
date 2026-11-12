@@ -48,8 +48,9 @@ AUTHOR=(crates/stave/ crates/stave-core/src/ examples/ ':!crates/stave-core/src/
 
 report "\"render\" means pixels; audio is processed (process, run)" \
   -i '\brender(s|ed|ing)?\b' -- "${AUTHOR[@]}"
+# (diagnostics report what a host did, in the host ABI's words.)
 report "the lifecycle is prepare / reset / process (activate is the wrappers')" \
-  -i '\b(activate|deactivate|activation|activated)\b' -- "${AUTHOR[@]}"
+  -i '\b(activate|deactivate|activation|activated)\b' -- "${AUTHOR[@]}" ':!crates/stave-core/src/diagnostics/'
 report "the author's type is a Plugin (not an engine, processor or spec)" \
   -i '\b(engines?|processors?|StaveEngine)\b' -- "${AUTHOR[@]}"
 report "sample_rate, never sr or fs; frame, never sample_offset" \
