@@ -23,7 +23,7 @@ env:
 jobs:
   test:
     name: build + test (workspace)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -39,7 +39,7 @@ jobs:
 
   warnings:
     name: zero warnings (rustc + rustdoc)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -53,7 +53,7 @@ jobs:
 
   clippy:
     name: clippy (zero warnings, workspace lint policy)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -82,7 +82,7 @@ jobs:
     # &Instance from it was UB). macOS runner: stave-vst3 declares
     # Cocoa externs.
     name: miri (wrapper ABI paths)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -105,7 +105,7 @@ jobs:
   clap-validator:
     # The industry's own CLAP test suite against every plugin.
     name: clap-validator (every plugin)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -118,7 +118,7 @@ jobs:
     # Steinberg's own validator (the SDK is MIT) against every plugin.
     # The SDK build is cached; cold runs add ~5 minutes.
     name: Steinberg VST3 validator (every plugin)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
