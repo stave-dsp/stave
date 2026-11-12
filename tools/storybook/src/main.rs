@@ -6,6 +6,9 @@
 //!   stave-storybook                                # live: drag everything; ←/→ change theme, Esc quits
 //!   stave-storybook --screenshot DIR [--scale 2]   # one PNG per theme
 //!
+//! `STAVE_TEXT=embedded` sets text in the embedded fonts on macOS too
+//! (how Windows and Linux show it).
+//!
 //! Screenshots are rendered offscreen through the real face runtime and
 //! the platform's text, so they show exactly what a plugin window shows.
 
@@ -13,14 +16,20 @@
 
 mod live;
 
-/// The platform's text: CoreText on macOS, the embedded fonts elsewhere.
+/// The platform's text: CoreText on macOS, the embedded fonts elsewhere
+/// (and on macOS with `STAVE_TEXT=embedded`, to see a face as Windows and
+/// Linux show it).
 #[cfg(target_os = "macos")]
-fn text(scale: f64) -> stave_ui_cocoa::offscreen::CoreText {
-    stave_ui_cocoa::offscreen::CoreText::new(scale)
+fn text(scale: f64) -> Box<dyn stave_raster::TextPainter> {
+    if std::env::var_os("STAVE_TEXT").is_some_and(|v| v == "embedded") {
+        Box::new(stave_font::FontText)
+    } else {
+        Box::new(stave_ui_cocoa::offscreen::CoreText::new(scale))
+    }
 }
 #[cfg(not(target_os = "macos"))]
-fn text(_scale: f64) -> stave_font::FontText {
-    stave_font::FontText
+fn text(_scale: f64) -> Box<dyn stave_raster::TextPainter> {
+    Box::new(stave_font::FontText)
 }
 
 use std::path::PathBuf;
@@ -45,10 +54,10 @@ fn screenshot(dir: PathBuf, scale: f64) {
         }
         let mut canvas = stave_raster::Canvas::new(0, 0);
         let t0 = std::time::Instant::now();
-        rt.render(&controller, scale, controller.time(), &mut canvas, &mut text(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut *text(scale));
         let first = t0.elapsed();
         let t1 = std::time::Instant::now();
-        rt.render(&controller, scale, controller.time(), &mut canvas, &mut text(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut *text(scale));
         let frame = t1.elapsed();
         let path = dir.join(format!("story_{name}.png"));
         std::fs::write(&path, stave_raster::png::encode(&canvas)).expect("write png");
