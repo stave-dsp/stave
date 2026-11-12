@@ -19,7 +19,7 @@ while IFS= read -r f; do
     echo "size signal: $rel = $n lines (threshold $cap) — worth asking what wants to split"
     signals=$((signals + 1))
   fi
-done < <(find "$ROOT/crates" "$ROOT/tools" "$ROOT/plugins" -name '*.rs' -not -path '*/target/*')
+done < <(find "$ROOT/crates" "$ROOT/tools" "$ROOT/examples" -name '*.rs' -not -path '*/target/*')
 if (( signals == 0 )); then
   echo "file sizes: no signals"
 fi

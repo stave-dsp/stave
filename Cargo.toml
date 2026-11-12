@@ -18,25 +18,7 @@ members = [
     "tools/stave-play",
     "tools/storybook",
 
-    "plugins/anvil",
-    "plugins/chime",
-    "plugins/dynamo",
-    "plugins/eddy",
-    "plugins/forge",
-    "plugins/halo",
-    "plugins/heirloom",
-    "plugins/multiband-comp",
-    "plugins/multiband-comp/profile",
-    "plugins/opal",
-    "plugins/saga",
-    "plugins/smear",
-    "plugins/tilt",
-    "plugins/tolex",
-    "plugins/vault",
-    "plugins/aeolian",
-    "plugins/ribbon",
-    "plugins/revenant",
-    "plugins/engram",
+    "examples/tilt",
 ]
 
 [workspace.package]

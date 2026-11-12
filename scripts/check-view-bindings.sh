@@ -24,7 +24,7 @@ if [[ -n "$hits" ]]; then
 fi
 # 3) G6 grep bar: engines publish observations ONLY through declared
 #    Tap handles — no name-string publishing at engine call sites.
-hits=$(grep -rn "probe!\|probe_f64\|probe_named" plugins/*/src --include="*.rs" || true)
+hits=$(grep -rn "probe!\|probe_f64\|probe_named" examples/*/src --include="*.rs" || true)
 if [[ -n "$hits" ]]; then
   echo "G6 VIOLATION: name-keyed tap publishing in an engine (declare a Tap):"; echo "$hits"; fail=1
 fi

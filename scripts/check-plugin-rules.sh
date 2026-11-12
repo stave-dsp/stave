@@ -8,7 +8,7 @@ fail=0
 
 # 1. ONE SPINE per engine: `impl XxxEngine` blocks live in exactly
 #    one engine file — components, never distributed extensions.
-for proj in plugins/*/; do
+for proj in examples/*/; do
   src="$proj/src"
   [ -d "$src" ] || continue
   files=$(grep -rl "^impl [A-Za-z]*Engine " "$src" --include="*.rs" 2>/dev/null | grep -v "lib.rs" | sort -u || true)
@@ -23,7 +23,7 @@ done
 # 2. GROWTH SIGNAL (advisory, never fails): a large single-file
 #    engine often means the second concept has arrived. Line count
 #    is a proxy, not a property — the decision is human.
-for f in plugins/*/src/engine.rs; do
+for f in examples/*/src/engine.rs; do
   [ -f "$f" ] || continue
   lines=$(wc -l < "$f")
   if [ "$lines" -gt 200 ]; then
@@ -34,22 +34,22 @@ done
 # 3. NO ARCHAEOLOGY in any source: milestone tags ((K3), (G6), (F-b4),
 #    (Step 5), (ABI 8)) are provenance — commits own that.
 TAGS='\((K[0-9]|G[0-9]|F-b[0-9]|Step [0-9]|ABI [0-9]|M-mod)'
-if grep -rEn "$TAGS" plugins crates tools --include="*.rs" >/dev/null 2>&1; then
+if grep -rEn "$TAGS" examples crates tools --include="*.rs" >/dev/null 2>&1; then
   echo "RULE: milestone tags in code comments (provenance lives in commits):"
-  grep -rEn "$TAGS" plugins crates tools --include="*.rs" | head -5
+  grep -rEn "$TAGS" examples crates tools --include="*.rs" | head -5
   fail=1
 fi
 
 # 4. DECLARATION-BACKED READS (E1): a cast-and-clamp beside a read
 #    restates the declaration and drifts.
-if grep -rn 'plain() as f32' plugins/*/src --include="*.rs" >/dev/null 2>&1; then
+if grep -rn 'plain() as f32' examples/*/src --include="*.rs" >/dev/null 2>&1; then
   echo "RULE: 'plain() as f32' in an engine — use p.x.value() (typed, bounded by the declaration):"
-  grep -rn 'plain() as f32' plugins/*/src --include="*.rs" | head -5
+  grep -rn 'plain() as f32' examples/*/src --include="*.rs" | head -5
   fail=1
 fi
 
 # 5. THE EDITOR STYLE is ui! markup, never builder calls.
-for f in plugins/*/src/editor.rs; do
+for f in examples/*/src/editor.rs; do
   if grep -qE 'row\(vec!|column\(vec!' "$f"; then
     echo "RULE: $f uses the builder editor style — the house style is ui! markup"; fail=1
   fi

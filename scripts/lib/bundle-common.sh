@@ -87,7 +87,7 @@ fresh_install() {
 # Every plugin crate in the workspace.
 plugin_crates() {
   local toml
-  for toml in "${REPO_ROOT}"/plugins/*/Cargo.toml; do
+  for toml in "${REPO_ROOT}"/examples/*/Cargo.toml; do
     grep -m1 '^name' "$toml" | cut -d'"' -f2
   done
 }

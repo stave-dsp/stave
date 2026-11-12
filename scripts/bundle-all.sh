@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, bundle (VST3 + CLAP) and fresh-install every plugin in plugins/.
+# Build, bundle (VST3 + CLAP) and fresh-install every plugin in examples/.
 # One failing plugin doesn't stop the batch; the exit code reports it.
 # For validation as well, use scripts/validate-formats.sh (all plugins)
 # or scripts/install.sh (one plugin).

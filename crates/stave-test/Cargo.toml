@@ -21,11 +21,5 @@ stave-raster.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 stave-ui-cocoa.workspace = true
 
-[dev-dependencies]
-stave-anvil-vst3 = { path = "../../plugins/anvil" }
-stave-forge-vst3 = { path = "../../plugins/forge" }
-stave-multiband-comp-vst3 = { path = "../../plugins/multiband-comp" }
-stave-smear-vst3 = { path = "../../plugins/smear" }
-
 [lints]
 workspace = true

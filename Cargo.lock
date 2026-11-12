@@ -2966,37 +2966,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "stave-aeolian-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-anvil-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "rustfft",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-tolex-vst3",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
 name = "stave-bench"
 version = "0.0.1"
 dependencies = [
@@ -3004,20 +2973,6 @@ dependencies = [
  "serde_json",
  "stave-host",
  "stave-measure",
-]
-
-[[package]]
-name = "stave-chime-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-ui",
- "stave-vst3",
 ]
 
 [[package]]
@@ -3048,95 +3003,6 @@ dependencies = [
 [[package]]
 name = "stave-dsp"
 version = "0.0.1"
-
-[[package]]
-name = "stave-dynamo-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-eddy-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-engram-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-ui-cocoa",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-forge-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-halo-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-heirloom-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
 
 [[package]]
 name = "stave-host"
@@ -3176,34 +3042,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "stave-multiband-comp-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-opal-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
 name = "stave-play"
 version = "0.0.1"
 dependencies = [
@@ -3225,78 +3063,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "stave-profile-multiband"
-version = "0.0.1"
-dependencies = [
- "stave-measure",
- "stave-multiband-comp-vst3",
-]
-
-[[package]]
 name = "stave-raster"
 version = "0.0.1"
 dependencies = [
  "stave-ui",
-]
-
-[[package]]
-name = "stave-revenant-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-ribbon-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-saga-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
-name = "stave-smear-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "rustfft",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-ui",
- "stave-vst3",
 ]
 
 [[package]]
@@ -3313,16 +3083,12 @@ name = "stave-test"
 version = "0.0.1"
 dependencies = [
  "assert_no_alloc",
- "stave-anvil-vst3",
  "stave-core",
  "stave-debug",
  "stave-dsp",
- "stave-forge-vst3",
  "stave-host",
  "stave-measure",
- "stave-multiband-comp-vst3",
  "stave-raster",
- "stave-smear-vst3",
  "stave-ui",
  "stave-ui-cocoa",
 ]
@@ -3342,22 +3108,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "stave-tolex-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "rustfft",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
- "stave-ui",
- "stave-vst3",
-]
-
-[[package]]
 name = "stave-ui"
 version = "0.0.1"
 dependencies = [
@@ -3371,20 +3121,6 @@ dependencies = [
  "stave-core",
  "stave-raster",
  "stave-ui",
-]
-
-[[package]]
-name = "stave-vault-vst3"
-version = "0.0.1"
-dependencies = [
- "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-host",
- "stave-test",
- "stave-ui",
- "stave-vst3",
 ]
 
 [[package]]

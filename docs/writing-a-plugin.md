@@ -3,10 +3,10 @@
 *The walkthrough for starting a new project. Read
 **docs/glossary.md** first — the domain concepts in plain words,
 with the web-dev bridges. **Start with `bash scripts/new-plugin.sh
-<name>`** — it stamps a complete gate-passing project. **Tilt is the
+<name>`** in [stave-plugins](https://github.com/stave-dsp/stave-plugins) — it stamps a complete gate-passing project. **Tilt (`examples/tilt`) is the
 minimal worked example** (a real, validated plugin in ~450 lines
 INCLUDING its whole test suite; its `tests/properties.rs` is the
-cautionary tale below) and forge is the full-scale reference; copy their **shape**,
+cautionary tale below) and stave-plugins' forge is the full-scale reference; copy their **shape**,
 never their DSP. Everything here is enforced by a gate, a property test,
 or a validator — nothing is advisory.*
 
@@ -201,21 +201,21 @@ Every project ships `tests/` with at least:
 - **Your project's OWN property tests — write the first one BEFORE the
   DSP.** The generic gates prove your plugin is *sane*; only a property
   test proves
-  it is *right*. The cautionary tale is tilt (`plugins/tilt/
+  it is *right*. The cautionary tale is tilt (`examples/tilt/
   tests/properties.rs`): its first build shipped with the tilt knob
   BACKWARDS — brighter darkened — past validation, the no-alloc
   check, the editor bindings, and both industry validators, because no
   generic check can know which way a knob should point. A
   30-second `stave-bench` sine measurement caught it; the sign property
   now makes it unshippable. Measure first, then code to the
-  measurement: forge's voicing suites, multiband's sidechain
+  measurement (in stave-plugins): forge's voicing suites, multiband's sidechain
   duck + AuxIn contract, smear's garden and surround-lift bit-exactness,
   eddy's field topology properties. A project without its own
   property tests is not done.
 - `validation.rs` — `stave_test::validation::assert_passes(
   stave_host::entry_points!(your_crate))`: stave-host's validation
   suite through your VST3 exports. Passing it is the price of
-  admission to `plugins/`.
+  admission to a plugin suite.
 - `editor.rs` — `stave_test::editor`: the tree resolves against
   the table; widgets agree with declared endpoints. Add your own
   chrome/order records (they are the archive of what the names said).

@@ -1,49 +1,26 @@
 # stave
 
-A from-scratch Rust audio plugin framework + a suite of plugins built
-on it + a transparent host for analysing them.
+A from-scratch Rust audio plugin framework + a transparent host for
+analysing plugins.
 
 No JUCE, no `nih-plug`, no `clap-sys` — hand-written CLAP and VST3 ABI
 bindings. The point is total ownership and a small comprehensible
 audio stack, with testability and observability as defaults rather
 than disciplines.
 
+The plugins built on it live in
+[stave-plugins](https://github.com/stave-dsp/stave-plugins); the website
+in [stave-dsp.github.io](https://github.com/stave-dsp/stave-dsp.github.io).
+
 ## What's in the box
 
-### Plugins (`plugins/`)
+### The worked example (`examples/tilt`)
 
-Every plugin ships as native macOS `.vst3` + `.clap` bundles from one
-cdylib and is held to the same gauntlet: the in-house validation
-suite, the Steinberg VST3 validator and clap-validator
-(`scripts/validate-formats.sh` runs both locally).
-
-**Stable** — feature-complete, with their own property suites:
-
-| plugin | category | what it is |
-|---|---|---|
-| Stave Forge | distortion | amp-topology saturation: two clipping stages with interstage memory, slew grit, iron hysteresis |
-| Stave Multiband | dynamics | 3-band compressor with Linkwitz-Riley crossover and external sidechain |
-| Stave Smear | resonator | Sympathetic Garden — self-tuning resonator field; smear blooms across pitches |
-| Stave Eddy | delay | a feedback delay whose read head breathes: four feedback laws, an in-loop diffusion field |
-| Stave Tilt | EQ | a one-knob tilt EQ — **the minimal worked example** (~450 lines including its whole test suite) |
-
-**In development** — usable, still moving:
-
-| plugin | category | what it is |
-|---|---|---|
-| Stave Saga | reverse / reverb | two time machines in series (reverse delays and reverbs) on a 32 kHz clock you can pull; see docs/saga.md |
-| Stave Heirloom | reverse / lo-fi | Saga's reverse machines played back off a worn record: platter wobble and a generation-loss wear stage |
-| Stave Ribbon | delay | an impossible tape echo: a tape loop modelled in tape coordinates, and an ERASE knob you can turn down |
-| Stave Vault | reverb | a synthesized room (live image-source early field) into a nonlinear Hadamard FDN tank |
-| Stave Engram | reverb | a reverb with associative memory: attention over remembered grains of your playing shapes the tail |
-| Stave Revenant | generative | an echo-state network that learns your playing online and keeps playing when you stop |
-| Stave Aeolian | resonator | a sympathetic string harp: twelve plucked-string voices that ring with what you play |
-| Stave Anvil | amp | a multiband metalcore amp head: parallel triode cascades, push-pull power, per-band saturation |
-| Stave Halo | amp | a high-headroom clean amp whose attack can stay cleaner than its sustain |
-| Stave Tolex | cabinet | a guitar cabinet built, not sampled: speaker motor, cone, box and air as a physical model |
-| Stave Dynamo | synth | a physical-modelling synth built from machinery that never existed |
-| Stave Opal | synth | a 4-operator FM synth |
-| Stave Chime | synth | a polyphonic sine/saw synth with a modulation matrix |
+Stave Tilt, a one-knob tilt EQ in ~450 lines including its whole test
+suite. It ships as native macOS `.vst3` + `.clap` bundles from one
+cdylib and passes the in-house validation suite, the Steinberg VST3
+validator and clap-validator (`scripts/validate-formats.sh` runs both
+locally). The host's own tests load it through the full VST3 path.
 
 ### Framework crates (`crates/`)
 
@@ -107,13 +84,12 @@ One library, two apps — see **docs/host.md** for the full surface:
 ## Building
 
 ```sh
-# Build + bundle + validate + install one plugin (fresh inodes —
+# Build + bundle + validate + install the example (fresh inodes —
 # never cp -R over a loaded bundle):
-bash scripts/install.sh stave-eddy-vst3 release
+bash scripts/install.sh stave-tilt-vst3 release
 
 # Launch the host on it:
-cargo run --release -p stave-play -- \
-  build/StaveEddy.vst3
+cargo run --release -p stave-play -- build/StaveTilt.vst3
 ```
 
 ## The gates
@@ -133,18 +109,16 @@ Steinberg validator and clap-validator on every push to main.
 
 ## Writing a plugin
 
-```sh
-bash scripts/new-plugin.sh myplugin
-```
-
-That stamps a complete, gate-passing project — declarations, a
-passthrough engine, a house-styled editor, and the full colocated
-test suite — ready for your DSP. Then read **docs/writing-a-plugin.md**
-(the two-halves model, the kernel vocabulary, and why every project
-writes its own properties) with **plugins/tilt** open beside it as the worked example.
-Its `tests/properties.rs` tells the story of why projects write their own
+Read **docs/writing-a-plugin.md** (the two-halves model, the kernel
+vocabulary, and why every project writes its own properties) with
+**examples/tilt** open beside it as the worked example. Its
+`tests/properties.rs` tells the story of why projects write their own
 properties: tilt's first build shipped with its one knob backwards, past
 every generic gate — only a measurement caught it.
+
+To start a new plugin, `bash scripts/new-plugin.sh myplugin` in
+[stave-plugins](https://github.com/stave-dsp/stave-plugins) stamps a
+complete, gate-passing project.
 
 ## License
 

@@ -1,6 +1,6 @@
 //! FRAMEWORK no-alloc checks: the primitives themselves under the
-//! guard. Project process-loop checks are COLOCATED (plugins/*/tests
-//! /no_alloc.rs) on the shared stave_test::no_alloc harness.
+//! guard. Project process-loop checks are COLOCATED (each plugin's
+//! tests/no_alloc.rs) on the shared stave_test::no_alloc harness.
 
 // assert_no_alloc compiles its guard out of release builds.
 #![cfg(debug_assertions)]

@@ -2,14 +2,15 @@
 
 The contracts the code keeps. Anything here is either enforced (a named
 test, check or lint) or is the reason a piece is shaped the way it is.
-History lives in git; product design lives in `plugins/<name>/docs/`.
+History lives in git; product design lives with each plugin (`plugins/<name>/docs/` in
+[stave-plugins](https://github.com/stave-dsp/stave-plugins)).
 
 ## Crates
 
 ```
 stave-macros ─┐
 stave-debug ──┼─ stave-core ─┬─ stave-vst3 ─┐
-stave-ui ─────┘              ├─ stave-clap ─┼─ plugins/*
+stave-ui ─────┘              ├─ stave-clap ─┼─ examples/tilt, stave-plugins
                              └─ stave-dsp ──┘
 stave-ui-cocoa ── stave-vst3 (editor view)
 stave-measure ── stave-host ── stave-test, tools/*
@@ -176,7 +177,7 @@ unattached engine cannot reach the path.
 | VST3/CLAP struct layouts match the SDK headers | `const` asserts in each `sys.rs`; `scripts/abi-layouts.sh` re-measures |
 | every plugin passes Steinberg's validator and clap-validator | `scripts/validate-formats.sh` (CI) |
 | rate, block-size and bit-exactness invariants | `stave-test/tests/*_conformance.rs` |
-| every plugin: validation suite, editor bindings, no-alloc, perf, stability | `plugins/*/tests/` via `stave_test` |
+| every plugin: validation suite, editor bindings, no-alloc, perf, stability | each plugin's `tests/` via `stave_test` (`examples/tilt/tests/` here) |
 | unsafe core | Miri and Loom jobs |
 | tree rules | `check-plugin-rules.sh`, `check-view-bindings.sh`, `check-file-sizes.sh` |
 
