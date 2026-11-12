@@ -90,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [state_load, param_text, vst3_host, raster]
+        target: [state_load, param_text, vst3_host, clap_events, raster]
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install $NIGHTLY --profile minimal

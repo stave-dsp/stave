@@ -18,7 +18,7 @@ shift || true
 NIGHTLY="${NIGHTLY:-nightly-2026-11-01}"
 TARGET="$(rustc +"$NIGHTLY" -vV | sed -n 's/^host: //p')"
 TARGETS=("$@")
-[[ $# -gt 0 ]] || TARGETS=(state_load param_text vst3_host raster)
+[[ $# -gt 0 ]] || TARGETS=(state_load param_text vst3_host clap_events raster)
 mkdir -p fuzz/corpus/state_load
 cp crates/stave-core/tests/fixtures/*.stve fuzz/corpus/state_load/ 2>/dev/null || true
 for target in ${TARGETS[@]+"${TARGETS[@]}"}; do

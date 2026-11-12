@@ -512,6 +512,7 @@ name = "stave-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "stave-clap",
  "stave-core",
  "stave-host",
  "stave-raster",
