@@ -53,6 +53,34 @@
 //! stave::export!(Gain);
 //! ```
 //!
+//! A plugin with no parameters names [`NoParams`](params::NoParams):
+//!
+//! ```
+//! use stave::prelude::*;
+//!
+//! pub struct Invert;
+//!
+//! impl Plugin for Invert {
+//!     const INFO: Info = Info { id: "com.example.invert", name: "Invert", vendor: "Example", ..Info::EFFECT };
+//!     type Params = NoParams;
+//!
+//!     fn new(_params: &Arc<NoParams>, _telemetry: &Telemetry) -> Self {
+//!         Invert
+//!     }
+//!
+//!     fn process(&mut self, block: &mut Block<'_>) {
+//!         let (input, output) = block.io();
+//!         for (x, y) in input.channels().zip(output.channels_mut()) {
+//!             for (x, y) in x.iter().zip(y) {
+//!                 *y = -x;
+//!             }
+//!         }
+//!     }
+//! }
+//!
+//! stave::export!(Invert);
+//! ```
+//!
 //! `stave::export!` makes the crate (a `cdylib`) a VST3 and a CLAP plugin
 //! at once. The framework owns everything around `process`: bypass
 //! (click-free, latency matched), parameter automation and state,
@@ -216,8 +244,8 @@ pub mod prelude {
     pub use stave_core::params::Params;
     pub use stave_core::param_enum;
     pub use stave_core::params::{
-        AnyParam, BoolParam, EnumParam, FloatParam, ModalWatch, ParamEnum, Ramp, Range, Smooth,
-        Smoother, Step, Steps, Unit, Watch,
+        AnyParam, BoolParam, EnumParam, FloatParam, ModalWatch, NoParams, ParamEnum, Ramp, Range,
+        Smooth, Smoother, Step, Steps, Unit, Watch,
     };
     pub use stave_core::state::Migrations;
     pub use stave_dsp::{

@@ -210,6 +210,24 @@ impl<'a> Process<'a> {
         }
     }
 
+    /// Flag every channel of the main output constant (silent) or not:
+    /// clap.h has the plugin set an output's `constant_mask` each block,
+    /// so a block that is not silent clears it.
+    pub(super) fn mark_output_constant(&self, constant: bool) {
+        if self.0.audio_outputs_count == 0 {
+            return;
+        }
+        // SAFETY: clap.h hands the plugin the outputs to write for the
+        // call; `audio_outputs` is null or holds `audio_outputs_count`
+        // buffers, and nothing else borrows the first one here.
+        if let Some(bus) = unsafe { self.0.audio_outputs.as_mut() } {
+            bus.constant_mask = match constant {
+                true => (1u64 << bus.channel_count.min(63)).wrapping_sub(1),
+                false => 0,
+            };
+        }
+    }
+
     pub(super) fn transport(&self) -> Option<&'a sys::ClapEventTransport> {
         // SAFETY: null or valid for the call.
         unsafe { self.0.transport.as_ref() }

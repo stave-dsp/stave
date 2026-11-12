@@ -18,16 +18,22 @@ ASSETS="$ROOT/tools/docsite/assets"
 # Its own target dir: other RUSTDOCFLAGS would rebuild every crate's docs.
 export CARGO_TARGET_DIR="${DOCSITE_TARGET_DIR:-$ROOT/target/docsite}"
 export RUSTDOCFLAGS="-D warnings --html-in-header $ASSETS/rustdoc-header.html --html-before-content $ASSETS/rustdoc-before.html"
-# Rustdoc writes a link into another crate only if that crate's doc
-# directory already exists when it starts; crates documented side by
-# side would otherwise leave such links as plain text, silently. Make
-# every workspace crate's directory first, and document the guide last.
-# (The docsite still rejects any link rustdoc left unresolved.)
-for lib in $(cargo metadata --format-version 1 --no-deps --locked |
-  python3 -c 'import json,sys; print("\n".join(t["name"].replace("-","_") for p in json.load(sys.stdin)["packages"] for t in p["targets"] if set(t["kind"]) & {"lib","rlib","cdylib","proc-macro"}))'); do
-  mkdir -p "$CARGO_TARGET_DIR/doc/$lib"
+# scripts/rustdoc.sh: no cross-crate link dropped, every warning an
+# error. (The docsite then rejects any link on any page that goes
+# nowhere.)
+scripts/rustdoc.sh
+# The platform crates are empty off their own platform (the Windows one
+# is `#![cfg(windows)]`): document each for its own target — rustdoc
+# needs only that target's std, never its linker — and put its pages in
+# place of the empty ones.
+for pair in stave-ui-win32:x86_64-pc-windows-msvc stave-ui-x11:x86_64-unknown-linux-gnu; do
+  pkg=${pair%%:*} triple=${pair#*:} lib=${pkg//-/_}
+  rustup target add "$triple" >/dev/null
+  scripts/rustdoc.sh --target "$triple" -p "$pkg"
+  for d in "$lib" "src/$lib"; do
+    rm -rf "${CARGO_TARGET_DIR:?}/doc/$d"
+    cp -R "$CARGO_TARGET_DIR/$triple/doc/$d" "$CARGO_TARGET_DIR/doc/$d"
+  done
 done
-cargo doc --workspace --no-deps --locked --exclude stave-guide
-cargo doc -p stave-guide --no-deps --locked
 unset RUSTDOCFLAGS
 cargo run --locked -p stave-docsite -- --doc "$CARGO_TARGET_DIR/doc" --out "$OUT"

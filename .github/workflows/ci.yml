@@ -6,8 +6,10 @@
 # queue behind each other; everything else is Linux.
 #
 # The slow tools (Kani, sanitizers, long fuzzing, the simulated host's
-# wide sweep, advisories, semver-checks, the newest-stable canary) are
-# in deep.yml: nightly and on demand, never in this run's way.
+# wide sweep, advisories, semver-checks) are in deep.yml: nightly and on
+# demand, never in this run's way. The newest-stable canary is
+# canary.yml (weekly); Linux and Windows are platforms.yml; the
+# documentation site, and with it the published rustdoc, is docs.yml.
 name: ci
 
 on:
@@ -67,10 +69,10 @@ jobs:
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
-      # Every intra-doc link, private items' docs included.
-      - run: cargo doc --workspace --no-deps --document-private-items --locked
-        env:
-          RUSTDOCFLAGS: -D warnings
+      # Every intra-doc link, private items' docs included, and none
+      # dropped between crates documented side by side: the same script
+      # docs.yml's site build runs.
+      - run: scripts/rustdoc.sh --document-private-items
       # The declared rust-version is a promise: hold it.
       - run: cargo +1.86.0 check --workspace --all-targets --locked
 

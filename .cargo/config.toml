@@ -3,8 +3,11 @@
 # which pins artifacts to the build machine's exact core). Measured
 # 2026-07-06 on the eddy engine, ns/frame, repeats: PRISM 381→357
 # (-6.3%), CIRCUIT 94.2→91.5 (-2.6%), PLATE/SHIFT within noise.
-# Fat LTO was measured the same day and REJECTED: no gain over thin
-# (cross-crate inlining already saturated), slower builds.
+# LTO is the release profile's (Cargo.toml: fat, one codegen unit), not
+# this file's. A same-day measurement found fat no faster than thin on
+# that engine (cross-crate inlining already saturated) and slower to
+# build; the profile kept fat. Switching is a Cargo.toml change, made
+# with a new measurement.
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "target-cpu=apple-m1"]
 

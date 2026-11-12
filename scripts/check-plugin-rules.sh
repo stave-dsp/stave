@@ -6,28 +6,40 @@
 set -euo pipefail
 fail=0
 
-# 1. ONE SPINE per engine: `impl XxxEngine` blocks live in exactly
-#    one engine file — components, never distributed extensions.
+# 1. ONE SPINE per plugin: the plugin type's `impl Plugin for X` and its
+#    inherent `impl X` blocks live in exactly one file — components,
+#    never distributed extensions. (The pre-overhaul form, `impl
+#    XxxEngine` in engine.rs, no longer exists; matching it tested
+#    nothing.)
+spines=0
 for proj in examples/*/; do
   src="$proj/src"
   [ -d "$src" ] || continue
-  files=$(grep -rl "^impl [A-Za-z]*Engine " "$src" --include="*.rs" 2>/dev/null | grep -v "lib.rs" | sort -u || true)
-  n=$(echo "$files" | grep -c . || true)
-  if [ "$n" -gt 1 ]; then
-    echo "RULE: $proj engine impl blocks are distributed across files (one spine only):"
-    echo "$files"
-    fail=1
-  fi
+  for ty in $(grep -rhoE "^impl Plugin for [A-Za-z0-9_]+" "$src" --include="*.rs" | awk '{print $4}' | sort -u); do
+    spines=$((spines + 1))
+    files=$(grep -rlE "^impl (Plugin for )?${ty}( |\{|<)" "$src" --include="*.rs" | sort -u || true)
+    n=$(echo "$files" | grep -c . || true)
+    if [ "$n" -gt 1 ]; then
+      echo "RULE: $proj $ty impl blocks are distributed across files (one spine only):"
+      echo "$files"
+      fail=1
+    fi
+  done
 done
+# A rule that matches nothing tests nothing: there is always a plugin.
+if [ "$spines" -eq 0 ]; then
+  echo "RULE: no 'impl Plugin for' under examples/ — the spine check is reading the wrong form"
+  fail=1
+fi
 
-# 2. GROWTH SIGNAL (advisory, never fails): a large single-file
-#    engine often means the second concept has arrived. Line count
-#    is a proxy, not a property — the decision is human.
-for f in examples/*/src/engine.rs; do
-  [ -f "$f" ] || continue
+# 2. GROWTH SIGNAL (advisory, never fails): a large spine file (the one
+#    holding `impl Plugin for`) often means a second concept has
+#    arrived. Line count is a proxy, not a property — the decision is
+#    human.
+for f in $(grep -rlE "^impl Plugin for " examples/*/src --include="*.rs" 2>/dev/null); do
   lines=$(wc -l < "$f")
-  if [ "$lines" -gt 200 ]; then
-    echo "note: $f is $lines lines — worth asking if a second concept wants engine/ components"
+  if [ "$lines" -gt 400 ]; then
+    echo "note: $f is $lines lines — worth asking if a second concept wants a module of its own"
   fi
 done
 
@@ -40,11 +52,12 @@ if grep -rEn "$TAGS" examples crates tools --include="*.rs" >/dev/null 2>&1; the
   fail=1
 fi
 
-# 4. DECLARATION-BACKED READS (E1): a cast-and-clamp beside a read
-#    restates the declaration and drifts.
-if grep -rn 'plain() as f32' examples/*/src --include="*.rs" >/dev/null 2>&1; then
-  echo "RULE: 'plain() as f32' in an engine — use p.x.value() (typed, bounded by the declaration):"
-  grep -rn 'plain() as f32' examples/*/src --include="*.rs" | head -5
+# 4. DECLARATION-BACKED READS (E1): `value()` is already the param's
+#    natural type; a cast-and-clamp beside a read restates the
+#    declaration and drifts. (`plain()` is no longer public.)
+if grep -rnE '\.value\(\) as f32' examples/*/src --include="*.rs" >/dev/null 2>&1; then
+  echo "RULE: 'value() as f32' in a plugin — p.x.value() is typed and bounded by the declaration:"
+  grep -rnE '\.value\(\) as f32' examples/*/src --include="*.rs" | head -5
   fail=1
 fi
 

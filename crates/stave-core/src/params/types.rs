@@ -752,7 +752,16 @@ impl core::fmt::Display for ParamTableError {
     }
 }
 
-/// An empty table, for plugins with no parameters.
+/// An empty table, for plugins with no parameters: a plugin names it
+/// as its `type Params`, which the framework builds by `Default`.
+///
+/// ```
+/// use stave_core::params::{NoParams, Params};
+/// let table = NoParams::default();
+/// assert_eq!(table.count(), 0);
+/// assert!(table.validate().is_ok());
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NoParams;
 
 impl Params for NoParams {

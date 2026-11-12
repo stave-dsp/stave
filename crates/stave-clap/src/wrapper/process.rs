@@ -196,7 +196,14 @@ fn process_block<P: ClapExport>(
     let output_peaks = unsafe { stave_core::runtime::peaks(output_ptrs, frames) };
     inst.taps.publish_peaks(input_peaks, output_peaks);
     inst.taps.cpu.set(cpu);
+    // Capture first, so the inspector sees what the plugin produced;
+    // then a breakpoint's pause mutes what the host hears (the plugin
+    // ran, so its state stays observable).
     publish_capture(&inst.telemetry, output_ptrs, frames, block_id);
+    // SAFETY: the host's output channels are writable for `frames`
+    // (clap.h); the plugin's borrows of them ended with `process`.
+    let muted = unsafe { stave_core::runtime::mute_if_paused(&inst.telemetry, output_ptrs, frames) };
+    process.mark_output_constant(muted);
     // Outbound: pending GUI gestures go to the host this block.
     emit_gestures(&inst.gestures, process.out_events());
     sys::CLAP_PROCESS_CONTINUE

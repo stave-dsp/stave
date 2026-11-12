@@ -29,7 +29,8 @@ jobs:
   build:
     # macOS: rustdoc documents the crates as the platform the API is
     # first written for (the Cocoa face), and the CLI page runs every
-    # binary there.
+    # binary there. The Windows and X11 platform crates are documented
+    # for their own targets (scripts/docsite.sh).
     name: build the site
     runs-on: macos-latest
     # Warm (the rust-cache below) this is a few minutes; the first, cold

@@ -210,8 +210,7 @@ impl<P: Erased> ProcessorState<P> {
     /// latency at these conditions.
     pub fn prepare(&mut self, env: &crate::Environment, in_channels: usize) -> u32 {
         let max_frames = env.max_block.max(1);
-        self.plugin.prepare(env);
-        self.plugin.reset();
+        prepare_and_reset(&mut self.plugin, env);
         self.prepare_scratch(in_channels, max_frames);
         let latency = self.plugin.latency();
         self.bypass
@@ -410,6 +409,35 @@ pub unsafe fn zero_tail(outputs: &[*mut f32], from: usize, frames: usize) {
         // SAFETY: writable for `frames` (the contract); `from < frames`.
         unsafe { core::slice::from_raw_parts_mut(out.add(from), frames - from) }.fill(0.0);
     }
+}
+
+/// What every activation does to the plugin: prepare it for `env`, then
+/// reset it, so a fresh start never rings in stale state. The wrappers
+/// (through [`ProcessorState::prepare`]) and the test harness call this
+/// one function, so a test prepares a plugin exactly as a host does.
+pub fn prepare_and_reset<P: Erased>(plugin: &mut P, env: &crate::Environment) {
+    plugin.prepare(env);
+    plugin.reset();
+}
+
+/// Honour a breakpoint's pause: when `telemetry` is paused, zero
+/// `outputs` for `frames` so the next stage hears silence, and return
+/// true (the wrapper then flags the output silent in its own format).
+/// The plugin already ran, so its state advanced and stays observable;
+/// every wrapper calls this after writing the capture, so the inspector
+/// sees what the plugin really produced. One function, so no format
+/// can skip it.
+///
+/// # Safety
+/// Each non-null pointer in `outputs` is writable for `frames`, and no
+/// borrow of those channels is live.
+pub unsafe fn mute_if_paused(telemetry: &stave_telemetry::Telemetry, outputs: &[*mut f32], frames: usize) -> bool {
+    if !telemetry.is_paused() {
+        return false;
+    }
+    // SAFETY: the contract, from frame 0.
+    unsafe { zero_tail(outputs, 0, frames) };
+    true
 }
 
 /// Order a block's parameter changes by frame, arrival order breaking

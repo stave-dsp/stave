@@ -296,12 +296,9 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
             }
             inst.telemetry.write_capture(&tap_buf[..chans], block_id);
         }
-        if inst.telemetry.is_paused() {
-            for &ptr in output_ptrs.iter().filter(|p| !p.is_null()) {
-                // SAFETY: writable for `frames` (SDK); the plugin's
-                // borrows of it ended with `process`.
-                unsafe { core::slice::from_raw_parts_mut(ptr, frames) }.fill(0.0);
-            }
+        // SAFETY: writable for `frames` (SDK); the plugin's borrows of
+        // it ended with `process`.
+        if unsafe { stave_core::runtime::mute_if_paused(&inst.telemetry, output_ptrs, frames) } {
             process.mark_output_silent();
         }
     }

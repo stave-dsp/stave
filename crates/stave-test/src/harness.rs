@@ -35,7 +35,8 @@ use stave_measure::signal::Recording;
 pub const MAX_AUX: usize = 4;
 
 /// Owns a plugin, its telemetry, and fixed-size input, aux and output
-/// buffers. Built prepared: `Plugin::prepare` has run.
+/// buffers. Built prepared: `Plugin::prepare` then `Plugin::reset` have
+/// run, as a wrapper's activation runs them.
 pub struct PluginHarness<P: Plugin> {
     shell: Shell<P>,
     telemetry: Arc<Telemetry>,
@@ -157,7 +158,9 @@ impl<P: Plugin> PluginHarness<P> {
     }
 
     /// Prepare again at a new rate and block size (buffers resized, the
-    /// plugin's `prepare` called), as a host does between sessions.
+    /// plugin's `prepare` then `reset` called), as a host's activation
+    /// does: the wrappers and the harness share
+    /// `stave_core::runtime::prepare_and_reset`.
     pub fn prepare(&mut self, sample_rate: f32, block_size: usize) {
         let l = self.layout;
         let chans = |n: usize| vec![vec![0.0; block_size].into_boxed_slice(); n];
@@ -170,7 +173,9 @@ impl<P: Plugin> PluginHarness<P> {
         self.out_ptrs = vec![core::ptr::null_mut(); l.output_channels()].into_boxed_slice();
         let aux_chans = self.aux_buffers.iter().map(Vec::len).sum();
         self.aux_ptrs = vec![core::ptr::null_mut(); aux_chans].into_boxed_slice();
-        self.shell.prepare(&Environment::new(sample_rate, block_size).with_layout(l));
+        // Prepared, then reset — exactly what a wrapper's activation does.
+        let env = Environment::new(sample_rate, block_size).with_layout(l);
+        stave_core::runtime::prepare_and_reset(&mut self.shell, &env);
     }
 
     /// The plugin's `reset` (a host's transport jump or re-activation).
@@ -424,6 +429,44 @@ mod tests {
             assert!(h.outputs()[0].iter().all(|&y| y == 1.0));
             assert!(h.outputs()[1].iter().all(|&y| y == -2.0));
         }
+    }
+
+    /// Records the lifecycle calls it receives.
+    #[derive(Default)]
+    struct Lifecycle {
+        calls: Vec<&'static str>,
+    }
+    impl Plugin for Lifecycle {
+        const INFO: Info = Info {
+            id: "com.stave.test.harness-lifecycle",
+            name: "Lifecycle",
+            vendor: "stave tests",
+            ..Info::EFFECT
+        };
+        type Params = NoParams;
+        fn new(_: &Arc<NoParams>, _: &Telemetry) -> Self {
+            Self::default()
+        }
+        fn prepare(&mut self, _: &Environment) {
+            self.calls.push("prepare");
+        }
+        fn reset(&mut self) {
+            self.calls.push("reset");
+        }
+        fn process(&mut self, _: &mut Block<'_>) {}
+    }
+
+    /// A harness prepares as a wrapper's activation does
+    /// (`ProcessorState::prepare`): prepare, then reset — both when built
+    /// and when prepared again.
+    #[test]
+    fn prepare_mirrors_a_wrappers_activation() {
+        let mut h = PluginHarness::<Lifecycle>::new(48_000.0, 16);
+        assert_eq!(h.plugin().calls, ["prepare", "reset"]);
+        h.prepare(96_000.0, 32);
+        assert_eq!(h.plugin().calls, ["prepare", "reset", "prepare", "reset"]);
+        h.reset();
+        assert_eq!(h.plugin().calls.last(), Some(&"reset"));
     }
 
     /// A click at each note on's frame.
