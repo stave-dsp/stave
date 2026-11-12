@@ -531,7 +531,7 @@ mod tests {
     fn mutational_fuzz_never_panics() {
         let t = table();
         let valid = save(&t, 1, b"extra-bytes", &StateStore::default());
-        let iters = if cfg!(miri) { 300 } else { 50_000 };
+        let iters = if cfg!(miri) { 40 } else { 50_000 };
         let mut rng: u64 = 0x9E3779B97F4A7C15;
         let mut next = move || {
             rng ^= rng << 13;

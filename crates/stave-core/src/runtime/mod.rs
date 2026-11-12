@@ -31,6 +31,8 @@ mod ftz;
 mod gesture;
 mod metrics;
 mod panic_guard;
+#[cfg(kani)]
+mod proofs;
 pub mod state;
 mod taps;
 
@@ -775,9 +777,12 @@ mod tests {
         assert!(got.windows(2).all(|w| w[0] < w[1]), "FIFO order");
         assert_eq!(q.dropped(), 0);
 
-        // Overflow: 65th unconsumed push drops and counts.
+        // Overflow: the 65th unconsumed Value drops and counts.
         for i in 0..65u32 {
-            q.push(GestureEvent::Begin { id: ParamId(i) });
+            q.push(GestureEvent::Value {
+                id: ParamId(i),
+                value: 0.0,
+            });
         }
         assert_eq!(q.dropped(), 1, "overflow counted, never silent");
     }

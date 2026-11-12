@@ -237,8 +237,10 @@ fn test_signal(len: usize, seed: u32) -> Vec<f32> {
 // Checks
 // ===========================================================================
 
-const FRAMES: usize = 64;
-const BLOCKS: usize = 8;
+// Under Miri every frame is interpreted: three short blocks still
+// cross every block boundary and every unsafe path.
+const FRAMES: usize = if cfg!(miri) { 16 } else { 64 };
+const BLOCKS: usize = if cfg!(miri) { 3 } else { 8 };
 
 #[test]
 fn in_place_processing_matches_split_buffers() {
@@ -305,7 +307,10 @@ fn in_place_processing_matches_split_buffers() {
 /// boundary artifacts, for a STATEFUL plugin.
 #[test]
 fn hostile_block_sizes_render_bit_identically() {
-    const TOTAL: usize = 4096;
+    // Under Miri every frame is interpreted: 40 frames still run every
+    // size (one-frame blocks, 16, 333 cut to fit, the mixed cycle)
+    // through the same unsafe paths; the full length runs natively.
+    const TOTAL: usize = if cfg!(miri) { 40 } else { 4096 };
     const MAX: i32 = 512;
     let sig_l = test_signal(TOTAL, 11);
     let sig_r = test_signal(TOTAL, 12);

@@ -291,18 +291,21 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn linear_roundtrip() {
         roundtrip_check(Range::new(-24.0, 24.0, Taper::Linear));
         roundtrip_check(Range::new(0.0, 1.0, Taper::Linear));
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn log_roundtrip() {
         roundtrip_check(Range::new(20.0, 20_000.0, Taper::Log));
         roundtrip_check(Range::new(0.1, 100.0, Taper::Log));
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn skewed_roundtrip_and_midpoint_contract() {
         let r = Range::new(0.0, 100.0, Taper::Skewed { midpoint: 20.0 });
         roundtrip_check(r);
@@ -334,5 +337,53 @@ mod tests {
     #[should_panic(expected = "outside")]
     fn skew_rejects_midpoint_outside_range() {
         let _ = Range::new(0.0, 1.0, Taper::Skewed { midpoint: 2.0 });
+    }
+}
+
+/// Kani, over every f64 (NaN and the infinities included): the linear
+/// taper's normalized values stay in [0, 1], its plain values in the
+/// range, both pin their endpoints exactly, and `denormalize` is
+/// monotone. (The log and skewed tapers go through `ln`/`powf`, which
+/// the model checker does not reason about; the property tests cover
+/// them.)
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    fn any_linear() -> Range {
+        let (min, max): (f64, f64) = (kani::any(), kani::any());
+        kani::assume(min.is_finite() && max.is_finite() && min < max);
+        Range::linear(min, max)
+    }
+
+    #[kani::proof]
+    fn normalize_lands_in_the_unit_interval() {
+        let r = any_linear();
+        let plain: f64 = kani::any();
+        let n = r.normalize(plain);
+        assert!((0.0..=1.0).contains(&n));
+        if plain <= r.min() {
+            assert_eq!(n, 0.0);
+        }
+        if plain >= r.max() {
+            assert_eq!(n, 1.0);
+        }
+    }
+
+    #[kani::proof]
+    fn denormalize_lands_in_the_range_and_is_monotone() {
+        let r = any_linear();
+        let (a, b): (f64, f64) = (kani::any(), kani::any());
+        let (va, vb) = (r.denormalize(a), r.denormalize(b));
+        assert!(va >= r.min() && va <= r.max());
+        if a <= 0.0 {
+            assert_eq!(va, r.min());
+        }
+        if a >= 1.0 {
+            assert_eq!(va, r.max());
+        }
+        if a <= b {
+            assert!(va <= vb);
+        }
     }
 }

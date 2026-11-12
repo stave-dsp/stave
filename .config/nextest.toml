@@ -5,3 +5,9 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 [profile.ci]
 fail-fast = false
 slow-timeout = { period = "30s", terminate-after = 4 }
+
+# Miri (CI's `miri` shards): one interpreted process per test; a slow
+# one is reported, one past 5 min has hung.
+[profile.miri]
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 5 }

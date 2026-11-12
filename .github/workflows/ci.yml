@@ -1,19 +1,24 @@
-# CI: the soundness gate and the rest. Every bar here is blocking: the claim "the
-# unsafe core is Miri-clean and Loom-modelled" is only worth making
-# while this stays green. Builds are --locked against the committed
-# Cargo.lock.
+# CI: the main signal (docs/overhaul.md C10). Every job here fits in
+# five minutes warm and the run's wall clock does too, so it gates every
+# push and pull request. Builds are --locked against the committed
+# Cargo.lock; every tool is pinned. macOS runners only where macOS is
+# needed (Cocoa, bundles, the validators) — three jobs, so they never
+# queue behind each other; everything else is Linux.
+#
+# The slow tools (Kani, sanitizers, long fuzzing, the simulated host's
+# wide sweep, advisories, semver-checks, the newest-stable canary) are
+# in deep.yml: nightly and on demand, never in this run's way.
 name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**"]
   pull_request:
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A main run always finishes (Miri takes ~30 min, and frequent pushes
-  # would otherwise cancel it forever); newer pushes queue behind it.
+  # A main run always finishes; newer pushes queue behind it.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -21,129 +26,73 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # The one nightly (Miri here; sanitizers and fuzzing in deep.yml).
+  NIGHTLY: nightly-2026-11-01
 
 jobs:
   test:
-    name: build + test (workspace)
+    # Every test of the workspace (nextest builds what it runs) and the
+    # doctests, on macOS (the Cocoa platform, bundles, stave-host).
+    name: test (macOS)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
-      # The tree rules (scripts/gates.sh runs the same set locally).
-      - run: scripts/check-file-sizes.sh
-      - run: scripts/check-view-bindings.sh
-      - run: scripts/check-plugin-rules.sh
-      - run: scripts/check-vocabulary.sh
-      - run: cargo build --workspace --locked
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: nextest@0.9.148 }
       - run: cargo nextest run --workspace --locked --profile ci
       - run: cargo test --workspace --doc --locked
+      # A golden-image mismatch leaves <name>.actual.png and .diff.png.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-diff
+          path: target/golden-diff
+          if-no-files-found: ignore
 
-  warnings:
-    name: zero warnings (rustc + rustdoc)
+  lint:
+    # clippy (its -D warnings covers rustc's warnings), rustdoc with
+    # every warning an error, and the MSRV check — one macOS job, one
+    # cache.
+    name: clippy + rustdoc + MSRV (macOS)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
+      - run: rustup toolchain install && rustup toolchain install 1.86.0 --profile minimal
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --workspace --all-targets --locked
-        env:
-          RUSTFLAGS: -D warnings
-      - run: cargo doc --workspace --no-deps
-        env:
-          RUSTDOCFLAGS: -D warnings
-
-  msrv:
-    # The declared rust-version is a promise: hold it.
-    name: MSRV (1.86)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup toolchain install 1.86.0 --profile minimal
-      - uses: Swatinem/rust-cache@v2
-        with: { key: msrv }
-      - run: cargo +1.86.0 check --workspace --all-targets --locked
-
-  clippy:
-    name: clippy (zero warnings, workspace lint policy)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
-      - uses: Swatinem/rust-cache@v2
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
-
-  miri:
-    name: miri (stave-core, stave-telemetry)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: miri
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo +nightly miri test -p stave-core -p stave-telemetry
-
-  miri-abi:
-    # The strongest bar in this file: the FULL wrapper path (factory →
-    # vtables → in-place process → two instances → release) interpreted
-    # under the memory model. This caught the CLAP field-provenance bug
-    # (factory returned a first-field & pointer; reconstructing
-    # &Instance from it was UB). macOS runner: stave-vst3 declares
-    # Cocoa externs.
-    name: miri (wrapper ABI paths)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: miri
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo +nightly miri test -p stave-vst3 -p stave-clap --test wrapper_abi --test table_abi --test diagnostics_abi --test negotiation_abi --test panic_abi
-
-  loom:
-    name: loom (protocol models)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p stave-core -p stave-telemetry --test loom --release
+      - run: cargo doc --workspace --no-deps --locked
         env:
-          RUSTFLAGS: --cfg loom
+          RUSTDOCFLAGS: -D warnings
+      # The declared rust-version is a promise: hold it.
+      - run: cargo +1.86.0 check --workspace --all-targets --locked
 
-  clap-validator:
-    # The industry's own CLAP test suite against every plugin.
-    name: clap-validator (every plugin)
+  validators:
+    # The industry's own suites against every plugin: clap-validator and
+    # Steinberg's VST3 validator (the SDK is MIT; its build is cached).
+    name: validators (clap-validator, VST3)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - name: Install clap-validator
-        run: cargo install --locked --git https://github.com/free-audio/clap-validator.git --tag 0.4.1 clap-validator
-      - run: scripts/validate-formats.sh clap
-
-  vst3-validator:
-    # Steinberg's own validator (the SDK is MIT) against every plugin.
-    # The SDK build is cached; cold runs add ~5 minutes.
-    name: Steinberg VST3 validator (every plugin)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
-      - uses: Swatinem/rust-cache@v2
-      - name: Cache VST3 SDK build
-        id: sdk-cache
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
+      - name: Cache the validators
+        id: tools-cache
         uses: actions/cache@v4
         with:
-          path: vst3sdk
-          key: vst3sdk-validator-${{ runner.os }}-v3.8.1_build_84
-      - name: Build Steinberg validator
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
+          path: |
+            vst3sdk/build/bin/Release/validator
+            ~/.cargo/bin/clap-validator
+          key: validators-${{ runner.os }}-vst3sdk-v3.8.1_build_84-clap-validator-0.4.1
+      - name: Build the validators
+        if: steps.tools-cache.outputs.cache-hit != 'true'
         run: |
+          cargo install --locked --git https://github.com/free-audio/clap-validator.git --tag 0.4.1 clap-validator
           git clone --depth 1 --branch v3.8.1_build_84 --recurse-submodules --shallow-submodules \
             https://github.com/steinbergmedia/vst3sdk.git vst3sdk
           cmake -S vst3sdk -B vst3sdk/build -DCMAKE_BUILD_TYPE=Release \
@@ -151,25 +100,72 @@ jobs:
             -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
             -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF
           cmake --build vst3sdk/build --target validator -j3
+      - run: scripts/validate-formats.sh clap
       - run: scripts/validate-formats.sh vst3
         env:
           VALIDATOR: vst3sdk/build/bin/Release/validator
 
-  cross-compile:
-    # The portable crates must never grow platform assumptions: the DSP
-    # and plugin core, both format wrappers (their Cocoa face view is
-    # macOS-only), and the UI stack below the Cocoa platform (stave-ui's
-    # view model, stave-raster's renderer, stave-face's design system) —
-    # the path to a non-macOS editor. ubuntu-latest IS
-    # x86_64-unknown-linux-gnu.
-    name: portable crates check (Linux)
+  rules:
+    # The tree rules and hygiene: file sizes, view bindings, plugin
+    # rules, the glossary, purity, golden-image sizes; licences,
+    # duplicate versions and sources (deny.toml); unused dependencies.
+    name: tree rules + hygiene
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: "cargo-deny@0.20.2,cargo-machete@0.9.2" }
+      - run: scripts/check-file-sizes.sh
+      - run: scripts/check-view-bindings.sh
+      - run: scripts/check-plugin-rules.sh
+      - run: scripts/check-vocabulary.sh
+      - run: scripts/check-purity.sh
+      - run: scripts/check-golden-sizes.sh
+      - run: scripts/hygiene.sh
+
+  portable:
+    # The portable crates never grow platform assumptions: check them on
+    # x86_64 Linux, and run their loom models here too.
+    name: portable check + loom (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - run: >-
           cargo check --all-targets --locked
           -p stave-core -p stave-dsp -p stave-telemetry -p stave-measure -p stave-macros
           -p stave-ui -p stave-raster -p stave-face -p stave-clap -p stave-clap-sys
-          -p stave-vst3 -p stave-vst3-sys
+          -p stave-vst3 -p stave-vst3-sys -p stave-model
+      - run: cargo test -p stave-core -p stave-telemetry --test loom --release --locked
+        env:
+          RUSTFLAGS: --cfg loom
+
+  miri:
+    # The unsafe core and the FULL wrapper path (factory → vtables →
+    # in-place process → two instances → release) interpreted under the
+    # memory model — this caught the CLAP field-provenance bug. One
+    # nextest process per test, sharded so each shard stays under five
+    # minutes; safe-code sweeps are `#[cfg_attr(miri, ignore)]`.
+    name: miri (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install $NIGHTLY --profile minimal --component miri,rust-src
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: miri
+          save-if: "${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}"
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: nextest@0.9.148 }
+      - run: cargo +$NIGHTLY miri setup
+      - run: >-
+          cargo +$NIGHTLY miri nextest run --locked --profile miri
+          --partition hash:${{ matrix.shard }}/4
+          -p stave-core -p stave-telemetry -p stave-vst3 -p stave-clap
+          -E 'package(stave-core) | package(stave-telemetry) | binary_id(/::(wrapper|table|diagnostics|negotiation|panic)_abi$/)'

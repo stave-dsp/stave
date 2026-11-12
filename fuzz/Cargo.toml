@@ -1,0 +1,58 @@
+# The fuzz targets (docs/overhaul.md C5): cargo-fuzz (libFuzzer) on the
+# pinned nightly. Its own workspace, so the framework's builds never see
+# it; `scripts/fuzz.sh` runs every target.
+[package]
+name = "stave-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Reached through `stave_host::entry_points!`, which machete cannot see.
+[package.metadata.cargo-machete]
+ignored = ["stave-tilt-vst3"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+stave-core = { path = "../crates/stave-core" }
+stave-host = { path = "../crates/stave-host" }
+stave-raster = { path = "../crates/stave-raster" }
+stave-ui = { path = "../crates/stave-ui" }
+stave-tilt-vst3 = { path = "../examples/tilt" }
+
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "state_load"
+path = "fuzz_targets/state_load.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "param_text"
+path = "fuzz_targets/param_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vst3_host"
+path = "fuzz_targets/vst3_host.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raster"
+path = "fuzz_targets/raster.rs"
+test = false
+doc = false
+bench = false

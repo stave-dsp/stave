@@ -236,6 +236,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn format_matrix() {
         assert_eq!(
             &*Unit::DbFloor(-60)
@@ -260,6 +261,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn parse_accepts_format_output_and_shorthand() {
         let db = Unit::DbFloor(-60);
         assert_eq!(db.parse("-6.0 dB"), Some(-6.0));

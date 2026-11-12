@@ -4,7 +4,8 @@
 #   scripts/release.sh 0.2.0
 #
 # Requires a clean tree on main. Sets [workspace.package] version (every
-# crate inherits it), refreshes Cargo.lock, runs the gates, commits, tags
+# crate inherits it), refreshes Cargo.lock, checks the version against
+# the API change (scripts/semver-checks.sh), runs the gates, commits, tags
 # v<version> and pushes main + the tag to every configured remote.
 # Then, in stave-plugins: scripts/bump-framework.sh v<version>.
 set -euo pipefail
@@ -26,6 +27,8 @@ assert n == 1, "no version in [workspace.package]"
 open("Cargo.toml", "w").write(s)
 PY
 cargo update --workspace
+# The version must allow the API change since the last release.
+bash scripts/semver-checks.sh "$(git describe --tags --abbrev=0 --match 'v*')"
 bash scripts/gates.sh
 
 git commit -qam "Release ${TAG}"

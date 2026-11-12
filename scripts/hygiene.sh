@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# The hygiene gates (docs/overhaul.md C9) beside the vocabulary check:
+#
+#   scripts/hygiene.sh             # licences, duplicate versions, sources,
+#                                  # unused dependencies, rustdoc links
+#   scripts/hygiene.sh advisories  # the RustSec database (CI: nightly —
+#                                  # it changes without our commits)
+#
+# Tools (CI installs these exact versions): cargo-deny 0.20.2,
+# cargo-machete 0.9.2. Policy: deny.toml.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+if [[ "${1:-}" == advisories ]]; then
+  exec cargo deny --locked check advisories
+fi
+
+cargo deny --locked check bans licenses sources
+# Every crate but stave-test, whose unused `stave-telemetry` dependency
+# waits on its owner (docs/overhaul.md C9).
+cargo machete $(ls -d crates/*/ tools/*/ examples/*/ fuzz/ | grep -v '^crates/stave-test/$')
+# Every intra-doc link resolves, private items' docs included (the
+# public pass runs in CI's `warnings` job).
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked

@@ -700,6 +700,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn exp_settles_onto_the_target() {
         let (p, mut c) = prepared(Smooth::ms(1.0), 48_000.0, 0.0);
         run(&mut c, &p, 1.0, 4_800);

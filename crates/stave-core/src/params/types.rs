@@ -621,16 +621,15 @@ pub struct IndexedParams<T: ?Sized> {
 impl<T: Params + ?Sized> IndexedParams<T> {
     /// Walk `table` once (non-realtime: allocates the index).
     pub fn new(table: Arc<T>) -> Self {
-        let mut ids: Vec<(u32, u32)> = (0..table.count())
-            .filter_map(|i| Some((table.by_index(i)?.meta().id.0, i as u32)))
-            .collect();
-        // Stable: equal ids keep declaration order, so dedup keeps the first.
-        ids.sort_by_key(|&(id, _)| id);
-        ids.dedup_by_key(|&mut (id, _)| id);
+        let ids = id_index(
+            (0..table.count())
+                .filter_map(|i| Some((table.by_index(i)?.meta().id.0, i as u32)))
+                .collect(),
+        );
         let bypass =
             (0..table.count()).find(|&i| table.by_index(i).is_some_and(|p| p.meta().flags.bypass));
         Self {
-            ids: ids.into_boxed_slice(),
+            ids,
             bypass,
             table,
         }
@@ -650,8 +649,7 @@ impl<T: Params + ?Sized> Params for IndexedParams<T> {
         self.table.by_index(index)
     }
     fn by_id(&self, id: ParamId) -> Option<&dyn AnyParam> {
-        let at = self.ids.binary_search_by_key(&id.0, |&(id, _)| id).ok()?;
-        self.table.by_index(self.ids[at].1 as usize)
+        self.table.by_index(id_lookup(&self.ids, id.0)?)
     }
     fn by_name(&self, name: &str) -> Option<&dyn AnyParam> {
         self.table.by_name(name)
@@ -661,6 +659,39 @@ impl<T: Params + ?Sized> Params for IndexedParams<T> {
     }
     fn validate(&self) -> Result<(), ParamTableError> {
         self.table.validate()
+    }
+}
+
+/// `(id, index)` pairs in declaration order → sorted by id, the first
+/// declaration of a duplicate kept: [`id_lookup`]'s table.
+fn id_index(mut pairs: Vec<(u32, u32)>) -> Box<[(u32, u32)]> {
+    // Stable: equal ids keep declaration order, so dedup keeps the first.
+    pairs.sort_by_key(|&(id, _)| id);
+    pairs.dedup_by_key(|&mut (id, _)| id);
+    pairs.into_boxed_slice()
+}
+
+/// The index [`id_index`] recorded for `id`. Realtime: a binary search.
+fn id_lookup(ids: &[(u32, u32)], id: u32) -> Option<usize> {
+    let at = ids.binary_search_by_key(&id, |&(id, _)| id).ok()?;
+    Some(ids[at].1 as usize)
+}
+
+/// Kani: the id → index table answers every id exactly as a scan of the
+/// declarations would.
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn lookup_finds_the_first_declaration_of_every_id() {
+        const N: usize = 4;
+        let ids: [u32; N] = kani::any();
+        let table = id_index((0..N as u32).map(|i| (ids[i as usize], i)).collect());
+        let query: u32 = kani::any();
+        let scan = ids.iter().position(|&id| id == query);
+        assert_eq!(id_lookup(&table, query), scan);
     }
 }
 
@@ -840,6 +871,7 @@ mod tests {
     /// The index answers every id the scan does, at one `by_index` per
     /// lookup (the scan walks to the param), and the bypass from cache.
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn indexed_lookups_match_the_scan_without_scanning() {
         let wide = std::sync::Arc::new(Wide::new(600));
         let indexed = IndexedParams::new(wide.clone());
@@ -932,6 +964,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn enum_param_stepped_contract() {
         let p = TestParams::new();
         let c = &p.character as &dyn AnyParam;

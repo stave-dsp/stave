@@ -114,7 +114,7 @@ fn concurrent_scan_during_registration() {
     let reader_t = Arc::clone(&t);
     let names = ["alpha", "beta", "gamma", "delta"];
     let reader = std::thread::spawn(move || {
-        for _ in 0..200 {
+        for _ in 0..if cfg!(miri) { 20 } else { 200 } {
             for s in reader_t.tap_slots() {
                 let n = s.name.as_str();
                 assert!(n.is_empty() || names.contains(&n), "torn name: {n:?}");
@@ -142,7 +142,9 @@ fn overlong_probe_name_occupies_exactly_one_slot() {
     // A fresh per-callsite cache each block (worst case: many instances /
     // a cold cache) plus a warm one.
     let warm = AtomicU16::new(u16::MAX);
-    for i in 0..(MAX_TAPS * 2) {
+    // Under Miri a few rounds already prove the slot is found again.
+    let rounds = if cfg!(miri) { 8 } else { MAX_TAPS * 2 };
+    for i in 0..rounds {
         let cold = AtomicU16::new(u16::MAX);
         t.probe_f64(&cold, name, i as f64);
         t.probe_f64(&warm, name, i as f64);
@@ -150,7 +152,7 @@ fn overlong_probe_name_occupies_exactly_one_slot() {
     assert_eq!(used(&t), 1);
     let r = &t.taps()[0];
     assert_eq!(r.name, &name[..NAME_BYTES - 1]);
-    assert_eq!(r.hits, (MAX_TAPS * 4) as u64);
+    assert_eq!(r.hits, (rounds * 2) as u64);
 }
 
 #[test]
@@ -199,6 +201,17 @@ fn capture_and_curve_round_trip() {
     assert!(t.curve().is_empty());
     t.publish_curve(&[0.0, 0.5, 1.0]);
     assert_eq!(t.curve(), [0.0, 0.5, 1.0]);
+}
+
+/// Found by the simulated host: a host's null output channel reaches
+/// the capture as an empty slice; it captures silence, not a panic.
+#[test]
+fn a_short_capture_channel_reads_silence() {
+    let t = Telemetry::new();
+    t.write_capture(&[&[0.5, -0.5], &[]], 3);
+    let mut out = [9.0; 2];
+    assert_eq!(t.read_capture_channel(1, &mut out), (2, 3));
+    assert_eq!(out, [0.0, 0.0]);
 }
 
 #[test]

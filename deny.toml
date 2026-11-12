@@ -1,0 +1,61 @@
+# cargo deny (licences, advisories, duplicate versions, sources).
+# CI: `cargo deny check bans licenses sources` gates every PR (the
+# `hygiene` job); advisories change with the RustSec database, not with
+# our commits, so they run nightly (`advisories` job). Run locally with
+# `scripts/hygiene.sh`.
+
+[graph]
+all-features = false
+
+[advisories]
+# Each ignore names who pulls the crate in. None reaches a plugin binary:
+# they are all under tools/stave-play (eframe's window stack, pprof's
+# flamegraphs).
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste: unmaintained; stave-play via eframe → wgpu → metal" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: unmaintained; stave-play via eframe → epaint" },
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.26: stave-play via pprof → inferno (flamegraph SVG of our own profile)" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.26: stave-play via pprof → inferno (flamegraph SVG of our own profile)" },
+    { id = "RUSTSEC-2026-0257", reason = "webbrowser: stave-play via eframe; BROWSER is the developer's own environment" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained; stave-play via eframe's Linux portal stack" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained; stave-play via eframe's Linux portal stack" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained; stave-play via eframe's Linux portal stack" },
+]
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "Zlib",
+    "Unlicense",
+    "Unicode-3.0",
+    "0BSD",
+    "MPL-2.0",
+]
+# Licences allowed for one crate only, each in a development tool.
+exceptions = [
+    { crate = "inferno", allow = ["CDDL-1.0"] },            # stave-play: flamegraphs
+    { crate = "epaint", allow = ["OFL-1.1", "LicenseRef-UFL-1.0"] },  # stave-play: egui's bundled fonts
+]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+# The developer tools' window and audio stacks (eframe, cpal, pprof)
+# carry their own duplicate trees; the framework's graph must not.
+skip-tree = [
+    { crate = "stave-play", reason = "eframe/wgpu/winit/cpal duplicates" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -55,7 +55,8 @@ impl Telemetry {
 
     /// Wrapper entry: copy a block of per-channel samples into the capture
     /// frame. Called once per `process()` from the format wrapper, after the
-    /// plugin has filled its output.
+    /// plugin has filled its output. The first channel sets the frame
+    /// count; a shorter channel reads as silence past its end.
     pub fn write_capture(&self, channels: &[&[f32]], block: u64) {
         let n_ch = channels.len().min(CAPTURE_CHANNELS);
         if n_ch == 0 {
@@ -69,8 +70,10 @@ impl Telemetry {
         for ci in 0..n_ch {
             let base = ci * CAPTURE_LEN;
             for fi in 0..n_frames {
-                self.capture.samples[base + fi]
-                    .store(channels[ci][fi].to_bits() as i32, Ordering::Relaxed);
+                // A channel shorter than the first (a host's null output
+                // pointer arrives as an empty slice) captures silence.
+                let x = channels[ci].get(fi).copied().unwrap_or(0.0);
+                self.capture.samples[base + fi].store(x.to_bits() as i32, Ordering::Relaxed);
             }
         }
         self.capture.block.store(block, Ordering::Release);

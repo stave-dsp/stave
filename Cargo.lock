@@ -3038,6 +3038,7 @@ dependencies = [
  "stave-core",
  "stave-dsp",
  "stave-measure",
+ "stave-model",
  "stave-telemetry",
  "stave-tilt-vst3",
  "stave-vst3-sys",
@@ -3061,6 +3062,10 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "stave-model"
+version = "0.2.0"
 
 [[package]]
 name = "stave-play"

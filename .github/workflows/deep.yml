@@ -1,0 +1,127 @@
+# The deep checks: everything too slow for the main signal (ci.yml),
+# nightly and on demand. Each job still aims at five minutes; a red one
+# here is a finding, never a red push.
+#
+#   kani         the proof harnesses (V2), one job per crate
+#   sanitizers   AddressSanitizer and ThreadSanitizer (C4)
+#   fuzz         every cargo-fuzz target, 4 min each (C5)
+#   sim-sweep    the simulated host over thousands of seeds (V3)
+#   advisories   the RustSec database (C9)
+#   semver       release branches against the release they patch (C9)
+name: deep
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # nightly
+  push:
+    branches: ["release/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  NIGHTLY: nightly-2026-11-01
+
+jobs:
+  kani:
+    name: kani (${{ matrix.crate }})
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [stave-core, stave-telemetry, stave-dsp, stave-raster]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Kani
+        id: kani-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/kani
+            ~/.cargo/bin/cargo-kani
+            ~/.kani
+          key: kani-0.68.0-${{ runner.os }}
+      - if: steps.kani-cache.outputs.cache-hit != 'true'
+        run: cargo install --locked kani-verifier@0.68.0 && cargo kani setup
+      - run: scripts/kani.sh -p ${{ matrix.crate }}
+
+  sanitizers:
+    # macOS: stave-host hosts bundles through CoreFoundation.
+    name: sanitizer (${{ matrix.sanitizer }})
+    if: github.event_name != 'push'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install $NIGHTLY --profile minimal --component rust-src
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "${{ matrix.sanitizer }}" }
+      - run: scripts/sanitize.sh ${{ matrix.sanitizer }}
+
+  fuzz:
+    # macOS: the vst3_host target hosts Tilt through stave-host.
+    name: fuzz (${{ matrix.target }})
+    if: github.event_name != 'push'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [state_load, param_text, vst3_host, raster]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install $NIGHTLY --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: fuzz, key: "${{ matrix.target }}" }
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: cargo-fuzz@0.13.2 }
+      - run: scripts/fuzz.sh 240 ${{ matrix.target }}
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+
+  sim-sweep:
+    # The simulated host over thousands of seeds (the main run does 48).
+    name: simulated host (wide sweep)
+    if: github.event_name != 'push'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p stave-host --release --locked --test sim_host
+        env:
+          STAVE_SIM_SEEDS: "3000"
+
+  advisories:
+    # The RustSec database changes without our commits.
+    name: advisories (RustSec)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: cargo-deny@0.20.2 }
+      - run: scripts/hygiene.sh advisories
+
+  semver:
+    # A release branch's patch must not break the API of the release it
+    # patches (scripts/semver-checks.sh; scripts/release.sh runs it too).
+    name: semver-checks (release branches)
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the baseline tag
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: cargo-semver-checks@0.51.0 }
+      - run: scripts/semver-checks.sh

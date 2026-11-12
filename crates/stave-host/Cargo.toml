@@ -13,6 +13,7 @@ thiserror.workspace = true
 libc.workspace = true
 hound = "3"
 stave-measure.workspace = true
+stave-model.workspace = true
 stave-dsp.workspace = true
 stave-vst3-sys.workspace = true
 stave-telemetry.workspace = true

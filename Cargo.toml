@@ -10,6 +10,7 @@ members = [
     "crates/stave-host",
     "crates/stave-macros",
     "crates/stave-measure",
+    "crates/stave-model",
     "crates/stave-raster",
     "crates/stave-telemetry",
     "crates/stave-test",
@@ -37,7 +38,7 @@ rust-version = "1.86"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)", "cfg(kani)"] }
 
 [workspace.lints.clippy]
 ptr_cast_constness = "deny"
@@ -66,6 +67,7 @@ stave-dsp = { path = "crates/stave-dsp" }
 stave-test = { path = "crates/stave-test" }
 stave-host = { path = "crates/stave-host" }
 stave-measure = { path = "crates/stave-measure" }
+stave-model = { path = "crates/stave-model" }
 thiserror = "2"
 
 [profile.release]

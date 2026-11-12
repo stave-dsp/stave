@@ -74,7 +74,7 @@ const HB_M_INNER: usize = (HB_TAPS_INNER - 1) / 2; // 36
 const HB_HALF_INNER: usize = (HB_TAPS_INNER - 1) / 4; // 18
 
 /// Compute the nonzero half-band coefficients for a given tap count:
-/// `(center, side[j])`, side[j] multiplying the symmetric pair at odd
+/// `(center, side[j])`, `side[j]` multiplying the symmetric pair at odd
 /// offset `2j+1`. Normalised so the DC gain is exactly 1.
 fn halfband_coeffs_n(taps: usize) -> (f64, [f64; HB_HALF]) {
     let m = ((taps - 1) / 2) as f64;

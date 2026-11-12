@@ -24,6 +24,7 @@ mod factory;
 mod loaded;
 mod module;
 mod open;
+pub mod sim;
 mod telemetry;
 mod trace;
 mod transport;

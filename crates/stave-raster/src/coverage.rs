@@ -208,3 +208,31 @@ mod tests {
         assert!((m.cov[0] - 1.0).abs() < 1e-5 && (m.cov[1] - 1.0).abs() < 1e-5);
     }
 }
+
+/// Kani: on any canvas up to 3×3, an edge between ANY two points (NaN,
+/// the infinities and points far off the canvas included) deposits only
+/// inside the mask's accumulator — no index past it, no panic — and
+/// every finished pixel's coverage is in [0, 1].
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn any_edge_stays_inside_the_mask() {
+        let (cw, ch): (usize, usize) = (kani::any(), kani::any());
+        kani::assume(cw <= 3 && ch <= 3);
+        let a = Pt { x: kani::any(), y: kani::any() };
+        let b = Pt { x: kani::any(), y: kani::any() };
+        let pts = [a, b];
+        let Some(bounds) = bounds(&[pts.to_vec()]) else {
+            unreachable!("two points have bounds");
+        };
+        let Some(mut mask) = Mask::new(bounds, cw, ch) else {
+            return;
+        };
+        mask.polygon(&pts);
+        mask.finish();
+        assert!(mask.cov.iter().all(|c| (0.0..=1.0).contains(c)));
+    }
+}

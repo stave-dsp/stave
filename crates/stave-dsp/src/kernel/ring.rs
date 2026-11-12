@@ -78,3 +78,32 @@ mod tests {
         assert_eq!(r.delayed(), 0.0);
     }
 }
+
+/// Kani: for every length up to four and every tick count, the ring
+/// delays by exactly its length, and an unallocated ring reads zero.
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(11)]
+    fn delays_by_exactly_its_length() {
+        let len: usize = kani::any_where(|l: &usize| *l <= 4);
+        let mut r = Ring::new();
+        if len > 0 {
+            r.allocate(len);
+        }
+        let mut seen = [0.0f32; 10];
+        for i in 0..10 {
+            let x: f32 = kani::any();
+            let y = r.delayed();
+            if len == 0 || i < len {
+                assert_eq!(y.to_bits(), 0.0f32.to_bits());
+            } else {
+                assert_eq!(y.to_bits(), seen[i - len].to_bits());
+            }
+            r.push(x);
+            seen[i] = x;
+        }
+    }
+}

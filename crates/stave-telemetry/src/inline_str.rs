@@ -102,3 +102,39 @@ impl<const N: usize> core::fmt::Debug for InlineStr<N> {
         f.write_str(self.as_str())
     }
 }
+
+/// Kani, over every UTF-8 string of up to six bytes and a 4-byte slot:
+/// truncation keeps the longest prefix that fits and ends on a char
+/// boundary, and a stored name reads back as — and matches — exactly
+/// that form.
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn truncation_is_the_longest_fitting_prefix_and_round_trips() {
+        type Slot = InlineStr<4>;
+        let bytes: [u8; 6] = kani::any();
+        let len: usize = kani::any_where(|l: &usize| *l <= 6);
+        let Ok(s) = core::str::from_utf8(&bytes[..len]) else {
+            return;
+        };
+        let t = Slot::truncate(s);
+        assert!(s.starts_with(t));
+        assert!(t.len() <= Slot::CAPACITY);
+        // Longest: the next char would not fit.
+        if t.len() < s.len() {
+            let next = s[t.len()..].chars().next().unwrap();
+            assert!(t.len() + next.len_utf8() > Slot::CAPACITY);
+        }
+        let slot = Slot::zeroed();
+        assert!(!slot.matches(s), "unpublished matches nothing");
+        slot.set(s);
+        // A name with an interior nul reads back cut at the nul.
+        if !t.contains('\0') {
+            assert_eq!(slot.as_str(), t);
+            assert!(slot.matches(s));
+        }
+    }
+}
