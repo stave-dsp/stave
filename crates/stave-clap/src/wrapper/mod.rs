@@ -17,8 +17,8 @@ use stave_core::state::StateStore;
 use stave_core::wrapper::state::{self as wrapper_state, MAX_STATE_BYTES};
 use stave_core::wrapper::PanicGuard;
 use stave_core::{
-    ranges_alias, AudioBuffer, Event, EventKind, GestureEvent, GestureQueue, NoteEvent, ParamId,
-    Plugin, PluginCell, PluginFeature, ProcessCtx, SharedState, Transport,
+    AudioBuffer, Event, EventKind, GestureEvent, GestureQueue, NoteEvent, ParamId, Plugin,
+    PluginCell, PluginFeature, ProcessCtx, SharedState, Transport,
 };
 
 use crate::ports;

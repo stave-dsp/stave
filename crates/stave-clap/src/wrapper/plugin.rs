@@ -14,6 +14,7 @@ pub(super) unsafe extern "C" fn plugin_init<P: ClapExport>(plugin: *const sys::C
 pub(super) unsafe extern "C" fn plugin_destroy<P: ClapExport>(plugin: *const sys::ClapPlugin) {
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
+    inst.guard.report(&inst.diagnostics);
     inst.diagnostics.report_faults();
     // SAFETY: `create_plugin` made this pointer with `Box::into_raw` of
     // the whole `Instance`; `destroy` is the host's last call on it.
@@ -117,9 +118,9 @@ pub(super) unsafe extern "C" fn plugin_on_main_thread<P: ClapExport>(
     plugin: *const sys::ClapPlugin,
 ) {
     // SAFETY: host contract (see `host`).
-    unsafe { Instance::<P>::from_plugin_ptr(plugin) }
-        .diagnostics
-        .report_faults();
+    let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
+    inst.guard.report(&inst.diagnostics);
+    inst.diagnostics.report_faults();
 }
 
 pub(super) unsafe extern "C" fn plugin_get_extension<P: ClapExport>(

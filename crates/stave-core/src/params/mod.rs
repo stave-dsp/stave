@@ -20,7 +20,7 @@ pub use route::{RouteMode, RouteParams, RouteQuant, MAX_ROUTES, ROUTE_MODES, ROU
 pub use smooth::Smooth;
 pub use taper::{Range, Taper};
 pub use types::{
-    AnyParam, BoolParam, EnumParam, FloatParam, NoParams, ParamEnum, ParamFlags, ParamMeta,
+    AnyParam, BoolParam, EnumParam, FloatParam, IndexedParams, NoParams, ParamEnum, ParamFlags, ParamMeta,
     ParamTableError, Params,
 };
 pub use watch::{ModalWatch, Watch};

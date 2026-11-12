@@ -46,9 +46,17 @@ impl<'a> AudioBuffer<'a> {
         unsafe { Self::from_raw(ptrs, frames) }
     }
 
+    /// A null pointer is not a channel: [`channel`](Self::channel) and
+    /// [`channel_ref`](Self::channel_ref) yield an empty slice for it (so
+    /// a plugin indexing it panics — caught by the wrapper's panic guard —
+    /// rather than reading through null). The wrappers never pass one:
+    /// they substitute zeroed scratch for a host's null channels
+    /// ([`ProcessorState::split_for_block`](crate::ProcessorState::split_for_block)).
+    ///
     /// # Safety
-    /// Each pointer in `channel_ptrs` must be valid for `frames` f32 reads
-    /// and writes for the lifetime `'a`, and channels must not alias.
+    /// Each non-null pointer in `channel_ptrs` must be valid for `frames`
+    /// f32 reads and writes for the lifetime `'a`, and channels must not
+    /// alias.
     pub unsafe fn from_raw(channel_ptrs: &'a [*mut f32], frames: usize) -> Self {
         // Checkable half of the contract: channel ranges are pairwise
         // disjoint. (In-place hosts alias *across* the input/output
@@ -78,20 +86,46 @@ impl<'a> AudioBuffer<'a> {
         self.frames
     }
 
-    /// Returns a mutable slice for channel `idx`. Panics if out of bounds.
+    /// Returns a mutable slice for channel `idx`. Panics if out of bounds;
+    /// empty for a null channel pointer (see [`from_raw`](Self::from_raw)).
     pub fn channel(&mut self, idx: usize) -> &mut [f32] {
         let ptr = self.channel_ptrs[idx];
-        // SAFETY: from_raw's caller guarantees the pointer is valid for
-        // `frames` samples and that channels do not alias. We borrow
-        // through &mut self so the slice cannot outlive this borrow.
+        if ptr.is_null() {
+            return &mut [];
+        }
+        // SAFETY: non-null, so from_raw's caller guarantees the pointer is
+        // valid for `frames` samples and that channels do not alias. We
+        // borrow through &mut self so the slice cannot outlive this borrow.
         unsafe { slice::from_raw_parts_mut(ptr, self.frames) }
     }
 
     /// Read-only view; useful when multiple non-overlapping borrows are
-    /// needed without going through the channel index.
+    /// needed without going through the channel index. Empty for a null
+    /// channel pointer.
     pub fn channel_ref(&self, idx: usize) -> &[f32] {
         let ptr = self.channel_ptrs[idx];
+        if ptr.is_null() {
+            return &[];
+        }
         // SAFETY: same invariants as `channel`, scoped to &self.
         unsafe { slice::from_raw_parts(ptr, self.frames) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A null channel pointer reads as an empty channel, never through
+    /// null (Miri checks the second half).
+    #[test]
+    fn a_null_channel_is_empty_not_a_null_slice() {
+        let mut data = [1.0f32; 4];
+        let ptrs = [core::ptr::null_mut(), data.as_mut_ptr()];
+        // SAFETY: the non-null pointer is `data`, valid for 4 frames.
+        let mut buffer = unsafe { AudioBuffer::from_raw(&ptrs, 4) };
+        assert!(buffer.channel_ref(0).is_empty());
+        assert!(buffer.channel(0).is_empty());
+        assert_eq!(buffer.channel_ref(1), &[1.0; 4]);
     }
 }

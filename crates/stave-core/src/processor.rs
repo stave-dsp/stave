@@ -26,7 +26,7 @@ use stave_debug::DebugBus;
 
 use crate::editor::{Preset, UiNode};
 use crate::environment::Environment;
-use crate::params::Params;
+use crate::params::{IndexedParams, Params};
 use crate::plugin::{Plugin, PluginDescriptor, PortConfig, Tail};
 use crate::process::ProcessCtx;
 use crate::state::Migrations;
@@ -108,6 +108,9 @@ pub trait Spec: Processor {
 /// Projects export `StavePlugin<TheirEngine>` and write no glue.
 pub struct StavePlugin<E: Spec> {
     params: Arc<E::Params>,
+    /// `params` behind an id → index table, built once here (instance
+    /// creation) so the wrappers' audio-thread lookups never scan.
+    table: Arc<dyn Params>,
     engine: E,
 }
 
@@ -129,11 +132,16 @@ impl<E: Spec> Plugin for StavePlugin<E> {
     fn new() -> Self {
         let params = E::params();
         let engine = E::new(params.clone());
-        Self { params, engine }
+        let table = Arc::new(IndexedParams::new(params.clone()));
+        Self {
+            params,
+            table,
+            engine,
+        }
     }
 
     fn param_table(&self) -> Arc<dyn Params> {
-        self.params.clone()
+        self.table.clone()
     }
     fn editor_ui(&self) -> Option<UiNode> {
         E::editor(&self.params)

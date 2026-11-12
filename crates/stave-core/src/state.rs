@@ -320,9 +320,8 @@ pub fn load(
         let (id, value) = migrations.apply(plugin_version, raw_id, f64::from_bits(bits));
         match table.by_id(ParamId(id)) {
             Some(p) => {
-                p.set_plain(value);
                 // Restored state must not fade in.
-                p.mark_restored();
+                p.restore_plain(value);
                 report.applied += 1;
             }
             None => {

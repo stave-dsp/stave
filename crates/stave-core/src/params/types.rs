@@ -17,6 +17,11 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use crate::params::ParamId;
 
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
 use super::display::{Unit, ValueText};
 use super::smooth::Smooth;
 use super::taper::Range;
@@ -134,7 +139,10 @@ impl FloatParam {
         self.smooth
     }
 
-    /// How many times the value was restored (see [`AnyParam::mark_restored`]).
+    /// The restore count (see [`AnyParam::restore_plain`]): it moves on
+    /// every restore and is odd while one is being written. Readers load
+    /// it, then the value, then it again (all `Acquire`) and snap when it
+    /// moved, is odd, or differs from the count they last saw.
     pub fn restores(&self) -> u32 {
         self.restores.load(Ordering::Acquire)
     }
@@ -336,7 +344,15 @@ pub trait AnyParam: Send + Sync {
 
     /// The value was restored (session load), not moved: renderers jump
     /// to it rather than glide. Restored state must not fade in.
+    /// Prefer [`restore_plain`](Self::restore_plain), which writes the
+    /// value and the mark as one protocol.
     fn mark_restored(&self) {}
+    /// Restore `plain` (session load): the value is jumped to, never
+    /// glided to, by every renderer reading it concurrently.
+    fn restore_plain(&self, plain: f64) {
+        self.set_plain(plain);
+        self.mark_restored();
+    }
     /// Display hint for generic editors: logarithmic knob travel.
     fn display_log(&self) -> bool {
         false
@@ -383,6 +399,19 @@ impl AnyParam for FloatParam {
             .map(|v| v.clamp(self.range.min, self.range.max))
     }
     fn mark_restored(&self) {
+        // +2 keeps the count even: no restore is in progress.
+        self.restores.fetch_add(2, Ordering::Release);
+    }
+    fn restore_plain(&self, plain: f64) {
+        // Bracket the value store with the count: odd while writing, even
+        // (and moved) after. A reader that sees this value also sees an
+        // odd or moved count: the Release store below orders the first
+        // increment before it, and the reader's Acquire load of the value
+        // orders its second count load after it. A reader that sees the
+        // old value with a moved count snaps to the old value, then snaps
+        // again next block. Neither interleaving glides.
+        self.restores.fetch_add(1, Ordering::Release);
+        self.set_plain(plain);
         self.restores.fetch_add(1, Ordering::Release);
     }
     fn display_log(&self) -> bool {
@@ -531,6 +560,14 @@ pub trait Params: Send + Sync {
             .find(|p| p.meta().name == name)
     }
 
+    /// The param flagged [`ParamFlags::bypass`], if any. The default
+    /// scans; [`IndexedParams`] answers from a cached index.
+    fn bypass(&self) -> Option<&dyn AnyParam> {
+        (0..self.count())
+            .filter_map(|i| self.by_index(i))
+            .find(|p| p.meta().flags.bypass)
+    }
+
     /// Wrapper-side sanity at instance creation: id uniqueness.
     /// Duplicate ids are author bugs that corrupt automation; fail
     /// loudly, first run. (No count cap: the table is Vec-shaped
@@ -561,6 +598,65 @@ pub trait Params: Send + Sync {
             }
         }
         Ok(())
+    }
+}
+
+/// A table with an id → index map and the bypass param's index, built
+/// once at instance creation: [`by_id`](Params::by_id) is a binary search
+/// plus one `by_index`, [`bypass`](Params::bypass) one `by_index` —
+/// neither scans nor allocates, so both are audio-thread safe.
+/// [`StavePlugin`](crate::StavePlugin) serves its table through this.
+pub struct IndexedParams<T: ?Sized> {
+    /// (id, index), sorted by id; the first declaration wins a duplicate
+    /// (which [`Params::validate`] refuses anyway).
+    ids: Box<[(u32, u32)]>,
+    bypass: Option<usize>,
+    table: Arc<T>,
+}
+
+impl<T: Params + ?Sized> IndexedParams<T> {
+    /// Walk `table` once (non-realtime: allocates the index).
+    pub fn new(table: Arc<T>) -> Self {
+        let mut ids: Vec<(u32, u32)> = (0..table.count())
+            .filter_map(|i| Some((table.by_index(i)?.meta().id.0, i as u32)))
+            .collect();
+        // Stable: equal ids keep declaration order, so dedup keeps the first.
+        ids.sort_by_key(|&(id, _)| id);
+        ids.dedup_by_key(|&mut (id, _)| id);
+        let bypass =
+            (0..table.count()).find(|&i| table.by_index(i).is_some_and(|p| p.meta().flags.bypass));
+        Self {
+            ids: ids.into_boxed_slice(),
+            bypass,
+            table,
+        }
+    }
+
+    /// The wrapped table.
+    pub fn inner(&self) -> &Arc<T> {
+        &self.table
+    }
+}
+
+impl<T: Params + ?Sized> Params for IndexedParams<T> {
+    fn count(&self) -> usize {
+        self.table.count()
+    }
+    fn by_index(&self, index: usize) -> Option<&dyn AnyParam> {
+        self.table.by_index(index)
+    }
+    fn by_id(&self, id: ParamId) -> Option<&dyn AnyParam> {
+        let at = self.ids.binary_search_by_key(&id.0, |&(id, _)| id).ok()?;
+        self.table.by_index(self.ids[at].1 as usize)
+    }
+    fn by_name(&self, name: &str) -> Option<&dyn AnyParam> {
+        self.table.by_name(name)
+    }
+    fn bypass(&self) -> Option<&dyn AnyParam> {
+        self.table.by_index(self.bypass?)
+    }
+    fn validate(&self) -> Result<(), ParamTableError> {
+        self.table.validate()
     }
 }
 
@@ -696,6 +792,80 @@ mod tests {
                 _ => None,
             }
         }
+    }
+
+    /// A wide table that counts `by_index` calls: the cost of a lookup.
+    struct Wide {
+        params: Vec<FloatParam>,
+        calls: core::sync::atomic::AtomicUsize,
+    }
+
+    impl Wide {
+        fn new(n: u32) -> Self {
+            // Ids out of declaration order, as authors pick them.
+            let params = (0..n)
+                .map(|i| {
+                    let p = FloatParam::new(
+                        (i * 7919) % 100_003,
+                        "p",
+                        0.0,
+                        Range::new(0.0, 1.0, Taper::Linear),
+                    );
+                    if i == n - 1 {
+                        p.with_flags(ParamFlags {
+                            bypass: true,
+                            ..Default::default()
+                        })
+                    } else {
+                        p
+                    }
+                })
+                .collect();
+            Self {
+                params,
+                calls: Default::default(),
+            }
+        }
+        fn calls(&self) -> usize {
+            self.calls.swap(0, Ordering::Relaxed)
+        }
+    }
+
+    impl Params for Wide {
+        fn count(&self) -> usize {
+            self.params.len()
+        }
+        fn by_index(&self, index: usize) -> Option<&dyn AnyParam> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            self.params.get(index).map(|p| p as &dyn AnyParam)
+        }
+    }
+
+    /// The index answers every id the scan does, at one `by_index` per
+    /// lookup (the scan walks to the param), and the bypass from cache.
+    #[test]
+    fn indexed_lookups_match_the_scan_without_scanning() {
+        let wide = std::sync::Arc::new(Wide::new(600));
+        let indexed = IndexedParams::new(wide.clone());
+        indexed.validate().expect("unique ids");
+        wide.calls();
+        for p in &wide.params {
+            let id = p.id();
+            let found = indexed.by_id(id).expect("every declared id");
+            assert_eq!(found.meta().id, id);
+            assert!(wide.calls() <= 1, "one by_index per lookup");
+        }
+        assert!(indexed.by_id(ParamId(100_004)).is_none());
+        assert_eq!(wide.calls(), 0, "a miss touches no param");
+        let bypass = indexed.bypass().expect("the flagged param");
+        assert!(bypass.meta().flags.bypass);
+        assert_eq!(wide.calls(), 1);
+        // The scan, for contrast: the last param costs the whole table.
+        assert!(wide.bypass().is_some());
+        assert_eq!(wide.calls(), 600);
+        // A table with no bypass has none, from the cache too.
+        let plain = IndexedParams::new(std::sync::Arc::new(NoParams));
+        assert!(plain.bypass().is_none() && plain.by_id(ParamId(1)).is_none());
     }
 
     #[test]

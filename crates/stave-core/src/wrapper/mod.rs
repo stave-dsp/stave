@@ -31,6 +31,7 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 extern crate alloc;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use crate::plugin::Plugin;
@@ -94,15 +95,64 @@ impl SharedState {
     }
 }
 
+/// Most aux input ports a block carries (declared ports past this are
+/// served as absent).
+pub const MAX_AUX_PORTS: usize = 4;
+
 /// The processor-side half of an instance: the plugin itself plus the
 /// preallocated buffers the wrapper needs on the audio thread.
 pub struct ProcessorState<P: Plugin> {
     pub plugin: P,
     /// Framework-owned click-free bypass.
     pub bypass: BypassGate,
-    /// In-place scratch: one buffer per input channel, sized at activate.
-    scratch: Vec<Vec<f32>>,
-    scratch_ptrs: Vec<*mut f32>,
+    /// Scratch channels, `scratch_frames` samples each, back to back:
+    /// staged in-place inputs and stand-ins for null host channels.
+    /// Sized at prepare; the audio thread never resizes it.
+    scratch: Box<[f32]>,
+    scratch_frames: usize,
+    /// Pointer lists the block's buffers read when the host's lists
+    /// cannot be used as-is. One slot per scratch channel.
+    ptrs: Box<[*mut f32]>,
+}
+
+/// One block's channel pointer lists, ready for
+/// [`AudioBuffer::from_raw`](crate::AudioBuffer::from_raw): no nulls, and
+/// staged inputs never alias the outputs.
+pub struct BlockIo<'a> {
+    pub input: &'a [*mut f32],
+    pub output: &'a [*mut f32],
+    pub aux: [&'a [*mut f32]; MAX_AUX_PORTS],
+    /// The frames the plugin may run: the host's count, or the prepared
+    /// scratch length when the block needed scratch and was longer.
+    pub frames: usize,
+    /// Frames or channels were cut to fit the prepared scratch: record
+    /// [`ProcessFault::BlockTruncated`](crate::diagnostics::ProcessFault::BlockTruncated).
+    pub truncated: bool,
+}
+
+/// Every audio-thread borrow a wrapper needs for one block.
+pub struct Block<'a, P> {
+    pub plugin: &'a mut P,
+    pub bypass: &'a mut BypassGate,
+    pub io: BlockIo<'a>,
+}
+
+/// Scratch channels for the widest declared configuration: main in +
+/// main out + every aux input.
+fn declared_channels<P: Plugin>() -> usize {
+    P::CONFIGS
+        .iter()
+        .map(|c| {
+            c.in_channels() as usize
+                + c.out_channels() as usize
+                + c.aux_in
+                    .iter()
+                    .take(MAX_AUX_PORTS)
+                    .map(|a| a.arrangement.channels() as usize)
+                    .sum::<usize>()
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 impl<P: Plugin> ProcessorState<P> {
@@ -110,61 +160,202 @@ impl<P: Plugin> ProcessorState<P> {
         Self {
             plugin,
             bypass: BypassGate::new(),
-            scratch: Vec::new(),
-            scratch_ptrs: Vec::new(),
+            scratch: Box::default(),
+            scratch_frames: 0,
+            ptrs: Box::default(),
         }
     }
 
-    /// Size the in-place scratch. Call from a non-realtime context
-    /// (activate / setupProcessing) — this is the only allocation site.
-    pub fn prepare_scratch(&mut self, channels: usize, max_frames: usize) {
-        self.scratch.resize_with(channels, Vec::new);
-        for buf in &mut self.scratch {
-            if buf.len() < max_frames {
-                buf.resize(max_frames, 0.0);
-            }
+    /// Size the scratch for `max_frames`: every channel of the widest
+    /// declared configuration, and at least `in_channels`. Call from a
+    /// non-realtime context (activate / setupProcessing) — this is the
+    /// only allocation site.
+    pub fn prepare_scratch(&mut self, in_channels: usize, max_frames: usize) {
+        let channels = declared_channels::<P>().max(in_channels);
+        if self.ptrs.len() != channels || self.scratch_frames != max_frames {
+            self.scratch = alloc::vec![0.0; channels * max_frames].into_boxed_slice();
+            self.ptrs = alloc::vec![core::ptr::null_mut(); channels].into_boxed_slice();
+            self.scratch_frames = max_frames;
         }
-        self.scratch_ptrs.clear();
-        self.scratch_ptrs.reserve(channels);
     }
 
-    /// Split every audio-thread borrow the wrapper needs at once:
-    /// plugin, bypass gate, and (if `stage` is set) the inputs copied into
-    /// scratch — stable, non-aliasing pointers for a host that processes
-    /// in place. Allocation-free while the host keeps to the channel count
-    /// and `max_frames` it declared; past them scratch grows rather than
-    /// overruns.
+    /// Split every audio-thread borrow the wrapper needs at once: the
+    /// plugin, the bypass gate, and the block's channel lists — the
+    /// host's own when they can be used as-is, otherwise lists through
+    /// preallocated scratch: inputs staged when they alias the outputs
+    /// (in-place hosts), zeroed stand-ins for null channels.
+    ///
+    /// Never allocates. A block that needs scratch beyond what was
+    /// prepared (more frames, or more channels than declared) is cut to
+    /// fit — the plugin runs the frames that fit, surplus channels are
+    /// left out (surplus outputs zeroed) — and `io.truncated` is set.
+    /// The caller zeroes outputs past `io.frames`
+    /// ([`zero_tail`]).
     ///
     /// # Safety
-    /// Each non-null pointer in `stage`'s inputs is valid for its `frames`
-    /// f32 reads.
+    /// Each non-null pointer in `input`, `output` and `aux` is valid for
+    /// `frames` f32 reads (inputs) or writes (outputs) for `'a`, and no
+    /// two output channels overlap.
     pub unsafe fn split_for_block<'a>(
         &'a mut self,
-        stage: Option<(&[*mut f32], usize)>,
-    ) -> (&'a mut P, &'a mut BypassGate, Option<&'a [*mut f32]>) {
-        let staged = stage.map(|(inputs, frames)| {
-            if self.scratch.len() < inputs.len() {
-                self.scratch.resize_with(inputs.len(), Vec::new);
-            }
-            self.scratch_ptrs.clear();
-            for (buf, &src) in self.scratch.iter_mut().zip(inputs) {
-                if buf.len() < frames {
-                    buf.resize(frames, 0.0);
+        input: &'a [*mut f32],
+        output: &'a [*mut f32],
+        aux: &[&'a [*mut f32]],
+        frames: usize,
+    ) -> Block<'a, P> {
+        let stage = ranges_alias(input, output, frames);
+        let aux = &aux[..aux.len().min(MAX_AUX_PORTS)];
+        let has_null = |ptrs: &[*mut f32]| ptrs.iter().any(|p| p.is_null());
+        let needs_scratch =
+            stage || has_null(input) || has_null(output) || aux.iter().any(|a| has_null(a));
+        let mut truncated = false;
+        let run = if needs_scratch && frames > self.scratch_frames {
+            truncated = true;
+            self.scratch_frames
+        } else {
+            frames
+        };
+
+        let mut cursor = Cursor {
+            // One reborrow of the scratch per block: every channel
+            // pointer below derives from this base.
+            base: self.scratch.as_mut_ptr(),
+            stride: self.scratch_frames,
+            ptrs: &mut self.ptrs,
+            next: 0,
+            run,
+            truncated,
+        };
+        // SAFETY: this function's contract: non-null inputs are readable
+        // for `frames >= run`.
+        let input_at = unsafe { cursor.list(input, stage, false) };
+        // SAFETY: as above; non-null outputs are writable too.
+        let output_at = unsafe { cursor.list(output, false, true) };
+        let mut aux_at = [ListAt::Host; MAX_AUX_PORTS];
+        for (at, &list) in aux_at.iter_mut().zip(aux) {
+            // SAFETY: as for the inputs.
+            *at = unsafe { cursor.list(list, false, false) };
+        }
+        let truncated = cursor.truncated;
+
+        let ptrs: &'a [*mut f32] = &self.ptrs;
+        let resolve = |at: ListAt, host: &'a [*mut f32]| match at {
+            ListAt::Host => host,
+            ListAt::Scratch(from, to) => &ptrs[from..to],
+        };
+        let mut aux_lists: [&'a [*mut f32]; MAX_AUX_PORTS] = [&[]; MAX_AUX_PORTS];
+        for (i, &list) in aux.iter().enumerate() {
+            aux_lists[i] = resolve(aux_at[i], list);
+        }
+        Block {
+            plugin: &mut self.plugin,
+            bypass: &mut self.bypass,
+            io: BlockIo {
+                input: resolve(input_at, input),
+                output: resolve(output_at, output),
+                aux: aux_lists,
+                frames: run,
+                truncated,
+            },
+        }
+    }
+}
+
+/// Where a block's channel list lives: the host's own, or a range of
+/// [`ProcessorState`]'s pointer slots.
+#[derive(Copy, Clone)]
+enum ListAt {
+    Host,
+    Scratch(usize, usize),
+}
+
+/// Hands out scratch channels and pointer slots for one block.
+struct Cursor<'s> {
+    base: *mut f32,
+    stride: usize,
+    ptrs: &'s mut [*mut f32],
+    next: usize,
+    run: usize,
+    truncated: bool,
+}
+
+impl Cursor<'_> {
+    /// `host` as a usable list: itself when it has no nulls and need not
+    /// be staged; otherwise a scratch-backed copy where null channels (and
+    /// every channel, when `stage`) read scratch holding zeros (or the
+    /// staged input). Channels past the scratch are left out — zeroed
+    /// first when `zero_dropped` (outputs the plugin will not write).
+    ///
+    /// # Safety
+    /// Each non-null pointer in `host` is valid for `run` f32 reads, and
+    /// writes too when `zero_dropped`.
+    unsafe fn list(&mut self, host: &[*mut f32], stage: bool, zero_dropped: bool) -> ListAt {
+        if !stage && !host.iter().any(|p| p.is_null()) {
+            return ListAt::Host;
+        }
+        let from = self.next;
+        for &src in host {
+            if self.next == self.ptrs.len() {
+                self.truncated = true;
+                if zero_dropped && !src.is_null() {
+                    // SAFETY: a non-null output is writable for `run`.
+                    unsafe { core::slice::from_raw_parts_mut(src, self.run) }.fill(0.0);
                 }
-                if src.is_null() {
-                    buf[..frames].fill(0.0);
-                } else {
-                    // SAFETY: `src` is readable for `frames` (this
-                    // function's contract) and `buf` is our own
-                    // allocation of at least `frames`, so they cannot
-                    // overlap.
-                    unsafe { core::ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), frames) };
-                }
-                self.scratch_ptrs.push(buf.as_mut_ptr());
+                continue;
             }
-            &self.scratch_ptrs[..]
-        });
-        (&mut self.plugin, &mut self.bypass, staged)
+            if !src.is_null() && !stage {
+                self.ptrs[self.next] = src;
+                self.next += 1;
+                continue;
+            }
+            // SAFETY: slot `next` < ptrs.len() = the scratch's channel
+            // count, each `stride` long: the offset stays inside the
+            // allocation `base` points into.
+            let dst = unsafe { self.base.add(self.next * self.stride) };
+            // SAFETY: `dst` is `run <= stride` samples of our own scratch,
+            // reached only through `base` this block.
+            let chan = unsafe { core::slice::from_raw_parts_mut(dst, self.run) };
+            if src.is_null() {
+                chan.fill(0.0);
+            } else {
+                // SAFETY: `src` is readable for `run` (the contract), and
+                // the scratch is our allocation, so the two cannot overlap.
+                unsafe { core::ptr::copy_nonoverlapping(src, dst, self.run) };
+            }
+            self.ptrs[self.next] = dst;
+            self.next += 1;
+        }
+        ListAt::Scratch(from, self.next)
+    }
+}
+
+/// Zero `outputs` from frame `from` to `frames`: what a truncated block
+/// plays past the frames the plugin ran.
+///
+/// # Safety
+/// Each non-null pointer in `outputs` is writable for `frames`.
+pub unsafe fn zero_tail(outputs: &[*mut f32], from: usize, frames: usize) {
+    if from >= frames {
+        return;
+    }
+    for &out in outputs.iter().filter(|p| !p.is_null()) {
+        // SAFETY: writable for `frames` (the contract); `from < frames`.
+        unsafe { core::slice::from_raw_parts_mut(out.add(from), frames - from) }.fill(0.0);
+    }
+}
+
+/// Order a block's parameter changes by frame, arrival order breaking
+/// ties — the (frame, sequence) order hosts mean. An in-place insertion
+/// sort: hosts deliver nearly sorted points, so this is near linear, and
+/// unlike the standard library's stable sort it never allocates.
+pub fn sort_param_changes(changes: &mut [crate::process::ParamChange]) {
+    for i in 1..changes.len() {
+        let mut j = i;
+        // Strictly greater: equal frames keep arrival order.
+        while j > 0 && changes[j - 1].sample_offset > changes[j].sample_offset {
+            changes.swap(j - 1, j);
+            j -= 1;
+        }
     }
 }
 
@@ -180,9 +371,10 @@ pub struct PluginCell<P: Plugin> {
 // Acquire/Release pair on the token orders one owner's writes before the
 // next owner's reads.
 unsafe impl<P: Plugin> Sync for PluginCell<P> {}
-// SAFETY: `P: Send`; the only non-`Send` field is `scratch_ptrs`, whose
-// pointers address `scratch`'s heap buffers, owned by the same state and
-// moved with it.
+// SAFETY: `P: Send`; the only non-`Send` field is `ptrs`, whose pointers
+// are rewritten every block before use (host channels for that call, or
+// `scratch`, owned by the same state and moved with it) and never read
+// across a move.
 unsafe impl<P: Plugin> Send for PluginCell<P> {}
 
 impl<P: Plugin> PluginCell<P> {
@@ -710,22 +902,150 @@ mod tests {
         assert!(black_box(a) * black_box(b) != 0.0, "register restored");
     }
 
+    /// A stereo effect with one sidechain: 2 in + 2 out + 2 aux = 6
+    /// scratch channels.
+    struct SideFx;
+    impl Plugin for SideFx {
+        const DESCRIPTOR: PluginDescriptor = NullPlugin::DESCRIPTOR;
+        const CONFIGS: &'static [crate::plugin::PortConfig] = &[crate::plugin::PortConfig {
+            main_in: Some(crate::plugin::Arrangement::Stereo),
+            main_out: crate::plugin::Arrangement::Stereo,
+            aux_in: &[crate::plugin::AuxIn {
+                name: "side",
+                arrangement: crate::plugin::Arrangement::Stereo,
+            }],
+        }];
+        fn new() -> Self {
+            SideFx
+        }
+        fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
+    }
+
+    fn channel<'a>(ptr: *mut f32, frames: usize) -> &'a [f32] {
+        assert!(!ptr.is_null(), "a null channel reached the buffers");
+        // SAFETY: every pointer these tests read is a test array or
+        // scratch of at least `frames` samples.
+        unsafe { core::slice::from_raw_parts(ptr, frames) }
+    }
+
     #[test]
     fn staging_copies_and_zeroes_null_channels() {
-        let mut state = ProcessorState::new(NullPlugin::new());
+        let mut state = ProcessorState::new(SideFx::new());
         state.prepare_scratch(2, 8);
-        let mut src = [1.0f32, 2.0, 3.0, 4.0];
-        let ptrs = [src.as_mut_ptr(), core::ptr::null_mut()];
-        // SAFETY: `src` holds the 4 frames staged.
-        let (_, _, staged) = unsafe { state.split_for_block(Some((&ptrs, 4))) };
-        let staged = staged.unwrap();
-        assert_eq!(staged.len(), 2);
-        // SAFETY: each staged pointer is a scratch buffer of ≥ 4 frames.
-        let c0 = unsafe { core::slice::from_raw_parts(staged[0], 4) };
-        // SAFETY: as above.
-        let c1 = unsafe { core::slice::from_raw_parts(staged[1], 4) };
-        assert_eq!(c0, &[1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(c1, &[0.0; 4]);
-        assert!(!ranges_alias(staged, &ptrs, 4), "staged pointers are fresh");
+        let mut buf = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out_r = [9.0f32; 4];
+        let ins = [buf.as_mut_ptr(), core::ptr::null_mut()];
+        let outs = [buf.as_mut_ptr(), out_r.as_mut_ptr()];
+        // SAFETY: `buf` and `out_r` hold the 4 frames.
+        let block = unsafe { state.split_for_block(&ins, &outs, &[], 4) };
+        let io = block.io;
+        assert!(!io.truncated);
+        assert_eq!(io.input.len(), 2);
+        assert_eq!(channel(io.input[0], 4), &[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(channel(io.input[1], 4), &[0.0; 4]);
+        assert!(
+            !ranges_alias(io.input, &outs, 4),
+            "staged pointers are fresh"
+        );
+        assert_eq!(io.output, &outs, "outputs without nulls pass through");
+    }
+
+    /// Null channels in any list become zeroed scratch, each its own
+    /// (outputs must not alias one another).
+    #[test]
+    fn null_channels_become_distinct_zeroed_scratch() {
+        let mut state = ProcessorState::new(SideFx::new());
+        state.prepare_scratch(2, 8);
+        let mut a = [1.0f32; 8];
+        let mut b = [2.0f32; 8];
+        let null = core::ptr::null_mut();
+        let ins = [a.as_mut_ptr(), null];
+        let outs = [null, null];
+        let side = [null, b.as_mut_ptr()];
+        // SAFETY: `a` and `b` hold the 8 frames.
+        let block = unsafe { state.split_for_block(&ins, &outs, &[&side], 8) };
+        let io = block.io;
+        assert!(!io.truncated);
+        assert_eq!(io.input[0], ins[0], "a real channel is not copied");
+        assert_eq!(channel(io.input[1], 8), &[0.0; 8]);
+        assert_eq!(channel(io.output[0], 8), &[0.0; 8]);
+        assert_eq!(channel(io.output[1], 8), &[0.0; 8]);
+        assert_ne!(io.output[0], io.output[1]);
+        assert!(!ranges_alias(&io.output[..1], &io.output[1..], 8));
+        assert_eq!(channel(io.aux[0][0], 8), &[0.0; 8]);
+        assert_eq!(io.aux[0][1], side[1]);
+    }
+
+    /// A block longer than the prepared scratch, or wider than declared,
+    /// is cut to fit — never grown — and says so.
+    #[test]
+    fn a_block_past_the_prepared_scratch_is_truncated_not_grown() {
+        let mut state = ProcessorState::new(SideFx::new());
+        state.prepare_scratch(2, 4);
+        let (scratch, slots) = (state.scratch.as_ptr(), state.ptrs.len());
+        let mut buf = [5.0f32; 16];
+        let null = core::ptr::null_mut();
+
+        // Too long: in place (needs staging) with 16 > 4 frames.
+        let ins = [buf.as_mut_ptr()];
+        // SAFETY: `buf` holds 16 frames.
+        let block = unsafe { state.split_for_block(&ins, &ins, &[], 16) };
+        assert!(block.io.truncated);
+        assert_eq!(block.io.frames, 4);
+        assert_eq!(channel(block.io.input[0], 4), &[5.0; 4]);
+
+        // Too wide: 8 null outputs against 6 scratch channels; the real
+        // output past the scratch is zeroed and left out.
+        let mut tail = [7.0f32; 4];
+        let mut outs = [null; 9];
+        outs[8] = tail.as_mut_ptr();
+        // SAFETY: `tail` holds 4 frames.
+        let block = unsafe { state.split_for_block(&[], &outs, &[], 4) };
+        assert!(block.io.truncated);
+        assert_eq!(block.io.output.len(), 6);
+        assert_eq!(tail, [0.0; 4]);
+
+        // A long block that needs no scratch runs whole.
+        let mut out = [0.0f32; 16];
+        let outs = [out.as_mut_ptr()];
+        // SAFETY: `buf`, `out` hold 16 frames and do not overlap.
+        let block = unsafe { state.split_for_block(&ins, &outs, &[], 16) };
+        assert!(!block.io.truncated);
+        assert_eq!(block.io.frames, 16);
+
+        assert_eq!(state.scratch.as_ptr(), scratch, "scratch never reallocated");
+        assert_eq!(state.ptrs.len(), slots);
+    }
+
+    #[test]
+    fn zero_tail_clears_past_the_frames_run() {
+        let mut out = [1.0f32; 6];
+        let outs = [out.as_mut_ptr(), core::ptr::null_mut()];
+        // SAFETY: `out` holds 6 frames.
+        unsafe { zero_tail(&outs, 4, 6) };
+        assert_eq!(out, [1.0, 1.0, 1.0, 1.0, 0.0, 0.0]);
+    }
+
+    /// (frame, sequence) order: by frame, arrival order breaking ties.
+    #[test]
+    fn param_changes_sort_by_frame_then_arrival() {
+        use crate::process::{ParamChange, ParamChangeKind};
+        let change = |offset: u32, seq: u32| ParamChange {
+            id: crate::ParamId(seq),
+            sample_offset: offset,
+            plain_value: 0.0,
+            kind: ParamChangeKind::Value,
+        };
+        let mut changes = [
+            change(5, 0),
+            change(0, 1),
+            change(5, 2),
+            change(3, 3),
+            change(0, 4),
+            change(5, 5),
+        ];
+        sort_param_changes(&mut changes);
+        let order: Vec<(u32, u32)> = changes.iter().map(|c| (c.sample_offset, c.id.0)).collect();
+        assert_eq!(order, [(0, 1), (0, 4), (3, 3), (5, 0), (5, 2), (5, 5)]);
     }
 }

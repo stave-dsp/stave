@@ -21,10 +21,13 @@ pub enum ProcessFault {
     ParamChangesDropped,
     /// More note events in one block than the wrapper holds.
     EventsDropped,
+    /// A block needed more scratch (frames or channels) than was
+    /// prepared; it ran cut to fit.
+    BlockTruncated,
 }
 
 impl ProcessFault {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::ConcurrentProcess,
         Self::MissingProcessData,
         Self::BlockTooLong,
@@ -32,6 +35,7 @@ impl ProcessFault {
         Self::UnsupportedSampleSize,
         Self::ParamChangesDropped,
         Self::EventsDropped,
+        Self::BlockTruncated,
     ];
 
     pub fn severity(self) -> Severity {
@@ -40,7 +44,8 @@ impl ProcessFault {
             | Self::MissingProcessData
             | Self::BlockTooLong
             | Self::MissingOutput
-            | Self::UnsupportedSampleSize => Severity::HostMisbehaving,
+            | Self::UnsupportedSampleSize
+            | Self::BlockTruncated => Severity::HostMisbehaving,
             Self::ParamChangesDropped | Self::EventsDropped => Severity::Warning,
         }
     }
@@ -60,6 +65,9 @@ impl fmt::Display for ProcessFault {
             Self::UnsupportedSampleSize => "process refused: samples are not 32-bit float",
             Self::ParamChangesDropped => "parameter changes dropped: more than a block holds",
             Self::EventsDropped => "note events dropped: more than a block holds",
+            Self::BlockTruncated => {
+                "block truncated: more frames or channels than the host declared"
+            }
         })
     }
 }

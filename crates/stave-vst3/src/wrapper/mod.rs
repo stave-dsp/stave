@@ -19,8 +19,8 @@ use stave_core::state::StateStore;
 use stave_core::wrapper::state::{self as wrapper_state, MAX_STATE_BYTES};
 use stave_core::wrapper::PanicGuard;
 use stave_core::{
-    ranges_alias, AudioBuffer, DebugBus, Event as StaveEvent, EventKind, Plugin, PluginCell,
-    ProcessCtx, SharedState,
+    AudioBuffer, DebugBus, Event as StaveEvent, EventKind, Plugin, PluginCell, ProcessCtx,
+    SharedState,
 };
 
 use crate::buses;

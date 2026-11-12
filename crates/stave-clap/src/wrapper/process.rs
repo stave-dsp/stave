@@ -18,14 +18,22 @@ pub(super) unsafe extern "C" fn plugin_process<P: ClapExport>(
         inst.fault(ProcessFault::MissingProcessData, 1);
         return sys::CLAP_PROCESS_ERROR;
     };
-    inst.guarded(
+    // The realtime guard: a panic here is recorded, and logged from
+    // `on_main_thread`, which this asks the host for.
+    let status = inst.guard.run_realtime(
         "process",
         || {
             process.silence_output();
             sys::CLAP_PROCESS_ERROR
         },
         || process_block(inst, &process),
-    )
+    );
+    if inst.guard.unreported() {
+        if let Some(host) = inst.host {
+            host.request_callback();
+        }
+    }
+    status
 }
 
 fn process_block<P: ClapExport>(
@@ -70,7 +78,8 @@ fn process_block<P: ClapExport>(
     if let Some(events) = process.in_events() {
         (param_count, params_dropped) =
             apply_param_events(&events, inst.param_table.as_ref(), &mut param_buf);
-        param_buf[..param_count].sort_by_key(|change| change.sample_offset);
+        // In place: the standard stable sort may allocate.
+        stave_core::wrapper::sort_param_changes(&mut param_buf[..param_count]);
         let events_dropped;
         (event_count, events_dropped) = translate_input_events(&events, &mut events_buf);
         inst.fault(ProcessFault::EventsDropped, events_dropped);
@@ -101,43 +110,49 @@ fn process_block<P: ClapExport>(
         return sys::CLAP_PROCESS_ERROR;
     };
 
-    // In-place hosts alias input and output; stage input through
-    // preallocated scratch so the AudioBuffer no-alias contract holds.
-    let stage = ranges_alias(input_ptrs, output_ptrs, frames).then_some((input_ptrs, frames));
-    // SAFETY: the host's channel pointers are valid for `frames` (clap.h).
-    let (plugin, gate, staged) = unsafe { proc.split_for_block(stage) };
-    let input_ptrs = staged.unwrap_or(input_ptrs);
-
-    let bypassed = inst.bypass_id.is_some_and(|id| {
-        inst.param_table
-            .by_id(ParamId(id))
-            .is_some_and(|p| p.plain() >= 0.5)
-    });
-    if inst.bypass_id.is_some() {
-        // SAFETY: as above.
-        unsafe { gate.feed(input_ptrs, frames) };
-    }
-
-    // SAFETY: valid for `frames` (clap.h); staging removed any aliasing.
-    let (input, output) = unsafe {
-        (
-            AudioBuffer::from_raw(input_ptrs, frames),
-            AudioBuffer::from_raw(output_ptrs, frames),
-        )
-    };
-
     // Aux inputs: declared aux ports follow the main input in
-    // declaration order. A missing/null port becomes a zero-channel
-    // buffer — the AuxIn contract (plugin fully functional without).
-    const MAX_AUX: usize = 4;
-    let mut aux_bufs = [const { AudioBuffer::empty() }; MAX_AUX];
+    // declaration order. A missing port becomes a zero-channel buffer —
+    // the AuxIn contract (plugin fully functional without).
+    const MAX_AUX: usize = stave_core::wrapper::MAX_AUX_PORTS;
     let n_aux = want.aux_in.len().min(MAX_AUX);
     let main_ports = usize::from(want.in_channels() > 0);
-    for (a, aux) in aux_bufs.iter_mut().enumerate().take(n_aux) {
-        if let Some(ptrs) = process.input(main_ports + a) {
-            // SAFETY: valid for `frames` (clap.h).
-            *aux = unsafe { AudioBuffer::from_raw(ptrs, frames) };
-        }
+    let mut aux_ptrs: [&[*mut f32]; MAX_AUX] = [&[]; MAX_AUX];
+    for (a, ptrs) in aux_ptrs.iter_mut().enumerate().take(n_aux) {
+        *ptrs = process.input(main_ports + a).unwrap_or(&[]);
+    }
+
+    // Channel lists the buffers can take: in-place inputs staged through
+    // preallocated scratch (the AudioBuffer no-alias contract), null
+    // channels replaced by zeroed scratch.
+    // SAFETY: the host's channel pointers are valid for `frames` (clap.h).
+    let block =
+        unsafe { proc.split_for_block(input_ptrs, output_ptrs, &aux_ptrs[..n_aux], frames) };
+    let (plugin, gate, io) = (block.plugin, block.bypass, block.io);
+    if io.truncated {
+        inst.fault(ProcessFault::BlockTruncated, 1);
+    }
+    let run = io.frames;
+
+    // The bypass param from the table's cached index (no scan).
+    let bypass = inst.bypass_id.and_then(|_| inst.param_table.bypass());
+    let bypassed = bypass.is_some_and(|p| p.plain() >= 0.5);
+    if bypass.is_some() {
+        // SAFETY: `split_for_block` lists are valid for `run` frames.
+        unsafe { gate.feed(io.input, run) };
+    }
+
+    // SAFETY: `split_for_block` lists have no nulls, are valid for `run`
+    // frames, and staging removed any input/output aliasing.
+    let (input, output) = unsafe {
+        (
+            AudioBuffer::from_raw(io.input, run),
+            AudioBuffer::from_raw(io.output, run),
+        )
+    };
+    let mut aux_bufs = [const { AudioBuffer::empty() }; MAX_AUX];
+    for (aux, &ptrs) in aux_bufs.iter_mut().zip(&io.aux).take(n_aux) {
+        // SAFETY: as above.
+        *aux = unsafe { AudioBuffer::from_raw(ptrs, run) };
     }
 
     let transport = process.transport().map(|t| Transport {
@@ -151,7 +166,7 @@ fn process_block<P: ClapExport>(
 
     let mut ctx = ProcessCtx {
         sample_rate: inst.shared.sample_rate(),
-        frames,
+        frames: run,
         transport,
         input,
         output,
@@ -161,10 +176,12 @@ fn process_block<P: ClapExport>(
     };
 
     plugin.process(&mut ctx);
-    if inst.bypass_id.is_some() {
-        // SAFETY: the output channels are writable for `frames` (clap.h).
-        unsafe { gate.mix(bypassed, output_ptrs, frames) };
+    if bypass.is_some() {
+        // SAFETY: the output channels are writable for `run` (clap.h).
+        unsafe { gate.mix(bypassed, output_ptrs, run) };
     }
+    // SAFETY: the host's output channels are writable for `frames`.
+    unsafe { stave_core::wrapper::zero_tail(output_ptrs, run, frames) };
     drop(proc);
     // Outbound: pending GUI gestures go to the host this block.
     emit_gestures(&inst.gestures, process.out_events());

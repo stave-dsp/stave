@@ -72,7 +72,9 @@ pub(super) unsafe extern "C" fn ap_process<P: Vst3Export>(
             .record(ProcessFault::MissingProcessData, 1);
         return K_INVALID_ARGUMENT;
     };
-    inst.guarded(
+    // The realtime guard: a panic here is recorded, and logged by the
+    // next (guarded) lifecycle or state call.
+    inst.guard.run_realtime(
         "process",
         || {
             process.silence_output();
@@ -115,7 +117,8 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     if let Some(changes) = process.param_changes() {
         (param_count, params_dropped) =
             events::drain_param_changes(&changes, inst.param_table.as_ref(), &mut param_buf);
-        param_buf[..param_count].sort_by_key(|change| change.sample_offset);
+        // In place: the standard stable sort may allocate.
+        stave_core::wrapper::sort_param_changes(&mut param_buf[..param_count]);
         inst.diagnostics
             .faults
             .record(ProcessFault::ParamChangesDropped, params_dropped);
@@ -179,52 +182,61 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
         return K_INTERNAL_ERROR;
     };
 
-    // In-place hosts (Live, notably) pass input and output pointing at
-    // the same memory — which would violate the AudioBuffer no-alias
-    // contract. Stage the input through preallocated scratch when the
-    // ranges overlap; zero-copy otherwise.
-    let stage = ranges_alias(input_ptrs, output_ptrs, frames).then_some((input_ptrs, frames));
-    // SAFETY: the host's channel pointers are valid for `frames` (SDK).
-    let (plugin, gate, staged) = unsafe { proc.split_for_block(stage) };
-    let input_ptrs = staged.unwrap_or(input_ptrs);
-
-    // Bypass dry capture BEFORE the plugin runs (post-staging, so the
-    // dry path survives in-place processing).
-    let bypassed = inst.bypass_id.is_some_and(|id| {
-        inst.param_table
-            .by_id(stave_core::ParamId(id))
-            .is_some_and(|p| p.plain() >= 0.5)
-    });
-    if inst.bypass_id.is_some() {
-        // SAFETY: as above.
-        unsafe { gate.feed(input_ptrs, frames) };
-    }
-
-    // SAFETY: valid for `frames` (SDK); staging removed any aliasing.
-    let (input, output) = unsafe {
-        (
-            AudioBuffer::from_raw(input_ptrs, frames),
-            AudioBuffer::from_raw(output_ptrs, frames),
-        )
-    };
-
     // Aux inputs: aux buses follow the main input, declaration
     // order. An inactive/absent bus (hosts routinely leave sidechains
     // unconnected) becomes a zero-channel buffer — the AuxIn contract.
-    const MAX_AUX: usize = 4;
-    let mut aux_bufs = [const { AudioBuffer::empty() }; MAX_AUX];
+    const MAX_AUX: usize = stave_core::wrapper::MAX_AUX_PORTS;
     let n_aux = ports.aux_in.len().min(MAX_AUX);
     let main_ins = usize::from(ports.in_channels() > 0);
-    for (a, aux) in aux_bufs.iter_mut().enumerate().take(n_aux) {
-        if let Some(ptrs) = process.input(main_ins + a).filter(|p| !p.is_empty()) {
-            // SAFETY: valid for `frames` (SDK).
-            *aux = unsafe { AudioBuffer::from_raw(ptrs, frames) };
-        }
+    let mut aux_ptrs: [&[*mut f32]; MAX_AUX] = [&[]; MAX_AUX];
+    for (a, ptrs) in aux_ptrs.iter_mut().enumerate().take(n_aux) {
+        *ptrs = process.input(main_ins + a).unwrap_or(&[]);
     }
+
+    // Channel lists the buffers can take. In-place hosts (Live, notably)
+    // pass input and output pointing at the same memory — which would
+    // violate the AudioBuffer no-alias contract — so overlapping inputs
+    // are staged through preallocated scratch; null channels read zeroed
+    // scratch. Zero-copy otherwise.
+    // SAFETY: the host's channel pointers are valid for `frames` (SDK).
+    let block =
+        unsafe { proc.split_for_block(input_ptrs, output_ptrs, &aux_ptrs[..n_aux], frames) };
+    let (plugin, gate, io) = (block.plugin, block.bypass, block.io);
+    if io.truncated {
+        inst.diagnostics
+            .faults
+            .record(ProcessFault::BlockTruncated, 1);
+    }
+    let run = io.frames;
+
+    // Bypass dry capture BEFORE the plugin runs (post-staging, so the
+    // dry path survives in-place processing). The bypass param comes
+    // from the table's cached index (no scan).
+    let bypass = inst.bypass_id.and_then(|_| inst.param_table.bypass());
+    let bypassed = bypass.is_some_and(|p| p.plain() >= 0.5);
+    if bypass.is_some() {
+        // SAFETY: `split_for_block` lists are valid for `run` frames.
+        unsafe { gate.feed(io.input, run) };
+    }
+
+    // SAFETY: `split_for_block` lists have no nulls, are valid for `run`
+    // frames, and staging removed any input/output aliasing.
+    let (input, output) = unsafe {
+        (
+            AudioBuffer::from_raw(io.input, run),
+            AudioBuffer::from_raw(io.output, run),
+        )
+    };
+    let mut aux_bufs = [const { AudioBuffer::empty() }; MAX_AUX];
+    for (aux, &ptrs) in aux_bufs.iter_mut().zip(&io.aux).take(n_aux) {
+        // SAFETY: as above.
+        *aux = unsafe { AudioBuffer::from_raw(ptrs, run) };
+    }
+    let input_ptrs = io.input;
 
     let mut ctx = ProcessCtx {
         sample_rate: inst.shared.sample_rate(),
-        frames,
+        frames: run,
         transport: process.context().map(translate_transport),
         input,
         output,
@@ -236,8 +248,8 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // Generic I/O level metering (read-only) for the editor's frame
     // rails, published as probes below: input pre-process, output
     // post-process.
-    // SAFETY: valid for `frames` (SDK).
-    let input_peaks = unsafe { crate::metrics::peaks(input_ptrs, frames) };
+    // SAFETY: `split_for_block` lists are valid for `run` frames.
+    let input_peaks = unsafe { crate::metrics::peaks(input_ptrs, run) };
 
     let block_id = inst.debug_bus.tick_block();
     // Time strictly the plugin's own work (Instant is a wait-free
@@ -248,10 +260,12 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
         t_process.elapsed().as_secs_f64() / (frames as f64 / f64::from(inst.shared.sample_rate()));
     // Framework bypass: crossfade plugin output with latency-matched
     // dry. One branch when fully active.
-    if inst.bypass_id.is_some() {
-        // SAFETY: the output channels are writable for `frames` (SDK).
-        unsafe { gate.mix(bypassed, output_ptrs, frames) };
+    if bypass.is_some() {
+        // SAFETY: the output channels are writable for `run` (SDK).
+        unsafe { gate.mix(bypassed, output_ptrs, run) };
     }
+    // SAFETY: the host's output channels are writable for `frames` (SDK).
+    unsafe { stave_core::wrapper::zero_tail(output_ptrs, run, frames) };
 
     // SAFETY: valid for `frames` (SDK).
     let output_peaks = unsafe { crate::metrics::peaks(output_ptrs, frames) };

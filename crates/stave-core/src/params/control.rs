@@ -83,12 +83,24 @@ impl ContinuousControl {
             self.id,
             "a control read against another parameter"
         );
+        // The restore protocol (see `FloatParam::restore_plain`): count,
+        // value, count. A count that moved, or an odd (in-progress) count,
+        // means the value read belongs to a restore — snap to it.
+        let first = param.restores();
         let store_target = param.plain();
-        let restores = param.restores();
-        if restores != self.restores {
-            self.restores = restores;
-            self.snap(store_target);
-        }
+        let second = param.restores();
+        self.begin_block_read(params, first, store_target, second)
+    }
+
+    /// [`begin_block`](Self::begin_block) after its three loads.
+    fn begin_block_read<'control, 'block>(
+        &'control mut self,
+        params: ParamBlock<'block>,
+        first: u32,
+        store_target: f64,
+        second: u32,
+    ) -> ContinuousBlock<'control, 'block> {
+        self.observe_restore(first, store_target, second);
         let has_points = params
             .changes()
             .iter()
@@ -108,6 +120,21 @@ impl ContinuousControl {
 
     pub fn current(&self) -> f64 {
         self.current
+    }
+
+    /// One read of the store under the restore protocol: the restore count
+    /// before (`first`) and after (`second`) reading `value`. Any sign of
+    /// a restore — a count other than the last seen, a count that moved
+    /// during the read, or an odd count (the writer is mid-restore) —
+    /// snaps; a value that might belong to a restore is never glided to.
+    /// Remembering `first`, not `second`, keeps an unsettled read
+    /// (moved or odd) a restore for the next block too, which snaps again
+    /// to whatever value the restore left.
+    fn observe_restore(&mut self, first: u32, value: f64, second: u32) {
+        if first != self.restores || second != first || first & 1 == 1 {
+            self.restores = first;
+            self.snap(value);
+        }
     }
 
     fn clamp(&self, value: f64) -> f64 {
@@ -512,6 +539,135 @@ mod tests {
             [0.7, 0.7],
             "no fade-in"
         );
+    }
+
+    #[test]
+    fn a_restore_snaps_through_restore_plain() {
+        let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, 0.0);
+        (&p as &dyn AnyParam).restore_plain(0.7);
+        let mut block = c.begin_block(ParamBlock::empty(), &p);
+        assert_eq!([block.next_f64(), block.next_f64()], [0.7, 0.7]);
+    }
+
+    /// One step of a restore racing a block's read of the store.
+    #[derive(Copy, Clone, Debug)]
+    enum Step {
+        Writer(usize),
+        Reader(usize),
+    }
+
+    /// Every interleaving of `writers` writer steps with `readers` reader
+    /// steps (each side keeps its program order).
+    fn interleavings(writers: usize, readers: usize) -> Vec<Vec<Step>> {
+        if writers == 0 && readers == 0 {
+            return vec![Vec::new()];
+        }
+        let mut out = Vec::new();
+        if writers > 0 {
+            for mut rest in interleavings(writers - 1, readers) {
+                rest.insert(0, Step::Writer(0));
+                out.push(rest);
+            }
+        }
+        if readers > 0 {
+            for mut rest in interleavings(writers, readers - 1) {
+                rest.insert(0, Step::Reader(0));
+                out.push(rest);
+            }
+        }
+        // Number each side's steps in order.
+        for steps in &mut out {
+            let (mut w, mut r) = (0, 0);
+            for step in steps.iter_mut() {
+                match step {
+                    Step::Writer(i) => {
+                        *i = w;
+                        w += 1;
+                    }
+                    Step::Reader(i) => {
+                        *i = r;
+                        r += 1;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// A restore racing the first block's read, every interleaving of
+    /// the writer's three steps (count+1, value, count+1) with the
+    /// reader's three loads (count, value, count): the block and the one
+    /// after it hold the old value or the restored value exactly — never
+    /// a sample of glide between them.
+    #[test]
+    fn a_restore_racing_a_block_never_glides() {
+        const OLD: f64 = 0.0;
+        const NEW: f64 = 0.7;
+        for steps in interleavings(3, 3) {
+            let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, OLD);
+            let start = p.restores();
+            let (mut count, mut value) = (start, OLD);
+            let mut reads = (0u32, 0.0f64, 0u32);
+            for &step in &steps {
+                match step {
+                    Step::Writer(0) | Step::Writer(2) => count += 1,
+                    Step::Writer(_) => value = NEW,
+                    Step::Reader(0) => reads.0 = count,
+                    Step::Reader(1) => reads.1 = value,
+                    Step::Reader(_) => reads.2 = count,
+                }
+            }
+            let first: Vec<f64> = {
+                let mut block = c.begin_block_read(ParamBlock::empty(), reads.0, reads.1, reads.2);
+                (0..64).map(|_| block.next_f64()).collect()
+            };
+            // The writer has finished: the real store holds the restore.
+            (&p as &dyn AnyParam).restore_plain(NEW);
+            assert_eq!(p.restores(), start + 2);
+            let second: Vec<f64> = {
+                let mut block = c.begin_block(ParamBlock::empty(), &p);
+                (0..64).map(|_| block.next_f64()).collect()
+            };
+            assert!(
+                first.iter().all(|&v| v == OLD) || first.iter().all(|&v| v == NEW),
+                "{steps:?}: the racing block glided: {:?}",
+                &first[..4]
+            );
+            assert!(
+                second.iter().all(|&v| v == NEW),
+                "{steps:?}: the block after the restore glided: {:?}",
+                &second[..4]
+            );
+        }
+    }
+
+    /// The model above catches the old protocol: value stored then the
+    /// count bumped once, read value-then-count, glides in one
+    /// interleaving (the reader sees the new value before the bump).
+    #[test]
+    fn the_model_catches_the_old_value_then_count_protocol() {
+        let glided = interleavings(2, 2).into_iter().any(|steps| {
+            let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, 0.0);
+            let seen = p.restores();
+            let (mut count, mut value) = (seen, 0.0);
+            let (mut read_value, mut read_count) = (0.0, 0);
+            for step in steps {
+                match step {
+                    Step::Writer(0) => value = 0.7,
+                    Step::Writer(_) => count += 1,
+                    Step::Reader(0) => read_value = value,
+                    Step::Reader(_) => read_count = count,
+                }
+            }
+            // The old reader: snap only on a moved count.
+            if read_count != seen {
+                c.snap(read_value);
+            }
+            let mut block = c.begin_block_read(ParamBlock::empty(), seen, read_value, seen);
+            let v = block.next_f64();
+            v != 0.0 && v != 0.7
+        });
+        assert!(glided, "the old protocol has a gliding interleaving");
     }
 
     #[test]
