@@ -288,7 +288,7 @@ Status: `[ ]` open · `[x]` done (with the commit).
 - [x] **S14** (01ee9bf) `Ring::delayed` indexes before `prepare` (a `Loop::tick` before prepare panics). Size in `new` or read with a 0 fallback.
 - [x] **S15** (01ee9bf) One NaN locks Svf/Biquad/Loop/Chain feedback until reset. NaN → 0 in `denormal::flush`, and a guard in `Loop`.
 - [x] **S16** (87034fe) Param lookup is a linear scan through `dyn` calls on the audio thread (`types.rs:522`; CLAP bypass every block, VST3 every event). An id → index table built at instance creation; cache the bypass param.
-- [ ] **S17** Leaks: FaceMount view alloc, NSTrackingArea, CFRunLoopTimer never released; the 30 Hz editor timer keeps running with a face attached.
+- [ ] **S17** (the 30 Hz editor timer went with L7 in e2f5294) Leaks: FaceMount view alloc, NSTrackingArea, CFRunLoopTimer never released; the 30 Hz editor timer keeps running with a face attached.
 - [ ] **S18** `text.rs` `CFRetain(NULL)` if NSFont returns nil; font cache unbounded.
 - [x] **S19** (01ee9bf) `stave-host` `RTLD_LOCAL = 0x4` is `RTLD_NOLOAD` on Linux (`plugin/module.rs:104`). Use `libc::RTLD_*`.
 - [x] **S20** (a614e52) `EditorBox` `unsafe impl Send/Sync` is unneeded; stale SAFETY/comments (`capture.rs:24`, `sys.rs:5`).
@@ -301,8 +301,8 @@ Status: `[ ]` open · `[x]` done (with the commit).
 - [ ] **L4** Faces are VST3-only: no CLAP `gui` extension (and verify `note-ports` for instruments). `stave-vst3` hard-depends on the Cocoa crate.
 - [ ] **L5** Two gesture-sink traits (`EditorHost`, `face::Host`) for one concept. One `Controller` in core; wrappers adapt it.
 - [ ] **L6** `stave-debug` is the shipping telemetry transport, with 11 `pub` atomic fields. Rename `stave-telemetry`, make fields private, typed `Tap` handles for shipping, string `probe!` for tooling only.
-- [ ] **L7** The legacy UI layer: delete `stave-core` `editor.rs`/`editor_kit.rs`/`Widget`/`UiNode`/`ui!` editor path, `stave-ui` `tokens.rs`/`scenes/`, the legacy Cocoa widgets, mount/tick/view widget state, `stave-test` `editor.rs`/`raster.rs`, `editor_ui` in the wrappers. First move what survives: `Preset` (to core), `photo` (to face), objc helpers (`sel`/`class`/`msg_*`/`CGRect`, `detach`) out of `widgets/`, `VIEW_WHEN_BIT` users.
-- [ ] **L8** `stave-ui` `Node` still carries CSS-like styling (bg, border, radius) that competes with "parts never mint a colour". Keep layout only.
+- [x] **L7** (e2f5294) The legacy UI layer: delete `stave-core` `editor.rs`/`editor_kit.rs`/`Widget`/`UiNode`/`ui!` editor path, `stave-ui` `tokens.rs`/`scenes/`, the legacy Cocoa widgets, mount/tick/view widget state, `stave-test` `editor.rs`/`raster.rs`, `editor_ui` in the wrappers. First move what survives: `Preset` (to core), `photo` (to face), objc helpers (`sel`/`class`/`msg_*`/`CGRect`, `detach`) out of `widgets/`, `VIEW_WHEN_BIT` users.
+- [x] **L8** (e2f5294) `stave-ui` `Node` still carries CSS-like styling (bg, border, radius) that competes with "parts never mint a colour". Keep layout only.
 - [ ] **L9** `stave-host`: the CLI parser and usage text belong in `tools/stave-bench`; `loaded.rs` depends on `bench::describe`; `modules.rs` mixes a 900-line catalog with `ModuleInstance`. `stave-measure` claims pure functions but has `wav.rs` file I/O (move to host).
 - [ ] **L10** An umbrella `stave` crate with the prelude and `stave::export!` (VST3 + CLAP from one line, CIDs derived stably from `Info::id`).
 
@@ -316,7 +316,7 @@ Status: `[ ]` open · `[x]` done (with the commit).
 - [ ] **A6** The engine ↔ face channel is a string: engines `Tap::new("spin")`, faces `.probes(&["spin"])`, a typo reads 0. `#[derive(Taps)]` table referenced by both; telemetry handed to `Plugin::new`.
 - [ ] **A7** `AudioBuffer`: input exposed mutably; no way to borrow two channels mutably (why `Lanes` re-derives raw pointers). `InputBuffer`/`OutputBuffer`, `channels_mut()`.
 - [ ] **A8** History in code comments ("user-specced", "Step 1.3", "chime consumer … fifth instrument lock", "forge's boot()", milestone tags) and cargo-culted `extern crate alloc` in std crates. Remove.
-- [ ] **A9** `ui!` fails silently (bad `cols` → 1, bad `kind` → Rect, dropped attrs). Becomes moot with L7 for editors; any surviving macro emits `compile_error!`.
+- [x] **A9** (e2f5294: `ui!` deleted) `ui!` fails silently (bad `cols` → 1, bad `kind` → Rect, dropped attrs). Becomes moot with L7 for editors; any surviving macro emits `compile_error!`.
 - [ ] **A10** Tilt clones the params `Arc` every block and hand-wires lanes, ramps and coefficients. Tilt is rewritten to the target shape as the acceptance test.
 
 ### D — DSP vocabulary
