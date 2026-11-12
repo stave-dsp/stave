@@ -141,7 +141,7 @@ pub struct Footswitch {
     /// Held, not latched: 1 while pressed, 0 on release.
     pub momentary: bool,
     /// The lamp's colour (the theme's lamp when None).
-    pub color: Option<stave_ui::photo::Rgb>,
+    pub color: Option<crate::photo::Rgb>,
 }
 
 impl Footswitch {
@@ -176,7 +176,7 @@ impl Footswitch {
         self
     }
     /// The lamp's colour (linear RGB; may exceed 1 for a hot core).
-    pub fn color(mut self, c: stave_ui::photo::Rgb) -> Self {
+    pub fn color(mut self, c: crate::photo::Rgb) -> Self {
         self.color = Some(c);
         self
     }
@@ -252,7 +252,7 @@ pub fn lamp(f: &Frame<'_>, s: &mut Scene, c: Pt) {
 }
 
 /// Draw a lit LED of colour `col` (linear RGB) at `c`.
-pub fn lamp_in(f: &Frame<'_>, s: &mut Scene, c: Pt, col: stave_ui::photo::Rgb) {
+pub fn lamp_in(f: &Frame<'_>, s: &mut Scene, c: Pt, col: crate::photo::Rgb) {
     let key = sprite_key(("lamp", col.map(f64::to_bits)));
     f.sprite(s, c, 44.0, key, |scale| {
         material::sprite(44.0, scale, |dx, dy| material::lamp_glow(dx, dy, col, 4.2, scale))
@@ -278,7 +278,7 @@ pub struct Lamp {
     /// A faceted jewel pilot lamp (amps) instead of an LED.
     pub jewel: bool,
     /// The lamp's colour (the theme's lamp when None).
-    pub color: Option<stave_ui::photo::Rgb>,
+    pub color: Option<crate::photo::Rgb>,
 }
 
 const JEWEL_R: f64 = 10.0;
@@ -305,7 +305,7 @@ impl Lamp {
         self
     }
     /// The lamp's colour (linear RGB; may exceed 1 for a hot core).
-    pub fn color(mut self, c: stave_ui::photo::Rgb) -> Self {
+    pub fn color(mut self, c: crate::photo::Rgb) -> Self {
         self.color = Some(c);
         self
     }

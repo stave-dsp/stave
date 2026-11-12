@@ -1,34 +1,17 @@
 #!/usr/bin/env bash
-# The F11 grep bar: no CONTROL-name binding in view/framework code.
-# Allowed name-keyed surfaces (their names ARE the API):
-#   - probes (find_probe / probes[i].name_str)
-#   - DebugBus preset pairs (project-declared, resolved from typed ids)
-#   - binding.rs's index-identity debug_assert
-# Everything else binds by ParamId through the owned tree.
+# Binding and layering bars: engines publish through declared taps,
+# and stave-dsp's layers point down.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 fail=0
-# 1) find_control: only its definition (mapping.rs) and the preset
-#    apply path (tick.rs) may reference it.
-hits=$(grep -rn "find_control" crates/stave-ui-cocoa/src crates/stave-vst3/src --include="*.rs" \
-  | grep -v "mapping.rs" | grep -v "tick.rs" || true)
-if [[ -n "$hits" ]]; then
-  echo "F11 VIOLATION: control-name lookup outside allowed files:"; echo "$hits"; fail=1
-fi
-# 2) controls[..].name_str() comparisons anywhere in framework view code
-hits=$(grep -rn "controls\[[a-z]*\]\.name_str() ==" crates/stave-ui-cocoa/src crates/stave-vst3/src --include="*.rs" \
-  | grep -v "binding.rs" | grep -v "mapping.rs" || true)
-if [[ -n "$hits" ]]; then
-  echo "F11 VIOLATION: control-name comparison in framework code:"; echo "$hits"; fail=1
-fi
-# 3) G6 grep bar: engines publish observations ONLY through declared
+# 1) G6 grep bar: engines publish observations ONLY through declared
 #    Tap handles — no name-string publishing at engine call sites.
 hits=$(grep -rn "probe!\|probe_f64\|probe_named" examples/*/src --include="*.rs" || true)
 if [[ -n "$hits" ]]; then
   echo "G6 VIOLATION: name-keyed tap publishing in an engine (declare a Tap):"; echo "$hits"; fail=1
 fi
-# 4) stave-dsp layering (docs/architecture.md): each layer may use only
+# 2) stave-dsp layering (docs/architecture.md): each layer may use only
 #    the layers listed before it. A missing layer directory is a renamed
 #    layer — fail loudly rather than silently checking nothing.
 DSP=crates/stave-dsp/src

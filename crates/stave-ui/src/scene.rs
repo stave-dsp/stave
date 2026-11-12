@@ -1,5 +1,5 @@
-//! The Scene IR: ONE vector vocabulary under every visual. Widgets are pure
-//! `state → Scene` functions; renderers (stave-ui-cocoa) consume scenes; and because a scene is plain
+//! The Scene IR: ONE vector vocabulary under every visual. Parts paint
+//! scenes; renderers (stave-raster) consume them; and because a scene is plain
 //! data, VISUAL INVARIANTS become derived tests — "the attack knob moves
 //! the envelope path's first control point" asserts on ops, no
 //! screenshot needed.
@@ -11,7 +11,7 @@
 //! scene is in the widget's own coordinate space, and the arc
 //! convention deliberately matches CoreGraphics' `CGContextAddArc`
 //! (angles in radians, `cw` flag as CG means it in a y-up context)
-//! so the first renderer is a 1:1 mapping.
+//! so a CoreGraphics renderer is a 1:1 mapping.
 
 extern crate alloc;
 use alloc::string::String;
@@ -308,51 +308,3 @@ impl Scene {
         });
     }
 }
-
-/// What a scene-widget's BUILD function receives each paint
-/// the declared bindings' live values, the
-/// widget rect, and the THEME PALETTE — projects draw with roles,
-/// never minted colors, so theming survives bespoke pictures.
-pub struct SceneInputs<'a> {
-    /// Plain values of the declared params, in declaration order.
-    pub params: &'a [f64],
-    /// Declared (min, max) of each param — drag maps clamp against
-    /// the DECLARATION, never a restated range.
-    pub ranges: &'a [(f64, f64)],
-    /// Latest values of the declared probes, in order.
-    pub probes: &'a [f64],
-    pub w: f64,
-    pub h: f64,
-    pub palette: ScenePalette,
-}
-
-/// The theme roles a picture may use, resolved by the host.
-#[derive(Copy, Clone, Debug)]
-pub struct ScenePalette {
-    pub accent: Color,
-    pub ink_hi: Color,
-    pub ink_muted: Color,
-    pub axis: Color,
-    pub bg: Color,
-}
-
-/// A project (or kit) picture: pure inputs → Scene. A plain fn
-/// pointer ON PURPOSE — no captured state, so the picture stays a
-/// function of its DECLARED bindings and nothing else.
-pub type SceneBuild = fn(&SceneInputs<'_>) -> Scene;
-
-/// A scene widget's OPTIONAL interaction, as pure as its picture
-/// given the inputs AT GRAB (params snapshotted at mouseDown
-/// — no accumulation drift), the grab point, and the current point
-/// (both in the scene's own y-down space), return which declared
-/// param moves and its new PLAIN value — or None if the grab
-/// touched nothing draggable. The host owns the gesture bracketing
-/// (begin/perform/end) and the write path; the map owns the
-/// geometry. One drag moves ONE param: the grab decides which.
-pub type SceneDrag = fn(&SceneInputs<'_>, Pt, Pt) -> Option<(usize, f64)>;
-
-/// The two-param form of [`SceneDrag`]: one grab moves a PAIR of
-/// declared params together (an XY handle — a node on a plane). Same
-/// purity and snapshot rules; the grab point decides both targets.
-/// Return the same index twice to move just one.
-pub type SceneDragPair = fn(&SceneInputs<'_>, Pt, Pt) -> Option<[(usize, f64); 2]>;

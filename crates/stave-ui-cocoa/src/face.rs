@@ -2,7 +2,7 @@
 //! the face. It renders the face runtime's canvas, forwards the pointer
 //! (down, drag, up, wheel, hover, exit) with its modifiers and click
 //! count, sets the cursor the runtime asks for, and repaints from the
-//! editor's 30 Hz tick only when the runtime says something changed.
+//! view's own timer only when the runtime says something changed.
 //!
 //! Parameters flow through [`Bridge`]: reads from the plugin's typed
 //! table, edits through the host's gesture path (so the DAW records and
@@ -201,7 +201,7 @@ fn parts(editor: &mut PluginEditorView) -> Option<(&mut FaceEditor, Bridge<'_>)>
 }
 
 impl PluginEditorView {
-    /// Use `face` as this editor (instead of the declared `ui!` tree).
+    /// Use `face` as this editor.
     pub fn set_face(&mut self, face: Option<Face>) {
         self.face = face.map(|f| {
             let runtime = Runtime::new(f);
@@ -213,7 +213,7 @@ impl PluginEditorView {
             }
             let mut probes = HashMap::new();
             for name in runtime.probes() {
-                if let Some(pi) = crate::mapping::find_or_reserve_probe(&self.bus, name) {
+                if let Some(pi) = find_or_reserve_probe(&self.bus, name) {
                     probes.insert(name, pi);
                 }
             }
@@ -270,9 +270,25 @@ impl PluginEditorView {
             face.mount = None;
         }
     }
+}
 
-    /// The editor's own tick has nothing to do: the mount ticks itself.
-    pub(crate) fn face_tick(&mut self) {}
+/// Find a probe by name, RESERVING its slot (at 0.0) if the engine has
+/// not published it yet — for displays that must draw before the first
+/// audio block (a face opened on a stopped transport). The engine later
+/// writes the same slot by name. None only if the bus is full.
+fn find_or_reserve_probe(bus: &Arc<DebugBus>, name: &'static str) -> Option<usize> {
+    if let Some(i) = find_probe(bus, name) {
+        return Some(i);
+    }
+    bus.probe_f64(&core::sync::atomic::AtomicU16::new(u16::MAX), name, 0.0);
+    find_probe(bus, name)
+}
+
+fn find_probe(bus: &Arc<DebugBus>, name: &str) -> Option<usize> {
+    let used = bus.probes_used.load(Ordering::Acquire) as usize;
+    bus.probes[..used.min(stave_core::debug::MAX_PROBES)]
+        .iter()
+        .position(|p| p.name_str() == name)
 }
 
 /// A face view mounted in a parent NSView, repainting itself at up to

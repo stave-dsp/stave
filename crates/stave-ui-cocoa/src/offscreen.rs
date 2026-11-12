@@ -1,19 +1,12 @@
-//! Offscreen rendering of a Scene into RGBA pixels, two ways:
-//!
-//! * [`render_cg`] — the CoreGraphics reference (the renderer the views
-//!   have used): a bitmap context, the scene flipped into its y-up space.
-//! * [`render_raster`] — the portable `stave-raster` software renderer,
-//!   with CoreText painting the text straight into the same buffer
-//!   ([`CoreText`], the macOS `TextPainter`).
-//!
-//! Both return premultiplied RGBA8, row 0 at the top — so a test can
-//! compare every pixel of every face, and the view can show the raster
-//! buffer as one image.
+//! Rendering a Scene into RGBA pixels with the portable `stave-raster`
+//! software renderer, CoreText painting the text straight into the same
+//! buffer ([`CoreText`], the macOS `TextPainter`), and showing the
+//! result in a view ([`draw_canvas`]). Pixels are premultiplied RGBA8,
+//! row 0 at the top.
 
 use core::ffi::c_void;
 
 extern crate alloc;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use stave_raster::{Canvas, TextPainter};
@@ -75,24 +68,6 @@ unsafe fn bitmap_context(px: &mut [u8], w: usize, h: usize) -> *mut c_void {
         CGColorSpaceRelease(cs);
         ctx
     }
-}
-
-/// The CoreGraphics reference: `scene` (points, y-down), `w × h` points
-/// at `scale` px per point.
-pub fn render_cg(scene: &Scene, w: f64, h: f64, scale: f64) -> Vec<u8> {
-    let (pw, ph) = ((w * scale).round() as usize, (h * scale).round() as usize);
-    let mut px = vec![0u8; pw * ph * 4];
-    unsafe {
-        let ctx = bitmap_context(&mut px, pw, ph);
-        if ctx.is_null() {
-            return px;
-        }
-        CGContextScaleCTM(ctx, scale, scale);
-        let flipped = crate::widgets::scene_widget::flip_y(scene.clone(), h);
-        crate::widgets::scene_render::render(ctx, &flipped);
-        CGContextRelease(ctx);
-    }
-    px
 }
 
 /// macOS text for the software renderer: CoreText, drawn straight into

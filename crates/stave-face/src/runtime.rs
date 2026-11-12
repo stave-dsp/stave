@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use stave_raster::{Canvas, TextPainter};
 use stave_ui::layout::Rect;
 use stave_ui::scene::{Pt, Scene};
-use stave_ui::{FixedMetrics, Kind, Layout};
+use stave_ui::{Kind, Layout};
 
 use crate::material::Shadows;
 use crate::part::{step_of, step_value, Bake, Bind, Control, FaceNode, Focus, Frame, Gesture, Host, Part, Sprites};
@@ -117,10 +117,9 @@ impl Runtime {
         // A face is as big as its content: measure with no space to
         // spare (fills and spacers take nothing), then lay out at that
         // size so they share whatever the widest row left over.
-        let m = FixedMetrics::default();
-        let natural = stave_ui::solve(&face.root, (0.0, 0.0), &m).rect;
+        let natural = stave_ui::solve(&face.root, (0.0, 0.0)).rect;
         let size = (natural.w.ceil(), natural.h.ceil());
-        let layout = stave_ui::solve(&face.root, size, &m);
+        let layout = stave_ui::solve(&face.root, size);
         let mut items = Vec::new();
         flatten(&face.root, &layout, &[], &mut items);
         let mut ctls = Vec::new();

@@ -577,9 +577,8 @@ pub trait Params: Send + Sync {
         let n = self.count();
         for i in 0..n {
             let a = self.by_index(i).ok_or(ParamTableError::Hole { index: i })?;
-            // The top bit is the VIEW key namespace (editor-local
-            // page state, crate::editor::VIEW_WHEN_BIT) — a param id
-            // there would collide with view bindings.
+            // The top bit is reserved for the framework; ids there
+            // are refused so the range stays free.
             if a.meta().id.0 >= 0x8000_0000 || a.meta().id == ParamId::PROGRAM {
                 return Err(ParamTableError::ReservedId {
                     id: a.meta().id,

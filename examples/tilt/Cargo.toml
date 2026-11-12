@@ -13,7 +13,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 stave-core.workspace = true
-stave-ui.workspace = true
 stave-vst3.workspace = true
 stave-clap.workspace = true
 stave-dsp.workspace = true

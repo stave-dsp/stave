@@ -28,10 +28,6 @@ impl EditorBinding {
             .by_index(ci)
             .expect("control indices come from the table")
     }
-
-    pub(crate) fn plain(&self, ci: usize) -> f64 {
-        self.param(ci).plain()
-    }
 }
 
 impl super::view::PluginEditorView {
@@ -43,24 +39,13 @@ impl super::view::PluginEditorView {
         self.binding.param(ci)
     }
 
-    pub(crate) fn plain(&self, ci: usize) -> f64 {
-        self.binding.plain(ci)
-    }
-
-    /// Plain values at the ends of the param's range.
-    pub(crate) fn param_range(&self, ci: usize) -> (f64, f64) {
-        let p = self.param(ci);
-        (p.normalized_to_plain(0.0), p.normalized_to_plain(1.0))
-    }
-
     pub(crate) fn param_index_of(&self, id: ParamId) -> Option<usize> {
         (0..self.param_count()).find(|&i| self.param(i).meta().id == id)
     }
 
     /// Editor-originated value change, through the host's gesture path.
-    /// `bracket` wraps it in begin/end for one-shot controls (toggles,
-    /// dropdowns, preset applies); drags bracket at mouseDown/mouseUp
-    /// via begin_control/end_control instead.
+    /// `bracket` wraps it in begin/end for a one-shot change; a drag
+    /// brackets with begin_control/end_control instead.
     pub fn write_control_plain(&self, ci: usize, plain: f64, bracket: bool) {
         let id = self.param(ci).meta().id.0;
         let host = &self.binding.host;

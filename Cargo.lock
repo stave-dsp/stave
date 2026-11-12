@@ -2991,7 +2991,6 @@ dependencies = [
  "stave-dsp",
  "stave-face",
  "stave-macros",
- "stave-ui",
 ]
 
 [[package]]
@@ -3098,9 +3097,6 @@ dependencies = [
  "stave-dsp",
  "stave-host",
  "stave-measure",
- "stave-raster",
- "stave-ui",
- "stave-ui-cocoa",
 ]
 
 [[package]]
@@ -3113,16 +3109,12 @@ dependencies = [
  "stave-dsp",
  "stave-host",
  "stave-test",
- "stave-ui",
  "stave-vst3",
 ]
 
 [[package]]
 name = "stave-ui"
 version = "0.2.0"
-dependencies = [
- "stave-macros",
-]
 
 [[package]]
 name = "stave-ui-cocoa"
@@ -3140,7 +3132,6 @@ version = "0.2.0"
 dependencies = [
  "stave-core",
  "stave-measure",
- "stave-ui",
  "stave-ui-cocoa",
 ]
 

@@ -34,7 +34,7 @@ plugins/<name>/
                         #   top-to-bottom then clicking down IS the
                         #   walk; declarations only, < 100 lines
     params.rs           # THE identity table (ids are forever)
-    editor.rs           # UiNode tree, pure fn of params
+    editor.rs           # the face, pure fn of params
     presets.rs          # factory presets, pure fn of params
     engine.rs           # small engines: one file
     engine/             # big engines: a directory of COMPONENTS,
@@ -94,8 +94,7 @@ can hold them, and get pushed UP when a stronger one opens:
    exactly what Rust cannot express: comment content, file
    organization, the choice between two type-identical APIs. Fails
    on distributed `impl Engine` blocks, milestone tags in project
-   comments, `plain() as f32` reads, and builder-style editors
-   (the laggard allowlist may only shrink). A large single-file
+   comments, and `plain() as f32` reads. A large single-file
    engine is a printed SIGNAL, never a failure — line count is a
    proxy, and the split decision is human.
 Every gate check exists because its violation actually happened; a
@@ -138,31 +137,26 @@ what's over threshold; you decide on concept seams.
 
 - `lib.rs`: the `Spec` impl — `DESCRIPTOR`, explicit `CONFIGS` (the
   negotiation SET, preference order; state it even when it's the
-  default), `params()`, `editor()`, `presets()` — plus the two export
+  default), `params()`, `face()`, `presets()` — plus the two export
   macros. Nothing else.
 - `params.rs`: every param with a stable id. **Ids are forever** —
   never reuse, never renumber (docs/architecture.md). Declared
   smoothing (`with_smooth`) for audio-rate gain paths; engine-owned
   motion only when the glide IS the instrument (document which).
-  Selector labels live here — the editor and the host read the same
+  Selector labels live here — the face and the host read the same
   declaration.
-- `editor.rs`: the whole tree as **`ui!` markup** — the JSX-shaped
-  macro is THE editor style (forge, smear, eddy and multiband are the
-  examples).
-  Composed against typed params; the colocated editor bindings pin that
-  the tree resolves and that widgets agree with declared endpoints.
-  Tabbed views are declared, never hand-wired: a `Tabs` bar over a
-  stepped param + pages marked `show_when={(&p.algo, i)}` stacked in
-  one rect (eddy's ALGORITHM section is the example). Pages follow
-  the BUS value, so host automation turns them like a click; the
-  editor bindings fail any page whose param doesn't resolve. A probe's
-  recent history (echo tails, envelopes) is the `History` widget —
-  the engine publishes one number per block, the UI owns the ring.
-  **A bespoke display starts IN YOUR PROJECT** via the open scene
-  kind (`SceneDisplay { params, probes, build }` — a pure picture
-  fn over your declared bindings and the theme palette; opal's
-  algorithm diagram is the worked example). The kit is for
-  second-consumer graduates; promotion happens later, never first.
+- `editor.rs`: the **face** — a pure function of params returning a
+  `Face` (`use stave_core::face::prelude::*`). Parts (`Knob`,
+  `Footswitch`, `Toggle`, `Selector`, `Lamp`, displays, `Title`) bind
+  to params with `p.x.bind()`; `row`/`column`/`stack` lay them out;
+  `Plate`s group them and a `Panel` is the enclosure. The `Theme` is
+  the whole look — parts never mint a colour, a font or a coordinate.
+  `examples/tilt/src/editor.rs` is the worked example and
+  `tools/storybook` shows every part on every theme. Paged views are
+  declared: a `Pager` part plus `pages(key, …)` overlays the pages in
+  one rect. A bespoke display starts IN YOUR PROJECT as your own
+  `Part` that paints a `Scene` from the values its `Frame` reads; the
+  catalogue is for second-consumer graduates.
 
 ## The engine half
 
@@ -204,7 +198,7 @@ Every project ships `tests/` with at least:
   it is *right*. The cautionary tale is tilt (`examples/tilt/
   tests/properties.rs`): its first build shipped with the tilt knob
   BACKWARDS — brighter darkened — past validation, the no-alloc
-  check, the editor bindings, and both industry validators, because no
+  check, the face bindings, and both industry validators, because no
   generic check can know which way a knob should point. A
   30-second `stave-bench` sine measurement caught it; the sign property
   now makes it unshippable. Measure first, then code to the
@@ -216,15 +210,15 @@ Every project ships `tests/` with at least:
   stave_host::entry_points!(your_crate))`: stave-host's validation
   suite through your VST3 exports. Passing it is the price of
   admission to a plugin suite.
-- `editor.rs` — `stave_test::editor`: the tree resolves against
-  the table; widgets agree with declared endpoints. Add your own
-  chrome/order records (they are the archive of what the names said).
+- `editor.rs` — `stave_test::face::binds_resolve::<YourPlugin>(name)`:
+  every bind resolves against the table, and stepped gestures bind
+  stepped params, continuous ones continuous params.
 - `no_alloc.rs` — `stave_test::no_alloc` with YOUR wiggle list:
   sweep the params that rebuild tables and switch structure, not
   just the easy trims. The test binary installs `AllocDisabler`.
 
 Shared machinery lives in the `stave-test` LIB (harness, validation,
-editor bindings, no-alloc check); `crates/stave-test/tests/` holds the
+face bindings, no-alloc check); `crates/stave-test/tests/` holds the
 framework-level checks and the kernel/primitive conformance suites — they
 test the vocabulary, not you.
 

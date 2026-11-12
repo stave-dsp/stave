@@ -24,7 +24,6 @@ pub mod wrapper;
 pub use stave_core;
 /// The macOS editor host (view layer moved out — ABI-agnostic).
 pub use stave_ui_cocoa as cocoa_view;
-pub use stave_ui_cocoa::theme;
 
 /// Exports a type implementing `stave_core::Plugin` as a VST3 plugin.
 ///

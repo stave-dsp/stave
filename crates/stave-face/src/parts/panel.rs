@@ -6,7 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use stave_ui::layout::Rect;
-use stave_ui::photo::{mix, mul, smoothstep, Rgb};
+use crate::photo::{mix, mul, smoothstep, Rgb};
 use stave_ui::{Dim, Edges};
 
 use crate::material::{self, cov, RRect};
@@ -364,7 +364,7 @@ impl PanelPart {
                     return ([0.0; 3], 0.0);
                 }
                 let n = plate.bevel(x, y, 3.0);
-                (stave_ui::photo::chrome(n, metal), cov(d, scale))
+                (crate::photo::chrome(n, metal), cov(d, scale))
             });
             cx.image(bx0, by0, w, h, img);
             let mut font = ty.title;
@@ -384,7 +384,7 @@ impl PanelPart {
 
 /// The outward direction of a rounded rectangle's edge near (x, y).
 fn grad(r: &RRect, x: f64, y: f64) -> (f64, f64) {
-    stave_ui::photo::grad_rrect(x, y, r.cx, r.cy, r.hw, r.hh, r.r)
+    crate::photo::grad_rrect(x, y, r.cx, r.cy, r.hw, r.hh, r.r)
 }
 
 /// A recessed plate grouping controls, optionally titled.
@@ -424,7 +424,7 @@ impl Part for PlatePart {
                 return ([0.0; 3], 0.0);
             }
             // The floor, shaded by the lip along its top-left edge.
-            let floor = material::surface(finish, base, x, y, stave_ui::photo::v3(0.0, 0.0, 1.0));
+            let floor = material::surface(finish, base, x, y, crate::photo::v3(0.0, 0.0, 1.0));
             let inner = 1.0 - 0.5 * (1.0 - smoothstep(0.0, 7.0, -plate.shifted(2.5, 3.5).sd(x, y)));
             let mut c = mul(floor, inner * shadows.light(x, y));
             // The lip: a thin chamfer catching the light on the far edge.

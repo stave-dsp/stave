@@ -142,9 +142,7 @@ pub struct Instance<P: Vst3Export> {
     pub(crate) programs: crate::programs::Programs,
     /// Parameter groups as VST3 units (folders).
     pub(crate) units: crate::units::Units,
-    /// The project-OWNED editor tree; None = bare dev container.
-    pub editor_ui: Option<stave_core::UiNode>,
-    /// The project's design-system face, preferred over `editor_ui`.
+    /// The project's design-system face; None = no editor view.
     pub editor_face: Option<stave_core::face::Face>,
     /// Unknown-content retention across state load→save cycles
     /// Mutex: state calls are non-realtime

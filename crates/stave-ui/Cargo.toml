@@ -5,14 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Stave's OS-agnostic view layer: box model, flexbox layout, style and typography types."
+description = "Stave's OS-agnostic look layer: the layout tree, its flexbox solver, and the Scene IR."
 
-# ZERO dependencies by design: this crate is the OS-agnostic view
-# layer — box model, flexbox solver, style/typography types. Platform
-# backends (macOS Cocoa today; Windows/Linux later) live elsewhere and
-# plug in through the MeasureText + host traits.
+# ZERO dependencies by design: layout and the Scene IR are pure data;
+# renderers and platforms live elsewhere.
 [dependencies]
-stave-macros.workspace = true
 
 [lints]
 workspace = true

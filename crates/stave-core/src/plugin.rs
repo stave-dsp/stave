@@ -190,24 +190,15 @@ pub trait Plugin: Send + 'static {
         Arc::new(crate::params::NoParams)
     }
 
-    /// The OWNED editor content tree: the project composes
-    /// its whole UI as a `UiNode` (via `editor_kit` sugar or raw
-    /// boxes); the framework solves and mounts it verbatim.
-    fn editor_ui(&self) -> Option<crate::editor::UiNode> {
-        None
-    }
-
-    /// The editor as a design-system face, if the plugin declares one;
-    /// hosts prefer it over `editor_ui`.
+    /// The editor as a design-system face, if the plugin declares one.
     fn editor_face(&self) -> Option<stave_face::Face> {
         None
     }
 
-    /// Factory presets, declared against typed params in the
-    /// project's `presets.rs` (see `editor_kit::preset`). The
-    /// framework publishes them wherever presets surface (editor
-    /// preset bar today; host preset APIs later).
-    fn presets(&self) -> alloc::vec::Vec<crate::editor::Preset> {
+    /// Factory presets, declared against typed params. The wrappers
+    /// publish them as the host's program list; a face's `Presets`
+    /// part steps through them.
+    fn presets(&self) -> alloc::vec::Vec<crate::preset::Preset> {
         alloc::vec::Vec::new()
     }
 

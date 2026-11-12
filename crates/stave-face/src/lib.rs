@@ -2,13 +2,14 @@
 //!
 //! A plugin's editor is a **face**: a physically lit instrument panel
 //! composed from **parts** (knobs, toggles, footswitches, lamps,
-//! displays, plates, print) and laid out with `ui!` rows and columns. A
+//! displays, plates, print) and laid out in rows, columns and stacks. A
 //! [`Theme`] says what everything looks like; parts never mint a colour,
 //! a font or a coordinate.
 //!
 //! ```text
 //! theme.rs     the look as data: finish, palette, knob family, type, spacing
 //! material.rs  lit surfaces and hardware (one studio light), parallel bakes
+//! photo.rs     the studio: vectors, light, materials, grain, distances, bakers
 //! part.rs      the Part contract: bake (static) / paint (live) / controls
 //! parts/       the catalogue
 //! screens.rs   pictures for displays: graticule, scope, spectrum, curve, envelope
@@ -22,6 +23,7 @@
 
 pub mod material;
 pub mod part;
+pub mod photo;
 pub mod parts;
 pub mod runtime;
 pub mod screens;
@@ -39,5 +41,5 @@ pub mod prelude {
     pub use stave_ui::layout::Rect;
     pub use stave_ui::scene::{pt, Path, Scene, Stroke};
     pub use stave_ui::style::Color;
-    pub use stave_ui::{column, row, spacer, stack, ui, Align, Dim, Justify};
+    pub use stave_ui::{column, row, spacer, stack, Align, Dim, Justify};
 }

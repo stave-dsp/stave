@@ -36,8 +36,15 @@ dB; the engine converts once per sample or block.
 ## The two halves of a plugin
 
 **Declarations** — pure data: who you are, the knob table, the
-editor tree, the presets, the port set. No behavior. (≈ a
+face, the presets, the port set. No behavior. (≈ a
 component's props/schema.)
+
+**Face** — the plugin's editor: a pure function of params returning
+a layout tree (`row`/`column`/`stack`) of **Parts** — knobs, switches,
+lamps, displays, print — grouped on **Plates** inside a **Panel** (the
+enclosure), all drawn on a **Theme**, the whole look as data. Parts
+never mint a colour or a font; they ask the theme. (≈ a component
+tree on a design system's tokens.)
 
 **Engine (Processor)** — the realtime half. `process(ctx)` runs per
 block on the audio thread. (≈ the reducer: state + input block →
@@ -128,8 +135,8 @@ channels, sampled by the UI, never strings.)
 **Telemetry** — the engine component that owns taps + capture +
 publish. The other end of the framework's `attach_telemetry` seam.
 
-**Scope** — the framework's capture scratch for the editor's
-oscilloscope-style views, plus the CPU load meter.
+**Scope** — the framework's capture scratch for a face's
+oscilloscope-style displays, plus the CPU load meter.
 
 ## The realtime rules (why the tests look like that)
 
@@ -192,7 +199,7 @@ TypeScript interface, implemented explicitly, never inherited).
 | not re-exported from the barrel | `pub(super)` (visible to the parent module only) |
 | component props/schema | the declarations half |
 | reducer | the engine |
-| JSX | `chain!` topology / `ui!` editor markup |
+| JSX | `chain!` topology / a face's `row`/`column` tree |
 | CSS transition | declared param smoothing |
 | dependency array | `Watch` (value snapshots, never gated) |
 | controlled component | displace-from-base |

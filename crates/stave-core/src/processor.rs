@@ -8,7 +8,7 @@
 //!  - `Processor` is REALTIME-ONLY: construct from the typed params,
 //!    activate at a rate, process blocks. Nothing about descriptors,
 //!    editors, or state formats.
-//!  - The editor is a PURE FUNCTION of params (`Spec::editor`) — no
+//!  - The editor is a PURE FUNCTION of params (`Spec::face`) — no
 //!    JUCE-style mutable pointer from the editor back into the
 //!    processor; gestures flow through the framework.
 //!  - `Spec` carries the declarations (descriptor, editor, presets,
@@ -24,10 +24,10 @@ use alloc::vec::Vec;
 
 use stave_debug::DebugBus;
 
-use crate::editor::{Preset, UiNode};
 use crate::environment::Environment;
 use crate::params::{IndexedParams, Params};
 use crate::plugin::{Plugin, PluginDescriptor, PortConfig, Tail};
+use crate::preset::Preset;
 use crate::process::ProcessCtx;
 use crate::state::Migrations;
 
@@ -82,12 +82,7 @@ pub trait Spec: Processor {
     /// Construct the param table (identity lives in params.rs).
     fn params() -> Arc<Self::Params>;
 
-    /// The owned editor tree — a pure function of params.
-    fn editor(_params: &Self::Params) -> Option<UiNode> {
-        None
-    }
-    /// The editor as a design-system face (preferred over `editor`
-    /// when both are given) — a pure function of params.
+    /// The editor as a design-system face — a pure function of params.
     fn face(_params: &Self::Params) -> Option<stave_face::Face> {
         None
     }
@@ -142,9 +137,6 @@ impl<E: Spec> Plugin for StavePlugin<E> {
 
     fn param_table(&self) -> Arc<dyn Params> {
         self.table.clone()
-    }
-    fn editor_ui(&self) -> Option<UiNode> {
-        E::editor(&self.params)
     }
     fn editor_face(&self) -> Option<stave_face::Face> {
         E::face(&self.params)

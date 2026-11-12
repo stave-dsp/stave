@@ -10,16 +10,17 @@ History lives in git; product design lives with each plugin (`plugins/<name>/doc
 ```
 stave-macros ─┐
 stave-debug ──┼─ stave-core ─┬─ stave-vst3 ─┐
-stave-ui ─────┘              ├─ stave-clap ─┼─ examples/tilt, stave-plugins
+stave-face ───┘              ├─ stave-clap ─┼─ examples/tilt, stave-plugins
                              └─ stave-dsp ──┘
+stave-ui ── stave-raster ── stave-face
 stave-ui-cocoa ── stave-vst3 (editor view)
 stave-measure ── stave-host ── stave-test, tools/*
 ```
 
 - **stave-core** — the plugin model: `Processor` (realtime half) and
   `Spec` (declarations half) composed by `StavePlugin<E>`; typed params;
-  state; events; the `ui!` editor markup; `wrapper`, the machinery both
-  format wrappers share.
+  presets; state; events; `wrapper`, the machinery both format wrappers
+  share.
 - **stave-dsp** — the DSP vocabulary (below). Depends on nothing in the
   plugin model: it never sees hosts, params or events.
 - **stave-vst3 / stave-clap** — hand-written ABIs. A plugin exports with
@@ -29,14 +30,23 @@ stave-measure ── stave-host ── stave-test, tools/*
 - **stave-debug** — the `DebugBus`: declared `Tap`s, probes, the scope
   and capture buffers, breakpoints, the plugin's recent log messages.
   Lock-free; zero cost unattached.
-- **stave-ui / stave-ui-cocoa** — OS-agnostic layout and style tokens;
-  the macOS renderer.
+- **stave-ui** — the layout tree (`Node`, layout only) with its flexbox
+  solver, and the `Scene` vector IR. **stave-raster** renders a Scene to
+  pixels, identically on every OS.
+- **stave-face** — the design system: a plugin's editor is a `Face`, a
+  layout tree of `Part`s (knobs, switches, lamps, displays, `Plate`s,
+  print) inside a `Panel`, on a `Theme` that is the whole look as data.
+  Its `Runtime` lays out, bakes the static layer, paints live values and
+  turns pointer input into parameter gestures.
+- **stave-ui-cocoa** — the macOS host of a face: one NSView that blits
+  the runtime's canvas, forwards the pointer, and sets text with
+  CoreText.
 - **stave-measure** — measurement as pure functions over buffers and
   signals.
 - **stave-host** — loads any VST3 (or any stave-dsp module) as an
   `Instance`; bench, validation suite, rendering. `tools/stave-bench` and
   `tools/stave-play` are its CLI and GUI.
-- **stave-test** — shared plugin checks (`validation`, `editor`,
+- **stave-test** — shared plugin checks (`validation`, `face`,
   `no_alloc`, `perf`, `stability`) and, under `tests/`, conformance
   suites for the framework itself.
 
@@ -112,7 +122,7 @@ exaggeration owns it in its own engine.
   everything; `activate(env)` derives every coefficient from the
   environment; `process(ctx)` is realtime and allocation-free
   (`stave_test::no_alloc`). `Spec` declares descriptor, port configs,
-  params, editor, presets, state version and migrations.
+  params, face, presets, state version and migrations.
 - **Params are the spine.** A typed table (`#[derive(Params)]`) owns
   ranges, tapers and smoothing; engines read `p.x.value()` or a ramp,
   never a cast-and-clamp copy (`check-plugin-rules.sh`).
@@ -121,9 +131,11 @@ exaggeration owns it in its own engine.
   remaps users' curves. Change a range with a new id plus
   `Migrations::renamed`/`rescaled`; bump `state_version` whenever
   `migrate()` must reason about a change.
-- **Editors are declarations.** `Spec::editor` returns a `UiNode` tree
-  (`ui!` markup); widgets bind to params by id and write only through
-  host gestures. Bespoke visuals are `Widget::Scene` pictures.
+- **Editors are declarations.** `Spec::face` returns a `Face`, a pure
+  function of params; parts bind to params by id and write only through
+  host gestures (`stave_test::face::binds_resolve` checks every bind).
+  Parts never mint a colour, a font or a coordinate: they ask the
+  `Theme`. A bespoke picture is a part that paints a `Scene`.
 
 ## Format wrappers (`stave_core::wrapper`, stave-vst3, stave-clap)
 
@@ -177,7 +189,7 @@ unattached engine cannot reach the path.
 | VST3/CLAP struct layouts match the SDK headers | `const` asserts in each `sys.rs`; `scripts/abi-layouts.sh` re-measures |
 | every plugin passes Steinberg's validator and clap-validator | `scripts/validate-formats.sh` (CI) |
 | rate, block-size and bit-exactness invariants | `stave-test/tests/*_conformance.rs` |
-| every plugin: validation suite, editor bindings, no-alloc, perf, stability | each plugin's `tests/` via `stave_test` (`examples/tilt/tests/` here) |
+| every plugin: validation suite, face bindings, no-alloc, perf, stability | each plugin's `tests/` via `stave_test` (`examples/tilt/tests/` here) |
 | unsafe core | Miri and Loom jobs |
 | tree rules | `check-plugin-rules.sh`, `check-view-bindings.sh`, `check-file-sizes.sh` |
 

@@ -40,7 +40,6 @@ pub(super) fn new_view<P: Vst3Export>(
         inst.param_table.clone(),
         Box::new(Vst3EditorHost::<P> { inst: inst_ptr }),
     );
-    view.set_ui(inst.editor_ui.clone());
     view.set_face(inst.editor_face.clone());
     view.set_face_presets(inst.programs.presets());
     // Taken only once the view exists, so a panic above leaks nothing.
@@ -209,8 +208,8 @@ pub(super) unsafe extern "C" fn sv_get_size<P: Vst3Export>(
                 Ok(size) => size,
                 Err(error) => return inst.answer("IPlugView::getSize", Err(error)),
             };
-            // No editor tree: a bare container.
-            let (w, h) = editor.view.ui_root_dims().unwrap_or((480.0, 320.0));
+            // No face: an empty container.
+            let (w, h) = editor.view.size().unwrap_or((480.0, 320.0));
             *size = ViewRect {
                 left: 0,
                 top: 0,

@@ -48,33 +48,6 @@ if grep -rn 'plain() as f32' examples/*/src --include="*.rs" >/dev/null 2>&1; th
   fail=1
 fi
 
-# 5. THE EDITOR STYLE: a legacy UiNode editor is ui! markup, never
-#    builder calls. (A face composes typed parts with row/column.)
-for f in examples/*/src/editor.rs; do
-  grep -q 'UiNode' "$f" || continue
-  if grep -qE 'row\(vec!|column\(vec!' "$f"; then
-    echo "RULE: $f uses the builder editor style — the house style is ui! markup"; fail=1
-  fi
-done
-
-# 6. SCENE DISCIPLINE: raw CoreGraphics
-#    drawing belongs to the scene renderer; migrated widgets emit
-#    Scenes. The allowlist is the renderer plus the UNMIGRATED set —
-#    it may only shrink.
-CG_ALLOWED="scene_render.rs engine.rs meter.rs pad.rs"
-for f in crates/stave-ui-cocoa/src/widgets/*.rs; do
-  base=$(basename "$f")
-  case " $CG_ALLOWED " in
-    *" $base "*) ;; # unmigrated (or the renderer itself)
-    *)
-      if grep -qE 'CGContext[A-Za-z]+\(ctx' "$f"; then
-        echo "RULE: $base makes raw CGContext calls — migrated widgets emit Scenes"
-        fail=1
-      fi
-      ;;
-  esac
-done
-
 if [ "$fail" -ne 0 ]; then
   exit 1
 fi

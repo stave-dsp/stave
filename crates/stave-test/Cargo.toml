@@ -15,11 +15,6 @@ stave-core.workspace = true
 stave-debug.workspace = true
 stave-dsp.workspace = true
 stave-host.workspace = true
-stave-ui.workspace = true
-stave-raster.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
-stave-ui-cocoa.workspace = true
 
 [lints]
 workspace = true

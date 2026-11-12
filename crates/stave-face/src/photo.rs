@@ -1,6 +1,5 @@
-//! The photo kit — what a PHOTOREAL picture is made of, shared by
-//! every pedal-style editor (heirloom, aeolian): a tiny vector type,
-//! the studio (one soft key light from the upper left, a softbox
+//! The photo kit — what a PHOTOREAL picture is made of, under the
+//! materials (material.rs) and the parts: a tiny vector type, the studio (one soft key light from the upper left, a softbox
 //! environment for chrome), materials, deterministic grain, signed
 //! distances, and the bakers that turn a per-pixel shader into a
 //! scene [`Image`]. Screen space is y-DOWN, z toward the viewer.
@@ -13,7 +12,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::scene::Image;
+use stave_ui::scene::Image;
 
 #[derive(Copy, Clone, Debug)]
 pub struct V3 {

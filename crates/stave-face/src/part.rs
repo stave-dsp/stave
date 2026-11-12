@@ -1,4 +1,4 @@
-//! The part contract. A face is a `ui!` tree whose leaves are parts;
+//! The part contract. A face is a layout tree whose leaves are parts;
 //! the runtime lays the tree out, then asks each part, in its solved
 //! rect, for three things:
 //!
@@ -299,7 +299,7 @@ pub trait Part: Send + Sync + 'static {
     }
 }
 
-/// A face tree: `ui!` layout nodes with parts at the leaves.
+/// A face tree: layout nodes with parts at the leaves.
 pub type FaceNode = stave_ui::Node<Arc<dyn Part>>;
 
 /// Wrap a part as a fixed-size leaf.

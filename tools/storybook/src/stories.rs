@@ -90,7 +90,7 @@ pub fn showcase(host: &StoryHost, theme: Theme) -> Face {
 /// A plexi-style amp head: black tolex, a brushed-gold faceplate in
 /// cream piping, chicken-head knobs, a jewel pilot, a grille with a badge.
 pub fn amp(host: &StoryHost) -> Face {
-    use stave_ui::photo::hex;
+    use stave_face::photo::hex;
     let b = |id| host.bind(id);
     let theme = Theme {
         name: "amp head",
@@ -147,7 +147,7 @@ pub fn rack(host: &StoryHost) -> Face {
 
 /// A speaker cabinet: grille above, a control strip below.
 pub fn cabinet(host: &StoryHost) -> Face {
-    use stave_ui::photo::hex;
+    use stave_face::photo::hex;
     let b = |id| host.bind(id);
     let theme = Theme {
         name: "cabinet",

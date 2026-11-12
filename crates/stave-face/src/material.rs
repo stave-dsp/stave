@@ -1,4 +1,4 @@
-//! Materials and hardware, lit by the one studio in `stave_ui::photo`
+//! Materials and hardware, lit by the one studio in `crate::photo`
 //! (key light upper-left, a softbox environment). Everything here is a
 //! pure per-pixel function: surfaces take a position and a normal,
 //! hardware takes a position relative to its centre and returns colour
@@ -11,7 +11,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use stave_ui::photo::*;
+use crate::photo::*;
 use stave_ui::scene::Image;
 
 use crate::theme::{CapStyle, Finish};

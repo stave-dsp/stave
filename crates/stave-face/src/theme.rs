@@ -2,7 +2,7 @@
 //! mints a colour or a font; it asks the theme for a role. Swapping the
 //! theme re-skins a face without touching its layout or its parts.
 
-use stave_ui::photo::{hex, Rgb};
+use crate::photo::{hex, Rgb};
 use stave_ui::scene::{Family, Font};
 use stave_ui::style::Color;
 

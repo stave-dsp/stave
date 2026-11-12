@@ -2,14 +2,7 @@
 //! OS, no display). If a rect moves, a check fails; screenshots only
 //! guard PAINT, never placement.
 
-use stave_ui::{
-    column, row, solve, spacer, stack, text, widget, Align, Color, Dim, FixedMetrics, Justify,
-};
-
-const M: FixedMetrics = FixedMetrics {
-    advance: 0.5,
-    line: 1.0,
-};
+use stave_ui::{column, row, solve, spacer, stack, widget, Align, Dim, Justify};
 
 fn rects(l: &stave_ui::Layout) -> Vec<(f64, f64, f64, f64)> {
     l.children
@@ -28,7 +21,7 @@ fn row_with_gap_padding_and_fixed_children() {
     .pad(10.0)
     .gap(8.0)
     .size(200.0, 60.0);
-    let l = solve(&tree, (400.0, 400.0), &M);
+    let l = solve(&tree, (400.0, 400.0));
     assert_eq!(l.rect.w, 200.0);
     assert_eq!(
         rects(&l),
@@ -49,7 +42,7 @@ fn fill_shares_the_remainder_by_weight() {
     ])
     .gap(10.0)
     .size(300.0, 20.0);
-    let l = solve(&tree, (300.0, 300.0), &M);
+    let l = solve(&tree, (300.0, 300.0));
     // Remainder = 300 − (50 + 2 gaps) = 230; weights 1:3 → 57.5 / 172.5.
     assert_eq!(
         rects(&l),
@@ -69,7 +62,7 @@ fn spacer_is_the_toolbar_spring() {
         widget(()).size(30.0, 10.0),
     ])
     .size(200.0, 10.0);
-    let l = solve(&tree, (200.0, 200.0), &M);
+    let l = solve(&tree, (200.0, 200.0));
     assert_eq!(rects(&l)[2].0, 170.0, "right item flush right");
 }
 
@@ -83,7 +76,7 @@ fn wrap_flows_to_the_next_line_with_cross_gap() {
     .gap(10.0)
     .wrap()
     .size(150.0, 100.0);
-    let l = solve(&tree, (400.0, 400.0), &M);
+    let l = solve(&tree, (400.0, 400.0));
     let r = rects(&l);
     assert_eq!(r[0], (0.0, 0.0, 60.0, 20.0));
     assert_eq!(r[1], (70.0, 0.0, 60.0, 20.0));
@@ -104,7 +97,7 @@ fn intrinsic_height_wraps_at_the_resolved_width() {
     .gap(10.0)
     .wrap()
     .width(Dim::Px(150.0))]);
-    let l = solve(&tree, (400.0, 400.0), &M);
+    let l = solve(&tree, (400.0, 400.0));
     assert_eq!(l.rect.h, 50.0, "two lines of 20 + one 10 cross gap");
 }
 
@@ -114,7 +107,7 @@ fn justify_and_align_center_a_child() {
         .justify(Justify::Center)
         .align(Align::Center)
         .size(200.0, 100.0);
-    let l = solve(&tree, (200.0, 100.0), &M);
+    let l = solve(&tree, (200.0, 100.0));
     assert_eq!(rects(&l), vec![(75.0, 40.0, 50.0, 20.0)]);
 }
 
@@ -127,42 +120,19 @@ fn space_between_spreads_the_footer() {
     ])
     .justify(Justify::SpaceBetween)
     .size(240.0, 10.0);
-    let l = solve(&tree, (240.0, 240.0), &M);
+    let l = solve(&tree, (240.0, 240.0));
     let r = rects(&l);
     assert_eq!((r[0].0, r[1].0, r[2].0), (0.0, 100.0, 200.0));
 }
 
 #[test]
-fn text_measures_and_inherits_typography() {
-    let ts = stave_ui::TextStyle {
-        size: 10.0,
-        kern: 0.0,
-        ..Default::default()
-    };
-    let tree = column::<()>(vec![text("ABCD"), text("AB")])
-        .text_style(ts)
-        .gap(2.0);
-    let l = solve(&tree, (300.0, 300.0), &M);
-    // FixedMetrics: 4 chars × 0.5 × 10 = 20 wide, line = 10 tall.
-    assert_eq!(
-        rects(&l),
-        vec![(0.0, 0.0, 20.0, 10.0), (0.0, 12.0, 10.0, 10.0)]
-    );
-    assert_eq!(l.children[0].text.size, 10.0, "inherited down the tree");
-}
-
-#[test]
-fn borders_paint_only_padding_insets() {
-    // Layer-style borders: painted inside the bounds, NEVER moving
-    // content (the house design language) — only padding insets.
-    let tree = column::<()>(vec![widget(()).size(10.0, 10.0)])
-        .pad(6.0)
-        .border(2.0, Color::rgba(1.0, 0.0, 0.0, 1.0));
-    let l = solve(&tree, (100.0, 100.0), &M);
+fn padding_insets_content() {
+    let tree = column::<()>(vec![widget(()).size(10.0, 10.0)]).pad(6.0);
+    let l = solve(&tree, (100.0, 100.0));
     assert_eq!(
         l.rect.w,
         10.0 + 2.0 * 6.0,
-        "auto width = content + padding; border free"
+        "auto width = content + padding"
     );
     assert_eq!(rects(&l), vec![(6.0, 6.0, 10.0, 10.0)]);
 }
@@ -176,7 +146,7 @@ fn stack_overlays_and_centers() {
     .justify(Justify::Center)
     .align(Align::Center)
     .size(100.0, 100.0);
-    let l = solve(&tree, (100.0, 100.0), &M);
+    let l = solve(&tree, (100.0, 100.0));
     let r = rects(&l);
     assert_eq!(r[0], (0.0, 0.0, 100.0, 100.0), "fill covers the box");
     assert_eq!(r[1], (40.0, 40.0, 20.0, 20.0), "overlay centered");
@@ -189,7 +159,7 @@ fn margins_space_siblings_and_offset_position() {
         widget(()).size(30.0, 30.0),
     ])
     .size(200.0, 40.0);
-    let l = solve(&tree, (200.0, 200.0), &M);
+    let l = solve(&tree, (200.0, 200.0));
     assert_eq!(
         rects(&l),
         vec![(5.0, 5.0, 30.0, 30.0), (40.0, 0.0, 30.0, 30.0)]
@@ -204,7 +174,7 @@ fn stretch_grows_auto_cross_children() {
     ])
     .align(Align::Stretch)
     .size(100.0, 60.0);
-    let l = solve(&tree, (100.0, 60.0), &M);
+    let l = solve(&tree, (100.0, 60.0));
     assert_eq!(
         rects(&l)[1].3,
         60.0,
@@ -213,12 +183,12 @@ fn stretch_grows_auto_cross_children() {
 }
 
 #[test]
-fn a_band_card_shaped_composition_lays_out() {
-    // The shape mb_cards builds: card = column(title, 4×3 knob grid
-    // (wrap), toggles row) — proving the vocabulary expresses it.
+fn a_card_shaped_composition_lays_out() {
+    // card = column(title, 4×3 knob grid (wrap), toggles row) —
+    // proving the vocabulary expresses it.
     let knob = || widget(()).size(40.0, 52.0);
     let card = column::<()>(vec![
-        text("LOW"),
+        widget(()).size(16.5, 11.0),
         row((0..11).map(|_| knob()).collect())
             .gap(8.0)
             .wrap()
@@ -230,9 +200,8 @@ fn a_band_card_shaped_composition_lays_out() {
         .justify(Justify::SpaceBetween),
     ])
     .pad(12.0)
-    .gap(10.0)
-    .radius(8.0);
-    let l = solve(&card, (400.0, 600.0), &M);
+    .gap(10.0);
+    let l = solve(&card, (400.0, 600.0));
     assert_eq!(l.children.len(), 3);
     let grid = &l.children[1];
     assert_eq!(grid.children.len(), 11);
@@ -247,7 +216,7 @@ fn grid_flows_row_major_with_equal_columns() {
     let tree = stave_ui::grid::<()>(4, (0..11).map(|_| widget(()).size(80.0, 40.0)).collect())
         .gap(8.0)
         .size(360.0, 200.0);
-    let l = solve(&tree, (360.0, 200.0), &M);
+    let l = solve(&tree, (360.0, 200.0));
     let r = rects(&l);
     // col width = (360 − 3·8)/4 = 84; cells keep their 80 within it.
     assert_eq!(r[0], (0.0, 0.0, 80.0, 40.0));
@@ -255,23 +224,4 @@ fn grid_flows_row_major_with_equal_columns() {
     assert_eq!(r[4].1, 48.0, "second row below tallest+gap");
     assert_eq!(r[8].1, 96.0, "third row");
     assert_eq!(r[10].0, 2.0 * 92.0, "11th cell in third column");
-}
-
-#[test]
-fn shapes_and_glyphs_are_sized_leaves() {
-    use stave_ui::Shape;
-    let tree = column::<()>(vec![
-        stave_ui::shape(Shape::Line)
-            .width(Dim::Fill(1.0))
-            .height(Dim::Px(1.0)),
-        stave_ui::shape(Shape::RRect).size(3.0, 100.0),
-        stave_ui::glyph("power").size(16.0, 16.0),
-    ])
-    .gap(4.0)
-    .size(200.0, 150.0);
-    let l = solve(&tree, (200.0, 150.0), &M);
-    let r = rects(&l);
-    assert_eq!(r[0], (0.0, 0.0, 200.0, 1.0), "hairline fills width");
-    assert_eq!(r[1], (0.0, 5.0, 3.0, 100.0), "stripe");
-    assert_eq!(r[2], (0.0, 109.0, 16.0, 16.0), "glyph");
 }

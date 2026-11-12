@@ -30,7 +30,7 @@ The contracts they keep are in **docs/architecture.md**.
   half) + `Spec` (the declarations half) composed by
   `StavePlugin<E>`; typed params (`FloatParam`/`BoolParam`/
   `EnumParam`, `#[derive(Params)]`, declaration-owned smoothing and
-  ranges), state chunks, events, the `ui!` editor markup.
+  ranges), presets, state chunks, events.
 - **`stave-vst3`** / **`stave-clap`** — the hand-written ABIs; one
   export macro each.
 - **`stave-dsp`** — the DSP vocabulary: layered downward-only
@@ -43,19 +43,23 @@ The contracts they keep are in **docs/architecture.md**.
   ns/sample price of every primitive.
 - **`stave-debug`** — the `DebugBus`: lock-free probes, controls,
   presets, and typed `Tap` handles that feed every meter and scope.
-- **`stave-ui`** — the OS-agnostic view layer (box model, flexbox,
-  style tokens, the `Scene` vector vocabulary); **`stave-ui-cocoa`** —
-  its macOS backend.
+- **`stave-face`** — the design system: a plugin's editor is a `Face`
+  — `Part`s (knobs, switches, lamps, displays, `Plate`s) laid out in
+  rows and columns inside a `Panel`, on a `Theme` that holds the whole
+  look as data. `tools/storybook` shows every part on every theme.
+- **`stave-ui`** — the OS-agnostic look layer: the layout tree and its
+  flexbox solver, and the `Scene` vector vocabulary;
+  **`stave-ui-cocoa`** — the macOS host that shows a face.
 - **`stave-raster`** — a portable, pure-Rust software renderer that
   draws a `Scene` into an RGBA pixel buffer identically on every
   platform (text is left to the OS).
-- **`stave-macros`** — `#[derive(Params)]` and `ui!` (re-exported by
-  `stave-core` and `stave-ui`; proc-macros need a crate of their own).
+- **`stave-macros`** — `#[derive(Params)]` (re-exported by
+  `stave-core`; proc-macros need a crate of their own).
 - **`stave-measure`** — audio measurement as pure functions: levels,
   spectra, THD, latency, transfer functions, aliasing/IMD, dynamics,
   modulation, zipper, reverb-tail metrics, WAV I/O.
 - **`stave-test`** — the shared checks every plugin mounts in ~10
-  lines each (validation suite, editor-binding proofs, no-alloc
+  lines each (validation suite, face-binding proofs, no-alloc
   guard, perf report, stability check) and, under `tests/`, the
   conformance suites for the DSP vocabulary itself.
 - **`stave-host`** — host any VST3 and measure it (below).
