@@ -33,8 +33,8 @@ pub use stave_ui_cocoa::theme;
 ///
 /// CIDs are pairs of `u32` written as four 32-bit hex constants, matching
 /// the Steinberg SDK's `DECLARE_CLASS_IID(name, 0xXXXX, 0xYYYY, 0xZZZZ, 0xWWWW)`.
-/// The macro converts them to the non-COM-compatible (macOS/Linux) TUID layout
-/// via `make_tuid`.
+/// The macro converts them to the platform's `INLINE_UID` byte layout via
+/// `make_tuid` (GUID order on Windows, big-endian words elsewhere).
 ///
 /// Example:
 /// ```ignore

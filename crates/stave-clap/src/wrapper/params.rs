@@ -5,7 +5,7 @@ use super::*;
 pub(super) unsafe extern "C" fn params_count<P: ClapExport>(plugin: *const sys::ClapPlugin) -> u32 {
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    inst.param_table.count() as u32
+    inst.guarded("params.count", || 0, || inst.param_table.count() as u32)
 }
 
 pub(super) unsafe extern "C" fn params_get_info<P: ClapExport>(

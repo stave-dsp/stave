@@ -14,7 +14,7 @@ use stave_core::{Arrangement, Plugin, PortConfig};
 use crate::host::{host_array, out_param};
 use crate::sys::*;
 use crate::wire_strings::{plugin_is_instrument, write_utf16_name};
-use crate::wrapper::{parent_ref, Instance, Vst3Export};
+use crate::wrapper::{ffi_entry, parent_ref, Instance, Vst3Export};
 use stave_core::diagnostics::CallError;
 
 /// The instance's host-accepted configuration.
@@ -29,7 +29,11 @@ pub(crate) unsafe extern "C" fn comp_get_bus_count<P: Vst3Export>(
     dir: i32,
 ) -> i32 {
     // SAFETY: host contract (see `crate::host`).
-    let ports = accepted(unsafe { parent_ref::<P>(this) });
+    let inst = unsafe { parent_ref::<P>(this) };
+    ffi_entry::<P, _>(|| 0, || bus_count::<P>(accepted(inst), media_type, dir))
+}
+
+fn bus_count<P: Vst3Export>(ports: PortConfig, media_type: i32, dir: i32) -> i32 {
     if media_type == MEDIA_TYPE_AUDIO {
         if dir == BUS_DIR_INPUT {
             // Main (if any) + declared aux buses, declaration order.
@@ -61,8 +65,14 @@ pub(crate) unsafe extern "C" fn comp_get_bus_info<P: Vst3Export>(
 ) -> Tresult {
     // SAFETY: host contract (see `crate::host`).
     let (inst, bus) = unsafe { (parent_ref::<P>(this), out_param(bus, "bus")) };
-    let result = bus.and_then(|bus| bus_info::<P>(accepted(inst), media_type, dir, index, bus));
-    inst.answer("getBusInfo", result)
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            let result =
+                bus.and_then(|bus| bus_info::<P>(accepted(inst), media_type, dir, index, bus));
+            inst.answer("getBusInfo", result)
+        },
+    )
 }
 
 fn bus_info<P: Vst3Export>(
@@ -190,16 +200,19 @@ pub(crate) unsafe extern "C" fn ap_set_bus_arrangements<P: Vst3Export>(
     let (Some(inputs), Some(outputs)) = (inputs, outputs) else {
         return K_RESULT_FALSE;
     };
-    match <P as Plugin>::CONFIGS
-        .iter()
-        .position(|member| member_matches(member, inputs, outputs))
-    {
-        Some(idx) => {
-            inst.config.store(idx, Ordering::Release);
-            K_RESULT_OK
-        }
-        None => K_RESULT_FALSE,
-    }
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || match <P as Plugin>::CONFIGS
+            .iter()
+            .position(|member| member_matches(member, inputs, outputs))
+        {
+            Some(idx) => {
+                inst.config.store(idx, Ordering::Release);
+                K_RESULT_OK
+            }
+            None => K_RESULT_FALSE,
+        },
+    )
 }
 
 pub(crate) unsafe extern "C" fn ap_get_bus_arrangement<P: Vst3Export>(
@@ -210,8 +223,13 @@ pub(crate) unsafe extern "C" fn ap_get_bus_arrangement<P: Vst3Export>(
 ) -> Tresult {
     // SAFETY: host contract (see `crate::host`).
     let (inst, arr) = unsafe { (parent_ref::<P>(this), out_param(arr, "arrangement")) };
-    let result = arr.and_then(|arr| bus_arrangement(accepted(inst), dir, index, arr));
-    inst.answer("getBusArrangement", result)
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            let result = arr.and_then(|arr| bus_arrangement(accepted(inst), dir, index, arr));
+            inst.answer("getBusArrangement", result)
+        },
+    )
 }
 
 fn bus_arrangement(

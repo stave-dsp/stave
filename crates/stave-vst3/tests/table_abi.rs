@@ -1219,7 +1219,7 @@ fn editor_writes_reach_the_host_and_the_table() {
         let name: Vec<u8> = b"editor\0".to_vec();
         let view_ptr = ((inst.ctl_vtbl()).create_view)(inst.controller, name.as_ptr() as FidString);
         assert!(!view_ptr.is_null(), "createView");
-        let editor_box = view_ptr as *mut stave_vst3::wrapper::EditorBox;
+        let editor_box = view_ptr as *mut stave_vst3::wrapper::EditorBox<TableGain>;
         let view = &mut (*editor_box).view;
 
         // Knob drag on control 1 ("drive"): the gesture conversation
@@ -1249,7 +1249,64 @@ fn editor_writes_reach_the_host_and_the_table() {
             (inst.ctl_vtbl().set_component_handler)(inst.controller, ptr::null_mut()),
             K_RESULT_OK
         );
+        let view_vtbl = &*(*(view_ptr as *mut RawObj<IPlugViewVtbl>)).vtbl;
+        assert_eq!((view_vtbl.release)(view_ptr), 0, "createView returned +1");
         inst.release();
+    }
+}
+
+/// S7: the view holds a reference on its instance (SDK `CPluginView`
+/// pattern). A host that releases every controller/component reference
+/// first can still call the view, and the view's last release frees the
+/// instance. Under Miri a use-after-free here is a hard error.
+#[test]
+fn a_view_outliving_the_controller_keeps_the_instance_alive() {
+    unsafe {
+        let inst = create_instance();
+        let name = c"editor";
+        let view = (inst.ctl_vtbl().create_view)(inst.controller, name.as_ptr());
+        assert!(!view.is_null(), "createView");
+        let other = (inst.ctl_vtbl().create_view)(inst.controller, name.as_ptr());
+        assert!(!other.is_null() && other != view, "a fresh view per call");
+        let vt = &*(*(view as *mut RawObj<IPlugViewVtbl>)).vtbl;
+        assert_eq!((vt.release)(other), 0);
+
+        // The host drops the controller (and everything else) first.
+        inst.release();
+
+        // Every view method still reaches a live instance.
+        let mut rect = ViewRect {
+            left: -1,
+            top: -1,
+            right: -1,
+            bottom: -1,
+        };
+        assert_eq!((vt.get_size)(view, &mut rect), K_RESULT_OK);
+        assert!(rect.right > 0 && rect.bottom > 0, "{rect:?}");
+        assert_eq!((vt.get_size)(view, ptr::null_mut()), K_INVALID_ARGUMENT);
+        assert_eq!(
+            (vt.is_platform_type_supported)(view, c"NSView".as_ptr()),
+            K_RESULT_OK
+        );
+        // Null parent: attach declines before touching Cocoa.
+        assert_eq!(
+            (vt.attached)(view, ptr::null_mut(), c"NSView".as_ptr()),
+            K_RESULT_OK
+        );
+        assert_eq!((vt.removed)(view), K_RESULT_OK);
+
+        // A real refcount: queryInterface and addRef take references.
+        let mut same: *mut c_void = ptr::null_mut();
+        assert_eq!(
+            (vt.query_interface)(view, &IID_IPLUG_VIEW, &mut same),
+            K_RESULT_OK
+        );
+        assert_eq!(same, view.cast());
+        assert_eq!((vt.add_ref)(view), 3);
+        assert_eq!((vt.release)(view), 2);
+        assert_eq!((vt.release)(view), 1);
+        // The last reference frees the view, then the instance.
+        assert_eq!((vt.release)(view), 0);
     }
 }
 

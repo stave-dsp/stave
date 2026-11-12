@@ -19,11 +19,13 @@ pub unsafe extern "C" fn entry_get_factory<P: ClapExport>(
 ) -> *const c_void {
     // SAFETY: clap.h: null or a nul-terminated id.
     let requested = unsafe { in_text(factory_id, "factory_id") };
-    if requested.is_ok_and(|id| id == sys::CLAP_PLUGIN_FACTORY_ID) {
-        P::clap_factory() as *const _ as *const c_void
-    } else {
-        ptr::null()
-    }
+    ffi_entry::<P, _>(ptr::null, || {
+        if requested.is_ok_and(|id| id == sys::CLAP_PLUGIN_FACTORY_ID) {
+            P::clap_factory() as *const _ as *const c_void
+        } else {
+            ptr::null()
+        }
+    })
 }
 
 // ===========================================================================
@@ -44,11 +46,13 @@ pub unsafe extern "C" fn factory_get_plugin_descriptor<P: ClapExport>(
     _factory: *const sys::ClapPluginFactory,
     index: u32,
 ) -> *const sys::ClapPluginDescriptor {
-    if index == 0 {
-        P::clap_descriptor() as *const _
-    } else {
-        ptr::null()
-    }
+    ffi_entry::<P, _>(ptr::null, || {
+        if index == 0 {
+            P::clap_descriptor() as *const _
+        } else {
+            ptr::null()
+        }
+    })
 }
 
 /// # Safety
@@ -63,8 +67,16 @@ pub unsafe extern "C" fn factory_create_plugin<P: ClapExport>(
     if requested.ok() != Some(P::DESCRIPTOR.id) {
         return ptr::null();
     }
-    stave_core::diagnostics::log_panics(const { &P::DESCRIPTOR });
+    // `P::new()` and the author hooks below are plugin code. On a panic
+    // the partly built values drop during the unwind and the host gets
+    // null.
+    // SAFETY: clap.h: `host` is null or outlives the instance.
+    ffi_entry::<P, _>(ptr::null, || unsafe { create_plugin::<P>(host) })
+}
 
+/// # Safety
+/// `host` is null or a `clap_host` that outlives the instance.
+unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys::ClapPlugin {
     let plugin_obj = P::new();
     let param_table = plugin_obj.param_table();
     if let Err(e) = param_table.validate() {

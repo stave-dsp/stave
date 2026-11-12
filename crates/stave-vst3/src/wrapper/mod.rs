@@ -4,7 +4,6 @@
 //! interface its own sub-struct (each starts with its own vtable pointer)
 //! that share a common backing `Instance`.
 
-use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::mem;
 use core::ptr;
@@ -107,13 +106,14 @@ pub struct UnitInfoObj<P: Vst3Export> {
 }
 
 /// Heap-allocated per-plugin-instance state. All three interface sub-objects
-/// share this backing store; refcount tracks total host references.
+/// share this backing store; refcount tracks total host references plus
+/// one per live editor view (`EditorBox`).
 ///
 /// Thread contract: entry points materialize only `&Instance` from the
 /// host's raw pointer — never `&mut`. Cross-thread fields live in
 /// `shared` (atomics); the plugin sits in a `PluginCell` claimed
 /// exclusively per call (audio thread during `process`, main thread
-/// during activate); `editor` is main-thread-only by VST3 convention.
+/// during activate).
 #[repr(C)]
 pub struct Instance<P: Vst3Export> {
     pub component: ComponentObj<P>,
@@ -126,13 +126,13 @@ pub struct Instance<P: Vst3Export> {
     pub unit_info: UnitInfoObj<P>,
     /// Stored by value for the same reason as `pcr_vtbl`.
     pub unit_info_vtbl: IUnitInfoVtbl,
+    /// The `IPlugView` vtable every `EditorBox` of this instance points
+    /// at; by value for the same reason as `pcr_vtbl`. A view holds an
+    /// instance reference, so this outlives every view using it.
+    pub view_vtbl: IPlugViewVtbl,
     pub ref_count: AtomicU32,
     pub shared: SharedState,
     pub plugin: PluginCell<P>,
-    /// Main-thread only (`createView` and view callbacks). UnsafeCell
-    /// because we only ever hold `&Instance`; the single-thread protocol
-    /// is what makes the interior `&mut` sound.
-    pub editor: UnsafeCell<Option<Box<EditorBox>>>,
     /// The typed parameter table, served with STABLE wire ids. Shared
     /// with the plugin via Arc — host threads read it without touching
     /// the claimed processor.
@@ -229,24 +229,45 @@ fn failure_code(error: &CallError) -> Tresult {
     }
 }
 
+/// The panic boundary for `extern "C"` entries: `call()`, or `failed()`
+/// if it panics — an unwind never reaches the host. Entries with an
+/// instance go through [`Instance::guarded`] (the same boundary plus
+/// the instance's disable-on-panic latch); this is for the rest
+/// (factory, instance construction, view lifetime). The panic itself is
+/// logged by the `log_panics` hook installed here.
+///
+/// Entries whose whole body is a constant or a single atomic op cannot
+/// panic and are not wrapped.
+pub(crate) fn ffi_entry<P: Plugin, R>(failed: impl FnOnce() -> R, call: impl FnOnce() -> R) -> R {
+    stave_core::diagnostics::log_panics(const { &P::DESCRIPTOR });
+    // AssertUnwindSafe: on a panic, whatever `call` built is dropped
+    // during the unwind and `failed()` touches none of it.
+    std::panic::catch_unwind(core::panic::AssertUnwindSafe(call)).unwrap_or_else(|_| failed())
+}
+
+/// One `IPlugView`, returned by `createView` with one reference (the
+/// SDK's `CPluginView` pattern). While alive it holds a reference on its
+/// `Instance`, so a host that releases the controller first still
+/// reaches a live instance through the view; the last `release` drops
+/// the view (which detaches it from any host window) and then that
+/// instance reference.
+///
+/// No `Send`/`Sync`: the box lives on the heap behind the host's raw
+/// pointer, never inside a value that crosses threads, and view calls
+/// are main-thread only (SDK).
+#[repr(C)]
+pub struct EditorBox<P: Vst3Export> {
+    /// Points at the owning instance's `view_vtbl`.
+    pub vtbl: *const IPlugViewVtbl,
+    pub(crate) ref_count: AtomicU32,
+    pub(crate) inst: *mut Instance<P>,
+    pub view: Box<crate::cocoa_view::PluginEditorView>,
+}
+
 /// Stable C ABI helper: return a raw pointer to the instance's DebugBus.
 /// Used by the per-type exported lookup symbol the `stave_vst3_export!`
 /// macro emits. The pointer is owned by the Instance — the host must not
 /// free it. Lifetime: valid until the plugin instance is released.
-/// IPlugView container with vtable header so it can be returned as
-/// `*mut FUnknown`. Allocated lazily on the first createView().
-#[repr(C)]
-pub struct EditorBox {
-    pub vtbl: *const crate::sys::IPlugViewVtbl,
-    pub view: Box<crate::cocoa_view::PluginEditorView>,
-}
-
-// SAFETY: the VST3 threading model confines the editor to the main
-// thread; the bounds only let it sit inside the shared `Instance`.
-unsafe impl Send for EditorBox {}
-// SAFETY: as above.
-unsafe impl Sync for EditorBox {}
-
 pub fn debug_bus_ptr<P: Vst3Export>(inst: &Instance<P>) -> *const DebugBus {
     Arc::as_ptr(&inst.debug_bus)
 }
@@ -303,6 +324,7 @@ pub(crate) unsafe extern "C" fn shared_query_interface<P: Vst3Export>(
     let (Some(&iid), Ok(obj)) = (iid, obj) else {
         return K_INVALID_ARGUMENT;
     };
+    // Pointer comparisons and writes only: nothing here can panic.
     // SAFETY: the host's reference keeps `parent` alive; `addr_of_mut!`
     // makes sub-object pointers without a `&mut` (other threads hold
     // `&Instance` meanwhile).
@@ -331,7 +353,9 @@ pub(crate) unsafe extern "C" fn shared_query_interface<P: Vst3Export>(
 pub(crate) unsafe extern "C" fn shared_add_ref<P: Vst3Export>(this: *mut FUnknown) -> u32 {
     // SAFETY: host contract (see `crate::host`).
     let inst = unsafe { parent_ref::<P>(this) };
-    inst.ref_count.fetch_add(1, Ordering::SeqCst) + 1
+    inst.ref_count
+        .fetch_add(1, Ordering::SeqCst)
+        .wrapping_add(1)
 }
 
 pub(crate) unsafe extern "C" fn shared_release<P: Vst3Export>(this: *mut FUnknown) -> u32 {
@@ -339,14 +363,14 @@ pub(crate) unsafe extern "C" fn shared_release<P: Vst3Export>(this: *mut FUnknow
     let parent = unsafe { parent_of::<P>(this) };
     // SAFETY: the host's reference keeps `parent` alive until this
     // decrement.
-    let now = unsafe { (*parent).ref_count.fetch_sub(1, Ordering::SeqCst) } - 1;
+    let now = unsafe { (*parent).ref_count.fetch_sub(1, Ordering::SeqCst) }.wrapping_sub(1);
     if now == 0 {
         // SAFETY: the last reference is gone; the factory made `parent`
         // with `Box::into_raw`.
         let instance = unsafe { Box::from_raw(parent) };
         // A destructor that panics (logged by the hook) must not unwind
         // into the host.
-        let _ = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| drop(instance)));
+        ffi_entry::<P, _>(|| (), || drop(instance));
     }
     now
 }

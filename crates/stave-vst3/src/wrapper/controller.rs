@@ -48,8 +48,11 @@ pub(super) const PARAM_IS_BYPASS: i32 = 1 << 16;
 pub(super) unsafe extern "C" fn ec_get_parameter_count<P: Vst3Export>(this: *mut FUnknown) -> i32 {
     // SAFETY: host contract (see `crate::host`).
     let inst = unsafe { parent_ref::<P>(this) };
-    let table = &inst.param_table;
-    (table.count() + usize::from(inst.programs.exposed())) as i32
+    inst.guarded(
+        "getParameterCount",
+        || 0,
+        || (inst.param_table.count() + usize::from(inst.programs.exposed())) as i32,
+    )
 }
 
 pub(super) unsafe extern "C" fn ec_get_parameter_info<P: Vst3Export>(
@@ -295,10 +298,20 @@ pub(super) unsafe extern "C" fn ec_set_component_handler<P: Vst3Export>(
     this: *mut FUnknown,
     handler: *mut FUnknown,
 ) -> Tresult {
-    // SAFETY: host contract (see `crate::host`): `handler` is null or the
-    // host's IComponentHandler.
-    unsafe { parent_ref::<P>(this).handler.replace(handler.cast()) };
-    K_RESULT_OK
+    // SAFETY: host contract (see `crate::host`).
+    let inst = unsafe { parent_ref::<P>(this) };
+    // Not the instance guard: host-object bookkeeping touches no plugin
+    // state, and a disabled instance must still let the host swap or
+    // clear its handler.
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            // SAFETY: host contract: `handler` is null or the host's
+            // IComponentHandler.
+            unsafe { inst.handler.replace(handler.cast()) };
+            K_RESULT_OK
+        },
+    )
 }
 
 // ===========================================================================
@@ -321,30 +334,8 @@ pub(super) unsafe extern "C" fn ec_create_view<P: Vst3Export>(
         return ptr::null_mut();
     }
     // SAFETY: host contract (see `crate::host`).
-    let inst = unsafe { parent_ref::<P>(this) };
-    // SAFETY: createView (and every other touch of `editor`) is a
-    // main-thread call per the VST3 threading model; the cell has a
-    // single accessor thread, so the interior `&mut` cannot alias.
-    let editor = unsafe { &mut *inst.editor.get() };
-    if editor.is_none() {
-        let mut view = crate::cocoa_view::PluginEditorView::new(
-            inst.debug_bus.clone(),
-            inst.param_table.clone(),
-            Box::new(Vst3EditorHost::<P> {
-                // SAFETY: host contract (see `crate::host`).
-                inst: unsafe { parent_of::<P>(this) },
-            }),
-        );
-        view.set_ui(inst.editor_ui.clone());
-        view.set_face(inst.editor_face.clone());
-        view.set_face_presets(inst.programs.presets());
-        *editor = Some(Box::new(EditorBox {
-            vtbl: &STUB_VIEW_VTBL,
-            view,
-        }));
-    }
-    match editor.as_mut() {
-        Some(b) => b.as_mut() as *mut EditorBox as *mut FUnknown,
-        None => ptr::null_mut(),
-    }
+    let (inst, inst_ptr) = unsafe { (parent_ref::<P>(this), parent_of::<P>(this)) };
+    // A fresh view per call, returned with one reference the host owns
+    // (SDK `createView` contract); it holds its own instance reference.
+    inst.guarded("createView", ptr::null_mut, || new_view(inst, inst_ptr))
 }

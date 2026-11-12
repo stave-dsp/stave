@@ -1,6 +1,6 @@
 //! Why a plugin failed to load.
 
-use stave_vst3::sys::Tresult;
+use stave_vst3::sys::{tresult_name, Tresult};
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum HostError {
@@ -16,8 +16,15 @@ pub enum HostError {
     FactoryNull,
     #[error("no \"Audio Module Class\" among the factory's classes {classes:?}")]
     NoAudioModule { classes: Vec<String> },
-    #[error("{call} failed: tresult=0x{:08x}", *result as u32)]
+    #[error("{call} failed: {}", describe(*result))]
     Call { call: &'static str, result: Tresult },
+}
+
+/// The SDK name (per platform: the values differ between Windows and
+/// macOS/Linux) plus the raw code.
+fn describe(result: Tresult) -> String {
+    let name = tresult_name(result).unwrap_or("unknown result");
+    format!("{name} (tresult=0x{:08x})", result as u32)
 }
 
 impl HostError {
@@ -33,6 +40,15 @@ mod tests {
     #[test]
     fn call_errors_name_the_call_and_hex_result() {
         let e = HostError::call("setActive")(stave_vst3::sys::K_NOT_IMPLEMENTED);
-        assert_eq!(e.to_string(), "setActive failed: tresult=0x80000001");
+        #[cfg(not(windows))]
+        let expected = "setActive failed: kNotImplemented (tresult=0x00000003)";
+        #[cfg(windows)]
+        let expected = "setActive failed: kNotImplemented (tresult=0x80004001)";
+        assert_eq!(e.to_string(), expected);
+        let e = HostError::call("process")(-7);
+        assert_eq!(
+            e.to_string(),
+            "process failed: unknown result (tresult=0xfffffff9)"
+        );
     }
 }

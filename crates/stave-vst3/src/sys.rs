@@ -2,12 +2,16 @@
 //! Steinberg `vst3_pluginterfaces` headers — no external bindings crate.
 //!
 //! All structs are `#[repr(C)]` with field order matching the C++ headers.
-//! Interface vtables are `#[repr(C)]` structs of `Option<unsafe extern "C" fn>`
-//! laid out in C++ declaration order (FUnknown methods first, then any
-//! inherited interface methods, then own methods).
+//! Interface vtables are `#[repr(C)]` structs of plain (non-null)
+//! `unsafe extern "C" fn` pointers laid out in C++ declaration order
+//! (FUnknown methods first, then any inherited interface methods, then own
+//! methods).
 //!
-//! TUID byte layout follows the non-COM_COMPATIBLE (macOS/Linux) INLINE_UID
-//! expansion: for each 32-bit input word, bytes are stored big-endian.
+//! Two things depend on the SDK's `COM_COMPATIBLE` switch
+//! (`pluginterfaces/base/funknown.h`), which is 1 on Windows only: the
+//! `tresult` values and the TUID byte order of `INLINE_UID`. Both follow
+//! `cfg(windows)` here, so a CID declared once means the same class on
+//! every platform.
 
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
@@ -34,16 +38,54 @@ pub type Sample64 = f64;
 pub type SpeakerArrangement = u64;
 pub type TQuarterNotes = f64;
 
-// tresult constants — macOS/Linux (non-COM-compatible) values.
-pub const K_RESULT_OK: Tresult = 0x0000_0000_u32 as i32;
+// tresult constants (funknown.h). `kResultOk`/`kResultTrue` = 0 and
+// `kResultFalse` = 1 everywhere; the errors are HRESULTs on Windows
+// (COM_COMPATIBLE) and small integers elsewhere. Never test a result's
+// sign: on macOS/Linux `kResultFalse` and every error but
+// `kNoInterface` are positive.
+pub const K_RESULT_OK: Tresult = 0;
 pub const K_RESULT_TRUE: Tresult = K_RESULT_OK;
-pub const K_RESULT_FALSE: Tresult = 0x0000_0001_u32 as i32;
-pub const K_NO_INTERFACE: Tresult = 0x8000_0004_u32 as i32;
-pub const K_INVALID_ARGUMENT: Tresult = 0x8000_0003_u32 as i32;
-pub const K_NOT_IMPLEMENTED: Tresult = 0x8000_0001_u32 as i32;
-pub const K_INTERNAL_ERROR: Tresult = 0x8000_0008_u32 as i32;
-pub const K_NOT_INITIALIZED: Tresult = 0x8000_FFFF_u32 as i32;
-pub const K_OUT_OF_MEMORY: Tresult = 0x8000_0002_u32 as i32;
+pub const K_RESULT_FALSE: Tresult = 1;
+#[cfg(windows)]
+pub const K_NO_INTERFACE: Tresult = 0x8000_4002_u32 as i32; // E_NOINTERFACE
+#[cfg(windows)]
+pub const K_INVALID_ARGUMENT: Tresult = 0x8007_0057_u32 as i32; // E_INVALIDARG
+#[cfg(windows)]
+pub const K_NOT_IMPLEMENTED: Tresult = 0x8000_4001_u32 as i32; // E_NOTIMPL
+#[cfg(windows)]
+pub const K_INTERNAL_ERROR: Tresult = 0x8000_4005_u32 as i32; // E_FAIL
+#[cfg(windows)]
+pub const K_NOT_INITIALIZED: Tresult = 0x8000_FFFF_u32 as i32; // E_UNEXPECTED
+#[cfg(windows)]
+pub const K_OUT_OF_MEMORY: Tresult = 0x8007_000E_u32 as i32; // E_OUTOFMEMORY
+#[cfg(not(windows))]
+pub const K_NO_INTERFACE: Tresult = -1;
+#[cfg(not(windows))]
+pub const K_INVALID_ARGUMENT: Tresult = 2;
+#[cfg(not(windows))]
+pub const K_NOT_IMPLEMENTED: Tresult = 3;
+#[cfg(not(windows))]
+pub const K_INTERNAL_ERROR: Tresult = 4;
+#[cfg(not(windows))]
+pub const K_NOT_INITIALIZED: Tresult = 5;
+#[cfg(not(windows))]
+pub const K_OUT_OF_MEMORY: Tresult = 6;
+
+/// The SDK name of a result code on this platform (`kNotImplemented`, …),
+/// or `None` for a value that is none of them.
+pub const fn tresult_name(result: Tresult) -> Option<&'static str> {
+    Some(match result {
+        K_RESULT_OK => "kResultOk",
+        K_RESULT_FALSE => "kResultFalse",
+        K_NO_INTERFACE => "kNoInterface",
+        K_INVALID_ARGUMENT => "kInvalidArgument",
+        K_NOT_IMPLEMENTED => "kNotImplemented",
+        K_INTERNAL_ERROR => "kInternalError",
+        K_NOT_INITIALIZED => "kNotInitialized",
+        K_OUT_OF_MEMORY => "kOutOfMemory",
+        _ => return None,
+    })
+}
 
 // SpeakerArrangement constants (vsttypes.h).
 pub const SPEAKER_L: SpeakerArrangement = 1 << 0;
@@ -109,30 +151,27 @@ pub const SUBCATEGORY_FX: &core::ffi::CStr = c"Fx";
 pub const SUBCATEGORY_INSTRUMENT_SYNTH: &core::ffi::CStr = c"Instrument|Synth";
 
 // ===========================================================================
-// TUID builder (macOS/Linux byte ordering)
+// TUID builder
 // ===========================================================================
 
-/// Equivalent to the Steinberg `INLINE_UID(l1, l2, l3, l4)` macro on non-COM
-/// platforms (macOS/Linux). Each 32-bit input is laid out big-endian into
-/// four consecutive bytes.
+/// The Steinberg `INLINE_UID(l1, l2, l3, l4)` macro.
+///
+/// macOS/Linux (non-COM): each 32-bit word is stored big-endian.
+/// Windows (COM_COMPATIBLE): the GUID layout — `l1` little-endian, `l2`
+/// as two little-endian 16-bit halves (high half first), `l3`/`l4`
+/// big-endian.
 pub const fn make_tuid(l1: u32, l2: u32, l3: u32, l4: u32) -> Tuid {
+    let (a, b, c, d) = (
+        l1.to_be_bytes(),
+        l2.to_be_bytes(),
+        l3.to_be_bytes(),
+        l4.to_be_bytes(),
+    );
+    #[cfg(windows)]
+    let (a, b) = ([a[3], a[2], a[1], a[0]], [b[1], b[0], b[3], b[2]]);
     [
-        ((l1 >> 24) & 0xFF) as u8,
-        ((l1 >> 16) & 0xFF) as u8,
-        ((l1 >> 8) & 0xFF) as u8,
-        (l1 & 0xFF) as u8,
-        ((l2 >> 24) & 0xFF) as u8,
-        ((l2 >> 16) & 0xFF) as u8,
-        ((l2 >> 8) & 0xFF) as u8,
-        (l2 & 0xFF) as u8,
-        ((l3 >> 24) & 0xFF) as u8,
-        ((l3 >> 16) & 0xFF) as u8,
-        ((l3 >> 8) & 0xFF) as u8,
-        (l3 & 0xFF) as u8,
-        ((l4 >> 24) & 0xFF) as u8,
-        ((l4 >> 16) & 0xFF) as u8,
-        ((l4 >> 8) & 0xFF) as u8,
-        (l4 & 0xFF) as u8,
+        a[0], a[1], a[2], a[3], b[0], b[1], b[2], b[3], c[0], c[1], c[2], c[3], d[0], d[1], d[2],
+        d[3],
     ]
 }
 
@@ -863,3 +902,45 @@ const _: () = {
     }
     assert!(core::mem::offset_of!(Event, data) == 24);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// funknown.h, non-COM branch (macOS/Linux).
+    #[cfg(not(windows))]
+    #[test]
+    fn tresults_and_tuids_match_the_non_com_sdk() {
+        let codes = [
+            K_NO_INTERFACE,
+            K_RESULT_OK,
+            K_RESULT_TRUE,
+            K_RESULT_FALSE,
+            K_INVALID_ARGUMENT,
+            K_NOT_IMPLEMENTED,
+            K_INTERNAL_ERROR,
+            K_NOT_INITIALIZED,
+            K_OUT_OF_MEMORY,
+        ];
+        assert_eq!(codes, [-1, 0, 0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(tresult_name(3), Some("kNotImplemented"));
+        assert_eq!(tresult_name(7), None);
+        assert_eq!(
+            make_tuid(0x0102_0304, 0x0506_0708, 0x090A_0B0C, 0x0D0E_0F10),
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        );
+    }
+
+    /// funknown.h, COM_COMPATIBLE branch (Windows HRESULTs, GUID order).
+    #[cfg(windows)]
+    #[test]
+    fn tresults_and_tuids_match_the_com_sdk() {
+        assert_eq!(K_NO_INTERFACE as u32, 0x8000_4002);
+        assert_eq!(K_INVALID_ARGUMENT as u32, 0x8007_0057);
+        assert_eq!((K_RESULT_OK, K_RESULT_FALSE), (0, 1));
+        assert_eq!(
+            make_tuid(0x0102_0304, 0x0506_0708, 0x090A_0B0C, 0x0D0E_0F10),
+            [4, 3, 2, 1, 6, 5, 8, 7, 9, 10, 11, 12, 13, 14, 15, 16]
+        );
+    }
+}

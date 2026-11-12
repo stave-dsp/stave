@@ -19,9 +19,14 @@ pub(super) unsafe extern "C" fn comp_get_controller_class_id<P: Vst3Export>(
 ) -> Tresult {
     // SAFETY: host contract (see `crate::host`).
     let (inst, class_id) = unsafe { (parent_ref::<P>(this), out_param(class_id, "classId")) };
-    inst.answer(
-        "getControllerClassId",
-        class_id.map(|out| *out = P::CONTROLLER_CID),
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            inst.answer(
+                "getControllerClassId",
+                class_id.map(|out| *out = P::CONTROLLER_CID),
+            )
+        },
     )
 }
 

@@ -6,11 +6,24 @@
 #![allow(clippy::undocumented_unsafe_blocks)]
 
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 use stave_clap::sys::*;
 use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
 
 struct Panics;
+
+/// Arms a panic in `Panics::new()`.
+static PANIC_IN_NEW: AtomicBool = AtomicBool::new(false);
+/// The tests share the arming static and run on parallel threads.
+static SERIAL: Mutex<()> = Mutex::new(());
+
+fn serial() -> MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 impl Plugin for Panics {
     const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
@@ -24,6 +37,7 @@ impl Plugin for Panics {
     };
 
     fn new() -> Self {
+        assert!(!PANIC_IN_NEW.load(Ordering::SeqCst), "a constructor bug");
         Self
     }
 
@@ -37,6 +51,7 @@ stave_clap::stave_clap_export!(raw Panics);
 
 #[test]
 fn a_panicking_process_is_contained_and_the_instance_goes_silent() {
+    let _serial = serial();
     unsafe {
         let get_factory = clap_entry.get_factory.unwrap();
         let factory = get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr()).cast::<ClapPluginFactory>();
@@ -79,5 +94,27 @@ fn a_panicking_process_is_contained_and_the_instance_goes_silent() {
             ([0.0; 64], [0.0; 64]),
             "silence, not the half-written block"
         );
+    }
+}
+
+/// S8: a panic in `P::new()` makes `create_plugin` return null instead
+/// of unwinding into the host.
+#[test]
+fn a_panicking_constructor_fails_create_plugin() {
+    let _serial = serial();
+    unsafe {
+        let get_factory = clap_entry.get_factory.unwrap();
+        let factory = get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr()).cast::<ClapPluginFactory>();
+        let create = (*factory).create_plugin.unwrap();
+        PANIC_IN_NEW.store(true, Ordering::SeqCst);
+        let plugin = create(factory, ptr::null(), Panics::DESCRIPTOR.id.as_ptr());
+        PANIC_IN_NEW.store(false, Ordering::SeqCst);
+        assert!(plugin.is_null());
+
+        // The factory still works afterwards.
+        let plugin = create(factory, ptr::null(), Panics::DESCRIPTOR.id.as_ptr());
+        assert!(!plugin.is_null());
+        assert!(((*plugin).init.unwrap())(plugin));
+        ((*plugin).destroy.unwrap())(plugin);
     }
 }

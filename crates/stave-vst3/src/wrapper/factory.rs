@@ -15,7 +15,7 @@ pub struct FactoryObj {
 unsafe impl Sync for FactoryObj {}
 
 pub(super) unsafe extern "C" fn factory_query_interface(
-    _this: *mut FUnknown,
+    this: *mut FUnknown,
     iid: *const Tuid,
     obj: *mut *mut c_void,
 ) -> Tresult {
@@ -30,8 +30,9 @@ pub(super) unsafe extern "C" fn factory_query_interface(
         IID_IPLUGIN_FACTORY2,
         IID_IPLUGIN_FACTORY3,
     ];
+    // Array comparisons and pointer writes only: nothing here can panic.
     if known.contains(&requested) {
-        *obj = _this.cast();
+        *obj = this.cast();
         K_RESULT_OK
     } else {
         *obj = ptr::null_mut();
@@ -55,14 +56,20 @@ pub(super) unsafe extern "C" fn factory_get_factory_info<P: Vst3Export>(
     let Ok(dst) = (unsafe { out_param(info, "info") }) else {
         return K_INVALID_ARGUMENT;
     };
-    // SAFETY: all-zero is a valid `PFactoryInfo` (char arrays, an integer).
-    *dst = unsafe { mem::zeroed() };
-    let desc = <P as Plugin>::DESCRIPTOR;
-    write_cstr_into(&mut dst.vendor, desc.vendor);
-    write_cstr_into(&mut dst.url, desc.url);
-    // Email — we don't have one in the descriptor; leave empty.
-    dst.flags = FACTORY_FLAG_UNICODE;
-    K_RESULT_OK
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            // SAFETY: all-zero is a valid `PFactoryInfo` (char arrays, an
+            // integer).
+            *dst = unsafe { mem::zeroed() };
+            let desc = <P as Plugin>::DESCRIPTOR;
+            write_cstr_into(&mut dst.vendor, desc.vendor);
+            write_cstr_into(&mut dst.url, desc.url);
+            // Email — we don't have one in the descriptor; leave empty.
+            dst.flags = FACTORY_FLAG_UNICODE;
+            K_RESULT_OK
+        },
+    )
 }
 
 pub(super) unsafe extern "C" fn factory_count_classes(_this: *mut FUnknown) -> i32 {
@@ -82,15 +89,20 @@ pub(super) unsafe extern "C" fn factory_get_class_info<P: Vst3Export>(
     let (Ok(dst), 0) = (unsafe { out_param(info, "info") }, index) else {
         return K_INVALID_ARGUMENT;
     };
-    let desc = <P as Plugin>::DESCRIPTOR;
-    // SAFETY: all-zero is a valid `PClassInfo` (a byte id, integers, char
-    // arrays).
-    *dst = unsafe { mem::zeroed() };
-    dst.cid = P::COMPONENT_CID;
-    dst.cardinality = K_MANY_INSTANCES;
-    write_cstr_into(&mut dst.category, CATEGORY_EFFECT);
-    write_cstr_into(&mut dst.name, desc.name);
-    K_RESULT_OK
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            let desc = <P as Plugin>::DESCRIPTOR;
+            // SAFETY: all-zero is a valid `PClassInfo` (a byte id, integers, char
+            // arrays).
+            *dst = unsafe { mem::zeroed() };
+            dst.cid = P::COMPONENT_CID;
+            dst.cardinality = K_MANY_INSTANCES;
+            write_cstr_into(&mut dst.category, CATEGORY_EFFECT);
+            write_cstr_into(&mut dst.name, desc.name);
+            K_RESULT_OK
+        },
+    )
 }
 
 pub(super) unsafe extern "C" fn factory_get_class_info_2<P: Vst3Export>(
@@ -102,20 +114,25 @@ pub(super) unsafe extern "C" fn factory_get_class_info_2<P: Vst3Export>(
     let (Ok(dst), 0) = (unsafe { out_param(info, "info") }, index) else {
         return K_INVALID_ARGUMENT;
     };
-    let desc = <P as Plugin>::DESCRIPTOR;
-    // SAFETY: all-zero is a valid `PClassInfo2` (a byte id, integers, char
-    // arrays).
-    *dst = unsafe { mem::zeroed() };
-    dst.cid = P::COMPONENT_CID;
-    dst.cardinality = K_MANY_INSTANCES;
-    write_cstr_into(&mut dst.category, CATEGORY_EFFECT);
-    write_cstr_into(&mut dst.name, desc.name);
-    dst.class_flags = 0;
-    write_subcategories::<P>(&mut dst.sub_categories);
-    write_cstr_into(&mut dst.vendor, desc.vendor);
-    write_cstr_into(&mut dst.version, desc.version);
-    write_cstr_into(&mut dst.sdk_version, c"VST 3.7.0");
-    K_RESULT_OK
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            let desc = <P as Plugin>::DESCRIPTOR;
+            // SAFETY: all-zero is a valid `PClassInfo2` (a byte id, integers, char
+            // arrays).
+            *dst = unsafe { mem::zeroed() };
+            dst.cid = P::COMPONENT_CID;
+            dst.cardinality = K_MANY_INSTANCES;
+            write_cstr_into(&mut dst.category, CATEGORY_EFFECT);
+            write_cstr_into(&mut dst.name, desc.name);
+            dst.class_flags = 0;
+            write_subcategories::<P>(&mut dst.sub_categories);
+            write_cstr_into(&mut dst.vendor, desc.vendor);
+            write_cstr_into(&mut dst.version, desc.version);
+            write_cstr_into(&mut dst.sdk_version, c"VST 3.7.0");
+            K_RESULT_OK
+        },
+    )
 }
 
 pub(super) unsafe extern "C" fn factory_get_class_info_unicode<P: Vst3Export>(
@@ -127,20 +144,25 @@ pub(super) unsafe extern "C" fn factory_get_class_info_unicode<P: Vst3Export>(
     let (Ok(dst), 0) = (unsafe { out_param(info, "info") }, index) else {
         return K_INVALID_ARGUMENT;
     };
-    let desc = <P as Plugin>::DESCRIPTOR;
-    // SAFETY: all-zero is a valid `PClassInfoW` (a byte id, integers, char
-    // arrays).
-    *dst = unsafe { mem::zeroed() };
-    dst.cid = P::COMPONENT_CID;
-    dst.cardinality = K_MANY_INSTANCES;
-    write_cstr_into(&mut dst.category, CATEGORY_EFFECT);
-    write_utf16_name(&mut dst.name, cstr_to_str(desc.name));
-    dst.class_flags = 0;
-    write_subcategories::<P>(&mut dst.sub_categories);
-    write_utf16_name(&mut dst.vendor, cstr_to_str(desc.vendor));
-    write_utf16_name(&mut dst.version, cstr_to_str(desc.version));
-    write_utf16_name(&mut dst.sdk_version, "VST 3.7.0");
-    K_RESULT_OK
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        || {
+            let desc = <P as Plugin>::DESCRIPTOR;
+            // SAFETY: all-zero is a valid `PClassInfoW` (a byte id, integers, char
+            // arrays).
+            *dst = unsafe { mem::zeroed() };
+            dst.cid = P::COMPONENT_CID;
+            dst.cardinality = K_MANY_INSTANCES;
+            write_cstr_into(&mut dst.category, CATEGORY_EFFECT);
+            write_utf16_name(&mut dst.name, cstr_to_str(desc.name));
+            dst.class_flags = 0;
+            write_subcategories::<P>(&mut dst.sub_categories);
+            write_utf16_name(&mut dst.vendor, cstr_to_str(desc.vendor));
+            write_utf16_name(&mut dst.version, cstr_to_str(desc.version));
+            write_utf16_name(&mut dst.sdk_version, "VST 3.7.0");
+            K_RESULT_OK
+        },
+    )
 }
 
 pub(super) unsafe extern "C" fn factory_set_host_context(
@@ -169,7 +191,19 @@ pub(super) unsafe extern "C" fn factory_create_instance<P: Vst3Export>(
     if requested_cid != P::COMPONENT_CID && requested_cid != P::CONTROLLER_CID {
         return K_NO_INTERFACE;
     }
+    // `P::new()` and every author hook below are plugin code. On a panic
+    // the partly built values drop during the unwind and the host gets
+    // an error with `*obj` still null.
+    ffi_entry::<P, _>(
+        || K_INTERNAL_ERROR,
+        // SAFETY: `iid` is a non-null TUID and `obj` writable (checked).
+        || unsafe { create_instance::<P>(iid, obj) },
+    )
+}
 
+/// # Safety
+/// `iid` is a 16-byte TUID; `obj` is writable.
+unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) -> Tresult {
     // Allocate the debug bus *before* the plugin so we can hand it to
     // `debug_attach` after construction.
     let debug_bus = DebugBus::new();
@@ -190,13 +224,15 @@ pub(super) unsafe extern "C" fn factory_create_instance<P: Vst3Export>(
         debug_bus.probe_f64(&io_out_right, "io_out_r", -120.0);
     }
 
-    stave_core::diagnostics::log_panics(const { &P::DESCRIPTOR });
     let mut plugin_obj = P::new();
     plugin_obj.debug_attach(debug_bus.clone());
     let diagnostics = Diagnostics::new(&P::DESCRIPTOR);
     diagnostics.log.add(Box::new(BusSink(debug_bus.clone())));
-    let (param_table, editor_ui, editor_face) =
-        (plugin_obj.param_table(), plugin_obj.editor_ui(), plugin_obj.editor_face());
+    let (param_table, editor_ui, editor_face) = (
+        plugin_obj.param_table(),
+        plugin_obj.editor_ui(),
+        plugin_obj.editor_face(),
+    );
     if let Err(e) = param_table.validate() {
         // Author bug (duplicate or reserved ids): refuse the instance
         // loudly rather than corrupt automation.
@@ -235,10 +271,10 @@ pub(super) unsafe extern "C" fn factory_create_instance<P: Vst3Export>(
             parent: ptr::null_mut(),
         },
         unit_info_vtbl: build_unit_info_vtbl::<P>(),
+        view_vtbl: build_view_vtbl::<P>(),
         ref_count: AtomicU32::new(0),
         shared,
         plugin: PluginCell::new(plugin_obj),
-        editor: UnsafeCell::new(None),
         bypass_id: (0..param_table.count())
             .filter_map(|i| param_table.by_index(i))
             .find(|p| p.meta().flags.bypass)
@@ -283,7 +319,9 @@ pub(super) unsafe extern "C" fn factory_create_instance<P: Vst3Export>(
     // The host's first reference: the interface it asked for, through the
     // same lookup `queryInterface` serves.
     // SAFETY: `inst` is live and wired; `component` is one of its
-    // interfaces; `iid` is a TUID and `obj` writable (checked above).
+    // interfaces; `iid` is a TUID and `obj` writable (this function's
+    // contract). On refusal nothing else has seen `inst`, so the
+    // `Box::into_raw` above is reclaimed here.
     unsafe {
         let component = ptr::addr_of_mut!((*inst).component).cast::<FUnknown>();
         let result = shared_query_interface::<P>(component, iid.cast(), obj);

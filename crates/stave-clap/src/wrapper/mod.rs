@@ -24,6 +24,23 @@ use stave_core::{
 use crate::ports;
 use crate::sys;
 
+/// The panic boundary for `extern "C"` entries: `call()`, or `failed()`
+/// if it panics — an unwind never reaches the host. Entries that run
+/// plugin code on an instance go through [`Instance::guarded`] (the
+/// same boundary plus the instance's disable-on-panic latch); this is
+/// for the rest (entry, factory, instance construction, wrapper-only
+/// bookkeeping). The panic itself is logged by the `log_panics` hook
+/// installed here.
+///
+/// Entries whose whole body is a constant or a single atomic load
+/// cannot panic and are not wrapped.
+pub(crate) fn ffi_entry<P: Plugin, R>(failed: impl FnOnce() -> R, call: impl FnOnce() -> R) -> R {
+    stave_core::diagnostics::log_panics(const { &P::DESCRIPTOR });
+    // AssertUnwindSafe: on a panic, whatever `call` built is dropped
+    // during the unwind and `failed()` touches none of it.
+    std::panic::catch_unwind(core::panic::AssertUnwindSafe(call)).unwrap_or_else(|_| failed())
+}
+
 /// Scratch must fit the WIDEST declared member — hosts can
 /// renegotiate configs between activations.
 fn max_in_channels<P: Plugin>() -> usize {

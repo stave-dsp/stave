@@ -5,13 +5,28 @@ use super::*;
 pub(super) unsafe extern "C" fn plugin_init<P: ClapExport>(plugin: *const sys::ClapPlugin) -> bool {
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    if let Some(log) = inst.host.and_then(Host::log) {
-        inst.diagnostics.log.add(Box::new(log));
-    }
-    true
+    ffi_entry::<P, _>(
+        || false,
+        || {
+            if let Some(log) = inst.host.and_then(Host::log) {
+                inst.diagnostics.log.add(Box::new(log));
+            }
+            true
+        },
+    )
 }
 
 pub(super) unsafe extern "C" fn plugin_destroy<P: ClapExport>(plugin: *const sys::ClapPlugin) {
+    // A panic before the free leaks the instance instead of unwinding
+    // into the host.
+    // SAFETY: host contract (see `host`): `destroy` is the last call.
+    ffi_entry::<P, _>(|| (), || unsafe { destroy::<P>(plugin) });
+}
+
+/// # Safety
+/// `plugin` is a live pointer `create_plugin` returned; nothing uses it
+/// after this call.
+unsafe fn destroy<P: ClapExport>(plugin: *const sys::ClapPlugin) {
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
     inst.guard.report(&inst.diagnostics);
@@ -78,7 +93,7 @@ pub(super) unsafe extern "C" fn tail_get<P: ClapExport>(plugin: *const sys::Clap
 pub(super) unsafe extern "C" fn plugin_deactivate<P: ClapExport>(plugin: *const sys::ClapPlugin) {
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    inst.diagnostics.report_faults();
+    ffi_entry::<P, _>(|| (), || inst.diagnostics.report_faults());
     inst.guarded(
         "deactivate",
         || (),
@@ -118,6 +133,13 @@ pub(super) unsafe extern "C" fn plugin_on_main_thread<P: ClapExport>(
     plugin: *const sys::ClapPlugin,
 ) {
     // SAFETY: host contract (see `host`).
+    ffi_entry::<P, _>(|| (), || unsafe { on_main_thread::<P>(plugin) });
+}
+
+/// # Safety
+/// `plugin` is a live pointer `create_plugin` returned.
+unsafe fn on_main_thread<P: ClapExport>(plugin: *const sys::ClapPlugin) {
+    // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
     inst.guard.report(&inst.diagnostics);
     inst.diagnostics.report_faults();
@@ -132,6 +154,10 @@ pub(super) unsafe extern "C" fn plugin_get_extension<P: ClapExport>(
     let Ok(requested) = requested else {
         return ptr::null();
     };
+    ffi_entry::<P, _>(ptr::null, || extension(inst, requested))
+}
+
+fn extension<P: ClapExport>(inst: &Instance<P>, requested: &CStr) -> *const c_void {
     if requested == sys::CLAP_EXT_AUDIO_PORTS {
         return &inst.audio_ports_vtable as *const _ as *const c_void;
     }

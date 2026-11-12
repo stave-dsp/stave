@@ -5,7 +5,8 @@ use crate::wrapper::{Instance, Vst3Export};
 
 /// The editor's gesture sink: forwards knob gestures to the
 /// Step-3 handler path. Holds the instance pointer — valid for the
-/// editor's lifetime because the editor lives inside the Instance.
+/// editor's lifetime because the `EditorBox` owning the editor holds a
+/// reference on the instance until the editor is dropped.
 pub(crate) struct Vst3EditorHost<P: Vst3Export> {
     pub(crate) inst: *mut Instance<P>,
 }
@@ -24,7 +25,8 @@ impl<P: Vst3Export> crate::cocoa_view::EditorHost for Vst3EditorHost<P> {
 
 impl<P: Vst3Export> Vst3EditorHost<P> {
     fn instance(&self) -> &Instance<P> {
-        // SAFETY: see the struct docs — the instance outlives its editor.
+        // SAFETY: see the struct docs — the instance outlives its editor
+        // (the owning view's reference).
         unsafe { &*self.inst }
     }
 }

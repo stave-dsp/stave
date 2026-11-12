@@ -8,7 +8,7 @@ use core::ffi::c_char;
 use stave_core::Plugin;
 
 use crate::sys;
-use crate::wrapper::{out_param, write_c_str, ClapExport, Instance};
+use crate::wrapper::{ffi_entry, out_param, write_c_str, ClapExport, Instance};
 use stave_core::diagnostics::CallError;
 
 use core::sync::atomic::Ordering;
@@ -26,16 +26,22 @@ pub(crate) unsafe extern "C" fn audio_ports_count<P: ClapExport>(
     is_input: bool,
 ) -> u32 {
     // SAFETY: host contract (see `wrapper::host`).
-    let ports = selected(unsafe { Instance::<P>::from_plugin_ptr(plugin) });
-    if is_input {
-        // Main (if any) + declared aux ports, in declaration order.
-        let main = if ports.in_channels() > 0 { 1 } else { 0 };
-        main + ports.aux_in.len() as u32
-    } else if ports.out_channels() > 0 {
-        1
-    } else {
-        0
-    }
+    let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
+    ffi_entry::<P, _>(
+        || 0,
+        || {
+            let ports = selected(inst);
+            if is_input {
+                // Main (if any) + declared aux ports, in declaration order.
+                let main = if ports.in_channels() > 0 { 1 } else { 0 };
+                main + ports.aux_in.len() as u32
+            } else if ports.out_channels() > 0 {
+                1
+            } else {
+                0
+            }
+        },
+    )
 }
 
 pub(crate) unsafe extern "C" fn audio_ports_get<P: ClapExport>(
@@ -51,9 +57,14 @@ pub(crate) unsafe extern "C" fn audio_ports_get<P: ClapExport>(
             out_param(info, "info"),
         )
     };
-    inst.answer(
-        "audio_ports.get",
-        info.and_then(|info| port_info(selected(inst), index, is_input, info)),
+    ffi_entry::<P, _>(
+        || false,
+        || {
+            inst.answer(
+                "audio_ports.get",
+                info.and_then(|info| port_info(selected(inst), index, is_input, info)),
+            )
+        },
     )
 }
 
@@ -130,9 +141,14 @@ pub(crate) unsafe extern "C" fn config_get<P: ClapExport>(
             out_param(out, "config"),
         )
     };
-    inst.answer(
-        "audio_ports_config.get",
-        out.and_then(|out| config_info::<P>(index, out)),
+    ffi_entry::<P, _>(
+        || false,
+        || {
+            inst.answer(
+                "audio_ports_config.get",
+                out.and_then(|out| config_info::<P>(index, out)),
+            )
+        },
     )
 }
 
@@ -177,14 +193,19 @@ pub(crate) unsafe extern "C" fn config_select<P: ClapExport>(
 ) -> bool {
     // SAFETY: host contract (see `wrapper::host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    let known = (config_id as usize) < <P as Plugin>::CONFIGS.len();
-    if known {
-        inst.config.store(config_id as usize, Ordering::Release);
-    }
-    inst.answer(
-        "audio_ports_config.select",
-        known
-            .then_some(())
-            .ok_or(CallError::UnknownConfigId(config_id)),
+    ffi_entry::<P, _>(
+        || false,
+        || {
+            let known = (config_id as usize) < <P as Plugin>::CONFIGS.len();
+            if known {
+                inst.config.store(config_id as usize, Ordering::Release);
+            }
+            inst.answer(
+                "audio_ports_config.select",
+                known
+                    .then_some(())
+                    .ok_or(CallError::UnknownConfigId(config_id)),
+            )
+        },
     )
 }

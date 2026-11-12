@@ -28,7 +28,9 @@ edition = "2021"
 license = "MIT"
 authors = ["Ryan Bahan <ryan@ryanbahan.com>"]
 repository = "https://github.com/stave-dsp/stave"
-rust-version = "1.80"
+# 1.81: a panic reaching an `extern "C"` boundary aborts instead of
+# being undefined behaviour (the wrappers also catch every one first).
+rust-version = "1.81"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
