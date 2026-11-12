@@ -1,5 +1,7 @@
-//! Instruments: the segmented level [`Meter`], the moving [`Trace`] of a
-//! tap over time, and the XY [`Pad`].
+//! Instruments: the segmented level [`Meter`] (and the gain-reduction
+//! meter that hangs from the top), the moving [`Trace`] of a tap over
+//! time (bipolar about a centre line, for a modulation source), and the
+//! XY [`Pad`].
 
 use std::collections::VecDeque;
 use std::vec::Vec;
@@ -31,8 +33,20 @@ pub enum Reading {
     Db,
     /// The tap is a linear amplitude (1 = 0 dBFS).
     Linear,
-    /// The tap is 0..1 (a gain reduction depth, a position).
+    /// The tap is 0..1 (a depth, a position).
     Unit,
+    /// The tap is gain reduction in dB (its size: −6 and 6 both read as
+    /// 6 dB of reduction), over `range`'s (0, most).
+    Reduction,
+}
+
+/// Which end of a meter's bar its reading grows from.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Hang {
+    /// A level: lit from the bottom up.
+    Bottom,
+    /// Gain reduction: lit from the top down.
+    Top,
 }
 
 /// A vertical LED bar meter reading a tap, with an optional legend.
@@ -44,6 +58,8 @@ pub struct Meter {
     pub range: (f64, f64),
     pub label: Option<&'static str>,
     pub height: f64,
+    /// The end the bar grows from.
+    pub hang: Hang,
 }
 
 const SEGMENTS: usize = 24;
@@ -58,7 +74,24 @@ impl Meter {
             range: (-60.0, 6.0),
             label: None,
             height: 150.0,
+            hang: Hang::Bottom,
         }
+    }
+    /// A gain-reduction meter: the tap's reduction in dB, 0 to 24 dB,
+    /// hanging from the top.
+    pub fn reduction(tap: TapId) -> Self {
+        Meter {
+            reading: Reading::Reduction,
+            range: (0.0, 24.0),
+            hang: Hang::Top,
+            ..Self::db(tap)
+        }
+    }
+    /// The dB at the bottom and top of the scale (for a reduction
+    /// meter: none and the most it shows).
+    pub fn range(mut self, lo: f64, hi: f64) -> Self {
+        self.range = (lo, hi);
+        self
     }
     pub fn linear(tap: TapId) -> Self {
         Meter {
@@ -90,6 +123,7 @@ impl Meter {
     fn level(&self, v: f64) -> f64 {
         match self.reading {
             Reading::Unit => v.clamp(0.0, 1.0),
+            Reading::Reduction => ((v.abs() - self.range.0) / (self.range.1 - self.range.0)).clamp(0.0, 1.0),
             Reading::Db | Reading::Linear => {
                 let db = if self.reading == Reading::Linear { 20.0 * v.abs().max(1e-9).log10() } else { v };
                 ((db - self.range.0) / (self.range.1 - self.range.0)).clamp(0.0, 1.0)
@@ -127,8 +161,13 @@ impl Part for Meter {
         let lit = (lvl * SEGMENTS as f64).round() as usize;
         let seg_h = (win.h - 4.0) / SEGMENTS as f64;
         for i in 0..SEGMENTS {
-            let y = win.y + win.h - 2.0 - (i as f64 + 1.0) * seg_h;
-            let hot = i >= SEGMENTS - 3;
+            // Segment i counts from the end the bar hangs from.
+            let y = match self.hang {
+                Hang::Bottom => win.y + win.h - 2.0 - (i as f64 + 1.0) * seg_h,
+                Hang::Top => win.y + 2.0 + i as f64 * seg_h,
+            };
+            // A level runs hot at its top; reduction is never "hot".
+            let hot = self.hang == Hang::Bottom && i >= SEGMENTS - 3;
             let base = if hot { Color::rgba(1.0, 0.32, 0.2, 1.0) } else { th.palette.phosphor };
             let c = if i < lit { base } else { with_alpha(base, 0.1) };
             s.solid(Path::rect(pt(win.x + 2.5, y + 0.6), win.w - 5.0, seg_h - 1.2), c);
@@ -155,6 +194,9 @@ pub struct Trace {
     /// The tap values at the bottom and top of the screen.
     pub range: (f64, f64),
     pub label: Option<&'static str>,
+    /// Draw about a centre line (the middle of `range`), filled to it: a
+    /// modulation source swinging either side of zero.
+    pub bipolar: bool,
     history: Mutex<History>,
 }
 
@@ -175,11 +217,17 @@ impl Trace {
             h,
             range,
             label: None,
+            bipolar: false,
             history: Mutex::new(History::default()),
         }
     }
     pub fn label(mut self, l: &'static str) -> Self {
         self.label = Some(l);
+        self
+    }
+    /// About a centre line (see [`bipolar`](Self::bipolar)).
+    pub fn bipolar(mut self) -> Self {
+        self.bipolar = true;
         self
     }
     pub fn node(self) -> FaceNode {
@@ -219,6 +267,17 @@ impl Part for Trace {
                 pt(sc.x + sc.w - (h.len() - 1 - i) as f64 * 2.0, sc.y + sc.h - 4.0 - t * (sc.h - 8.0))
             })
             .collect();
+        if self.bipolar {
+            let mid = sc.y + sc.h / 2.0;
+            s.stroke(Path::new().move_to(pt(sc.x, mid)).line_to(pt(sc.x + sc.w, mid)), Stroke::new(with_alpha(th.palette.phosphor, 0.35), 1.0));
+            if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
+                let mut area = Path::new().move_to(pt(first.x, mid));
+                for &p in &pts {
+                    area = area.line_to(p);
+                }
+                s.solid(area.line_to(pt(last.x, mid)).close(), with_alpha(th.palette.phosphor, 0.16));
+            }
+        }
         if pts.len() > 1 {
             s.stroke(Path::polyline(&pts), Stroke::round(with_alpha(th.palette.phosphor, 0.2), 4.0));
             s.stroke(Path::polyline(&pts), Stroke::round(th.palette.phosphor, 1.4));

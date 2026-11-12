@@ -331,6 +331,19 @@ pub fn lamp_in(f: &Frame<'_>, s: &mut Scene, c: Pt, col: crate::photo::Rgb) {
 
 // ------------------------------------------------------------------- lamp
 
+/// A bipolar lamp's light for `v` (±1): `lamp` above zero, its mirror
+/// (red and blue swapped) below, as bright as the swing in eight steps
+/// (one sprite each); unlit near zero.
+fn bipolar_glow(v: f64, lamp: crate::photo::Rgb) -> Option<crate::photo::Rgb> {
+    let k = (v.abs().clamp(0.0, 1.0) * 8.0).round() / 8.0;
+    if k == 0.0 {
+        return None;
+    }
+    let [r, g, b] = lamp;
+    let base = if v > 0.0 { lamp } else { [b, g, r] };
+    Some(base.map(|c| c * k))
+}
+
 /// What lights an indicator lamp.
 #[derive(Copy, Clone, Debug)]
 pub enum LampSource {
@@ -340,6 +353,10 @@ pub enum LampSource {
     Tap(TapId, f64),
     /// Always lit (a pilot lamp: the unit is on).
     Always,
+    /// A tap swinging ±1 (a modulation source): lit in the lamp's colour
+    /// above zero and in its mirror (red and blue swapped: amber's is a
+    /// blue) below, as bright as the swing.
+    Bipolar(TapId),
 }
 
 /// What an indicator lamp looks like.
@@ -367,6 +384,15 @@ impl Lamp {
     pub fn param(b: Bind) -> Self {
         Lamp {
             source: LampSource::Param(b),
+            label: None,
+            style: LampStyle::Led,
+            color: None,
+        }
+    }
+    /// A lamp following a ±1 tap (see [`LampSource::Bipolar`]).
+    pub fn bipolar(id: TapId) -> Self {
+        Lamp {
+            source: LampSource::Bipolar(id),
             label: None,
             style: LampStyle::Led,
             color: None,
@@ -450,15 +476,16 @@ impl Part for Lamp {
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
-        let on = match self.source {
-            LampSource::Param(b) => f.value(b) >= 0.5,
-            LampSource::Tap(id, t) => f.tap(id) > t,
-            LampSource::Always => true,
+        let lamp = self.color.unwrap_or(f.theme.hardware.lamp);
+        let col = match self.source {
+            LampSource::Param(b) => (f.value(b) >= 0.5).then_some(lamp),
+            LampSource::Tap(id, t) => (f.tap(id) > t).then_some(lamp),
+            LampSource::Always => Some(lamp),
+            LampSource::Bipolar(id) => bipolar_glow(f.tap(id), lamp),
         };
-        if !on {
+        let Some(col) = col else {
             return;
-        }
-        let col = self.color.unwrap_or(f.theme.hardware.lamp);
+        };
         if self.style == LampStyle::Jewel {
             let size = 2.0 * JEWEL_R * 3.0;
             let key = sprite_key(("jewel", col.map(f64::to_bits)));
@@ -473,7 +500,7 @@ impl Part for Lamp {
     fn reads(&self) -> Reads {
         match self.source {
             LampSource::Param(b) => Reads::params(&[b]),
-            LampSource::Tap(id, _) => Reads::taps(&[id]),
+            LampSource::Tap(id, _) | LampSource::Bipolar(id) => Reads::taps(&[id]),
             LampSource::Always => Reads::NONE,
         }
     }

@@ -41,6 +41,7 @@ pub use part::{
 };
 pub use stave_core::telemetry::TapId;
 pub use stave_core::Controller;
+pub use stave_ui::Kind;
 pub use parts::*;
 pub use runtime::{Cursor, Face, Key, Layer, Mods, Runtime, Visibility};
 pub use trace::{Act, Trace, TraceError};

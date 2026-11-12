@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use stave::controller::{GestureSink, PluginController};
 use stave::params::{AnyParam, IndexedParams, ParamId, Params};
 use stave::{Controller, Plugin, Preset, Telemetry};
+use stave_telemetry::{Tap, TapId};
 use stave_face::{Act, Cursor, Face, Gesture, Grab, Key, Layer, Mods, PartId, Runtime, Trace, Visibility};
 use stave_raster::{BoxText, Canvas};
 use stave_ui::layout::Rect;
@@ -173,6 +174,7 @@ const DRAG_STEPS: usize = 8;
 pub struct FaceDriver {
     runtime: Runtime,
     controller: PluginController,
+    telemetry: Arc<Telemetry>,
     table: Arc<dyn Params>,
     log: Log,
     trace: Trace,
@@ -201,10 +203,12 @@ impl FaceDriver {
     /// Any face, over a parameter table and its presets.
     pub fn new(face: Face, table: Arc<dyn Params>, presets: Vec<Preset>) -> Self {
         let log = Log::default();
-        let controller = PluginController::new(table.clone(), Telemetry::new(), presets.into(), Box::new(log.clone()));
+        let telemetry = Telemetry::new();
+        let controller = PluginController::new(table.clone(), telemetry.clone(), presets.into(), Box::new(log.clone()));
         FaceDriver {
             runtime: Runtime::new(face, &BoxText),
             controller,
+            telemetry,
             table,
             log,
             trace: Trace::default(),
@@ -364,6 +368,13 @@ impl FaceDriver {
     /// Show one page or step (pages flip; steps are edits).
     pub fn show(&mut self, state: &[Visibility]) -> &mut Self {
         self.runtime.show(&self.controller, state);
+        self
+    }
+
+    /// Publish `value` on tap `id`, as the engine would: what a meter,
+    /// a trace or a lamp reads.
+    pub fn tap(&mut self, id: TapId, value: f64) -> &mut Self {
+        Tap::register(&self.telemetry, id).set(value);
         self
     }
 

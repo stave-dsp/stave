@@ -15,6 +15,7 @@ use crate::theme::Theme;
 
 /// A display's picture: draw into `screen` (face coordinates). Plain fn,
 /// no captured state: the picture is a function of the frame alone.
+/// What it draws past the screen's rounded edge is clipped away.
 pub type Draw = fn(&Frame<'_>, Rect, &mut Scene);
 
 #[derive(Clone, Debug)]
@@ -85,7 +86,7 @@ impl Part for Display {
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let sc = Self::screen(r);
-        (self.draw)(f, sc, s);
+        s.clipped(rrect_path(sc, RADIUS), |s| (self.draw)(f, sc, s));
         glass_over(f, s, sc, RADIUS);
     }
 
