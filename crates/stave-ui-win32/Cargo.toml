@@ -1,0 +1,18 @@
+[package]
+name = "stave-ui-win32"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The Windows platform for a stave face: an HWND child window, the software blit, pointer, keys and DPI."
+
+[dependencies]
+stave-core.workspace = true
+stave-face.workspace = true
+stave-raster.workspace = true
+stave-ui.workspace = true
+stave-ui-shell.workspace = true
+
+[lints]
+workspace = true

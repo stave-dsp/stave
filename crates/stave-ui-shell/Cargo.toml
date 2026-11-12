@@ -1,0 +1,18 @@
+[package]
+name = "stave-ui-shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "What every stave platform shell shares: a face session (runtime, canvas, clock, trace, snapshot) behind a reentrancy and panic guard."
+
+[dependencies]
+stave-core.workspace = true
+stave-face.workspace = true
+stave-font.workspace = true
+stave-raster.workspace = true
+stave-ui.workspace = true
+
+[lints]
+workspace = true

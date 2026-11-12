@@ -200,6 +200,11 @@ pub const IID_IEVENT_LIST: Tuid = make_tuid(0x3A2C4214, 0x346349FE, 0xB2C4F397, 
 pub const IID_IPLUG_VIEW: Tuid = make_tuid(0x5BC32507, 0xD06049EA, 0xA6151B52, 0x2B755B29);
 pub const IID_IHOST_APPLICATION: Tuid = make_tuid(0x58E595CC, 0xDB2D4969, 0x8B6AAF8C, 0x36A664E5);
 pub const IID_ICONNECTION_POINT: Tuid = make_tuid(0x70A4156F, 0x6E6E4026, 0x989148BF, 0xAA60D8D1);
+pub const IID_IPLUG_FRAME: Tuid = make_tuid(0x367FAF01, 0xAFA94693, 0x8D4DA2A0, 0xED0882A3);
+/// Linux only (pluginterfaces/gui/iplugview.h): the host's run loop.
+pub const IID_IRUN_LOOP: Tuid = make_tuid(0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
+pub const IID_IEVENT_HANDLER: Tuid = make_tuid(0x561E65C9, 0x13A0496F, 0x813A2C35, 0x654D7983);
+pub const IID_ITIMER_HANDLER: Tuid = make_tuid(0x10BDD94F, 0x41424774, 0x821FAD8F, 0xECA72CA9);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -208,6 +213,51 @@ pub struct ViewRect {
     pub top: i32,
     pub right: i32,
     pub bottom: i32,
+}
+
+/// `Linux::IRunLoop`: the host's main loop, which an X11 view joins with
+/// a file descriptor handler and a timer.
+#[repr(C)]
+pub struct IRunLoopVtbl {
+    pub query_interface: unsafe extern "C" fn(
+        this: *mut FUnknown,
+        iid: *const Tuid,
+        obj: *mut *mut c_void,
+    ) -> Tresult,
+    pub add_ref: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub release: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub register_event_handler:
+        unsafe extern "C" fn(this: *mut FUnknown, handler: *mut FUnknown, fd: i32) -> Tresult,
+    pub unregister_event_handler: unsafe extern "C" fn(this: *mut FUnknown, handler: *mut FUnknown) -> Tresult,
+    pub register_timer:
+        unsafe extern "C" fn(this: *mut FUnknown, handler: *mut FUnknown, milliseconds: u64) -> Tresult,
+    pub unregister_timer: unsafe extern "C" fn(this: *mut FUnknown, handler: *mut FUnknown) -> Tresult,
+}
+
+/// `Linux::IEventHandler`: called when a registered descriptor is ready.
+#[repr(C)]
+pub struct IEventHandlerVtbl {
+    pub query_interface: unsafe extern "C" fn(
+        this: *mut FUnknown,
+        iid: *const Tuid,
+        obj: *mut *mut c_void,
+    ) -> Tresult,
+    pub add_ref: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub release: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub on_fd_is_set: unsafe extern "C" fn(this: *mut FUnknown, fd: i32),
+}
+
+/// `Linux::ITimerHandler`: called on a registered timer.
+#[repr(C)]
+pub struct ITimerHandlerVtbl {
+    pub query_interface: unsafe extern "C" fn(
+        this: *mut FUnknown,
+        iid: *const Tuid,
+        obj: *mut *mut c_void,
+    ) -> Tresult,
+    pub add_ref: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub release: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub on_timer: unsafe extern "C" fn(this: *mut FUnknown),
 }
 
 #[repr(C)]

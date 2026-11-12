@@ -540,6 +540,8 @@ pub struct ClapHostLog {
 
 pub const CLAP_EXT_GUI: &core::ffi::CStr = c"clap.gui";
 pub const CLAP_WINDOW_API_COCOA: &core::ffi::CStr = c"cocoa";
+pub const CLAP_WINDOW_API_WIN32: &core::ffi::CStr = c"win32";
+pub const CLAP_WINDOW_API_X11: &core::ffi::CStr = c"x11";
 
 /// The platform window a host embeds a plugin's GUI in.
 #[repr(C)]
@@ -593,6 +595,44 @@ pub struct ClapPluginGui {
     pub suggest_title: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, title: *const c_char)>,
     pub show: Option<unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool>,
     pub hide: Option<unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool>,
+}
+
+// ===========================================================================
+// clap.timer-support and clap.posix-fd-support (ext/timer-support.h,
+// ext/posix-fd-support.h): how an X11 GUI joins the host's run loop
+// ===========================================================================
+
+pub const CLAP_EXT_TIMER_SUPPORT: &core::ffi::CStr = c"clap.timer-support";
+pub const CLAP_EXT_POSIX_FD_SUPPORT: &core::ffi::CStr = c"clap.posix-fd-support";
+pub const CLAP_POSIX_FD_READ: u32 = 1 << 0;
+pub const CLAP_POSIX_FD_WRITE: u32 = 1 << 1;
+pub const CLAP_POSIX_FD_ERROR: u32 = 1 << 2;
+
+/// The plugin's `clap.timer-support`. [main-thread]
+#[repr(C)]
+pub struct ClapPluginTimerSupport {
+    pub on_timer: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, timer_id: ClapId)>,
+}
+
+/// The host's `clap.timer-support`. [main-thread]
+#[repr(C)]
+pub struct ClapHostTimerSupport {
+    pub register_timer: Option<unsafe extern "C" fn(host: *const ClapHost, period_ms: u32, timer_id: *mut ClapId) -> bool>,
+    pub unregister_timer: Option<unsafe extern "C" fn(host: *const ClapHost, timer_id: ClapId) -> bool>,
+}
+
+/// The plugin's `clap.posix-fd-support`. [main-thread]
+#[repr(C)]
+pub struct ClapPluginPosixFdSupport {
+    pub on_fd: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, fd: core::ffi::c_int, flags: u32)>,
+}
+
+/// The host's `clap.posix-fd-support`. [main-thread]
+#[repr(C)]
+pub struct ClapHostPosixFdSupport {
+    pub register_fd: Option<unsafe extern "C" fn(host: *const ClapHost, fd: core::ffi::c_int, flags: u32) -> bool>,
+    pub modify_fd: Option<unsafe extern "C" fn(host: *const ClapHost, fd: core::ffi::c_int, flags: u32) -> bool>,
+    pub unregister_fd: Option<unsafe extern "C" fn(host: *const ClapHost, fd: core::ffi::c_int) -> bool>,
 }
 
 // ===========================================================================
@@ -668,5 +708,9 @@ const _: () = {
         ClapPluginGui => 120, 8;
         ClapNotePortInfo => 268, 4;
         ClapPluginNotePorts => 16, 8;
+        ClapPluginTimerSupport => 8, 8;
+        ClapHostTimerSupport => 16, 8;
+        ClapPluginPosixFdSupport => 8, 8;
+        ClapHostPosixFdSupport => 24, 8;
     }
 };

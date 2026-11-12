@@ -168,10 +168,17 @@ fn extension<P: ClapExport>(inst: &Instance<P>, requested: &CStr) -> *const c_vo
     if requested == sys::CLAP_EXT_LATENCY {
         return &inst.latency_vtable as *const _ as *const c_void;
     }
-    // Faces show in an NSView; elsewhere the host shows its own editor.
-    #[cfg(target_os = "macos")]
     if requested == sys::CLAP_EXT_GUI && inst.face.is_some() {
         return &inst.gui_vtable as *const _ as *const c_void;
+    }
+    // An X11 face pumps from the host's run loop.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if requested == sys::CLAP_EXT_TIMER_SUPPORT && inst.face.is_some() {
+        return &inst.timer_vtable as *const _ as *const c_void;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if requested == sys::CLAP_EXT_POSIX_FD_SUPPORT && inst.face.is_some() {
+        return &inst.fd_vtable as *const _ as *const c_void;
     }
     if requested == sys::CLAP_EXT_NOTE_PORTS && ports::takes_notes::<P>() {
         return &inst.note_ports_vtable as *const _ as *const c_void;

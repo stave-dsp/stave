@@ -10,6 +10,7 @@ use crate::note::{NoteEvent, NoteSchedule};
 use stave_measure::signal::Signal;
 
 /// This thread's CPU time so far.
+#[cfg(unix)]
 fn thread_cpu_time() -> Duration {
     let mut now = libc::timespec {
         tv_sec: 0,
@@ -20,6 +21,35 @@ fn thread_cpu_time() -> Duration {
     let failed = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) } != 0;
     debug_assert!(!failed, "CLOCK_THREAD_CPUTIME_ID unavailable");
     Duration::new(now.tv_sec as u64, now.tv_nsec as u32)
+}
+
+/// This thread's CPU time so far (kernel + user).
+#[cfg(windows)]
+fn thread_cpu_time() -> Duration {
+    /// `FILETIME`: 100 ns units, split in two halves.
+    #[repr(C)]
+    #[derive(Default)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentThread() -> *mut core::ffi::c_void;
+        fn GetThreadTimes(
+            thread: *mut core::ffi::c_void,
+            creation: *mut FileTime,
+            exit: *mut FileTime,
+            kernel: *mut FileTime,
+            user: *mut FileTime,
+        ) -> i32;
+    }
+    let [mut creation, mut exit, mut kernel, mut user] = Default::default();
+    // SAFETY: the pseudo-handle of this thread and four valid out-pointers.
+    let ok = unsafe { GetThreadTimes(GetCurrentThread(), &mut creation, &mut exit, &mut kernel, &mut user) } != 0;
+    debug_assert!(ok, "GetThreadTimes failed");
+    let ticks = |t: &FileTime| (u64::from(t.high) << 32) | u64::from(t.low);
+    Duration::from_nanos((ticks(&kernel) + ticks(&user)) * 100)
 }
 
 /// One processed block, as handed to a run callback.

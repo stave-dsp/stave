@@ -13,6 +13,16 @@
 
 mod live;
 
+/// The platform's text: CoreText on macOS, the embedded fonts elsewhere.
+#[cfg(target_os = "macos")]
+fn text(scale: f64) -> stave_ui_cocoa::offscreen::CoreText {
+    stave_ui_cocoa::offscreen::CoreText::new(scale)
+}
+#[cfg(not(target_os = "macos"))]
+fn text(_scale: f64) -> stave_font::FontText {
+    stave_font::FontText
+}
+
 use std::path::PathBuf;
 
 use stave_face::Runtime;
@@ -35,10 +45,10 @@ fn screenshot(dir: PathBuf, scale: f64) {
         }
         let mut canvas = stave_raster::Canvas::new(0, 0);
         let t0 = std::time::Instant::now();
-        rt.render(&controller, scale, controller.time(), &mut canvas, &mut stave_ui_cocoa::offscreen::CoreText::new(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut text(scale));
         let first = t0.elapsed();
         let t1 = std::time::Instant::now();
-        rt.render(&controller, scale, controller.time(), &mut canvas, &mut stave_ui_cocoa::offscreen::CoreText::new(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut text(scale));
         let frame = t1.elapsed();
         let path = dir.join(format!("story_{name}.png"));
         std::fs::write(&path, stave_raster::png::encode(&canvas)).expect("write png");

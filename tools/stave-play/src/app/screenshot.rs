@@ -145,7 +145,15 @@ pub(super) fn root_ns_view(cc: &eframe::CreationContext<'_>) -> *mut std::ffi::c
 }
 
 /// The NSWindow number of the view's window (what `screencapture -l`
+/// takes); none off macOS.
+#[cfg(not(target_os = "macos"))]
+fn window_number(_ns_view: *mut std::ffi::c_void) -> Option<i64> {
+    None
+}
+
+/// The NSWindow number of the view's window (what `screencapture -l`
 /// takes).
+#[cfg(target_os = "macos")]
 fn window_number(ns_view: *mut std::ffi::c_void) -> Option<i64> {
     type Id = *mut std::ffi::c_void;
     type Sel = *const std::ffi::c_void;

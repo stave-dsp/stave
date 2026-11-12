@@ -46,7 +46,6 @@ impl ComponentHandler {
         }
     }
 
-    #[cfg(target_os = "macos")]
     pub(crate) fn begin_edit(&self, id: ParamId) {
         self.with(|h, v| {
             // SAFETY: the handler's own method, called with the handler.
@@ -54,7 +53,6 @@ impl ComponentHandler {
         });
     }
 
-    #[cfg(target_os = "macos")]
     pub(crate) fn perform_edit(&self, id: ParamId, normalized: ParamValue) {
         self.with(|h, v| {
             // SAFETY: as above.
@@ -62,7 +60,6 @@ impl ComponentHandler {
         });
     }
 
-    #[cfg(target_os = "macos")]
     pub(crate) fn end_edit(&self, id: ParamId) {
         self.with(|h, v| {
             // SAFETY: as above.

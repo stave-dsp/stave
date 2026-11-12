@@ -150,15 +150,23 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         params,
         state_store: std::sync::Mutex::new(StateStore::default()),
         gestures: Arc::new(GestureQueue::new()),
-        #[cfg(target_os = "macos")]
         gui_vtable: gui_vtable::<P>(),
+        #[cfg(all(unix, not(target_os = "macos")))]
+        timer_vtable: sys::ClapPluginTimerSupport {
+            on_timer: Some(run_loop::on_timer::<P>),
+        },
+        #[cfg(all(unix, not(target_os = "macos")))]
+        fd_vtable: sys::ClapPluginPosixFdSupport {
+            on_fd: Some(run_loop::on_fd::<P>),
+        },
+        #[cfg(all(unix, not(target_os = "macos")))]
+        run_loop: core::cell::Cell::new(None),
         note_ports_vtable: sys::ClapPluginNotePorts {
             count: Some(ports::note_ports_count::<P>),
             get: Some(ports::note_ports_get::<P>),
         },
         face,
         presets,
-        #[cfg(target_os = "macos")]
         editor: core::cell::RefCell::new(None),
         telemetry,
         taps,
