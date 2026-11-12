@@ -19,7 +19,7 @@ pub mod text;
 
 pub(crate) mod binding;
 pub(crate) mod cg;
-pub(crate) mod face;
+pub mod face;
 pub(crate) mod mapping;
 pub(crate) mod mount;
 pub(crate) mod objc;

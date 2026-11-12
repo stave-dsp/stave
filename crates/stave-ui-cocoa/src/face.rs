@@ -33,12 +33,58 @@ pub(crate) struct Slots {
     probes: HashMap<&'static str, usize>,
 }
 
+/// A face being shown: its runtime, the canvas it paints into, and the
+/// clock its animations read.
+pub struct FaceState {
+    pub runtime: Runtime,
+    pub canvas: Canvas,
+    pub opened: Instant,
+}
+
+impl FaceState {
+    pub fn new(face: Face) -> Self {
+        FaceState {
+            runtime: Runtime::new(face),
+            canvas: Canvas::new(0, 0),
+            opened: Instant::now(),
+        }
+    }
+    fn time(&self) -> f64 {
+        self.opened.elapsed().as_secs_f64()
+    }
+}
+
+/// Whatever drives a face view: a plugin editor, or a stand-in (the
+/// storybook). The view calls `with` for every paint and event.
+pub trait FaceTarget {
+    /// Run `f` on the face and the parameter host behind it.
+    fn with(&mut self, f: &mut dyn FnMut(&mut FaceState, &mut dyn Host));
+    /// A key press (macOS virtual key code). Return true if the face
+    /// was replaced, so the view resizes to it.
+    fn key(&mut self, _code: u16) -> bool {
+        false
+    }
+}
+
 pub(crate) struct FaceEditor {
-    pub(crate) runtime: Runtime,
+    pub(crate) state: FaceState,
     slots: Slots,
-    view: Id,
-    canvas: Canvas,
-    opened: Instant,
+    mount: Option<FaceMount>,
+}
+
+/// The editor's face as a `FaceTarget`.
+struct EditorTarget(*mut PluginEditorView);
+
+impl FaceTarget for EditorTarget {
+    fn with(&mut self, f: &mut dyn FnMut(&mut FaceState, &mut dyn Host)) {
+        // SAFETY: the mount (and so this target) lives inside the editor
+        // it points at and is dropped before it; all calls are on the
+        // main thread.
+        let editor = unsafe { &mut *self.0 };
+        if let Some((face, mut bridge)) = parts(editor) {
+            f(&mut face.state, &mut bridge);
+        }
+    }
 }
 
 /// `stave_face::Host` over one editor's table, gesture path and bus.
@@ -133,17 +179,19 @@ impl PluginEditorView {
                 }
             }
             Box::new(FaceEditor {
-                runtime,
+                state: FaceState {
+                    runtime,
+                    canvas: Canvas::new(0, 0),
+                    opened: Instant::now(),
+                },
                 slots: Slots { ids, probes },
-                view: core::ptr::null_mut(),
-                canvas: Canvas::new(0, 0),
-                opened: Instant::now(),
+                mount: None,
             })
         });
     }
 
     pub(crate) fn face_size(&self) -> Option<(f64, f64)> {
-        self.face.as_ref().map(|f| f.runtime.size())
+        self.face.as_ref().map(|f| f.state.runtime.size())
     }
 
     /// Mount the face view in `parent`. False when there is no face.
@@ -152,65 +200,124 @@ impl PluginEditorView {
         let Some(face) = self.face.as_deref_mut() else {
             return false;
         };
-        let (w, h) = face.runtime.size();
-        unsafe {
-            let cls = face_view_class();
-            let raw = msg_id(cls as Id, sel(c"alloc"));
-            let rect = CGRect {
-                origin: CGPoint { x: 0.0, y: 0.0 },
-                size: CGSize { width: w, height: h },
-            };
-            let view = msg_id_rect(raw, sel(c"initWithFrame:"), rect);
-            set_editor(view, me);
-            install_tracking(view);
-            msg_void_id(parent, sel(c"addSubview:"), view);
-            face.view = view;
-            face.opened = Instant::now();
-        }
+        face.state.opened = Instant::now();
+        let size = face.state.runtime.size();
+        face.mount = Some(unsafe { FaceMount::new(parent, Box::new(EditorTarget(me)), size) });
         true
     }
 
     pub(crate) unsafe fn detach_face(&mut self) {
         if let Some(face) = self.face.as_deref_mut() {
-            if !face.view.is_null() {
-                unsafe {
-                    set_editor(face.view, core::ptr::null_mut());
-                    msg_id(face.view, sel(c"removeFromSuperview"));
-                }
-                face.view = core::ptr::null_mut();
-            }
+            face.mount = None;
         }
     }
 
-    /// The 30 Hz tick: ask for a paint only when the face changed.
-    pub(crate) fn face_tick(&mut self) {
-        let Some((face, bridge)) = parts(self) else {
-            return;
-        };
-        if face.view.is_null() {
-            return;
+    /// The editor's own tick has nothing to do: the mount ticks itself.
+    pub(crate) fn face_tick(&mut self) {}
+}
+
+/// A face view mounted in a parent NSView, repainting itself at up to
+/// 60 Hz whenever the face reports a change. Dropping it removes the
+/// view and stops its timer.
+pub struct FaceMount {
+    view: Id,
+    timer: Id,
+    target: Box<Box<dyn FaceTarget>>,
+}
+
+impl FaceMount {
+    /// # Safety
+    /// Main thread; `parent` is a live NSView.
+    pub unsafe fn new(parent: Id, target: Box<dyn FaceTarget>, size: (f64, f64)) -> Self {
+        let mut target = Box::new(target);
+        let tp: *mut Box<dyn FaceTarget> = &mut *target;
+        unsafe {
+            let cls = face_view_class();
+            let raw = msg_id(cls as Id, sel(c"alloc"));
+            let rect = CGRect {
+                origin: CGPoint { x: 0.0, y: 0.0 },
+                size: CGSize { width: size.0, height: size.1 },
+            };
+            let view = msg_id_rect(raw, sel(c"initWithFrame:"), rect);
+            set_target(view, tp);
+            install_tracking(view);
+            msg_void_id(parent, sel(c"addSubview:"), view);
+            let context = CFRunLoopTimerContext {
+                version: 0,
+                info: view,
+                retain: None,
+                release: None,
+                copy_description: None,
+            };
+            let interval = 1.0 / 60.0;
+            let timer = CFRunLoopTimerCreate(
+                core::ptr::null(),
+                CFAbsoluteTimeGetCurrent() + interval,
+                interval,
+                0,
+                0,
+                face_tick,
+                core::ptr::from_ref(&context).cast_mut().cast(),
+            );
+            CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopCommonModes);
+            FaceMount { view, timer: timer as Id, target }
         }
-        let t = face.opened.elapsed().as_secs_f64();
-        if face.runtime.needs_paint(&bridge, t) {
-            unsafe { msg_void_int(face.view, sel(c"setNeedsDisplay:"), 1) };
+    }
+
+    pub fn view(&self) -> Id {
+        self.view
+    }
+}
+
+impl Drop for FaceMount {
+    fn drop(&mut self) {
+        unsafe {
+            msg_id(self.timer, sel(c"invalidate"));
+            set_target(self.view, core::ptr::null_mut());
+            msg_id(self.view, sel(c"removeFromSuperview"));
+        }
+        let _ = &self.target;
+    }
+}
+
+unsafe extern "C" fn face_tick(_timer: CFRunLoopTimerRef, info: *mut c_void) {
+    let view = info as Id;
+    let mut dirty = false;
+    unsafe {
+        with_target(view, |st, host| {
+            let t = st.time();
+            dirty = st.runtime.needs_paint(&*host, t);
+        });
+        if dirty {
+            redraw(view);
         }
     }
 }
 
 // ------------------------------------------------------------- the NSView
 
-unsafe fn set_editor(view: Id, editor: *mut PluginEditorView) {
+unsafe fn set_target(view: Id, target: *mut Box<dyn FaceTarget>) {
     unsafe {
-        let ivar = class_getInstanceVariable(object_getClass(view), c"editor_ptr".as_ptr());
-        object_setIvar(view, ivar, editor as Id);
+        let ivar = class_getInstanceVariable(object_getClass(view), c"target_ptr".as_ptr());
+        object_setIvar(view, ivar, target.cast());
     }
 }
 
-unsafe fn editor_of(view: Id) -> Option<&'static mut PluginEditorView> {
+/// Run `f` on the face behind `view`, if it is still mounted.
+unsafe fn with_target(view: Id, mut f: impl FnMut(&mut FaceState, &mut dyn Host)) {
     unsafe {
-        let ivar = class_getInstanceVariable(object_getClass(view), c"editor_ptr".as_ptr());
-        let p = object_getIvar(view, ivar) as *mut PluginEditorView;
-        p.as_mut()
+        let ivar = class_getInstanceVariable(object_getClass(view), c"target_ptr".as_ptr());
+        let p = object_getIvar(view, ivar) as *mut Box<dyn FaceTarget>;
+        if let Some(t) = p.as_mut() {
+            t.with(&mut f);
+        }
+    }
+}
+
+unsafe fn target_of(view: Id) -> Option<&'static mut Box<dyn FaceTarget>> {
+    unsafe {
+        let ivar = class_getInstanceVariable(object_getClass(view), c"target_ptr".as_ptr());
+        (object_getIvar(view, ivar) as *mut Box<dyn FaceTarget>).as_mut()
     }
 }
 
@@ -259,9 +366,6 @@ unsafe fn redraw(view: Id) {
 }
 
 unsafe extern "C" fn draw_rect(this: Id, _cmd: Sel, _dirty: CGRect) {
-    let Some(editor) = (unsafe { editor_of(this) }) else {
-        return;
-    };
     let ctx: *mut c_void = unsafe {
         let cur: Id = msg_id(class(c"NSGraphicsContext") as Id, sel(c"currentContext"));
         if cur.is_null() {
@@ -274,14 +378,15 @@ unsafe extern "C" fn draw_rect(this: Id, _cmd: Sel, _dirty: CGRect) {
         return;
     }
     let scale = unsafe { backing_scale(this) };
-    let Some((face, bridge)) = parts(editor) else {
-        return;
-    };
-    let t = face.opened.elapsed().as_secs_f64();
-    let (w, h) = face.runtime.size();
-    let mut text = crate::offscreen::CoreText::new(scale);
-    face.runtime.render(&bridge, scale, t, &mut face.canvas, &mut text);
-    unsafe { crate::offscreen::draw_canvas(ctx, &face.canvas, w, h) };
+    unsafe {
+        with_target(this, |st, host| {
+            let t = st.time();
+            let (w, h) = st.runtime.size();
+            let mut text = crate::offscreen::CoreText::new(scale);
+            st.runtime.render(&*host, scale, t, &mut st.canvas, &mut text);
+            crate::offscreen::draw_canvas(ctx, &st.canvas, w, h);
+        });
+    }
 }
 
 unsafe fn backing_scale(view: Id) -> f64 {
@@ -297,84 +402,67 @@ unsafe fn backing_scale(view: Id) -> f64 {
 }
 
 unsafe extern "C" fn mouse_down(this: Id, _cmd: Sel, event: Id) {
-    let Some(editor) = (unsafe { editor_of(this) }) else {
-        return;
-    };
     let (p, mods) = unsafe { (point_in(this, event), mods_of(event)) };
     let clicks: i64 = unsafe {
         let f: unsafe extern "C" fn(Id, Sel) -> i64 = core::mem::transmute(objc_msgSend as *const ());
         f(event, sel(c"clickCount"))
     };
-    let Some((face, mut bridge)) = parts(editor) else {
-        return;
-    };
-    face.runtime.pointer_down(&mut bridge, p, mods, clicks.max(1) as u32);
     unsafe {
-        set_cursor(face.runtime.cursor());
+        let win = msg_id(this, sel(c"window"));
+        if !win.is_null() {
+            msg_void_id(win, sel(c"makeFirstResponder:"), this);
+        }
+        with_target(this, |st, host| {
+            st.runtime.pointer_down(host, p, mods, clicks.max(1) as u32);
+            set_cursor(st.runtime.cursor());
+        });
         redraw(this);
     }
 }
 
 unsafe extern "C" fn mouse_dragged(this: Id, _cmd: Sel, event: Id) {
-    let Some(editor) = (unsafe { editor_of(this) }) else {
-        return;
-    };
     let (p, mods) = unsafe { (point_in(this, event), mods_of(event)) };
-    let Some((face, mut bridge)) = parts(editor) else {
-        return;
-    };
-    face.runtime.pointer_drag(&mut bridge, p, mods);
-    unsafe { redraw(this) };
+    unsafe {
+        with_target(this, |st, host| st.runtime.pointer_drag(host, p, mods));
+        redraw(this);
+    }
 }
 
 unsafe extern "C" fn mouse_up(this: Id, _cmd: Sel, event: Id) {
-    let Some(editor) = (unsafe { editor_of(this) }) else {
-        return;
-    };
     let p = unsafe { point_in(this, event) };
-    let Some((face, mut bridge)) = parts(editor) else {
-        return;
-    };
-    face.runtime.pointer_up(&mut bridge);
-    face.runtime.pointer_move(p);
     unsafe {
-        set_cursor(face.runtime.cursor());
+        with_target(this, |st, host| {
+            st.runtime.pointer_up(host);
+            st.runtime.pointer_move(p);
+            set_cursor(st.runtime.cursor());
+        });
         redraw(this);
     }
 }
 
 unsafe extern "C" fn mouse_moved(this: Id, _cmd: Sel, event: Id) {
-    let Some(editor) = (unsafe { editor_of(this) }) else {
-        return;
-    };
     let p = unsafe { point_in(this, event) };
-    let Some(face) = editor.face.as_deref_mut() else {
-        return;
-    };
-    if face.runtime.pointer_move(p) {
-        unsafe { redraw(this) };
+    let mut changed = false;
+    unsafe {
+        with_target(this, |st, _| {
+            changed = st.runtime.pointer_move(p);
+            set_cursor(st.runtime.cursor());
+        });
+        if changed {
+            redraw(this);
+        }
     }
-    unsafe { set_cursor(face.runtime.cursor()) };
 }
 
 unsafe extern "C" fn mouse_exited(this: Id, _cmd: Sel, _event: Id) {
-    let Some(editor) = (unsafe { editor_of(this) }) else {
-        return;
-    };
-    let Some(face) = editor.face.as_deref_mut() else {
-        return;
-    };
-    face.runtime.pointer_exit();
     unsafe {
+        with_target(this, |st, _| st.runtime.pointer_exit());
         set_cursor(Cursor::Arrow);
         redraw(this);
     }
 }
 
 unsafe extern "C" fn scroll_wheel(this: Id, _cmd: Sel, event: Id) {
-    let Some(editor) = (unsafe { editor_of(this) }) else {
-        return;
-    };
     let (p, mods) = unsafe { (point_in(this, event), mods_of(event)) };
     let (dy, precise) = unsafe {
         let f: unsafe extern "C" fn(Id, Sel) -> f64 = core::mem::transmute(objc_msgSend as *const ());
@@ -386,11 +474,37 @@ unsafe extern "C" fn scroll_wheel(this: Id, _cmd: Sel, event: Id) {
     if lines == 0.0 {
         return;
     }
-    let Some((face, mut bridge)) = parts(editor) else {
+    unsafe {
+        with_target(this, |st, host| st.runtime.wheel(host, p, lines, mods));
+        redraw(this);
+    }
+}
+
+unsafe extern "C" fn key_down(this: Id, _cmd: Sel, event: Id) {
+    let code: u16 = unsafe {
+        let f: unsafe extern "C" fn(Id, Sel) -> u16 = core::mem::transmute(objc_msgSend as *const ());
+        f(event, sel(c"keyCode"))
+    };
+    let Some(t) = (unsafe { target_of(this) }) else {
         return;
     };
-    face.runtime.wheel(&mut bridge, p, lines, mods);
+    if t.key(code) {
+        let mut size = (0.0, 0.0);
+        t.with(&mut |st, _| size = st.runtime.size());
+        unsafe {
+            let set: unsafe extern "C" fn(Id, Sel, CGSize) = core::mem::transmute(objc_msgSend as *const ());
+            set(this, sel(c"setFrameSize:"), CGSize { width: size.0, height: size.1 });
+            let win = msg_id(this, sel(c"window"));
+            if !win.is_null() {
+                set(win, sel(c"setContentSize:"), CGSize { width: size.0, height: size.1 });
+            }
+        }
+    }
     unsafe { redraw(this) };
+}
+
+unsafe extern "C" fn yes(_this: Id, _cmd: Sel) -> bool {
+    true
 }
 
 unsafe extern "C" fn yes_event(_this: Id, _cmd: Sel, _e: Id) -> bool {
@@ -433,12 +547,13 @@ unsafe fn face_view_class() -> Class {
         let cls = objc_allocateClassPair(class(c"NSView"), c"StaveFaceView".as_ptr(), 0);
         let _ = class_addIvar(
             cls,
-            c"editor_ptr".as_ptr(),
+            c"target_ptr".as_ptr(),
             core::mem::size_of::<*mut c_void>(),
             core::mem::align_of::<*mut c_void>().trailing_zeros() as u8,
             c"^v".as_ptr(),
         );
         let _ = class_addMethod(cls, sel(c"acceptsFirstMouse:"), yes_event as *const c_void, c"c@:@".as_ptr());
+        let _ = class_addMethod(cls, sel(c"acceptsFirstResponder"), yes as *const c_void, c"c@:".as_ptr());
         let _ = class_addMethod(cls, sel(c"drawRect:"), draw_rect as *const c_void, c"v@:{CGRect={CGPoint=dd}{CGSize=dd}}".as_ptr());
         for (name, imp) in [
             (c"mouseDown:", mouse_down as *const c_void),
@@ -447,6 +562,7 @@ unsafe fn face_view_class() -> Class {
             (c"mouseMoved:", mouse_moved as *const c_void),
             (c"mouseExited:", mouse_exited as *const c_void),
             (c"scrollWheel:", scroll_wheel as *const c_void),
+            (c"keyDown:", key_down as *const c_void),
         ] {
             let _ = class_addMethod(cls, sel(name), imp, c"v@:@".as_ptr());
         }

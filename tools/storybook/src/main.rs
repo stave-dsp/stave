@@ -3,12 +3,14 @@
 //! plugin (an in-memory parameter table and probes that move with time).
 //!
 //! Usage:
+//!   stave-storybook                                # live: drag everything; ←/→ change theme, Esc quits
 //!   stave-storybook --screenshot DIR [--scale 2]   # one PNG per theme
 //!
 //! Screenshots are rendered offscreen through the real face runtime and
 //! the platform's text, so they show exactly what a plugin window shows.
 
 mod host;
+mod live;
 mod stories;
 
 use std::path::PathBuf;
@@ -59,6 +61,5 @@ fn main() {
         screenshot(dir, scale);
         return;
     }
-    eprintln!("usage: stave-storybook --screenshot DIR [--scale 2]");
-    std::process::exit(2);
+    live::run();
 }
