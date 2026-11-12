@@ -158,7 +158,6 @@ impl<const N: usize> FeaturesArray<N> {
 
 mod entry;
 mod gesture;
-#[cfg(target_os = "macos")]
 mod gui;
 mod host;
 mod params;
@@ -169,7 +168,6 @@ mod state_ext;
 pub use entry::*;
 pub(crate) use gesture::*;
 pub use gesture::controller;
-#[cfg(target_os = "macos")]
 use gui::*;
 pub(crate) use host::{in_text, out_param};
 use host::{
@@ -213,8 +211,16 @@ pub(crate) struct Instance<P: ClapExport> {
     /// during process/flush so the DAW records and undoes GUI edits;
     /// shared with every face's gesture sink.
     gestures: Arc<GestureQueue>,
-    #[cfg(target_os = "macos")]
     gui_vtable: sys::ClapPluginGui,
+    /// X11: the run-loop callbacks the view's descriptor and timer use.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    timer_vtable: sys::ClapPluginTimerSupport,
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fd_vtable: sys::ClapPluginPosixFdSupport,
+    /// X11: the timer and descriptor registered with the host while the
+    /// view is attached. [main-thread]
+    #[cfg(all(unix, not(target_os = "macos")))]
+    run_loop: core::cell::Cell<Option<(sys::ClapId, Option<core::ffi::c_int>)>>,
     note_ports_vtable: sys::ClapPluginNotePorts,
     /// The plugin's face; None = no `clap.gui`.
     face: Option<stave_face::Face>,
@@ -222,8 +228,7 @@ pub(crate) struct Instance<P: ClapExport> {
     presets: Arc<[Preset]>,
     /// The open face, between `gui.create` and `gui.destroy`. Only the
     /// [main-thread] gui calls touch it (clap gui.h).
-    #[cfg(target_os = "macos")]
-    editor: core::cell::RefCell<Option<stave_ui_cocoa::FaceView>>,
+    editor: core::cell::RefCell<Option<FaceView>>,
     /// The instance's telemetry: the plugin's taps, and the wrapper's
     /// I/O peaks, CPU load and capture for its face.
     telemetry: Arc<Telemetry>,

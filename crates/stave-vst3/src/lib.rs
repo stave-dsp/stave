@@ -9,7 +9,6 @@
 
 pub(crate) mod buses;
 pub(crate) mod events;
-#[cfg(target_os = "macos")]
 pub(crate) mod gestures;
 pub(crate) mod host;
 pub(crate) mod host_context;
@@ -26,7 +25,9 @@ pub use stave_core;
 pub use stave_face;
 
 /// The VST3 entry symbols for `$plugin` (a [`wrapper::Vst3Export`]):
-/// `GetPluginFactory`, `bundleEntry`/`bundleExit`, and
+/// `GetPluginFactory`, the module entry and exit (`bundleEntry`/
+/// `bundleExit`, plus `ModuleEntry`/`ModuleExit` on Linux and
+/// `InitDll`/`ExitDll` on Windows), and
 /// `stave_telemetry_for` (stave-aware hosts read an instance's telemetry
 /// through it). Once per cdylib; `stave::export!` invokes it.
 #[doc(hidden)]
@@ -42,6 +43,34 @@ macro_rules! export_vst3 {
         /// VST3 bundle exit. Called when the host unloads the bundle.
         #[no_mangle]
         pub extern "C" fn bundleExit() -> bool {
+            true
+        }
+
+        /// Linux module entry (`ModuleEntry`), given the library's handle.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        #[no_mangle]
+        pub extern "C" fn ModuleEntry(_handle: *mut ::core::ffi::c_void) -> bool {
+            true
+        }
+
+        /// Linux module exit.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        #[no_mangle]
+        pub extern "C" fn ModuleExit() -> bool {
+            true
+        }
+
+        /// Windows module entry (`InitDll`, optional in the SDK).
+        #[cfg(windows)]
+        #[no_mangle]
+        pub extern "C" fn InitDll() -> bool {
+            true
+        }
+
+        /// Windows module exit.
+        #[cfg(windows)]
+        #[no_mangle]
+        pub extern "C" fn ExitDll() -> bool {
             true
         }
 

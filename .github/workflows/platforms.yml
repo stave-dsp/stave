@@ -1,0 +1,137 @@
+# Linux and Windows (docs/overhaul.md, ledger X): the whole workspace
+# builds, lints and tests there; the plugin binaries export each
+# platform's entry points, pass clap-validator and Steinberg's
+# validator, and stave-host opens them; the face shells are driven in a
+# real window (Xvfb on Linux, window messages on Windows). macOS is
+# ci.yml's. Every job fits five minutes warm.
+name: platforms
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    # Every target builds (bins, examples, benches); every test runs —
+    # the X11 shell's in a real window on Xvfb (STAVE_REQUIRE_DISPLAY
+    # makes a missing server a failure, not a skip).
+    name: build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libasound2-dev xvfb
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
+          # A failing test still leaves a warm build for the next run.
+          cache-on-failure: true
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: nextest@0.9.148 }
+      - run: cargo build --workspace --all-targets --locked
+      - name: cargo nextest run
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            export STAVE_REQUIRE_DISPLAY=1
+            xvfb-run -a -s "-screen 0 1280x1024x24" cargo nextest run --workspace --locked --profile ci
+          else
+            cargo nextest run --workspace --locked --profile ci
+          fi
+      - run: cargo test --workspace --doc --locked
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-diff-${{ matrix.os }}
+          path: target/golden-diff
+          if-no-files-found: ignore
+
+  clippy:
+    name: clippy + rustdoc (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libasound2-dev
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
+          # A failing test still leaves a warm build for the next run.
+          cache-on-failure: true
+      - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+      # Docs of code that only compiles here (the shells, the loaders).
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  validators:
+    # The plugin binaries as a DAW meets them: each platform's entry
+    # points exported, clap-validator, Steinberg's validator (the SDK is
+    # MIT; its build is cached), and stave-host opening the bundle.
+    name: validators (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
+          # A failing test still leaves a warm build for the next run.
+          cache-on-failure: true
+      - name: Cache the validators
+        id: tools-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            vst3sdk/build/bin/Release/validator*
+            ~/.cargo/bin/clap-validator*
+          key: validators-${{ runner.os }}-vst3sdk-v3.8.1_build_84-clap-validator-0.4.1
+      - name: Build the validators
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked --git https://github.com/free-audio/clap-validator.git --tag 0.4.1 clap-validator &
+          git clone --depth 1 --branch v3.8.1_build_84 --recurse-submodules --shallow-submodules \
+            https://github.com/steinbergmedia/vst3sdk.git vst3sdk
+          cmake -S vst3sdk -B vst3sdk/build -DCMAKE_BUILD_TYPE=Release \
+            -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF \
+            -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
+            -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF
+          cmake --build vst3sdk/build --config Release --target validator -j4
+          wait
+      - run: cargo build --release --locked -p stave-tilt-vst3 -p stave-bench
+      - run: scripts/check-exports.sh
+      - run: scripts/validate-formats.sh clap
+      - run: scripts/validate-formats.sh vst3
+        env:
+          VALIDATOR: vst3sdk/build/bin/Release/validator
+      - name: stave-host opens the bundle
+        run: target/release/stave-bench target/validate/StaveTilt.vst3 --validate > /dev/null

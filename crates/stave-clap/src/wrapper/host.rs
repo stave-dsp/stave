@@ -80,6 +80,61 @@ impl Host {
         unsafe { flush(self.0) };
     }
 
+    /// The host's extension `id`, as a `T`.
+    ///
+    /// # Safety
+    /// `T` is the struct clap.h declares for `id`.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    unsafe fn extension<T>(self, id: &CStr) -> Option<&'static T> {
+        let get_extension = self.get().get_extension?;
+        // SAFETY: the host's own function, called with the host.
+        let ext = unsafe { get_extension(self.0, id.as_ptr()) };
+        // SAFETY: a host returns null or the extension's struct, which
+        // lives as long as the host (this function's contract for `T`).
+        unsafe { ext.cast::<T>().as_ref() }
+    }
+
+    /// A repaint timer every `period_ms` (`clap.timer-support`). [main-thread]
+    #[cfg(all(unix, not(target_os = "macos")))]
+    pub(super) fn register_timer(self, period_ms: u32) -> Option<sys::ClapId> {
+        // SAFETY: `clap.timer-support` is a `clap_host_timer_support`.
+        let register = unsafe { self.extension::<sys::ClapHostTimerSupport>(sys::CLAP_EXT_TIMER_SUPPORT) }?.register_timer?;
+        let mut id = sys::CLAP_INVALID_ID;
+        // SAFETY: the host's own function, on the main thread; `id` is ours.
+        let ok = unsafe { register(self.0, period_ms, &mut id) };
+        (ok && id != sys::CLAP_INVALID_ID).then_some(id)
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    pub(super) fn unregister_timer(self, id: sys::ClapId) {
+        // SAFETY: as in `register_timer`.
+        let ext = unsafe { self.extension::<sys::ClapHostTimerSupport>(sys::CLAP_EXT_TIMER_SUPPORT) };
+        if let Some(unregister) = ext.and_then(|e| e.unregister_timer) {
+            // SAFETY: the host's own function, on the main thread.
+            unsafe { unregister(self.0, id) };
+        }
+    }
+
+    /// Watch `fd` (`clap.posix-fd-support`). [main-thread]
+    #[cfg(all(unix, not(target_os = "macos")))]
+    pub(super) fn register_fd(self, fd: core::ffi::c_int, flags: u32) -> bool {
+        // SAFETY: `clap.posix-fd-support` is a `clap_host_posix_fd_support`.
+        let ext = unsafe { self.extension::<sys::ClapHostPosixFdSupport>(sys::CLAP_EXT_POSIX_FD_SUPPORT) };
+        let Some(register) = ext.and_then(|e| e.register_fd) else { return false };
+        // SAFETY: the host's own function, on the main thread.
+        unsafe { register(self.0, fd, flags) }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    pub(super) fn unregister_fd(self, fd: core::ffi::c_int) {
+        // SAFETY: as in `register_fd`.
+        let ext = unsafe { self.extension::<sys::ClapHostPosixFdSupport>(sys::CLAP_EXT_POSIX_FD_SUPPORT) };
+        if let Some(unregister) = ext.and_then(|e| e.unregister_fd) {
+            // SAFETY: the host's own function, on the main thread.
+            unsafe { unregister(self.0, fd) };
+        }
+    }
+
     /// The host's `clap.log`. Only from `init` on (clap.h).
     pub(super) fn log(self) -> Option<HostLog> {
         let get_extension = self.get().get_extension?;

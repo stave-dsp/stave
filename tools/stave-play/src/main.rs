@@ -6,6 +6,7 @@ mod analysis;
 mod app;
 mod audio;
 mod debug_log;
+#[cfg_attr(not(target_os = "macos"), path = "editor_none.rs")]
 mod editor_view;
 mod errors;
 mod project;

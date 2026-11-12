@@ -10,7 +10,6 @@
 use stave_measure::stats::Summary;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use eframe::egui::{self, Color32, Stroke};
 use stave_core::runtime::WrapperTaps;
@@ -339,6 +338,16 @@ fn fmt_us(us: u32) -> String {
     }
 }
 
+/// pprof samples with signals: unix only.
+#[cfg(not(unix))]
+fn spawn_capture(state: &mut PerfState, log: Arc<DebugLog>) {
+    log.error("flamegraph: sampling needs a unix (pprof)".to_string());
+    if let Ok(mut g) = state.status.lock() {
+        *g = "flamegraph capture is unix-only".to_string();
+    }
+}
+
+#[cfg(unix)]
 fn spawn_capture(state: &mut PerfState, log: Arc<DebugLog>) {
     state.busy.store(true, Ordering::Relaxed);
     let status = state.status.clone();
@@ -362,7 +371,7 @@ fn spawn_capture(state: &mut PerfState, log: Arc<DebugLog>) {
                 return;
             }
         };
-        std::thread::sleep(Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         let report = match guard.report().build() {
             Ok(r) => r,
             Err(e) => {

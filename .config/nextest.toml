@@ -11,3 +11,16 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 [profile.miri]
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# The X11 shell's window tests move the one pointer (XTEST): one at a
+# time (ledger X).
+[test-groups]
+x-display = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary_id(stave-ui-x11::xvfb)'
+test-group = 'x-display'
+
+[[profile.ci.overrides]]
+filter = 'binary_id(stave-ui-x11::xvfb)'
+test-group = 'x-display'

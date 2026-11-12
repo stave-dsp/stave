@@ -11,6 +11,7 @@ use stave_core::Event;
 use stave_measure::signal::Signal;
 
 /// This thread's CPU time so far.
+#[cfg(unix)]
 fn thread_cpu_time() -> Duration {
     let mut now = libc::timespec {
         tv_sec: 0,
@@ -21,6 +22,17 @@ fn thread_cpu_time() -> Duration {
     let failed = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) } != 0;
     debug_assert!(!failed, "CLOCK_THREAD_CPUTIME_ID unavailable");
     Duration::new(now.tv_sec as u64, now.tv_nsec as u32)
+}
+
+/// Time for one block on Windows: wall time from the performance counter
+/// (`Instant`). The thread's CPU time (`GetThreadTimes`) advances in
+/// scheduler ticks of 15.6 ms — coarser than a block, so every block
+/// measured 0 or 15.6 ms (measured in CI). Wall time also counts
+/// preemption: pessimistic, never optimistic.
+#[cfg(windows)]
+fn thread_cpu_time() -> Duration {
+    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    ORIGIN.get_or_init(std::time::Instant::now).elapsed()
 }
 
 /// One processed block, as handed to a run callback.

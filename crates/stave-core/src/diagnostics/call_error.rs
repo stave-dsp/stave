@@ -28,6 +28,9 @@ pub enum CallError {
     ProcessorBusy,
     /// Saved without the plugin's extra state: the audio thread held it.
     ExtraStateSkipped,
+    /// The face could not open in the host's window (no display, no
+    /// run loop to join).
+    WindowRefused(String),
 }
 
 impl CallError {
@@ -45,7 +48,8 @@ impl CallError {
             | Self::StateTooLarge { .. }
             | Self::State(_)
             | Self::ProcessorBusy
-            | Self::ExtraStateSkipped => Severity::Error,
+            | Self::ExtraStateSkipped
+            | Self::WindowRefused(_) => Severity::Error,
         }
     }
 }
@@ -70,6 +74,7 @@ impl fmt::Display for CallError {
             Self::ExtraStateSkipped => {
                 f.write_str("saved without the plugin's extra state: the audio thread held it")
             }
+            Self::WindowRefused(why) => write!(f, "the face could not open in the host's window: {why}"),
         }
     }
 }

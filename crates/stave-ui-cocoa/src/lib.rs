@@ -8,6 +8,13 @@
 //! `offscreen.rs` + `text.rs` = the raster blit and CoreText; `objc.rs` =
 //! the typed Objective-C core every message goes through; `cf.rs` =
 //! CoreFoundation references and CoreGraphics geometry.
+//!
+//! The crate is empty off macOS (`stave-ui-win32` and `stave-ui-x11` are
+//! the other platforms, with the same `FaceView` shape).
+
+// Off macOS the crate is empty, and these docs link to nothing.
+#![cfg_attr(not(target_os = "macos"), allow(rustdoc::broken_intra_doc_links))]
+#![cfg(target_os = "macos")]
 
 pub mod offscreen;
 pub mod text;

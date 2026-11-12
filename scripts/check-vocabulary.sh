@@ -41,12 +41,13 @@ report "a retired name (see the glossary for its replacement)" \
 # The editor contract is the Controller; Host means the DAW (the format
 # wrappers' handle on it, stave-host's hosting), never a face's side.
 report "\`Host\` names the DAW; the editor's side is \`Controller\`" \
-  '\b(trait|struct|enum|dyn|impl) +Host\b|\bface::Host\b' -- crates/stave/ crates/stave-core/ crates/stave-face/ crates/stave-ui/ crates/stave-ui-cocoa/ crates/stave-raster/ examples/ tools/storybook/
+  '\b(trait|struct|enum|dyn|impl) +Host\b|\bface::Host\b' -- crates/stave/ crates/stave-core/ crates/stave-face/ crates/stave-ui/ crates/stave-ui-cocoa/ crates/stave-ui-win32/ crates/stave-ui-x11/ crates/stave-ui-shell/ crates/stave-raster/ examples/ tools/storybook/
 
 # The author surface: what a plugin author reads.
 AUTHOR=(crates/stave/ crates/stave-core/src/ examples/ ':!crates/stave-core/src/runtime/')
 
 PIXELS=(':!crates/stave-raster/' ':!crates/stave-face/' ':!crates/stave-ui/' ':!crates/stave-ui-cocoa/'
+  ':!crates/stave-ui-win32/' ':!crates/stave-ui-x11/' ':!crates/stave-ui-shell/' ':!crates/stave-font/'
   ':!tools/storybook/' ':!crates/stave-test/src/face/' ':!crates/stave-test/src/image.rs' ':!*/tests/golden.rs'
   ':!scripts/plot_silk_atlas.py' ':!docs/overhaul.md' ':!scripts/check-vocabulary.sh' ':!*.lock')
 report "\"render\" means pixels; audio is processed (process, run)" \

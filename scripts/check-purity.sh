@@ -17,7 +17,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 PURE=(crates/stave-dsp/src crates/stave-ui/src crates/stave-raster/src
-      crates/stave-face/src crates/stave-measure/src crates/stave-model/src)
+      crates/stave-face/src crates/stave-measure/src crates/stave-model/src
+      crates/stave-font/src)
 EFFECTS='std::time|Instant::now|SystemTime|std::thread|thread_local!|std::fs|std::env|std::process|std::net|getrandom|rand::|Mutex|RwLock|Atomic[A-Z][a-z0-9]+|static mut|OnceLock|LazyLock|OnceCell|RefCell|Cell<'
 
 # path:pattern — why it may stay.

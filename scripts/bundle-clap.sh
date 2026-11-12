@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bundle a stave cdylib into a macOS .clap bundle (does not build it;
+# Bundle a stave cdylib into a .clap for this OS (does not build it;
 # scripts/install.sh builds, bundles, validates and installs).
 #
 # Usage: scripts/bundle-clap.sh <crate-name> [release|debug] [out-dir]

@@ -32,7 +32,6 @@ mod controller;
 mod factory;
 mod processor;
 mod unit_info;
-#[cfg(target_os = "macos")]
 mod view;
 
 use component::*;
@@ -40,9 +39,7 @@ use controller::*;
 pub use factory::{build_factory_vtbl, FactoryObj};
 use processor::*;
 use unit_info::*;
-#[cfg(target_os = "macos")]
 pub use view::EditorBox;
-#[cfg(target_os = "macos")]
 use view::*;
 
 // ===========================================================================
@@ -140,7 +137,6 @@ pub struct Instance<P: Vst3Export> {
     /// The `IPlugView` vtable every `EditorBox` of this instance points
     /// at; by value for the same reason as `pcr_vtbl`. A view holds an
     /// instance reference, so this outlives every view using it.
-    #[cfg(target_os = "macos")]
     pub view_vtbl: IPlugViewVtbl,
     pub ref_count: AtomicU32,
     pub shared: SharedState,
@@ -225,7 +221,8 @@ fn failure_code(error: &CallError) -> Tresult {
         | CallError::StreamRead
         | CallError::StateTooLarge { .. }
         | CallError::State(_)
-        | CallError::ExtraStateSkipped => K_RESULT_FALSE,
+        | CallError::ExtraStateSkipped
+        | CallError::WindowRefused(_) => K_RESULT_FALSE,
     }
 }
 
