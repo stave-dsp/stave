@@ -382,6 +382,18 @@ framework deploy key.
 - [ ] **C10** Name and shape: the workflow is `ci` (one per repo), quick jobs gate PRs, the heavy ones (Miri, sanitizers, fuzz, validators) run on `main` and nightly; required checks configured on `main`.
 - [x] **C11** Moot: the repos are public (2026-11-12), so the plugins CI fetches the framework without a deploy key; public runners are also free, which unblocked CI billing.
 
+### V — Verification (proofs, models, deterministic simulation)
+
+What TLA+, Lean and Bend teach, applied where stave's risk is.
+
+- [ ] **V1** Types as proofs: unit newtypes (`Hz`, `Db`, `Seconds`, `Normalized`) on the author and DSP APIs; typestate for the plugin lifecycle (`process` only on a prepared plugin); `ParamId`/`TapId` everywhere (A4, A6). Lands with the A/D vocabulary work.
+- [ ] **V2** Kani (bounded model checking) harnesses in CI for the unsafe and index-heavy core: `Ring`, `InlineStr` truncation, `AudioBuffer`/`Lanes` indexing, `IndexedParams` binary search, rasterizer coverage accumulation, the gesture queue. Verus where an all-inputs invariant is worth stating inline.
+- [ ] **V3** A deterministic simulated host in stave-host: seeded randomness over call order, block size (incl. 0 and odd), sample rate, activate/deactivate/setState interleavings and thread timing; any failure replays from its seed. Subsumes most of T4.
+- [ ] **V4** Protocol models (TLA+ with TLC/Apalache, or Stateright in Rust) for the host lifecycle across threads, param restore and smoothing, the gesture ring (begin/perform/end, liveness), telemetry slot reservation, and editor attach/detach/refcount/reentrancy. Trace validation: tests and stave-play emit event traces checked against the model.
+- [ ] **V5** Telemetry as a structured, checkable event trace (lifecycle, gestures, restores, faults) so observability doubles as verification, in tests and in real DAW sessions.
+- [ ] **V6** Functional core, imperative shell: keep pure, deterministic code (faces, DSP graphs, layout, rasterizer) free of effects so golden images and replay hold; effects (threads, FFI, atomics) at the edges.
+- [ ] **V7** (Optional) Lean 4 proofs of a few DSP laws as documentation-grade results: filter stability over declared ranges, taper monotonicity and round-trip, smoother convergence, the kernel's latency/tail algebra.
+
 ### P — The plugins (stave-plugins), after the framework settles
 
 - [ ] **P1** Migrate all seventeen to the target author API (one trait, `stave` crate, taps tables, `Smoother`, Stage leaves).
@@ -395,5 +407,5 @@ framework deploy key.
 2. **L7** — delete the legacy UI (after moving what survives).
 3. **L** — the layering, landing the `Controller` contract, `*-sys` crates, telemetry, the umbrella crate and CLAP GUI.
 4. **A, D, F** — the author API and vocabulary, with Tilt and the storybook as the running acceptance tests, then `scripts/check-vocabulary.sh`.
-5. **T** and **C** — the harness, checks and validator, golden images, raster; CI pinned, widened and green. (C1–C3 first: CI must be green before the big refactors land.)
+5. **T**, **C** and **V** (V1 lands with step 4) — the harness, checks and validator, golden images, raster; CI pinned, widened and green. (C1–C3 first: CI must be green before the big refactors land.)
 6. **P** — migrate the plugins once, and cut a release.
