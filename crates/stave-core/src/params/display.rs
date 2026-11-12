@@ -284,6 +284,8 @@ mod tests {
 
     /// format → parse → format is stable (the typed-entry contract).
     #[test]
+    // Safe-code sweeps: Miri adds nothing but hours.
+    #[cfg_attr(miri, ignore)]
     fn format_parse_fixpoint() {
         let cases: &[(Unit, f64)] = &[
             (
@@ -315,6 +317,8 @@ mod tests {
     /// (S23: saga's ramp at 999.9999999999999 read "1000.0 ms", which
     /// parsed back to 1000 and re-read "1.00 s".)
     #[test]
+    // Safe-code sweeps: Miri adds nothing but hours.
+    #[cfg_attr(miri, ignore)]
     fn every_unit_round_trips_across_its_range() {
         let units = [
             Unit::Plain { decimals: 0 },
@@ -386,6 +390,8 @@ mod tests {
 
     /// Both readings of a switch point parse to the same value.
     #[test]
+    // Safe-code sweeps: Miri adds nothing but hours.
+    #[cfg_attr(miri, ignore)]
     fn both_sides_of_a_unit_switch_parse() {
         assert_eq!(Unit::Ms.parse("1000.0 ms"), Some(1000.0));
         assert_eq!(Unit::Ms.parse("1.00 s"), Some(1000.0));
