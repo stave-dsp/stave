@@ -17,9 +17,12 @@ pub enum Unit {
     Plain { decimals: u8 },
     /// Decibels. Values at or below `floor_db` (if set) read "-inf".
     Db { floor_db: Option<i16> },
-    /// Hertz; ≥ 1000 renders as kHz ("2.40 kHz").
+    /// Hertz; ≥ 1000 renders as kHz ("2.40 kHz"). The switch is judged on
+    /// the value rounded as it would show in Hz, so 999.96 reads
+    /// "1.00 kHz", never "1000.0 Hz".
     Hz,
-    /// Milliseconds; ≥ 1000 renders as seconds ("1.25 s").
+    /// Milliseconds; ≥ 1000 renders as seconds ("1.25 s"), judged on the
+    /// value rounded as it would show in ms (as for [`Unit::Hz`]).
     Ms,
     /// 0..=1 plain value rendered 0–100%.
     Percent,
@@ -104,21 +107,23 @@ impl Unit {
                 write!(out, "{:.*}", *decimals as usize, plain)
             }
             Unit::Db { floor_db } => {
-                if floor_db.is_some_and(|f| plain <= f as f64) {
+                // The floor is judged on the value as shown: −59.96 reads
+                // "-60.0 dB", which would parse back onto a −60 floor.
+                if floor_db.is_some_and(|f| shown(plain, 1) <= f as f64) {
                     out.write_str("-inf dB")
                 } else {
                     write!(out, "{plain:.1} dB")
                 }
             }
             Unit::Hz => {
-                if plain >= 1000.0 {
+                if shown(plain, 1) >= 1000.0 {
                     write!(out, "{:.2} kHz", plain / 1000.0)
                 } else {
                     write!(out, "{plain:.1} Hz")
                 }
             }
             Unit::Ms => {
-                if plain >= 1000.0 {
+                if shown(plain, 1) >= 1000.0 {
                     write!(out, "{:.2} s", plain / 1000.0)
                 } else {
                     write!(out, "{plain:.1} ms")
@@ -181,6 +186,19 @@ impl Unit {
             Unit::Plain { .. } | Unit::Ratio => strip_number(t).map(|(v, _)| v),
         }
     }
+}
+
+/// `plain` exactly as `{:.decimals$}` renders it, read back: unit
+/// switches (ms → s, Hz → kHz, the dB floor) are decided on the shown
+/// value, so a value that rounds onto a boundary reads the same as the
+/// boundary itself and format → parse → format is a fixpoint.
+fn shown(plain: f64, decimals: usize) -> f64 {
+    if plain.abs() >= 1e15 {
+        return plain; // past every switch point; rounding can't matter
+    }
+    let mut text = ValueText::new();
+    let _ = write!(text, "{plain:.decimals$}");
+    text.parse::<f64>().unwrap_or(plain)
 }
 
 /// Leading float off the front of `t`; returns (value, remainder).
@@ -285,5 +303,97 @@ mod tests {
                 "{unit:?}: {v} → {shown:?} → {parsed} not a fixpoint"
             );
         }
+    }
+
+    /// Every unit kind, every value across its range — including each
+    /// switch point (ms→s, Hz→kHz, the dB floor) ± a few ulps and ± the
+    /// display's half-step — is a format → parse → format fixpoint.
+    /// (S23: saga's ramp at 999.9999999999999 read "1000.0 ms", which
+    /// parsed back to 1000 and re-read "1.00 s".)
+    #[test]
+    fn every_unit_round_trips_across_its_range() {
+        let units = [
+            Unit::Plain { decimals: 0 },
+            Unit::Plain { decimals: 1 },
+            Unit::Plain { decimals: 2 },
+            Unit::Plain { decimals: 4 },
+            Unit::Db { floor_db: None },
+            Unit::Db {
+                floor_db: Some(-60),
+            },
+            Unit::Db {
+                floor_db: Some(-100),
+            },
+            Unit::Db { floor_db: Some(0) },
+            Unit::Hz,
+            Unit::Ms,
+            Unit::Percent,
+            Unit::Ratio,
+        ];
+        // Sweep: a dense linear run around zero plus a geometric run out
+        // to 1e6 on both signs.
+        let mut values: Vec<f64> = (-20_000..=20_000).map(|i| i as f64 * 0.0137).collect();
+        let mut v = 1e-4;
+        while v < 1e6 {
+            values.push(v);
+            values.push(-v);
+            v *= 1.0007;
+        }
+        // Switch points and rounding edges, each nudged by ulps and by
+        // the display's half-step.
+        let edges = [
+            0.0, 0.005, 0.05, 0.5, 1.0, 9.995, 99.95, 999.95, 1000.0, 1000.05, 9999.5, 10_000.0,
+            -60.0, -59.95, -60.05, -100.0, -99.95,
+        ];
+        for edge in edges {
+            for delta in [0.0, 1e-12, 1e-9, 1e-6, 0.004, 0.005, 0.049, 0.05, 0.051] {
+                for x in [edge + delta, edge - delta] {
+                    let mut y = x;
+                    for _ in 0..4 {
+                        values.push(y);
+                        y = f64::from_bits(y.to_bits() + 1);
+                    }
+                    let mut y = x;
+                    for _ in 0..4 {
+                        values.push(y);
+                        y = f64::from_bits(y.to_bits().wrapping_sub(1));
+                    }
+                }
+            }
+        }
+        values.push(999.9999999999999);
+        for unit in units {
+            for &v in &values {
+                if !v.is_finite() {
+                    continue;
+                }
+                let shown = unit.format(v);
+                let parsed = unit
+                    .parse(&shown)
+                    .unwrap_or_else(|| panic!("{unit:?}: {v} → {shown:?} does not parse"));
+                let again = unit.format(parsed);
+                assert_eq!(
+                    &*again, &*shown,
+                    "{unit:?}: {v} → {shown:?} → {parsed} → {again:?}"
+                );
+            }
+        }
+    }
+
+    /// Both readings of a switch point parse to the same value.
+    #[test]
+    fn both_sides_of_a_unit_switch_parse() {
+        assert_eq!(Unit::Ms.parse("1000.0 ms"), Some(1000.0));
+        assert_eq!(Unit::Ms.parse("1.00 s"), Some(1000.0));
+        assert_eq!(Unit::Hz.parse("1000.0 Hz"), Some(1000.0));
+        assert_eq!(Unit::Hz.parse("1.00 kHz"), Some(1000.0));
+        assert_eq!(&*Unit::Ms.format(999.9999999999999), "1.00 s");
+        assert_eq!(&*Unit::Ms.format(999.94), "999.9 ms");
+        assert_eq!(&*Unit::Hz.format(999.96), "1.00 kHz");
+        let db = Unit::Db {
+            floor_db: Some(-60),
+        };
+        assert_eq!(&*db.format(-59.96), "-inf dB");
+        assert_eq!(&*db.format(-59.94), "-59.9 dB");
     }
 }

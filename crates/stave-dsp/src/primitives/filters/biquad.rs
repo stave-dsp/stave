@@ -2,6 +2,15 @@
 //! coefficients (plus stave's own shelf), denormal-safe. The response is
 //! declared as a [`FilterSpec`] in hertz and decibels and re-derived at
 //! whatever rate the biquad is prepared for.
+//!
+//! Coefficients and state are f64. A corner far below the sample rate
+//! puts the poles a hair inside z = 1: a 7 Hz high-pass at 768 kHz sits
+//! 3e-9 inside the stability triangle (|a1| < 1 + a2) while f32's step
+//! at 2.0 is 2.4e-7, so f32 coefficients round the pole onto or past
+//! the unit circle and the section rings forever or diverges to NaN.
+//! The design is also cancellation-free (1 − cos ω written 2·sin²(ω/2)),
+//! so a 10 Hz low-pass at 384 kHz keeps its gain instead of rounding
+//! to zero. Audio in and out stays f32.
 
 use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
@@ -11,13 +20,13 @@ use crate::kernel::node::{Stage, Tail};
 /// passthrough.
 #[derive(Clone, Copy, Debug)]
 pub struct Biquad {
-    b0: f32,
-    b1: f32,
-    b2: f32,
-    a1: f32,
-    a2: f32,
-    z1: f32,
-    z2: f32,
+    b0: f64,
+    b1: f64,
+    b2: f64,
+    a1: f64,
+    a2: f64,
+    z1: f64,
+    z2: f64,
     spec: Option<FilterSpec>,
     sample_rate: f32,
 }
@@ -26,6 +35,17 @@ impl Default for Biquad {
     fn default() -> Self {
         Self::passthrough()
     }
+}
+
+/// The bilinear-mapped corner: (cos ω₀, sin ω₀, 1 − cos ω₀) in f64, the
+/// corner held inside (1 Hz, 0.499·fs) — the map is singular at Nyquist.
+#[inline]
+fn corner(freq_hz: f32, sample_rate: f32) -> (f64, f64, f64) {
+    let sample_rate = f64::from(sample_rate.max(1.0));
+    let freq = f64::from(freq_hz).clamp(1.0_f64.min(sample_rate * 0.499), sample_rate * 0.499);
+    let w0 = core::f64::consts::TAU * freq / sample_rate;
+    let half = (0.5 * w0).sin();
+    (w0.cos(), w0.sin(), 2.0 * half * half)
 }
 
 impl Biquad {
@@ -81,81 +101,103 @@ impl Biquad {
         }
     }
 
+    /// Normalize by a0 and store.
+    #[inline]
+    fn store(&mut self, b: [f64; 3], a: [f64; 3]) {
+        let inv = 1.0 / a[0];
+        self.b0 = b[0] * inv;
+        self.b1 = b[1] * inv;
+        self.b2 = b[2] * inv;
+        self.a1 = a[1] * inv;
+        self.a2 = a[2] * inv;
+    }
+
     fn lowpass(&mut self, cutoff_hz: f32, q: f32, sample_rate: f32) {
         debug_assert!(q > 0.0, "Q must be positive");
-        let pi = core::f32::consts::PI;
-        let cutoff = cutoff_hz.clamp(1.0, sample_rate * 0.499);
-        let w0 = 2.0 * pi * cutoff / sample_rate;
-        let cw = w0.cos();
-        let sw = w0.sin();
-        let alpha = sw / (2.0 * q);
-        let b0 = (1.0 - cw) * 0.5;
-        let b1 = 1.0 - cw;
-        let b2 = (1.0 - cw) * 0.5;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cw;
-        let a2 = 1.0 - alpha;
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
+        let (cw, sw, one_minus_cw) = corner(cutoff_hz, sample_rate);
+        let alpha = sw / (2.0 * f64::from(q));
+        self.store(
+            [one_minus_cw * 0.5, one_minus_cw, one_minus_cw * 0.5],
+            [1.0 + alpha, -2.0 * cw, 1.0 - alpha],
+        );
     }
 
     fn highpass(&mut self, cutoff_hz: f32, q: f32, sample_rate: f32) {
         debug_assert!(q > 0.0, "Q must be positive");
-        let pi = core::f32::consts::PI;
-        let cutoff = cutoff_hz.clamp(1.0, sample_rate * 0.499);
-        let w0 = 2.0 * pi * cutoff / sample_rate;
-        let cw = w0.cos();
-        let sw = w0.sin();
-        let alpha = sw / (2.0 * q);
-        let b0 = (1.0 + cw) * 0.5;
-        let b1 = -(1.0 + cw);
-        let b2 = (1.0 + cw) * 0.5;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cw;
-        let a2 = 1.0 - alpha;
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
+        let (cw, sw, _) = corner(cutoff_hz, sample_rate);
+        let alpha = sw / (2.0 * f64::from(q));
+        let one_plus_cw = 1.0 + cw;
+        self.store(
+            [one_plus_cw * 0.5, -one_plus_cw, one_plus_cw * 0.5],
+            [1.0 + alpha, -2.0 * cw, 1.0 - alpha],
+        );
     }
 
     fn allpass(&mut self, freq_hz: f32, q: f32, sample_rate: f32) {
         debug_assert!(q > 0.0, "Q must be positive");
-        let w0 = core::f32::consts::TAU * (freq_hz / sample_rate).clamp(1e-6, 0.49);
-        let alpha = w0.sin() / (2.0 * q);
+        let ratio = (f64::from(freq_hz) / f64::from(sample_rate.max(1.0))).clamp(1e-6, 0.49);
+        let w0 = core::f64::consts::TAU * ratio;
+        let alpha = w0.sin() / (2.0 * f64::from(q));
         let cw = w0.cos();
-        let a0 = 1.0 + alpha;
-        self.b0 = (1.0 - alpha) / a0;
-        self.b1 = (-2.0 * cw) / a0;
-        self.b2 = (1.0 + alpha) / a0;
-        self.a1 = (-2.0 * cw) / a0;
-        self.a2 = (1.0 - alpha) / a0;
+        self.store(
+            [1.0 - alpha, -2.0 * cw, 1.0 + alpha],
+            [1.0 + alpha, -2.0 * cw, 1.0 - alpha],
+        );
     }
 
     fn peak(&mut self, freq_hz: f32, gain_db: f32, q: f32, sample_rate: f32) {
         debug_assert!(q > 0.0, "Q must be positive");
-        let pi = core::f32::consts::PI;
-        let freq = freq_hz.clamp(1.0, sample_rate * 0.499);
-        let a = 10f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * pi * freq / sample_rate;
-        let cw = w0.cos();
-        let sw = w0.sin();
-        let alpha = sw / (2.0 * q);
-        let b0 = 1.0 + alpha * a;
-        let b1 = -2.0 * cw;
-        let b2 = 1.0 - alpha * a;
-        let a0 = 1.0 + alpha / a;
-        let a1 = -2.0 * cw;
-        let a2 = 1.0 - alpha / a;
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
+        let (cw, sw, _) = corner(freq_hz, sample_rate);
+        let a = 10f64.powf(f64::from(gain_db) / 40.0);
+        let alpha = sw / (2.0 * f64::from(q));
+        self.store(
+            [1.0 + alpha * a, -2.0 * cw, 1.0 - alpha * a],
+            [1.0 + alpha / a, -2.0 * cw, 1.0 - alpha / a],
+        );
+    }
+
+    /// Shelf coefficients for amplitude `a`, corner `one_minus_cw`
+    /// (1 − cos ω₀) and shelf `alpha`. The cookbook's (a±1) ∓ (a∓1)·cos ω₀
+    /// terms are rewritten around 1 − cos ω₀ so nothing cancels as
+    /// cos ω₀ → 1.
+    #[inline]
+    fn shelf(&mut self, a: f64, one_minus_cw: f64, alpha: f64, high: bool) {
+        let two_sqa = 2.0 * a.sqrt();
+        // (a+1) − (a−1)·cw = 2 + (a−1)·(1 − cw); (a+1) + (a−1)·cw = 2a − (a−1)·(1 − cw)
+        let minus = 2.0 + (a - 1.0) * one_minus_cw;
+        let plus = 2.0 * a - (a - 1.0) * one_minus_cw;
+        // (a−1) − (a+1)·cw = (a+1)(1 − cw) − 2; (a−1) + (a+1)·cw = 2a − (a+1)(1 − cw)
+        let lo_b1 = (a + 1.0) * one_minus_cw - 2.0;
+        let lo_a1 = 2.0 * a - (a + 1.0) * one_minus_cw;
+        if high {
+            self.store(
+                [
+                    a * (plus + two_sqa * alpha),
+                    -2.0 * a * lo_a1,
+                    a * (plus - two_sqa * alpha),
+                ],
+                [
+                    minus + two_sqa * alpha,
+                    2.0 * lo_b1,
+                    minus - two_sqa * alpha,
+                ],
+            );
+        } else {
+            self.store(
+                [
+                    a * (minus + two_sqa * alpha),
+                    2.0 * a * lo_b1,
+                    a * (minus - two_sqa * alpha),
+                ],
+                [plus + two_sqa * alpha, -2.0 * lo_a1, plus - two_sqa * alpha],
+            );
+        }
+    }
+
+    /// The STAVE shelf alpha — deliberately NOT the RBJ cookbook curve.
+    #[inline]
+    fn stave_shelf_alpha(sw: f64, a: f64) -> f64 {
+        sw * 0.5 * (((a + 1.0 / a) * (1.0 / 0.9) - 1.0) + 2.0).sqrt() * 0.5
     }
 
     /// The STAVE low shelf — deliberately NOT the RBJ cookbook curve
@@ -169,110 +211,51 @@ impl Biquad {
     /// reciprocity check). Deliberately not the RBJ cookbook formula:
     /// measurement chose keeping the sound.
     fn low_shelf(&mut self, freq_hz: f32, gain_db: f32, sample_rate: f32) {
-        let pi = core::f32::consts::PI;
-        let freq = freq_hz.clamp(1.0, sample_rate * 0.499);
-        let a = 10f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * pi * freq / sample_rate;
-        let cw = w0.cos();
-        let sw = w0.sin();
-        // Stave-shelf alpha (see doc comment above; NOT cookbook).
-        let alpha = sw * 0.5 * (((a + 1.0 / a) * (1.0 / 0.9) - 1.0) + 2.0).sqrt() * 0.5;
-        let two_sqa = 2.0 * a.sqrt();
-        let b0 = a * ((a + 1.0) - (a - 1.0) * cw + two_sqa * alpha);
-        let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cw);
-        let b2 = a * ((a + 1.0) - (a - 1.0) * cw - two_sqa * alpha);
-        let a0 = (a + 1.0) + (a - 1.0) * cw + two_sqa * alpha;
-        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cw);
-        let a2 = (a + 1.0) + (a - 1.0) * cw - two_sqa * alpha;
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
+        let (_, sw, one_minus_cw) = corner(freq_hz, sample_rate);
+        let a = 10f64.powf(f64::from(gain_db) / 40.0);
+        self.shelf(a, one_minus_cw, Self::stave_shelf_alpha(sw, a), false);
     }
 
     /// The STAVE high shelf — same deliberate non-cookbook corner
     /// character as `FilterSpec::LowShelf`; see there.
     fn high_shelf(&mut self, freq_hz: f32, gain_db: f32, sample_rate: f32) {
-        let pi = core::f32::consts::PI;
-        let freq = freq_hz.clamp(1.0, sample_rate * 0.499);
-        let a = 10f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * pi * freq / sample_rate;
-        let cw = w0.cos();
-        let sw = w0.sin();
-        // Stave-shelf alpha (see set_low_shelf; NOT cookbook).
-        let alpha = sw * 0.5 * (((a + 1.0 / a) * (1.0 / 0.9) - 1.0) + 2.0).sqrt() * 0.5;
-        let two_sqa = 2.0 * a.sqrt();
-        let b0 = a * ((a + 1.0) + (a - 1.0) * cw + two_sqa * alpha);
-        let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cw);
-        let b2 = a * ((a + 1.0) + (a - 1.0) * cw - two_sqa * alpha);
-        let a0 = (a + 1.0) - (a - 1.0) * cw + two_sqa * alpha;
-        let a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cw);
-        let a2 = (a + 1.0) - (a - 1.0) * cw - two_sqa * alpha;
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
+        let (_, sw, one_minus_cw) = corner(freq_hz, sample_rate);
+        let a = 10f64.powf(f64::from(gain_db) / 40.0);
+        self.shelf(a, one_minus_cw, Self::stave_shelf_alpha(sw, a), true);
     }
+
     /// Cookbook-exact RBJ low shelf, S = 1 (monotonic — no corner lip).
     fn low_shelf_rbj(&mut self, freq_hz: f32, gain_db: f32, sample_rate: f32) {
-        let pi = core::f32::consts::PI;
-        let freq = freq_hz.clamp(1.0, sample_rate * 0.499);
-        let a = 10f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * pi * freq / sample_rate;
-        let (cw, sw) = (w0.cos(), w0.sin());
+        let (_, sw, one_minus_cw) = corner(freq_hz, sample_rate);
+        let a = 10f64.powf(f64::from(gain_db) / 40.0);
         // S = 1 ⇒ (A + 1/A)(1/S − 1) + 2 = 2.
-        let alpha = sw * 0.5 * 2.0f32.sqrt();
-        let two_sqa = 2.0 * a.sqrt();
-        let b0 = a * ((a + 1.0) - (a - 1.0) * cw + two_sqa * alpha);
-        let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cw);
-        let b2 = a * ((a + 1.0) - (a - 1.0) * cw - two_sqa * alpha);
-        let a0 = (a + 1.0) + (a - 1.0) * cw + two_sqa * alpha;
-        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cw);
-        let a2 = (a + 1.0) + (a - 1.0) * cw - two_sqa * alpha;
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
+        self.shelf(a, one_minus_cw, sw * 0.5 * core::f64::consts::SQRT_2, false);
     }
 
     /// Cookbook-exact RBJ high shelf, S = 1.
     fn high_shelf_rbj(&mut self, freq_hz: f32, gain_db: f32, sample_rate: f32) {
-        let pi = core::f32::consts::PI;
-        let freq = freq_hz.clamp(1.0, sample_rate * 0.499);
-        let a = 10f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * pi * freq / sample_rate;
-        let (cw, sw) = (w0.cos(), w0.sin());
-        let alpha = sw * 0.5 * 2.0f32.sqrt();
-        let two_sqa = 2.0 * a.sqrt();
-        let b0 = a * ((a + 1.0) + (a - 1.0) * cw + two_sqa * alpha);
-        let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cw);
-        let b2 = a * ((a + 1.0) + (a - 1.0) * cw - two_sqa * alpha);
-        let a0 = (a + 1.0) - (a - 1.0) * cw + two_sqa * alpha;
-        let a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cw);
-        let a2 = (a + 1.0) - (a - 1.0) * cw - two_sqa * alpha;
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
+        let (_, sw, one_minus_cw) = corner(freq_hz, sample_rate);
+        let a = 10f64.powf(f64::from(gain_db) / 40.0);
+        self.shelf(a, one_minus_cw, sw * 0.5 * core::f64::consts::SQRT_2, true);
     }
 
     /// Complex frequency response H(e^{jω}) of the current
     /// coefficients at the prepared rate — the display and analysis
     /// read. Touches no state.
     pub fn response_at(&self, hz: f32) -> (f32, f32) {
-        let w = core::f32::consts::TAU * (hz / self.sample_rate.max(1.0)).clamp(0.0, 0.5);
+        let w = core::f64::consts::TAU
+            * (f64::from(hz) / f64::from(self.sample_rate.max(1.0))).clamp(0.0, 0.5);
         let (c1, s1) = (w.cos(), w.sin());
         let (c2, s2) = ((2.0 * w).cos(), (2.0 * w).sin());
         let nr = self.b0 + self.b1 * c1 + self.b2 * c2;
         let ni = -(self.b1 * s1 + self.b2 * s2);
         let dr = 1.0 + self.a1 * c1 + self.a2 * c2;
         let di = -(self.a1 * s1 + self.a2 * s2);
-        let den = (dr * dr + di * di).max(1e-30);
-        ((nr * dr + ni * di) / den, (ni * dr - nr * di) / den)
+        let den = (dr * dr + di * di).max(1e-300);
+        (
+            ((nr * dr + ni * di) / den) as f32,
+            ((ni * dr - nr * di) / den) as f32,
+        )
     }
 
     /// |H(e^{jω})| — see [`response_at`](Self::response_at).
@@ -295,16 +278,17 @@ impl Stage for Biquad {
     }
     #[inline]
     fn tick(&mut self, x: f32) -> f32 {
+        let x = f64::from(x);
         let y = self.b0 * x + self.z1;
-        self.z1 = denormal::flush(self.b1 * x - self.a1 * y + self.z2);
-        self.z2 = denormal::flush(self.b2 * x - self.a2 * y);
-        y
+        self.z1 = denormal::flush64(self.b1 * x - self.a1 * y + self.z2);
+        self.z2 = denormal::flush64(self.b2 * x - self.a2 * y);
+        denormal::flush(y as f32)
     }
     /// Samples for the slower pole to fall 120 dB.
     fn tail(&self) -> Tail {
         match self.spec {
             None => Tail::None,
-            Some(_) => Tail::from_biquad(f64::from(self.a1), f64::from(self.a2)),
+            Some(_) => Tail::from_biquad(self.a1, self.a2),
         }
     }
 }

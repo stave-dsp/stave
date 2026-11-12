@@ -25,6 +25,10 @@ use crate::structures::chain::{Chain, StageId};
 ///   `env_scale`, the LFO is multiplied by an envelope of the detector:
 ///   supply ripple is proportional to current draw, so quiet passages
 ///   stay clean — the difference between "vintage ghost" and "vibrato".
+// `Sub` carries f64 biquads (S22) and dwarfs the others; drivers are
+// built once at setup and ticked per sample, so it stays inline rather
+// than behind a pointer on the audio path.
+#[allow(clippy::large_enum_variant)]
 pub enum Driver {
     Env(EnvelopeFollower),
     Lfo {
