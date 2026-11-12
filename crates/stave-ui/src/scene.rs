@@ -5,10 +5,11 @@
 //! screenshot needed.
 //!
 //! Kept deliberately small: paths (lines, quads, cubics, circular
-//! arcs), solid + axial-gradient brushes, stroked or filled, text
-//! runs. Everything an audio UI draws — knobs, rings, envelopes,
-//! diagrams, scopes — is these ops. No transforms/layers yet: every
-//! scene is in the widget's own coordinate space, and the arc
+//! arcs), solid, axial- and radial-gradient brushes, stroked or filled,
+//! text runs, images, and a clip (`Clip` … `Unclip`: what is drawn
+//! between them lands only inside a path). Everything an audio UI draws
+//! — knobs, rings, envelopes, diagrams, scopes — is these ops. No
+//! transforms: every scene is in the widget's own coordinate space, and the arc
 //! convention deliberately matches CoreGraphics' `CGContextAddArc`
 //! (angles in radians, `cw` flag as CG means it in a y-up context)
 //! so a CoreGraphics renderer is a 1:1 mapping.
@@ -122,13 +123,22 @@ impl Path {
     }
 }
 
-/// How a fill paints. Axial gradients carry (t, color) stops.
+/// How a fill paints. Gradients carry (t, color) stops, interpolated in
+/// the encoded colour space and extended past both ends.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Brush {
     Solid(Color),
+    /// `t` runs 0 → 1 along the axis from `from` to `to`.
     Linear {
         from: Pt,
         to: Pt,
+        stops: Vec<(f64, Color)>,
+    },
+    /// `t` runs 0 → 1 outward from `centre` to `radius` (a lamp's glow,
+    /// a lens, a vignette).
+    Radial {
+        centre: Pt,
+        radius: f64,
         stops: Vec<(f64, Color)>,
     },
 }
@@ -199,6 +209,12 @@ pub enum Op {
         h: f64,
         image: Image,
     },
+    /// From here to the matching [`Op::Unclip`], every op draws only
+    /// inside `path` (filled nonzero, anti-aliased), and inside any clip
+    /// already set: clips nest. A clip left open ends with the scene.
+    Clip { path: Path },
+    /// End the innermost [`Op::Clip`] (nothing when none is open).
+    Unclip,
 }
 
 /// Premultiplied RGBA8 pixels, row 0 at the TOP, `px_w × px_h`. The
@@ -295,6 +311,20 @@ impl Scene {
     }
     pub fn stroke(&mut self, path: Path, stroke: Stroke) {
         self.ops.push(Op::Stroke { path, stroke });
+    }
+    /// Draw only inside `path` until [`unclip`](Self::unclip).
+    pub fn clip(&mut self, path: Path) {
+        self.ops.push(Op::Clip { path });
+    }
+    /// End the innermost clip.
+    pub fn unclip(&mut self) {
+        self.ops.push(Op::Unclip);
+    }
+    /// What `draw` adds, drawn only inside `path`.
+    pub fn clipped(&mut self, path: Path, draw: impl FnOnce(&mut Scene)) {
+        self.clip(path);
+        draw(self);
+        self.unclip();
     }
     /// One line of text in the default font (centered on `at`).
     pub fn text(&mut self, at: Pt, text: impl Into<String>, size: f64, color: Color) {
