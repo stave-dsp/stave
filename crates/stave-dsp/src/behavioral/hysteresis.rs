@@ -59,8 +59,8 @@ impl Stage for Hysteresis {
     fn tick(&mut self, x: f32) -> f32 {
         let an = (self.drive * x).tanh();
         let dx = (x - self.last_x).abs();
-        let rate = (self.hyst_rate * dx).min(1.0);
-        self.mag = crate::kernel::denormal::flush(self.mag + (an - self.mag) * rate);
+        let step = (self.hyst_rate * dx).min(1.0);
+        self.mag = crate::kernel::denormal::flush(self.mag + (an - self.mag) * step);
         self.last_x = x;
         // Small-signal normalised (÷drive): unity below the knee, so a
         // host can fade the stage in without a level jump.

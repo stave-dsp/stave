@@ -20,6 +20,17 @@ pub fn tau_coeff(seconds: f32, sample_rate: f32) -> f32 {
     1.0 - (-1.0 / (seconds * sample_rate)).exp()
 }
 
+/// [`tau_coeff`] in `f64`, for recursions whose pole sits so close to
+/// unity (slow RCs at oversampled rates) that `f32` would quantize the
+/// time constant.
+#[inline]
+pub fn tau_coeff64(seconds: f64, sample_rate: f64) -> f64 {
+    if seconds <= 0.0 {
+        return 1.0;
+    }
+    1.0 - (-1.0 / (seconds * sample_rate)).exp()
+}
+
 /// Which side of the corner a [`OnePole`] passes.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum OnePoleMode {

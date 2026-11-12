@@ -3,7 +3,7 @@
 //! * `SineVoice` — the simplest instrument shape (Osc + Adsr);
 //! * `MiniFmVoice` — a 2-operator FM voice whose MODULATOR carries
 //!   its own Adsr instance: per-voice control-plane instancing must
-//!   fit the trait with no framework help, BEFORE tier 2 needs it.
+//!   fit the trait with no framework help.
 //!   If this voice is awkward to write, the form is wrong — that is
 //!   this file's job.
 

@@ -105,9 +105,9 @@ impl PowerSupply {
     /// return the mean B+ over the last mains half-cycle (the ripple's
     /// period): the supply's settled voltage at that load.
     pub fn settle(&mut self, load_amps: f64, seconds: f64) -> f64 {
-        let rate = 1.0 / self.step_seconds;
-        let ripple_period = (rate / (2.0 * self.config.mains_hz)).round() as usize;
-        let total = (seconds * rate) as usize;
+        let sample_rate = f64::from(self.sample_rate);
+        let ripple_period = (sample_rate / (2.0 * self.config.mains_hz)).round() as usize;
+        let total = (seconds * sample_rate) as usize;
         let mut sum = 0.0;
         for i in 0..total {
             let b = self.tick_f64(load_amps);

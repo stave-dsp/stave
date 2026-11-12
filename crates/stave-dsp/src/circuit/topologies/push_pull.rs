@@ -33,6 +33,7 @@ use crate::circuit::topologies::triode_stage::{
     core_transfer_at, grid_amps_at, grid_volts_at, solve_load_line, Bias, TriodeParams,
 };
 use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::one_pole::tau_coeff64;
 
 /// Grid-volt domain of the tabulated halves (absolute): deep cutoff to
 /// well into grid conduction, for any class point and drive.
@@ -232,7 +233,7 @@ impl PushPull {
         self.cathode_coeff = match self.bias {
             Bias::Fixed => 0.0,
             Bias::Cathode { bypass_farads } => {
-                1.0 - (-1.0 / (self.rk * bypass_farads * f64::from(self.sample_rate))).exp()
+                tau_coeff64(self.rk * bypass_farads, f64::from(self.sample_rate))
             }
         };
     }
@@ -349,9 +350,9 @@ impl PushPull {
         self.out_scale = 1.0 / m.max(1e-9);
         // FLANK gain, not crossover gain: in deep AB the slope at
         // x = 0 is the dead zone — the one place the curve's slope
-        // is meaningless for staging (the anvil integration drove
-        // the pair by that number and the wall went clean). The
-        // report is the max slope the signal actually rides.
+        // is meaningless for staging (a pair driven by that number
+        // under-drives into a clean wall). The report is the max
+        // slope the signal actually rides.
         let d = X_SPAN / 256.0;
         self.gain_q = (1..256)
             .map(|i| {

@@ -88,10 +88,10 @@ impl Adsr {
             "{config:?}"
         );
         self.config = *config;
-        let fs = self.sample_rate;
-        self.a_coeff = tau_coeff(config.attack_ms / ATTACK_LN * 0.001, fs);
-        self.d_coeff = tau_coeff(config.decay_ms * 0.001, fs);
-        self.r_coeff = tau_coeff(config.release_ms * 0.001, fs);
+        let sample_rate = self.sample_rate;
+        self.a_coeff = tau_coeff(config.attack_ms / ATTACK_LN * 0.001, sample_rate);
+        self.d_coeff = tau_coeff(config.decay_ms * 0.001, sample_rate);
+        self.r_coeff = tau_coeff(config.release_ms * 0.001, sample_rate);
         debug_assert!(
             (0.0..=1.0).contains(&config.sustain),
             "sustain {}",

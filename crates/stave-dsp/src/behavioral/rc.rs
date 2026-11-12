@@ -170,7 +170,7 @@ impl NonlinearRc {
     fn i_and_slope(&self, u: f64) -> (f64, f64) {
         // The segment's ANALYTIC derivative, from the same fetch as
         // the value — one table walk instead of three (the finite
-        // difference this replaced was 22% of forge's screamer-mode
+        // difference this replaced was 22% of a diode-clipper chain's
         // cost, sampled), and it is the true df/dx of the curve
         // Newton is actually solving. Clamped ≥ 0: the conductance
         // shapes are monotone by contract, and F' = 1 + k·i' ≥ 1
@@ -219,19 +219,17 @@ impl Stage for NonlinearRc {
             }
             // v = v0 + k·(g·x − i(v)); Newton on
             // F(v) = v − v0 − k·(g·x − i(v)), F′(v) = 1 + k·i′(v) ≥ 1.
-            // SEMI-IMPLICIT (the perf deep-dive, 2026-08-05): one
+            // Semi-implicit: one
             // Newton step from the warm state is the semi-implicit
             // Euler discretization of the cap ODE; k = 1/(tau*fs)
             // ~ 3e-3 makes it unconditionally stable (F' >= 1) and
             // the iterated solve was refining digits the state
-            // forgets within its own tau. MEASURED against the
-            // 3-iteration solve on the field DI at FUZZBED: render
-            // null -68 dB rms / -58 dB peak (a slow bias in the
-            // cap state, fully masked under program); a guarded
-            // second step did not improve the null and cost the
-            // win back. One iteration is the discretization, not
-            // an approximation of a better one. EAR-RATIFIED with
-            // the 0.15.2 A/B pair.
+            // forgets within its own tau. Measured against the
+            // 3-iteration solve on a DI recording: null −68 dB rms /
+            // −58 dB peak (a slow bias in the cap state, masked under
+            // program); a guarded second step did not improve the
+            // null. One iteration is the discretization, not an
+            // approximation of a better one.
             RcTopology::Shunt { input_gain } => {
                 let (i, di) = self.i_and_slope(v);
                 let f = v - v0 - self.k * (input_gain * x - i);

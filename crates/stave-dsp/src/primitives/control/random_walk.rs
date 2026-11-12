@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn renewal_gives_the_walk_its_reach() {
-        // The doctrine's measurement: an eased renewing walk has
+        // The measurement: an eased renewing walk has
         // real variance; white through the same one-pole alone
         // (renewal every sample) has almost none.
         let sr = 48_000.0;

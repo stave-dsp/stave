@@ -31,6 +31,7 @@ use crate::circuit::devices::triode::koren::Koren;
 use crate::circuit::methods::load_line::LoadLine;
 use crate::circuit::methods::newton::NewtonSettings;
 use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::one_pole::tau_coeff64;
 
 /// Koren constants + circuit. Defaults are a classic 12AX7 gain stage
 /// (300 V supply, 100 kΩ plate load, −1.5 V grid bias).
@@ -86,11 +87,10 @@ const INITIAL_GRID_DRIVE: f64 = 0.4;
 /// physics are identical under both; what differs is what the drive
 /// knob does to LEVEL:
 ///
-/// * `Calibrated` (default, the historical behaviour): small-signal
-///   gain is normalised to unity at any drive — the knob adds
-///   harmonic colour, not level. Right for a saturation EFFECT
-///   (forge, a band saturator) where loudness invariance is the
-///   product. The knee's OUTPUT level falls as drive rises, so deep
+/// * `Calibrated` (default): small-signal gain is normalised to
+///   unity at any drive — the knob adds harmonic colour, not level.
+///   Right for a saturation effect where loudness invariance is the
+///   point. The knee's OUTPUT level falls as drive rises, so deep
 ///   cascades collapse toward a collective brick wall — which is
 ///   precisely why this is the wrong policy for an amp.
 /// * `Physical`: the stage behaves like a real gain pot into a fixed
@@ -240,7 +240,7 @@ impl Triode {
         self.cathode_coeff = match self.bias {
             Bias::Fixed => 0.0,
             Bias::Cathode { bypass_farads } => {
-                1.0 - (-1.0 / (self.rk * bypass_farads * self.sample_rate)).exp()
+                tau_coeff64(self.rk * bypass_farads, self.sample_rate)
             }
         };
     }

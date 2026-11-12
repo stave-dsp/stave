@@ -661,7 +661,7 @@ fn full_path_high_freq_is_clean_with_cathode() {
     // by design); what's left below 20 kHz is the ADAA machinery's own
     // inner-rate residual — measured −49.9 dB here, identical between
     // FIR and IIR decimators (the decimator can't touch it; more
-    // oversampling can — the multiband product's 4× saturation stack does).
+    // oversampling can — a 4× saturation stack does).
     let max_bin = (20_000.0 * 8192.0 / fs) as usize;
     let floor = noise_floor_db_upto(m, 8192, 0.5, max_bin, move |x| {
         os.tick_with(x, |s| t.tick(s))

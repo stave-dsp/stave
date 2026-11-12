@@ -46,7 +46,7 @@
 pub const CURVE_N: usize = 1024;
 
 /// A tabulated transfer + antiderivatives. See module docs.
-extern crate alloc;
+use std::sync::Arc;
 
 /// The tabulated columns, heap-allocated ONCE at construction: a Curve is
 /// ~32 KB of tables, and stages/chains embed several — inline arrays blew
@@ -65,7 +65,7 @@ struct Tables {
 }
 
 pub struct Curve {
-    /// SHARED tables (the perf deep-dive, 2026-08-05): a curve's
+    /// Shared tables: a curve's
     /// tables are immutable between rebuilds, and hot product models
     /// clone curves per stage — Arc turns those clones into
     /// refcount bumps so identical stages READ THE SAME MEMORY.
@@ -73,7 +73,7 @@ pub struct Curve {
     /// sample = every interp an L2 round-trip (~36 ns/iteration in
     /// the TS solve). Rebuild copies-on-write (bind-rate, same
     /// alloc class as the Box it replaces).
-    t: alloc::sync::Arc<Tables>,
+    t: Arc<Tables>,
     has_sense: bool,
     x_min: f64,
     x_max: f64,
@@ -86,7 +86,7 @@ impl Clone for Curve {
         // (copy-on-write in `tables_mut`). Identical stages read
         // identical memory — the cache is the point.
         Self {
-            t: alloc::sync::Arc::clone(&self.t),
+            t: Arc::clone(&self.t),
             has_sense: self.has_sense,
             x_min: self.x_min,
             x_max: self.x_max,
@@ -116,7 +116,7 @@ impl Curve {
     /// allocation a Curve ever makes — construction time, never audio).
     pub fn flat() -> Self {
         Self {
-            t: alloc::sync::Arc::new(Tables {
+            t: Arc::new(Tables {
                 f: [0.0; CURVE_N],
                 g1: [0.0; CURVE_N],
                 g2: [0.0; CURVE_N],
@@ -145,7 +145,7 @@ impl Curve {
         self.x_max = x_max;
         let step = (x_max - x_min) / ((CURVE_N - 1) as f64);
         self.inv_step = 1.0 / step;
-        let t = alloc::sync::Arc::make_mut(&mut self.t);
+        let t = Arc::make_mut(&mut self.t);
         for k in 0..CURVE_N {
             t.f[k] = source(x_min + k as f64 * step);
         }
@@ -165,7 +165,7 @@ impl Curve {
     ) {
         self.rebuild(x_min, x_max, ref_x, &mut source);
         let step = (x_max - x_min) / ((CURVE_N - 1) as f64);
-        let t = alloc::sync::Arc::make_mut(&mut self.t);
+        let t = Arc::make_mut(&mut self.t);
         for k in 0..CURVE_N {
             t.sense[k] = sense(x_min + k as f64 * step);
         }
@@ -215,7 +215,7 @@ impl Curve {
                 );
                 acc += w * c.t.f[k];
             }
-            alloc::sync::Arc::make_mut(&mut self.t).f[k] = acc;
+            Arc::make_mut(&mut self.t).f[k] = acc;
         }
         self.integrate(ref_x, step);
     }
@@ -224,7 +224,7 @@ impl Curve {
     /// both to 0 at `ref_x`.
     fn integrate(&mut self, ref_x: f64, step: f64) {
         let t_ref = self.t_of(ref_x);
-        let t = alloc::sync::Arc::make_mut(&mut self.t);
+        let t = Arc::make_mut(&mut self.t);
         t.g1[0] = 0.0;
         for k in 1..CURVE_N {
             t.g1[k] = t.g1[k - 1] + 0.5 * (t.f[k] + t.f[k - 1]) * step;
@@ -270,7 +270,7 @@ impl Curve {
     /// segment `f_at` evaluates — the true df/dx of the interpolated
     /// curve (a finite difference approximates this with three full
     /// evaluations and an H of its own; Newton solvers were paying
-    /// 3× for a worse answer — 22% of forge's screamer-mode block
+    /// 3× for a worse answer — 22% of a diode-clipper chain's block
     /// cost, sampled). Outside the domain the value is constant and
     /// the slope is 0.
     #[inline]
@@ -578,7 +578,7 @@ impl CurveStage {
         }
     }
 
-    /// Tabulate with a SENSE column (physical observable — Step 2).
+    /// Tabulate with a sense column (a physical observable).
     pub fn from_fn_with_sense(
         x_min: f64,
         x_max: f64,

@@ -59,7 +59,7 @@ pub use primitives::control::sub::SubOctave;
 pub use primitives::filters::allpass::Allpass1;
 pub use primitives::filters::biquad::{Biquad, FilterSpec};
 pub use primitives::filters::linkwitz_riley::{Crossover3, CrossoverSide, LinkwitzRiley4};
-pub use primitives::filters::one_pole::{tau_coeff, DcBlocker, OnePole, OnePoleMode};
+pub use primitives::filters::one_pole::{tau_coeff, tau_coeff64, DcBlocker, OnePole, OnePoleMode};
 pub use primitives::filters::svf::{Svf, SvfTaps};
 pub use primitives::gain::{amp_to_db, db_to_amp, t60_gain};
 pub use primitives::osc::{Osc, Waveform};

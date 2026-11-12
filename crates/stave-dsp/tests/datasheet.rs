@@ -1,5 +1,5 @@
 //! The primitive DATASHEET — ns/sample for every primitive, measured the
-//! way the perf doctrine demands (warm-up, repeated runs, median,
+//! way a benchmark should (warm-up, repeated runs, median,
 //! spread printed so a noisy run discredits itself). Like the
 //! project perf reports it DOCUMENTS, never blocks: the numbers
 //! belong in front of eyes when composing an engine ("can I afford
@@ -15,8 +15,7 @@
 //! 4.4 (f_and_slope_at the same fetch), Allpass1 5.7, Biquad 7.1,
 //! Adaa(1) 8.8, Hysteresis 10.5. The outlier is NonlinearRc's
 //! Newton solve at ~63 — an implicit nonlinear ODE per sample is
-//! the one primitive you budget around (forge's screamer already
-//! learned this).
+//! the one primitive you budget around.
 
 use stave_dsp::FilterSpec;
 use stave_dsp::RcClipperConfig;

@@ -297,7 +297,7 @@ fn control_properties() {
         }
     }
     // Edges are DATA: rebuildable at block rate, iterable for the
-    // sidecar; the target vocabulary is the consumer's.
+    // reflection; the target vocabulary is the consumer's.
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum Inlet {
         Gain,
@@ -424,7 +424,7 @@ fn param_and_detector_sources_are_one_class() {
         "detector source follows the program: {}",
         states[1]
     );
-    // Both edges are the same wiring data (the sidecar's view).
+    // Both edges are the same wiring data (the reflected view).
     let wiring: Vec<_> = r.routes().map(|e| (e.source, e.target)).collect();
     assert_eq!(wiring, vec![(0, Inlet::Depth), (1, Inlet::Gain)]);
     // Rest states differ HONESTLY under one reset surface: a param's

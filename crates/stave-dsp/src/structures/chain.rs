@@ -149,7 +149,7 @@ impl<const N: usize> Chain<N> {
         self.used == 0
     }
 
-    /// Reflection sidecar v1: the topology as data, read from the
+    /// Reflection: the topology as data, read from the
     /// LIVE structure — `(id, kind)` in signal order. Emitted, never
     /// hand-maintained, so it cannot drift from what runs.
     pub fn topology(&self) -> impl Iterator<Item = (StageId, &'static str)> + '_ {
@@ -560,7 +560,7 @@ pub enum StageKind {
 }
 
 impl StageKind {
-    /// Reflection sidecar v1: the kind as declared data, so a
+    /// Reflection: the kind as declared data, so a
     /// topology description can be emitted from the LIVE structure —
     /// it cannot drift from what actually runs.
     pub const fn kind_name(&self) -> &'static str {
@@ -812,7 +812,7 @@ mod stage_kind_tests {
     #[test]
     fn hysteresis_stage_loops() {
         // Real loop (nonzero area), roughly frequency-independent — the
-        // Memory::Tape invariant, preserved through the port.
+        // tape-hysteresis invariant.
         let fs = 48_000.0;
         let area = |f0: f64| {
             let mut h = Hysteresis::new(1.5, 0.8);

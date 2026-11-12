@@ -52,32 +52,63 @@ stave-measure ── stave-host ── stave-test, tools/*
 
 ## stave-dsp
 
-Folders name the modeling method; dependencies point down only
-(`scripts/check-view-bindings.sh` enforces the kernel's).
+Five layers, each depending only on the ones before it
+(`scripts/check-view-bindings.sh` enforces it). Folders name the
+modeling method.
 
 | layer | contents | may use |
 |---|---|---|
-| `kernel/` | the composition forms | nothing below |
-| `primitives/` | filters, control signals, delays, oscillators, resampling, deterministic randomness | kernel |
-| `behavioral/` | fitted or by-ear shapes: curves with ADAA, slew, hysteresis, nonlinear RC | kernel, primitives |
-| `circuit/` | devices, solver methods and topologies derived from schematics | kernel, primitives, behavioral |
-| `structures/` | `Chain` (sequence with addressable slots), `ModMatrix` | all of the above |
+| 0 `kernel/` | the `Stage` contract and `Tail`; the composition forms; denormal guards | nothing |
+| 1 `primitives/` | filters (`Biquad`, `Svf`, `OnePole`, `DcBlocker`, `Allpass1`, `LinkwitzRiley4`, `Crossover3`), time (`DelayLine`, `Comb`, `DelayAllpass`), control (LFOs, envelopes, followers, smoothers, random walks), `Osc` and `Waveform`, gain and pitch helpers, deterministic randomness | kernel |
+| 2 `behavioral/` | fitted or by-ear models: curves with ADAA, `soft_clip` and the shape library, `SmoothSat`, slew, hysteresis, nonlinear RC | kernel, primitives |
+| 3 `circuit/` | devices, solver methods and topologies derived from schematics | kernel, primitives, behavioral |
+| 4 `structures/` | `Chain` (serial composition with addressable slots), `chain!`, `ModMatrix` | all of the above |
 
-### The node contract
+### The Stage contract
 
-Every processor implements `Stage`: `prepare(rate)`, `reset()`,
-`tick(x)`, optionally `process_block`, and reports `latency_samples()`
-and `tail_samples()`. Leaves and composites present the same surface.
+Every processor — leaf or composite — implements `Stage`:
+
+```rust
+pub trait Stage {
+    fn prepare(&mut self, _sample_rate: f32) {}
+    fn reset(&mut self) {}
+    fn tick(&mut self, x: f32) -> f32;
+    fn process(&mut self, block: &mut [f32]) { /* the tick loop */ }
+    fn latency(&self) -> u32 { 0 }
+    fn tail(&self) -> Tail { Tail::None }
+}
+```
 
 - **Rate contract.** `prepare` receives the rate the stage actually
-  runs at, and derives every coefficient from it. Inside an oversampler
-  that is the oversampled rate (`tests/invariance_conformance.rs`).
+  runs at and caches every rate-derived coefficient; inside an
+  oversampler that is the oversampled rate
+  (`stave-test/tests/rate_contract.rs`). Setters take musical units
+  only — `set_hz`, `set_times(rise_ms, fall_ms)`, `FilterSpec { hz, db,
+  q }` — never a sample rate. A stage runs at 48 kHz before `prepare`.
+  Storage that sizes itself (`DelayLine`, `Compensator`) does so in
+  `allocate(samples)`.
+- **Latency and tail are forwarded.** `Tail` is `None`,
+  `Samples(n)` or `Infinite` (the plugin's three cases). Filters and
+  circuits estimate the samples to fall 120 dB from their poles or RC
+  time constants; generators report `Infinite`. Composites combine by
+  the laws below; a `Chain` with global feedback, or a `Loop` without a
+  declared bound, is `Infinite`.
+- **One step verb.** `tick` advances one sample (a generator ignores
+  its input); `process` is the block form, bit-identical to the tick
+  loop (`tests/block_api.rs`). Multi-output filters keep extra methods
+  (`Svf::taps`, `Crossover3::split`); circuits add `tick_f64`.
+- **Units.** `sample_rate` is `f32` everywhere (state may be `f64`);
+  frequencies end `_hz`, times `_ms`, levels `_db`; filters take `q`
+  (Butterworth = 1/√2), never "resonance"; phase is in cycles,
+  `0 ≤ t < 1`. One `Waveform` (sine, triangle, saw, square) serves
+  oscillators and LFOs.
+- **Capacity is a type.** Fixed-capacity pushes (`Chain::push`,
+  `Router::push_route`) return `Result<_, Full>`, never a sentinel.
 - **Preconditions are asserted, not repaired.** An input outside a
-  method's domain (`Q ≤ 0`, a non-positive rate, a pot past its travel)
+  method's domain (`q ≤ 0`, a non-positive rate, a pot past its travel)
   is a caller bug: `debug_assert!`, never a silent clamp. Clamps that
   remain are limits of the method itself — a bilinear corner below
-  Nyquist, a one-pole no faster than one sample, a read position
-  inside the buffer.
+  Nyquist, a read position inside the buffer.
 - **Configuration is data.** Multi-value setup takes a config struct
   with named fields (`FilterSpec`, `AdsrConfig`, `RcClipperConfig`,
   `PowerSupplyConfig`, …); variants are enums (`AdaaOrder`, `Bias`,
@@ -87,17 +118,20 @@ and `tail_samples()`. Leaves and composites present the same surface.
 
 | form | type | law (pinned in `tests/kernel_properties.rs`) |
 |---|---|---|
-| Node | `Stage` | one surface for leaf and composite |
+| Stage | `Stage`, `Tail` | one surface for leaf and composite |
 | Sequence | `Serial` | prepare cascades; latencies and tails sum |
-| Branch | `Par2` + `Compensator` | paths arrive at the join aligned |
-| Loop | `Loop` | feedback only through an explicit `NonZeroU32` delay |
-| Oversampled | `Oversampled2x` | interior prepared at k·fs; latency divides back |
+| Branch | `Par2` + `Compensator` | paths arrive at the join aligned; each branch's tail rings through its pad |
+| Loop | `Loop` | feedback only through an explicit `NonZeroU32` delay; tail infinite unless declared |
+| Oversampled | `Oversampled2x` | interior prepared at 2·fs; latency and tail divide back (tail rounding up) |
 | Lanes | `PerChannel` + `ChannelLayout` | lanes never mix or cross-index |
-| Control | `Source`, `Route`, `Router` | routes displace from the knob's base value |
+| Control | `Source`, `Route`, `Router` | a `Source` is a `Stage` with `state()`; routes displace from the knob's base value |
 | Voices | `VoiceRack`, `Voice`, `VoiceEvent` | fixed pool under a declared steal policy (`tests/voice_properties.rs`) |
 
+`Oversampled2x` is the only oversampler (its half-band pairs are
+crate-private); a 4× stack is `Oversampled2x::front(Oversampled2x::nested(s))`.
+`ModMatrix` is a `Router` whose targets are a chain's stage axes.
 `VoiceEvent` is the kernel's own note vocabulary; engines translate
-`stave_core::NoteEvent` into it.
+host note events into it, tuning with `hz_of_key` or their own map.
 
 ### The circuit layer (`circuit/`)
 
@@ -200,8 +234,8 @@ unattached engine cannot reach the path.
   (`check-file-sizes.sh` prints over ~1000 lines), never a gate.
 - f64 for accumulators, coefficients, phase and anything persistent;
   f32 at audio-rate interfaces.
-- Time constants are rate-derived (`1 − e^(−1/(τ·fs))`), never bare
-  per-sample coefficients.
+- Time constants are rate-derived (`tau_coeff(τ, fs)` = `1 − e^(−1/(τ·fs))`),
+  never bare per-sample coefficients.
 - Bounded queues never drop silently: saturating counters, surfaced.
 - Randomness is seeded (`primitives::random`): a render reproduces from its
   seed.

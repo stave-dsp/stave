@@ -255,7 +255,7 @@ impl<const D: usize, const R: usize> ModMatrix<D, R> {
                     db_add += r.amount * states[r.source.min(D - 1)];
                 }
             }
-            if let Some(StageKind::Filter(fs)) = chain.stage_mut(id) {
+            if let Some(StageKind::Filter(filter)) = chain.stage_mut(id) {
                 let spec = match spec {
                     FilterSpec::HighShelf { hz, db } => FilterSpec::HighShelf {
                         hz,
@@ -272,7 +272,7 @@ impl<const D: usize, const R: usize> ModMatrix<D, R> {
                     },
                     other => other,
                 };
-                fs.set(spec);
+                filter.set(spec);
             }
         }
     }

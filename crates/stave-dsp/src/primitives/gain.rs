@@ -15,11 +15,11 @@ pub fn amp_to_db(amp: f32) -> f32 {
     }
 }
 
-/// The gain that, applied once every `interval`, falls 60 dB over `t60`
-/// (both in samples). A t60 of zero is an instant stop: gain 0.
+/// The gain that, applied once every `interval_samples`, falls 60 dB
+/// over `t60_samples`. A t60 of zero is an instant stop: gain 0.
 #[inline]
-pub fn t60_gain(interval: f32, t60: f32) -> f32 {
-    10f32.powf(-3.0 * interval / t60)
+pub fn t60_gain(interval_samples: f32, t60_samples: f32) -> f32 {
+    10f32.powf(-3.0 * interval_samples / t60_samples)
 }
 
 #[cfg(test)]

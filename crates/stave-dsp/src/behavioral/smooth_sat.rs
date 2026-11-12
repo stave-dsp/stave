@@ -87,7 +87,7 @@ impl SmoothSat {
     /// on the curve, making it asymmetric (even-harmonic / "tube bias"
     /// colour). 0 = symmetric. The induced DC is removed by the output DC
     /// blocker. Cheap (scalar) so it can be modulated per sample, e.g. from
-    /// a `Memory` (tube-bias) — that's how `Recall` drives it.
+    /// a slow tube-bias model.
     pub fn set_bias(&mut self, bias: f32) {
         self.bias = bias;
         // cache the operating-point value so the shaper stays f(0)=0
@@ -152,7 +152,7 @@ impl SmoothSat {
         // unnormalised, changing odd/smoothness re-gains QUIET content by
         // several dB (loud content is pinned by the tanh bound), which the
         // ear reads as a low-pass sweeping with the smoothness knob — the
-        // "silk kills natural top end" complaint. Pin f'(0) = 1 exactly:
+        // "kills natural top end" complaint. Pin f'(0) = 1 exactly:
         // quiet signals and small HF components always pass at unity; the
         // knobs then shape only what saturation does to LOUD content.
         let mut c = 0.0f32; // slope contribution of odd orders ≥ 3
