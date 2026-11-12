@@ -335,6 +335,14 @@ pub fn knob(style: CapStyle, tint: Rgb, dx: f64, dy: f64, r: f64, scale: f64) ->
             }
             Some((plastic(tint, dome(dx, dy, dome_r, 1.25), 1.1, 0.12), 1.0))
         }
+        CapStyle::Chicken => {
+            // The skirt: a black bakelite disc, gently domed, with a
+            // fine knurl at the rim. The head is drawn live (it turns).
+            let n = dome(dx, dy, r, 2.2);
+            let ridge = smoothstep(r - 3.0, r - 0.5, rr) * (th * (r * 2.2).round()).sin() * 0.25;
+            let n = v3(n.x - uy * ridge, n.y + ux * ridge, n.z).norm();
+            Some((plastic([0.018, 0.018, 0.02], n, 0.7, 0.18), a))
+        }
         CapStyle::Soft => {
             // A soft-touch cylinder: a gentle crown, a darker chamfer,
             // a faint knurl on the side wall.
@@ -492,4 +500,163 @@ pub fn glass(x: f64, y: f64, rect: &RRect, scale: f64) -> Option<(Rgb, f64)> {
     let a = (0.02 + band + rim).min(1.0);
     let _ = scale;
     Some((mix([0.0; 3], [1.0; 3], ((band + rim) / a).min(1.0)), a))
+}
+
+// ------------------------------------------------------------ amp hardware
+
+/// Signed distance to a chicken-head pointer of reach `r` pointing along
+/// `angle` (radians, y-down): a round hub tapering to a beak.
+fn chicken_sd(dx: f64, dy: f64, r: f64, angle: f64) -> f64 {
+    let (c, sn) = (angle.cos(), angle.sin());
+    // Into the pointer's frame: u along the beak, v across it.
+    let (u, v) = (dx * c + dy * sn, -dx * sn + dy * c);
+    let hub = dx.hypot(dy) - r * 0.42;
+    // A tapered beak from the hub to the tip, half-width w(u).
+    let t = (u / r).clamp(0.0, 1.0);
+    let w = r * (0.34 * (1.0 - t) + 0.06 * t);
+    let beak = (v.abs() - w).max(u - r).max(-u - r * 0.62);
+    hub.min(beak) - 0.6
+}
+
+/// The chicken-head pointer of a [`CapStyle::Chicken`] knob, reach `r`,
+/// turned to `angle`, moulded in `tint` with a white index line.
+pub fn chicken_head(dx: f64, dy: f64, r: f64, angle: f64, tint: Rgb, scale: f64) -> Option<(Rgb, f64)> {
+    let d = chicken_sd(dx, dy, r, angle);
+    if d > 0.5 {
+        return None;
+    }
+    // A rounded moulding: the normal tilts toward the outline.
+    let e = 0.35;
+    let gx = chicken_sd(dx + e, dy, r, angle) - chicken_sd(dx - e, dy, r, angle);
+    let gy = chicken_sd(dx, dy + e, r, angle) - chicken_sd(dx, dy - e, r, angle);
+    let gl = gx.hypot(gy).max(1e-9);
+    let k = smoothstep(-3.5, 0.0, d) * 0.85;
+    let n = v3(gx / gl * k, gy / gl * k, 1.0).norm();
+    let mut c = plastic(tint, n, 0.9, 0.16);
+    // The index line along the beak.
+    let (cs, sn) = (angle.cos(), angle.sin());
+    let (u, v) = (dx * cs + dy * sn, -dx * sn + dy * cs);
+    if u > r * 0.25 {
+        c = mix(c, [0.95, 0.94, 0.9], cov((v.abs() - 0.7).max(u - r + 1.5), scale));
+    }
+    Some((c, cov(d, scale)))
+}
+
+/// A faceted jewel pilot lamp of radius `r` in a chrome bezel; `lit`
+/// glows it in `color` (linear, may exceed 1).
+pub fn jewel(dx: f64, dy: f64, r: f64, color: Rgb, lit: bool, scale: f64) -> Option<(Rgb, f64)> {
+    let rr = dx.hypot(dy);
+    let halo = if lit { 0.45 * (-(rr / (r * 1.4)).powi(2)).exp() } else { 0.0 };
+    if rr > r + 0.5 {
+        return if halo > 0.01 { Some((mul(color, 1.1), halo)) } else { None };
+    }
+    let lens = r * 0.72;
+    if rr > lens {
+        return Some((chrome(dome(dx, dy, r, 1.0), [0.85, 0.85, 0.88]), cov(rr - r, scale)));
+    }
+    // Facets: the lens is cut into wedges and rings, each catching the
+    // light at its own angle.
+    let th = dy.atan2(dx);
+    let wedge = (th / (core::f64::consts::TAU / 12.0)).floor() * (core::f64::consts::TAU / 12.0) + 0.26;
+    let ring = (rr / lens * 3.0).floor() / 3.0;
+    let n = v3(wedge.cos() * (0.25 + 0.4 * ring), wedge.sin() * (0.25 + 0.4 * ring), 1.0).norm();
+    let base = if lit { mul(color, 0.9) } else { mul(color, 0.08) };
+    let glint = chrome(n, if lit { [1.0, 0.9, 0.85] } else { [0.5, 0.5, 0.5] });
+    let mut c = add(base, mul(glint, 0.35));
+    if lit {
+        c = mix(c, [2.0, 1.9, 1.8], (1.0 - rr / lens).clamp(0.0, 1.0).powi(3));
+    }
+    Some((c, 1.0))
+}
+
+/// Tolex: vinyl with a leathery pebble grain over base `base`, normal `n`.
+pub fn tolex(base: Rgb, x: f64, y: f64, n: V3) -> Rgb {
+    let (ax, ay) = noise_slope(x, y, 1.2, 51, 0.32);
+    let (bx, by) = noise_slope(x, y, 0.45, 52, 0.18);
+    let n = v3(n.x - ax - bx, n.y - ay - by, n.z).norm();
+    let albedo = mul(base, 0.93 + 0.1 * vnoise(x, y, 0.06, 53));
+    plastic(albedo, n, 0.22, 0.42)
+}
+
+/// Grille cloth: a basket weave of threads in `base`, with the odd
+/// lighter fleck (salt-and-pepper).
+pub fn grille(base: Rgb, x: f64, y: f64) -> Rgb {
+    const PITCH: f64 = 1.6;
+    let (cx, cy) = ((x / PITCH).floor(), (y / PITCH).floor());
+    let (fx, fy) = (x / PITCH - cx, y / PITCH - cy);
+    let over = (cx as i64 + cy as i64).rem_euclid(2) == 0;
+    // Each cell is one thread crossing: lit across its width, dark in
+    // the gaps between threads.
+    let along = if over { fy } else { fx };
+    let across = if over { fx } else { fy };
+    let thread = (core::f64::consts::PI * across).sin().powf(0.5) * (0.85 + 0.15 * (core::f64::consts::PI * along).sin());
+    // Sparse light threads woven in (salt-and-pepper), and a slow
+    // variation in the dye.
+    let fleck = smoothstep(0.955, 0.985, hash2(cx as i64, cy as i64, 61)) * 0.6;
+    let dye = 0.92 + 0.12 * vnoise(x, y, 0.04, 62);
+    let tone = mix(mul(base, dye), [0.62, 0.58, 0.52], fleck);
+    mul(tone, 0.55 + 0.55 * thread)
+}
+
+/// A piping cord (welt) of half-width `w`, at signed distance `d` from
+/// its centre line: colour and coverage.
+pub fn piping(base: Rgb, d: f64, w: f64, side: (f64, f64), scale: f64) -> Option<(Rgb, f64)> {
+    if d.abs() > w + 0.5 {
+        return None;
+    }
+    let t = (d / w).clamp(-0.99, 0.99);
+    let n = v3(side.0 * t, side.1 * t, (1.0 - t * t).sqrt()).norm();
+    Some((plastic(base, n, 0.6, 0.2), cov(d.abs() - w, scale)))
+}
+
+/// A black corner protector over a box corner: a rounded cap of size
+/// `s` at offset (dx, dy) from the corner, pointing into the box along
+/// (sx, sy) (±1 each).
+pub fn corner(dx: f64, dy: f64, s: f64, sx: f64, sy: f64, scale: f64) -> Option<(Rgb, f64)> {
+    let (u, v) = (dx * sx, dy * sy);
+    if u < -1.0 || v < -1.0 {
+        return None;
+    }
+    let d = (u + v - s).max(-u).max(-v) - 1.5;
+    let d = d.min((u - 2.0).hypot(v - 2.0) - s * 0.45);
+    if d > 0.5 {
+        return None;
+    }
+    let k = smoothstep(-4.0, 0.0, d) * 0.6;
+    let n = v3(sx * k * 0.5, sy * k * 0.5, 1.0).norm();
+    let mut c = plastic([0.03, 0.03, 0.032], n, 0.25, 0.55);
+    // A rivet.
+    let rv = (u - s * 0.3).hypot(v - s * 0.3) - 2.2;
+    if rv < 0.5 {
+        c = mix(c, chrome(dome(u - s * 0.3, v - s * 0.3, 2.2, 1.0), [0.8, 0.8, 0.82]), cov(rv, scale));
+    }
+    Some((c, cov(d, scale)))
+}
+
+/// A rack ear's mounting slot (an oval cut, the rack rail behind it, a
+/// screw in it), slot half-length `hl` and radius `r`.
+pub fn rack_slot(dx: f64, dy: f64, hl: f64, r: f64, scale: f64) -> Option<(Rgb, f64)> {
+    let d = (dx.abs() - hl).max(0.0).hypot(dy) - r;
+    if d > 0.5 {
+        return None;
+    }
+    let depth = smoothstep(-r, 0.0, d);
+    let mut c = mix([0.01; 3], [0.08; 3], depth);
+    let screw_r = r * 1.15;
+    if let Some((sc, a)) = screw(dx - hl * 0.4, dy, screw_r, scale) {
+        c = mix(c, sc, a);
+    }
+    Some((c, cov(d, scale)))
+}
+
+/// A rack handle seen face-on: a chrome bar `len` tall, radius `r`.
+pub fn rack_handle(dx: f64, dy: f64, len: f64, r: f64, scale: f64) -> Option<(Rgb, f64)> {
+    let d = dx.hypot((dy.abs() - len / 2.0).max(0.0)) - r;
+    if d > 0.5 {
+        return None;
+    }
+    let t = (dx / r).clamp(-0.99, 0.99);
+    let ty = if dy.abs() > len / 2.0 { (dy - dy.signum() * len / 2.0) / r } else { 0.0 };
+    let n = v3(t, ty.clamp(-0.99, 0.99), (1.0 - t * t - ty * ty).max(0.02).sqrt()).norm();
+    Some((chrome(n, [0.9, 0.9, 0.93]), cov(d, scale)))
 }

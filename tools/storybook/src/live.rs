@@ -7,7 +7,7 @@
 
 use std::ffi::{c_char, c_void, CString};
 
-use stave_face::{Host, Theme};
+use stave_face::Host;
 use stave_ui_cocoa::face::{FaceMount, FaceState, FaceTarget};
 
 use crate::host::StoryHost;
@@ -62,7 +62,7 @@ unsafe fn ns_string(s: &str) -> Id {
 /// The story behind the window: the stand-in host and the current theme.
 struct Story {
     host: StoryHost,
-    themes: Vec<Theme>,
+    count: usize,
     at: usize,
     state: FaceState,
     window: Id,
@@ -70,12 +70,11 @@ struct Story {
 
 impl Story {
     fn load(&mut self) {
-        let theme = self.themes[self.at].clone();
-        let name = theme.name;
-        self.state = FaceState::new(stories::showcase(&self.host, theme));
+        let (name, face) = stories::all(&self.host).swap_remove(self.at);
+        self.state = FaceState::new(face);
         if !self.window.is_null() {
             unsafe {
-                send1(self.window, "setTitle:", ns_string(&format!("stave storybook — {name}  (←/→ theme)")));
+                send1(self.window, "setTitle:", ns_string(&format!("stave storybook — {name}  (←/→ story)")));
             }
         }
     }
@@ -87,7 +86,7 @@ impl FaceTarget for Story {
         f(&mut self.state, &mut self.host);
     }
     fn key(&mut self, code: u16) -> bool {
-        let n = self.themes.len();
+        let n = self.count;
         match code {
             53 => std::process::exit(0),
             123 => self.at = (self.at + n - 1) % n,
@@ -123,12 +122,12 @@ pub fn run() {
         send1(app, "setMainMenu:", bar);
 
         let host = StoryHost::new();
-        let themes = Theme::all().to_vec();
-        let state = FaceState::new(stories::showcase(&host, themes[0].clone()));
+        let count = stories::all(&host).len();
+        let state = FaceState::new(stories::all(&host).swap_remove(0).1);
         let (w, h) = state.runtime.size();
         let mut story = Box::new(Story {
             host,
-            themes,
+            count,
             at: 0,
             state,
             window: std::ptr::null_mut(),

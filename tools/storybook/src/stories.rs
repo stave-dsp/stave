@@ -86,3 +86,97 @@ pub fn showcase(host: &StoryHost, theme: Theme) -> Face {
     .align(Align::Stretch);
     Face::new(theme, Panel::default().around(body))
 }
+
+/// A plexi-style amp head: black tolex, a brushed-gold faceplate in
+/// cream piping, chicken-head knobs, a jewel pilot, a grille with a badge.
+pub fn amp(host: &StoryHost) -> Face {
+    use stave_ui::photo::hex;
+    let b = |id| host.bind(id);
+    let theme = Theme {
+        name: "amp head",
+        surface: hex(0xB8923E),
+        finish: stave_face::Finish::Anodized,
+        plate: hex(0xA8853A),
+        ink: Color::rgba(0.09, 0.07, 0.05, 1.0),
+        ink_soft: Color::rgba(0.09, 0.07, 0.05, 0.7),
+        accent: Color::rgba(0.55, 0.08, 0.05, 1.0),
+        lamp: [1.9, 0.18, 0.08],
+        caps: stave_face::CapStyle::Chicken,
+        cap: hex(0x141312),
+        tolex: hex(0x121212),
+        piping: hex(0xE6DCC4),
+        grille: hex(0x3B342C),
+        badge: [0.95, 0.93, 0.88],
+        ..Theme::graphite()
+    };
+    let gap = theme.space(3);
+    let controls = row(vec![
+        Lamp::pilot().label("POWER").node(),
+        Toggle::new(b(SYNC)).label("CHANNEL").node(),
+        Knob::new(b(DRIVE)).label("GAIN").node(),
+        Knob::new(b(TONE)).label("BASS").centered().node(),
+        Knob::new(b(MIX)).label("MIDDLE").centered().node(),
+        Knob::new(b(TIME)).label("TREBLE").centered().node(),
+        Knob::new(b(WIDTH)).label("PRESENCE").node(),
+        Knob::new(b(LEVEL)).label("MASTER").node(),
+    ])
+    .gap(gap)
+    .align(Align::Center);
+    Face::new(theme, Panel::amp_head().grille(Side::Top, 120.0, Some("Stave")).around(controls))
+}
+
+/// A 2U rack processor with handles.
+pub fn rack(host: &StoryHost) -> Face {
+    let b = |id| host.bind(id);
+    let theme = Theme { name: "rack", ..Theme::graphite() };
+    let gap = theme.space(3);
+    let body = row(vec![
+        column(vec![Title::new("STAVE").tagline("rack processor").node(), Presets::default().node()]).gap(8.0),
+        Meter::unit("level").label("IN").height(110.0).node(),
+        Knob::new(b(DRIVE)).large().node(),
+        Knob::new(b(TONE)).centered().node(),
+        Knob::new(b(MIX)).node(),
+        Selector::new(b(SHAPE)).node(),
+        Meter::unit("level").label("OUT").height(110.0).node(),
+        Footswitch::bypass(b(BYPASS)).compact().node(),
+    ])
+    .gap(gap)
+    .align(Align::Center);
+    Face::new(theme, Panel::rack(2).handles().around(body))
+}
+
+/// A speaker cabinet: grille above, a control strip below.
+pub fn cabinet(host: &StoryHost) -> Face {
+    use stave_ui::photo::hex;
+    let b = |id| host.bind(id);
+    let theme = Theme {
+        name: "cabinet",
+        surface: hex(0x1E1E1F),
+        finish: stave_face::Finish::Crinkle,
+        tolex: hex(0x151515),
+        grille: hex(0x2A2724),
+        caps: stave_face::CapStyle::Chicken,
+        cap: hex(0xE8E0CC),
+        ..Theme::graphite()
+    };
+    let gap = theme.space(4);
+    let strip = row(vec![
+        Selector::new(b(SHAPE)).label("SPEAKER").node(),
+        Knob::new(b(TONE)).label("MIC").centered().node(),
+        Knob::new(b(DEPTH)).label("DISTANCE").node(),
+        Knob::new(b(WIDTH)).label("ROOM").node(),
+        Knob::new(b(LEVEL)).label("LEVEL").centered().node(),
+    ])
+    .gap(gap)
+    .align(Align::Center);
+    Face::new(theme, Panel::cabinet().grille(Side::Top, 300.0, Some("Stave")).around(strip))
+}
+
+/// Every story: the showcase on each theme, then the hardware forms.
+pub fn all(host: &StoryHost) -> Vec<(String, Face)> {
+    let mut v: Vec<(String, Face)> = Theme::all().into_iter().map(|t| (t.name.to_string(), showcase(host, t))).collect();
+    v.push(("amp".into(), amp(host)));
+    v.push(("rack".into(), rack(host)));
+    v.push(("cabinet".into(), cabinet(host)));
+    v
+}

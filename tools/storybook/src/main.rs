@@ -15,15 +15,16 @@ mod stories;
 
 use std::path::PathBuf;
 
-use stave_face::{Runtime, Theme};
+use stave_face::Runtime;
 
 fn screenshot(dir: PathBuf, scale: f64) {
     std::fs::create_dir_all(&dir).expect("create screenshot dir");
-    for theme in Theme::all() {
+    let names: Vec<String> = stories::all(&host::StoryHost::new()).into_iter().map(|(n, _)| n).collect();
+    for (i, name) in names.iter().enumerate() {
         let host = host::StoryHost::new();
         host.time.set(1.7);
-        let name = theme.name;
-        let mut rt = Runtime::new(stories::showcase(&host, theme));
+        let face = stories::all(&host).swap_remove(i).1;
+        let mut rt = Runtime::new(face);
         if std::env::var_os("STAVE_FACE_DEBUG").is_some() {
             for r in rt.rects() {
                 println!("  {:7.1} {:7.1} {:7.1} {:7.1}", r.x, r.y, r.w, r.h);

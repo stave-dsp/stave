@@ -11,7 +11,7 @@ pub mod switch;
 pub use display::{bake_window, glass_over, rrect_path, Display, Draw};
 pub use knob::{knob_angle, Knob, KnobSize, Scale};
 pub use meter::{Meter, Pad, Reading, Trace};
-pub use panel::{Panel, Plate};
+pub use panel::{Form, Grille, Panel, Plate, Side, RACK_U};
 pub use print::{Caption, Title};
 pub use select::{Pager, Presets, Selector, Stepper};
 pub use switch::{lamp, Footswitch, Lamp, LampSource, Toggle};

@@ -249,31 +249,52 @@ pub enum LampSource {
 pub struct Lamp {
     pub source: LampSource,
     pub label: Option<&'static str>,
+    /// A faceted jewel pilot lamp (amps) instead of an LED.
+    pub jewel: bool,
 }
+
+const JEWEL_R: f64 = 10.0;
 
 impl Lamp {
     pub fn param(b: Bind) -> Self {
         Lamp {
             source: LampSource::Param(b),
             label: None,
+            jewel: false,
         }
     }
     pub fn probe(name: &'static str, threshold: f64) -> Self {
         Lamp {
             source: LampSource::Probe(name, threshold),
             label: None,
+            jewel: false,
         }
     }
     pub fn label(mut self, l: &'static str) -> Self {
         self.label = Some(l);
         self
     }
+    /// A jewel pilot lamp, lit whenever its source is on.
+    pub fn jewel(mut self) -> Self {
+        self.jewel = true;
+        self
+    }
+    /// A pilot jewel that is always lit (the amp is on).
+    pub fn pilot() -> Self {
+        Lamp {
+            source: LampSource::Probe("", f64::NEG_INFINITY),
+            label: None,
+            jewel: true,
+        }
+    }
     pub fn node(self) -> FaceNode {
-        let h = if self.label.is_some() { 38.0 } else { 18.0 };
+        let top = if self.jewel { 2.0 * JEWEL_R + 6.0 } else { 18.0 };
+        let h = top + if self.label.is_some() { 20.0 } else { 0.0 };
         leaf(self, 44.0, h)
     }
     fn centre(&self, r: Rect) -> Pt {
-        pt(r.x + r.w / 2.0, r.y + 9.0)
+        let half = if self.jewel { JEWEL_R + 3.0 } else { 9.0 };
+        pt(r.x + r.w / 2.0, r.y + half)
     }
 }
 
@@ -282,26 +303,47 @@ impl Part for Lamp {
         let th = cx.theme;
         let scale = cx.scale;
         let c = self.centre(r);
-        let seat = material::sprite(14.0, scale, |dx, dy| material::lamp_seat(dx, dy, 6.0, scale));
-        cx.image(c.x - 7.0, c.y - 7.0, 14.0, 14.0, seat);
+        let below = if self.jewel {
+            let col = th.lamp;
+            let size = 2.0 * JEWEL_R + 2.0;
+            let j = material::sprite(size, scale, |dx, dy| material::jewel(dx, dy, JEWEL_R, col, false, scale));
+            cx.image(c.x - size / 2.0, c.y - size / 2.0, size, size, j);
+            JEWEL_R + 14.0
+        } else {
+            let seat = material::sprite(14.0, scale, |dx, dy| material::lamp_seat(dx, dy, 6.0, scale));
+            cx.image(c.x - 7.0, c.y - 7.0, 14.0, 14.0, seat);
+            22.0
+        };
         if let Some(l) = self.label {
             let ty = &th.type_;
-            cx.scene.text_in(pt(c.x, c.y + 22.0), l, ty.caption_size, th.ink_soft, ty.caption);
+            cx.scene.text_in(pt(c.x, c.y + below), l, ty.caption_size, th.ink_soft, ty.caption);
         }
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let on = match self.source {
             LampSource::Param(b) => f.value(b) >= 0.5,
+            LampSource::Probe("", _) => true,
             LampSource::Probe(name, t) => f.probe(name) > t,
         };
-        if on {
+        if !on {
+            return;
+        }
+        if self.jewel {
+            let col = f.theme.lamp;
+            let size = 2.0 * JEWEL_R * 3.0;
+            let key = sprite_key(("jewel", col.map(f64::to_bits)));
+            f.sprite(s, self.centre(r), size, key, |scale| {
+                material::sprite(size, scale, |dx, dy| material::jewel(dx, dy, JEWEL_R, col, true, scale))
+            });
+        } else {
             lamp(f, s, self.centre(r));
         }
     }
 
     fn probes(&self) -> Vec<&'static str> {
         match self.source {
+            LampSource::Probe("", _) => Vec::new(),
             LampSource::Probe(name, _) => alloc::vec![name],
             LampSource::Param(_) => Vec::new(),
         }

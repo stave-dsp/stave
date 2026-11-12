@@ -113,7 +113,7 @@ fn pointer_span(style: CapStyle, r: f64) -> (f64, f64, f64) {
     match style {
         CapStyle::Aluminium => (0.18 * r, 0.66 * r, 2.2),
         CapStyle::Dome => (0.28 * r, 0.7 * r, 2.4),
-        CapStyle::Soft => (0.3 * r, 0.8 * r, 2.6),
+        CapStyle::Soft | CapStyle::Chicken => (0.3 * r, 0.8 * r, 2.6),
     }
 }
 
@@ -154,10 +154,14 @@ impl Part for Knob {
         let rad = self.size.radius();
         let v = f.value(self.bind);
         let a = knob_angle(v);
-        let (r0, r1, w) = pointer_span(th.caps, rad);
         let (ca, sa) = (a.cos(), a.sin());
-        let line = Path::new().move_to(pt(c.x + ca * r0, c.y + sa * r0)).line_to(pt(c.x + ca * r1, c.y + sa * r1));
-        s.stroke(line, Stroke::round(th.pointer, w));
+        if th.caps == CapStyle::Chicken {
+            chicken(f, s, c, rad, a);
+        } else {
+            let (r0, r1, w) = pointer_span(th.caps, rad);
+            let line = Path::new().move_to(pt(c.x + ca * r0, c.y + sa * r0)).line_to(pt(c.x + ca * r1, c.y + sa * r1));
+            s.stroke(line, Stroke::round(th.pointer, w));
+        }
         // The lit mark on the scale ring: where the knob points.
         let lit = f.focus.active || f.focus.hover;
         let ring = rad + RING;
@@ -185,4 +189,18 @@ impl Part for Knob {
             },
         }]
     }
+}
+
+/// Draw a chicken-head pointer of a knob of radius `r` at `c`, turned to
+/// `angle`: a sprite cached per 2° step.
+pub fn chicken(f: &Frame<'_>, s: &mut Scene, c: Pt, r: f64, angle: f64) {
+    let step = (angle.to_degrees() / 2.0).round();
+    let a = (step * 2.0).to_radians();
+    let tint = f.theme.cap;
+    let reach = r * 1.12;
+    let size = 2.0 * reach + 4.0;
+    let key = crate::part::sprite_key(("chicken", r.to_bits(), step as i64, tint.map(f64::to_bits)));
+    f.sprite(s, c, size, key, |scale| {
+        material::sprite(size, scale, |dx, dy| material::chicken_head(dx, dy, reach, a, tint, scale))
+    });
 }

@@ -92,13 +92,17 @@ impl Part for Selector {
         let n = f.host.steps(self.bind.id).max(2);
         let cur = step_of(f.value(self.bind), n);
         let a = Self::angle(cur, n);
-        let tip = if th.caps == CapStyle::Aluminium { 0.66 } else { 0.8 };
-        s.stroke(
-            Path::new()
-                .move_to(pt(c.x + a.cos() * SEL_R * 0.2, c.y + a.sin() * SEL_R * 0.2))
-                .line_to(pt(c.x + a.cos() * SEL_R * tip, c.y + a.sin() * SEL_R * tip)),
-            Stroke::round(th.pointer, 2.2),
-        );
+        if th.caps == CapStyle::Chicken {
+            crate::parts::knob::chicken(f, s, c, SEL_R, a);
+        } else {
+            let tip = if th.caps == CapStyle::Aluminium { 0.66 } else { 0.8 };
+            s.stroke(
+                Path::new()
+                    .move_to(pt(c.x + a.cos() * SEL_R * 0.2, c.y + a.sin() * SEL_R * 0.2))
+                    .line_to(pt(c.x + a.cos() * SEL_R * tip, c.y + a.sin() * SEL_R * tip)),
+                Stroke::round(th.pointer, 2.2),
+            );
+        }
         let lit = f.focus.active || f.focus.hover;
         for i in 0..n {
             let a = Self::angle(i, n);

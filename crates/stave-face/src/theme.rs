@@ -31,6 +31,9 @@ pub enum CapStyle {
     Dome,
     /// Soft-touch cap the colour of `Theme::cap`, with a printed line.
     Soft,
+    /// The amp knob: a bakelite skirt under a chicken-head pointer in
+    /// `Theme::cap`, the whole head turning with the value.
+    Chicken,
 }
 
 /// Text roles. Sizes are in points.
@@ -86,6 +89,12 @@ pub struct Theme {
     pub space: [f64; 6],
     /// Corner radius of the enclosure.
     pub radius: f64,
+    /// Amp and cabinet coverings (linear RGB): the tolex, the piping
+    /// cord around a faceplate, the grille cloth, and the badge metal.
+    pub tolex: Rgb,
+    pub piping: Rgb,
+    pub grille: Rgb,
+    pub badge: Rgb,
 }
 
 impl Theme {
@@ -141,6 +150,10 @@ impl Theme {
             type_: TYPE,
             space: SPACE,
             radius: 14.0,
+            tolex: hex(0x161616),
+            piping: hex(0xD8D2C2),
+            grille: hex(0x3A3530),
+            badge: [0.86, 0.86, 0.9],
         }
     }
 
@@ -164,6 +177,10 @@ impl Theme {
             type_: TYPE,
             space: SPACE,
             radius: 12.0,
+            tolex: hex(0x161616),
+            piping: hex(0xD8D2C2),
+            grille: hex(0x3A3530),
+            badge: [0.86, 0.86, 0.9],
         }
     }
 
@@ -187,6 +204,10 @@ impl Theme {
             type_: TYPE,
             space: SPACE,
             radius: 14.0,
+            tolex: hex(0x161616),
+            piping: hex(0xD8D2C2),
+            grille: hex(0x3A3530),
+            badge: [0.86, 0.86, 0.9],
         }
     }
 
@@ -210,6 +231,10 @@ impl Theme {
             type_: TYPE,
             space: SPACE,
             radius: 14.0,
+            tolex: hex(0x161616),
+            piping: hex(0xD8D2C2),
+            grille: hex(0x3A3530),
+            badge: [0.86, 0.86, 0.9],
         }
     }
 
@@ -233,6 +258,10 @@ impl Theme {
             type_: TYPE,
             space: SPACE,
             radius: 14.0,
+            tolex: hex(0x161616),
+            piping: hex(0xD8D2C2),
+            grille: hex(0x3A3530),
+            badge: [0.86, 0.86, 0.9],
         }
     }
 
@@ -256,6 +285,10 @@ impl Theme {
             type_: TYPE,
             space: SPACE,
             radius: 14.0,
+            tolex: hex(0x161616),
+            piping: hex(0xD8D2C2),
+            grille: hex(0x3A3530),
+            badge: [0.86, 0.86, 0.9],
         }
     }
 
