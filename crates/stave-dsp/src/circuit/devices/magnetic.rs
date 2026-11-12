@@ -46,8 +46,10 @@ impl JilesAtherton {
 
 /// L(x) = coth x − 1/x, by its series near 0.
 fn langevin(x: f64) -> f64 {
-    if x.abs() < 1e-4 {
-        x / 3.0
+    if x.abs() < SERIES_BELOW {
+        // Taylor series; the next term (x⁷/4725) is below 1e-18 here.
+        let x2 = x * x;
+        x * (1.0 / 3.0 - x2 * (1.0 / 45.0 - x2 * (2.0 / 945.0)))
     } else {
         1.0 / x.tanh() - 1.0 / x
     }
@@ -55,12 +57,20 @@ fn langevin(x: f64) -> f64 {
 
 /// L′(x) = 1/x² − 1/sinh² x.
 fn langevin_slope(x: f64) -> f64 {
-    if x.abs() < 1e-4 {
-        1.0 / 3.0 - x * x / 15.0
+    if x.abs() < SERIES_BELOW {
+        // Taylor series; the next term (x⁶/675) is below 1e-15 here.
+        let x2 = x * x;
+        1.0 / 3.0 - x2 * (1.0 / 15.0 - x2 * (2.0 / 189.0))
     } else {
         1.0 / (x * x) - 1.0 / x.sinh().powi(2)
     }
 }
+
+/// Below this |x| the closed forms cancel catastrophically (their
+/// rounding grows as ε/x and ε/x²: 2e-12 at 1e-4, past the series'
+/// accuracy, and the size of the error depends on the platform's libm);
+/// the series take over.
+const SERIES_BELOW: f64 = 1e-2;
 
 /// A core driven by its field: `step(h)` returns the magnetization.
 pub struct JilesAthertonCore {
@@ -195,9 +205,14 @@ mod tests {
 
     #[test]
     fn langevin_is_continuous_at_its_series_switch() {
-        for x in [9.9e-5, 1.01e-4] {
-            assert!((langevin(x) - x / 3.0).abs() < 1e-12);
-            assert!((langevin_slope(x) - 1.0 / 3.0).abs() < 1e-8);
+        // Either side of the switch, both forms agree with the series to
+        // well inside any platform's libm rounding (glibc, the CRT and
+        // Apple's libm all hold this).
+        let series = |x: f64| x / 3.0 - x.powi(3) / 45.0 + 2.0 * x.powi(5) / 945.0;
+        let slope = |x: f64| 1.0 / 3.0 - x * x / 15.0 + 2.0 * x.powi(4) / 189.0;
+        for x in [SERIES_BELOW * 0.99, SERIES_BELOW * 1.01, 1e-4, 1e-6] {
+            assert!((langevin(x) - series(x)).abs() < 1e-13, "L({x})");
+            assert!((langevin_slope(x) - slope(x)).abs() < 1e-10, "L'({x})");
         }
     }
 }

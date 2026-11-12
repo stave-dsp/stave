@@ -3050,6 +3050,7 @@ dependencies = [
  "stave-ui-cocoa",
  "stave-ui-win32",
  "stave-ui-x11",
+ "x11rb",
 ]
 
 [[package]]
@@ -3238,7 +3239,6 @@ version = "0.2.0"
 dependencies = [
  "stave-core",
  "stave-face",
- "stave-raster",
  "stave-ui",
  "stave-ui-shell",
 ]
@@ -3249,7 +3249,6 @@ version = "0.2.0"
 dependencies = [
  "stave-core",
  "stave-face",
- "stave-raster",
  "stave-ui",
  "stave-ui-shell",
  "x11rb",

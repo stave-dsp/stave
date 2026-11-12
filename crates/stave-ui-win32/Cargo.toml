@@ -7,10 +7,9 @@ authors.workspace = true
 repository.workspace = true
 description = "The Windows platform for a stave face: an HWND child window, the software blit, pointer, keys and DPI."
 
-[dependencies]
+[target.'cfg(windows)'.dependencies]
 stave-core.workspace = true
 stave-face.workspace = true
-stave-raster.workspace = true
 stave-ui.workspace = true
 stave-ui-shell.workspace = true
 

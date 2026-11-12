@@ -384,12 +384,19 @@ fn gestures_flow_to_the_host_through_out_events() {
     }
 }
 
+/// The one window API a face embeds in on this platform.
 #[cfg(target_os = "macos")]
-/// `clap.gui`: an embedded Cocoa view of the face's own size (headless:
-/// nothing touches Cocoa until `set_parent`); an effect offers no note
-/// ports.
+const API: &CStr = CLAP_WINDOW_API_COCOA;
+#[cfg(windows)]
+const API: &CStr = CLAP_WINDOW_API_WIN32;
+#[cfg(all(unix, not(target_os = "macos")))]
+const API: &CStr = CLAP_WINDOW_API_X11;
+
+/// `clap.gui`: an embedded view of the face's own size in this
+/// platform's window API (headless: nothing touches the window system
+/// until `set_parent`); an effect offers no note ports.
 #[test]
-fn the_face_is_served_as_an_embedded_cocoa_gui() {
+fn the_face_is_served_as_an_embedded_gui() {
     unsafe {
         let plugin = create();
         let get_ext = (*plugin).get_extension.expect("get_extension");
@@ -397,17 +404,21 @@ fn the_face_is_served_as_an_embedded_cocoa_gui() {
         let gui = get_ext(plugin, CLAP_EXT_GUI.as_ptr()).cast::<ClapPluginGui>();
         assert!(!gui.is_null(), "a plugin with a face serves clap.gui");
         let gui = &*gui;
-        let cocoa = CLAP_WINDOW_API_COCOA.as_ptr();
-        assert!((gui.is_api_supported.unwrap())(plugin, cocoa, false));
-        assert!(!(gui.is_api_supported.unwrap())(plugin, cocoa, true), "never floating");
-        assert!(!(gui.is_api_supported.unwrap())(plugin, c"x11".as_ptr(), false));
-        let (mut api, mut floating) = (ptr::null(), true);
-        assert!((gui.get_preferred_api.unwrap())(plugin, &mut api, &mut floating));
-        assert_eq!((CStr::from_ptr(api), floating), (CLAP_WINDOW_API_COCOA, false));
+        let api = API.as_ptr();
+        assert!((gui.is_api_supported.unwrap())(plugin, api, false));
+        assert!(!(gui.is_api_supported.unwrap())(plugin, api, true), "never floating");
+        for other in [CLAP_WINDOW_API_COCOA, CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11, c"wayland"] {
+            if other != API {
+                assert!(!(gui.is_api_supported.unwrap())(plugin, other.as_ptr(), false), "{other:?}");
+            }
+        }
+        let (mut preferred, mut floating) = (ptr::null(), true);
+        assert!((gui.get_preferred_api.unwrap())(plugin, &mut preferred, &mut floating));
+        assert_eq!((CStr::from_ptr(preferred), floating), (API, false));
 
         let (mut w, mut h) = (0u32, 0u32);
         assert!(!(gui.get_size.unwrap())(plugin, &mut w, &mut h), "no size before create");
-        assert!((gui.create.unwrap())(plugin, cocoa, false));
+        assert!((gui.create.unwrap())(plugin, api, false));
         assert!((gui.get_size.unwrap())(plugin, &mut w, &mut h));
         assert!(w > 0 && h > 0, "{w}×{h}");
         assert!(!(gui.get_size.unwrap())(plugin, ptr::null_mut(), &mut h));
@@ -415,6 +426,15 @@ fn the_face_is_served_as_an_embedded_cocoa_gui() {
         assert!((gui.set_size.unwrap())(plugin, w, h), "its own size");
         assert!(!(gui.set_size.unwrap())(plugin, w + 1, h));
         assert!(!(gui.set_parent.unwrap())(plugin, ptr::null()));
+        if cfg!(not(target_os = "macos")) {
+            // Windows and X11 sizes are device pixels: a host's scale
+            // doubles them.
+            assert!((gui.set_scale.unwrap())(plugin, 2.0));
+            let (mut w2, mut h2) = (0u32, 0u32);
+            assert!((gui.get_size.unwrap())(plugin, &mut w2, &mut h2));
+            assert!(w2.abs_diff(2 * w) <= 1 && h2.abs_diff(2 * h) <= 1, "{w}×{h} at 2× is {w2}×{h2}");
+            assert!(!(gui.set_scale.unwrap())(plugin, f64::NAN));
+        }
         (gui.destroy.unwrap())(plugin);
         assert!(!(gui.get_size.unwrap())(plugin, &mut w, &mut h), "destroyed");
 
