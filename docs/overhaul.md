@@ -395,6 +395,22 @@ What TLA+, Lean and Bend teach, applied where stave's risk is.
 - [ ] **V6** Functional core, imperative shell: keep pure, deterministic code (faces, DSP graphs, layout, rasterizer) free of effects so golden images and replay hold; effects (threads, FFI, atomics) at the edges.
 - [ ] **V7** (Optional) Lean 4 proofs of a few DSP laws as documentation-grade results: filter stability over declared ranges, taper monotonicity and round-trip, smoother convergence, the kernel's latency/tail algebra.
 
+### U — Interaction verification (how people use the plugins)
+
+Verification reaches the hands: every click, drag, wheel and hover on a
+face is scriptable, its effect checkable at exact coordinates, and the
+same checks run headless in CI and against a real window.
+
+- [ ] **U1** A face driver in stave-test: `FaceDriver::new(face, controller)` with `click(at)`, `double_click(at)`, `drag(from, to, mods)`, `wheel(at, lines)`, `hover(at)`, `key(code)`, `release()`, plus queries: `grab_at(p) -> Option<(PartId, Gesture)>`, `cursor()`, `focus()`, `value(id)`, `rect(part)`. Built on the face runtime, deterministic, no window.
+- [ ] **U2** Parts addressable by name, not coordinates: every part gets a stable `PartId` (its bound param, its role, or an explicit `.id("bypass")`), so tests say `driver.drag(knob("tilt"), up(40.0))` and the geometry comes from the solved layout.
+- [ ] **U3** Exact-coordinate laws for every part kind, checked on every face: a click at a control's centre hits that control; a drag of the documented travel sweeps the full range; Shift-drag is 10× finer; a click just outside the visible hardware hits nothing; double-click resets; toggles step and wrap; option labels choose; pads map x/y (and the y-down maps engram needs) exactly under the pointer.
+- [ ] **U4** Layout invariants on every face, every page: no two grab areas overlap unless one is declared to sit on top; every grab area lies within its part's visible hardware; every bound param is reachable by some grab on some page; nothing is outside the window; legends don't collide.
+- [ ] **U5** Overlays and z-order: readouts that appear on hover/drag, page flips, and any popover are checked to draw on top, to not steal grabs from what's under them unless they're interactive, and to disappear on release/exit; the hover target, cursor and focus are part of the observable state.
+- [ ] **U6** Golden images per interaction state: idle, hovered, dragging (value readout), each page, each theme; diffs uploaded by CI (C7).
+- [ ] **U7** Model-based UI tests: random sequences of pointer events (seeded, replayable) against every face, checking invariants after each step (values in range, gestures always bracketed begin→end, no stuck drag after release, hover cleared on exit) — the V3 simulated host for the editor.
+- [ ] **U8** The real window, end to end: synthesize `NSEvent`s into the face view of a real (offscreen) window and check the same laws, so the platform's coordinate mapping (flip, scale, scroll units, modifier bits) is tested, not assumed. The y-flip bug fixed during the face work is the case this catches.
+- [ ] **U9** Session traces: stave-play records a person's interaction as a replayable trace (pointer events + the gestures they produced + param values); a recorded session becomes a regression test.
+
 ### P — The plugins (stave-plugins), after the framework settles
 
 - [ ] **P1** Migrate all seventeen to the target author API (one trait, `stave` crate, taps tables, `Smoother`, Stage leaves).
@@ -408,5 +424,5 @@ What TLA+, Lean and Bend teach, applied where stave's risk is.
 2. **L7** — delete the legacy UI (after moving what survives).
 3. **L** — the layering, landing the `Controller` contract, `*-sys` crates, telemetry, the umbrella crate and CLAP GUI.
 4. **A, D, F** — the author API and vocabulary, with Tilt and the storybook as the running acceptance tests, then `scripts/check-vocabulary.sh`.
-5. **T**, **C** and **V** (V1 lands with step 4) — the harness, checks and validator, golden images, raster; CI pinned, widened and green. (C1–C3 first: CI must be green before the big refactors land.)
+5. **T**, **C**, **V** and **U** (V1 and U2 land with step 4) — the harness, checks and validator, golden images, raster; CI pinned, widened and green. (C1–C3 first: CI must be green before the big refactors land.)
 6. **P** — migrate the plugins once, and cut a release.
