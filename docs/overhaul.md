@@ -362,6 +362,26 @@ Status: `[ ]` open · `[x]` done (with the commit).
 - [ ] **T11** `stave-play --screenshot` captures the screen region, not the editor (caught other agents' windows). Offscreen capture through the face runtime.
 - [ ] **T12** Loom models a copy of the protocol, not the shipping types. A `cfg(loom)` atomic shim on the real code.
 
+### C — Continuous integration
+
+CI has not been green on GitHub since the move: the zero-warnings and
+clippy jobs fail on lints the floating `stable` toolchain added after the
+local one (stave-play, the old Cocoa widgets), and clap-validator, built
+from its git HEAD, no longer compiles. The plugins repo waits on its
+framework deploy key.
+
+- [ ] **C1** Pin the toolchain in `rust-toolchain.toml` (both repos) so local and CI agree; a scheduled job builds on the newest stable and opens an issue on new lints instead of breaking `main`.
+- [ ] **C2** An MSRV job (1.81, the declared `rust-version`) so the floor is real.
+- [ ] **C3** Pin external tools (clap-validator to a tag/rev, the VST3 SDK to a tag; add Tracktion's pluginval) and cache their builds.
+- [ ] **C4** Sanitizers where Miri can't reach: AddressSanitizer and ThreadSanitizer (nightly) over the ABI tests, stave-host hosting a real plugin bundle, and the face runtime; a scheduled job.
+- [ ] **C5** Fuzzing (`cargo-fuzz`, short in PRs, long nightly): state chunk load (host-supplied bytes), param text parsing, the VST3/CLAP event and param-change paths, the rasterizer.
+- [ ] **C6** Every plugin through the realtime checks in CI (no allocation, no locks in `process`), via `plugin_checks!` (T3), plus the extended validator checks (T4).
+- [ ] **C7** Golden images (T7): render the storybook and every plugin face offscreen, compare to committed PNGs within a tolerance, upload diffs as artifacts.
+- [ ] **C8** Plugins against framework `main`: a scheduled (and dispatchable) job in stave-plugins that links the framework at `main` and runs the plugin gates, so breakage is seen before a release, not at the bump.
+- [ ] **C9** Hygiene gates: `scripts/check-vocabulary.sh` (the glossary), `cargo deny` (licences, advisories, duplicate versions), unused-dependency check, rustdoc link check; `cargo semver-checks` on the public crates once releases are published.
+- [ ] **C10** Name and shape: the workflow is `ci` (one per repo), quick jobs gate PRs, the heavy ones (Miri, sanitizers, fuzz, validators) run on `main` and nightly; required checks configured on `main`.
+- [ ] **C11** The plugins repo's CI: run `scripts/ci-framework-access.sh` (deploy key) until the framework is public, then revoke it.
+
 ### P — The plugins (stave-plugins), after the framework settles
 
 - [ ] **P1** Migrate all seventeen to the target author API (one trait, `stave` crate, taps tables, `Smoother`, Stage leaves).
@@ -375,5 +395,5 @@ Status: `[ ]` open · `[x]` done (with the commit).
 2. **L7** — delete the legacy UI (after moving what survives).
 3. **L** — the layering, landing the `Controller` contract, `*-sys` crates, telemetry, the umbrella crate and CLAP GUI.
 4. **A, D, F** — the author API and vocabulary, with Tilt and the storybook as the running acceptance tests, then `scripts/check-vocabulary.sh`.
-5. **T** — the harness, checks and validator, golden images, raster.
+5. **T** and **C** — the harness, checks and validator, golden images, raster; CI pinned, widened and green. (C1–C3 first: CI must be green before the big refactors land.)
 6. **P** — migrate the plugins once, and cut a release.
