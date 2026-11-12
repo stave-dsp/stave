@@ -8,7 +8,7 @@ use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke};
 
 use crate::material::{self, Occluder};
-use crate::part::{leaf, Bake, Bind, Control, FaceNode, Frame, Gesture, Hit, Part};
+use crate::part::{leaf, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
 use crate::theme::{CapStyle, Theme};
 
 /// Knob sizes: the cap's radius in points.
@@ -133,7 +133,7 @@ impl Part for Knob {
         let th = cx.theme;
         let c = self.centre(r);
         let rad = self.size.radius();
-        let (style, tint, scale) = (th.caps, th.cap, cx.scale);
+        let (style, tint, scale) = (th.hardware.caps, th.hardware.cap, cx.scale);
         let size = 2.0 * rad + 2.0;
         let cap = material::sprite(size, scale, |dx, dy| material::knob(style, tint, dx, dy, rad, scale));
         cx.image(c.x - size / 2.0, c.y - size / 2.0, size, size, cap);
@@ -143,7 +143,7 @@ impl Part for Knob {
                 let a = knob_angle(f64::from(k) / 10.0);
                 let major = k == 0 || k == 10 || (k == 5 && self.scale == Scale::Centered);
                 let dot = if major { 1.5 } else { 0.95 };
-                cx.scene.solid(Path::circle(pt(c.x + a.cos() * ring, c.y + a.sin() * ring), dot), th.ink_soft);
+                cx.scene.solid(Path::circle(pt(c.x + a.cos() * ring, c.y + a.sin() * ring), dot), th.palette.ink_soft);
             }
         }
     }
@@ -155,31 +155,31 @@ impl Part for Knob {
         let v = f.value(self.bind);
         let a = knob_angle(v);
         let (ca, sa) = (a.cos(), a.sin());
-        if th.caps == CapStyle::Chicken {
+        if th.hardware.caps == CapStyle::Chicken {
             chicken(f, s, c, rad, a);
         } else {
-            let (r0, r1, w) = pointer_span(th.caps, rad);
+            let (r0, r1, w) = pointer_span(th.hardware.caps, rad);
             let line = Path::new().move_to(pt(c.x + ca * r0, c.y + sa * r0)).line_to(pt(c.x + ca * r1, c.y + sa * r1));
-            s.stroke(line, Stroke::round(th.pointer, w));
+            s.stroke(line, Stroke::round(th.hardware.pointer, w));
         }
         // The lit mark on the scale ring: where the knob points.
         let lit = f.focus.active || f.focus.hover;
         let ring = rad + RING;
-        let accent = th.accent;
+        let accent = th.palette.accent;
         s.solid(Path::circle(pt(c.x + ca * ring, c.y + sa * ring), if lit { 2.4 } else { 1.9 }), accent);
         // Legend, or the value while touched.
-        let ty = &th.type_;
+        let ty = &th.typography;
         let base = pt(r.x + r.w / 2.0, r.y + r.h - 5.0);
         if lit {
             s.text_in(base, f.controller.value_text(self.bind.id), ty.value_size, accent, ty.value);
         } else {
-            s.text_in(base, self.legend(), ty.legend_size, th.ink, ty.legend);
+            s.text_in(base, self.legend(), ty.legend_size, th.palette.ink, ty.legend);
         }
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
-        alloc::vec![Control {
-            hit: Hit::Circle {
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+        out.push(Grab {
+            area: Area::Circle {
                 c: self.centre(r),
                 r: self.size.radius() + RING + 3.0,
             },
@@ -187,7 +187,11 @@ impl Part for Knob {
                 bind: self.bind,
                 travel: 220.0,
             },
-        }]
+        });
+    }
+
+    fn reads(&self) -> Reads {
+        Reads::params(&[self.bind])
     }
 }
 
@@ -196,7 +200,7 @@ impl Part for Knob {
 pub fn chicken(f: &Frame<'_>, s: &mut Scene, c: Pt, r: f64, angle: f64) {
     let step = (angle.to_degrees() / 2.0).round();
     let a = (step * 2.0).to_radians();
-    let tint = f.theme.cap;
+    let tint = f.theme.hardware.cap;
     let reach = r * 1.12;
     let size = 2.0 * reach + 4.0;
     let key = crate::part::sprite_key(("chicken", r.to_bits(), step as i64, tint.map(f64::to_bits)));

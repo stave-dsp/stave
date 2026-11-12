@@ -13,7 +13,7 @@ use crate::controller::{taps, StoryParams};
 /// follows SHAPE and whose depth follows DEPTH, drifting with time.
 fn scope(f: &Frame<'_>, r: Rect, s: &mut Scene) {
     let th = f.theme;
-    let ph = th.phosphor;
+    let ph = th.palette.phosphor;
     let grid = Color::rgba(ph.r, ph.g, ph.b, 0.09);
     for i in 1..8 {
         let x = r.x + r.w * f64::from(i) / 8.0;
@@ -89,22 +89,34 @@ pub fn showcase(p: &StoryParams, theme: Theme) -> Face {
 /// cream piping, chicken-head knobs, a jewel pilot, a grille with a badge.
 pub fn amp(p: &StoryParams) -> Face {
     use stave_face::photo::hex;
+    let base = Theme::graphite();
     let theme = Theme {
         name: "amp head",
-        surface: hex(0xB8923E),
-        finish: stave_face::Finish::Anodized,
-        plate: hex(0xA8853A),
-        ink: Color::rgba(0.09, 0.07, 0.05, 1.0),
-        ink_soft: Color::rgba(0.09, 0.07, 0.05, 0.7),
-        accent: Color::rgba(0.55, 0.08, 0.05, 1.0),
-        lamp: [1.9, 0.18, 0.08],
-        caps: stave_face::CapStyle::Chicken,
-        cap: hex(0x141312),
-        tolex: hex(0x121212),
-        piping: hex(0xE6DCC4),
-        grille: hex(0x3B342C),
-        badge: [0.95, 0.93, 0.88],
-        ..Theme::graphite()
+        finish: stave_face::Finish {
+            coat: stave_face::Coat::Anodized,
+            surface: hex(0xB8923E),
+            plate: hex(0xA8853A),
+            ..base.finish
+        },
+        palette: stave_face::Palette {
+            ink: Color::rgba(0.09, 0.07, 0.05, 1.0),
+            ink_soft: Color::rgba(0.09, 0.07, 0.05, 0.7),
+            accent: Color::rgba(0.55, 0.08, 0.05, 1.0),
+            ..base.palette
+        },
+        hardware: stave_face::Hardware {
+            lamp: [1.9, 0.18, 0.08],
+            caps: stave_face::CapStyle::Chicken,
+            cap: hex(0x141312),
+            ..base.hardware
+        },
+        coverings: stave_face::Coverings {
+            tolex: hex(0x121212),
+            piping: hex(0xE6DCC4),
+            grille: hex(0x3B342C),
+            badge: [0.95, 0.93, 0.88],
+        },
+        ..base
     };
     let gap = theme.space(3);
     let controls = row(vec![
@@ -144,15 +156,25 @@ pub fn rack(p: &StoryParams) -> Face {
 /// A speaker cabinet: grille above, a control strip below.
 pub fn cabinet(p: &StoryParams) -> Face {
     use stave_face::photo::hex;
+    let base = Theme::graphite();
     let theme = Theme {
         name: "cabinet",
-        surface: hex(0x1E1E1F),
-        finish: stave_face::Finish::Crinkle,
-        tolex: hex(0x151515),
-        grille: hex(0x2A2724),
-        caps: stave_face::CapStyle::Chicken,
-        cap: hex(0xE8E0CC),
-        ..Theme::graphite()
+        finish: stave_face::Finish {
+            coat: stave_face::Coat::Crinkle,
+            surface: hex(0x1E1E1F),
+            ..base.finish
+        },
+        coverings: stave_face::Coverings {
+            tolex: hex(0x151515),
+            grille: hex(0x2A2724),
+            ..base.coverings
+        },
+        hardware: stave_face::Hardware {
+            caps: stave_face::CapStyle::Chicken,
+            cap: hex(0xE8E0CC),
+            ..base.hardware
+        },
+        ..base
     };
     let gap = theme.space(4);
     let strip = row(vec![

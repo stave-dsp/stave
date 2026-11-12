@@ -12,7 +12,7 @@ use stave_ui::scene::{pt, Path, Pt, Scene, Stroke, TextAlign};
 use stave_ui::Dim;
 
 use crate::material::{self, Occluder};
-use crate::part::{leaf, step_of, Bake, Bind, Control, FaceNode, Frame, Gesture, Hit, Part};
+use crate::part::{leaf, step_of, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, PartId, Reads};
 use crate::parts::display::{bake_window, glass_over};
 use crate::parts::switch::lamp;
 use crate::theme::{CapStyle, Theme};
@@ -70,37 +70,37 @@ impl Part for Selector {
 
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let c = Self::centre(r);
-        let (style, tint, scale) = (th.caps, th.cap, cx.scale);
+        let (style, tint, scale) = (th.hardware.caps, th.hardware.cap, cx.scale);
         let size = 2.0 * SEL_R + 2.0;
         let cap = material::sprite(size, scale, |dx, dy| material::knob(style, tint, dx, dy, SEL_R, scale));
         cx.image(c.x - size / 2.0, c.y - size / 2.0, size, size, cap);
-        cx.scene.text_in(pt(c.x, r.y + 11.0), legend_of(self.label, self.bind), ty.legend_size, th.ink, ty.legend);
+        cx.scene.text_in(pt(c.x, r.y + 11.0), legend_of(self.label, self.bind), ty.legend_size, th.palette.ink, ty.legend);
         let n = cx.controller.steps(self.bind.id).max(2);
         for i in 0..n {
             let a = Self::angle(i, n);
             let p = pt(c.x + a.cos() * (SEL_R + 6.0), c.y + a.sin() * (SEL_R + 6.0));
-            cx.scene.solid(Path::circle(p, 1.1), th.ink_soft);
+            cx.scene.solid(Path::circle(p, 1.1), th.palette.ink_soft);
         }
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let th = f.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let c = Self::centre(r);
         let n = f.controller.steps(self.bind.id).max(2);
         let cur = step_of(f.value(self.bind), n);
         let a = Self::angle(cur, n);
-        if th.caps == CapStyle::Chicken {
+        if th.hardware.caps == CapStyle::Chicken {
             crate::parts::knob::chicken(f, s, c, SEL_R, a);
         } else {
-            let tip = if th.caps == CapStyle::Aluminium { 0.66 } else { 0.8 };
+            let tip = if th.hardware.caps == CapStyle::Aluminium { 0.66 } else { 0.8 };
             s.stroke(
                 Path::new()
                     .move_to(pt(c.x + a.cos() * SEL_R * 0.2, c.y + a.sin() * SEL_R * 0.2))
                     .line_to(pt(c.x + a.cos() * SEL_R * tip, c.y + a.sin() * SEL_R * tip)),
-                Stroke::round(th.pointer, 2.2),
+                Stroke::round(th.hardware.pointer, 2.2),
             );
         }
         let lit = f.focus.active || f.focus.hover;
@@ -119,20 +119,20 @@ impl Part for Selector {
             let mut font = ty.caption.align(align);
             let color = if i == cur {
                 font.weight = 750;
-                th.accent
+                th.palette.accent
             } else {
-                th.ink_soft
+                th.palette.ink_soft
             };
             s.text_in(pt(x, y), name, ty.caption_size, color, font);
         }
         if lit {
-            s.solid(Path::circle(pt(c.x + a.cos() * (SEL_R + 6.0), c.y + a.sin() * (SEL_R + 6.0)), 2.0), th.accent);
+            s.solid(Path::circle(pt(c.x + a.cos() * (SEL_R + 6.0), c.y + a.sin() * (SEL_R + 6.0)), 2.0), th.palette.accent);
         }
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
-        alloc::vec![Control {
-            hit: Hit::Circle {
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+        out.push(Grab {
+            area: Area::Circle {
                 c: Self::centre(r),
                 r: SEL_R + 10.0,
             },
@@ -140,7 +140,11 @@ impl Part for Selector {
                 bind: self.bind,
                 pitch: 18.0,
             },
-        }]
+        });
+    }
+
+    fn reads(&self) -> Reads {
+        Reads::params(&[self.bind])
     }
 }
 
@@ -192,7 +196,7 @@ fn readout(r: Rect) -> (Rect, Rect, Rect) {
 }
 
 fn arrows(th: &Theme, s: &mut Scene, left: Rect, right: Rect, hot: bool) {
-    let c = if hot { th.accent } else { th.ink_soft };
+    let c = if hot { th.palette.accent } else { th.palette.ink_soft };
     let (ly, ry) = (left.y + left.h / 2.0, right.y + right.h / 2.0);
     let (lx, rx) = (left.x + 9.0, right.x + right.w - 9.0);
     s.solid(Path::new().move_to(pt(lx - 3.5, ly)).line_to(pt(lx + 3.0, ly - 4.5)).line_to(pt(lx + 3.0, ly + 4.5)).close(), c);
@@ -200,12 +204,12 @@ fn arrows(th: &Theme, s: &mut Scene, left: Rect, right: Rect, hot: bool) {
 }
 
 fn readout_text(th: &Theme, s: &mut Scene, win: Rect, text: &str) {
-    let ty = &th.type_;
+    let ty = &th.typography;
     s.text_in(
         pt(win.x + win.w / 2.0, win.y + win.h / 2.0 + ty.value_size * 0.36),
         text,
         ty.value_size,
-        th.phosphor,
+        th.palette.phosphor,
         ty.value.tracking(0.04),
     );
 }
@@ -213,10 +217,10 @@ fn readout_text(th: &Theme, s: &mut Scene, win: Rect, text: &str) {
 impl Part for Stepper {
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let (win, _, _) = readout(r);
         bake_window(cx, win, 5.0, 3.0);
-        cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + 12.0), legend_of(self.label, self.bind), ty.legend_size, th.ink, ty.legend);
+        cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + 12.0), legend_of(self.label, self.bind), ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
@@ -226,22 +230,26 @@ impl Part for Stepper {
         arrows(f.theme, s, left, right, f.focus.hover || f.focus.active);
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
         let (win, left, right) = readout(r);
-        alloc::vec![
-            Control {
-                hit: Hit::Rect(win),
+        out.extend([
+            Grab {
+                area: Area::Rect(win),
                 gesture: Gesture::Stepped { bind: self.bind, pitch: 18.0 },
             },
-            Control {
-                hit: Hit::Rect(left),
+            Grab {
+                area: Area::Rect(left),
                 gesture: Gesture::Nudge { bind: self.bind, delta: -1 },
             },
-            Control {
-                hit: Hit::Rect(right),
+            Grab {
+                area: Area::Rect(right),
                 gesture: Gesture::Nudge { bind: self.bind, delta: 1 },
             },
-        ]
+        ]);
+    }
+
+    fn reads(&self) -> Reads {
+        Reads::params(&[self.bind])
     }
 }
 
@@ -268,10 +276,10 @@ impl Presets {
 impl Part for Presets {
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let (win, _, _) = readout(r);
         bake_window(cx, win, 5.0, 3.0);
-        cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + 12.0), "PRESET", ty.legend_size, th.ink, ty.legend);
+        cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + 12.0), "PRESET", ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
@@ -287,13 +295,17 @@ impl Part for Presets {
         arrows(f.theme, s, left, right, f.focus.hover || f.focus.active);
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
         let (win, left, right) = readout(r);
-        alloc::vec![
-            Control { hit: Hit::Rect(win), gesture: Gesture::Preset { delta: 1 } },
-            Control { hit: Hit::Rect(left), gesture: Gesture::Preset { delta: -1 } },
-            Control { hit: Hit::Rect(right), gesture: Gesture::Preset { delta: 1 } },
-        ]
+        out.extend([
+            Grab { area: Area::Rect(win), gesture: Gesture::Preset { delta: 1 } },
+            Grab { area: Area::Rect(left), gesture: Gesture::Preset { delta: -1 } },
+            Grab { area: Area::Rect(right), gesture: Gesture::Preset { delta: 1 } },
+        ]);
+    }
+
+    fn id(&self) -> Option<PartId> {
+        Some(PartId::Name("presets"))
     }
 }
 
@@ -329,35 +341,33 @@ impl Pager {
 impl Part for Pager {
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let scale = cx.scale;
         let seat = material::sprite(14.0, scale, |dx, dy| material::lamp_seat(dx, dy, 6.0, scale));
         for (i, l) in self.labels.iter().enumerate() {
             let c = Self::cell(r, i);
             cx.image(c.x + c.w / 2.0 - 7.0, c.y + 3.0, 14.0, 14.0, seat.clone());
-            cx.scene.text_in(pt(c.x + c.w / 2.0, c.y + 33.0), l.to_uppercase(), ty.caption_size, th.ink_soft, ty.caption);
+            cx.scene.text_in(pt(c.x + c.w / 2.0, c.y + 33.0), l.to_uppercase(), ty.caption_size, th.palette.ink_soft, ty.caption);
         }
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let th = f.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let at = f.page(self.key) as usize;
         if let Some(l) = self.labels.get(at) {
             let c = Self::cell(r, at);
             lamp(f, s, pt(c.x + c.w / 2.0, c.y + 10.0));
             let mut font = ty.caption;
             font.weight = 750;
-            s.text_in(pt(c.x + c.w / 2.0, c.y + 33.0), l.to_uppercase(), ty.caption_size, th.accent, font);
+            s.text_in(pt(c.x + c.w / 2.0, c.y + 33.0), l.to_uppercase(), ty.caption_size, th.palette.accent, font);
         }
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
-        (0..self.labels.len())
-            .map(|i| Control {
-                hit: Hit::Rect(Self::cell(r, i)),
-                gesture: Gesture::Page { key: self.key, page: i as u32 },
-            })
-            .collect()
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+        out.extend((0..self.labels.len()).map(|i| Grab {
+            area: Area::Rect(Self::cell(r, i)),
+            gesture: Gesture::Page { key: self.key, page: i as u32 },
+        }));
     }
 }

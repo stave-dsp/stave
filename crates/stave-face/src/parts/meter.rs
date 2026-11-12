@@ -12,7 +12,7 @@ use stave_ui::style::Color;
 
 use stave_core::telemetry::TapId;
 
-use crate::part::{leaf, Bake, Bind, Control, FaceNode, Frame, Gesture, Hit, Part};
+use crate::part::{leaf, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
 use crate::parts::display::{bake_window, glass_over};
 use crate::screens;
 
@@ -99,8 +99,8 @@ impl Part for Meter {
         bake_window(cx, self.window(r), 3.0, 3.0);
         if let Some(l) = self.label {
             let th = cx.theme;
-            let ty = &th.type_;
-            cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + r.h - 4.0), l, ty.caption_size, th.ink_soft, ty.caption);
+            let ty = &th.typography;
+            cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + r.h - 4.0), l, ty.caption_size, th.palette.ink_soft, ty.caption);
         }
     }
 
@@ -113,15 +113,15 @@ impl Part for Meter {
         for i in 0..SEGMENTS {
             let y = win.y + win.h - 2.0 - (i as f64 + 1.0) * seg_h;
             let hot = i >= SEGMENTS - 3;
-            let base = if hot { Color::rgba(1.0, 0.32, 0.2, 1.0) } else { th.phosphor };
+            let base = if hot { Color::rgba(1.0, 0.32, 0.2, 1.0) } else { th.palette.phosphor };
             let c = if i < lit { base } else { with_alpha(base, 0.1) };
             s.solid(Path::rect(pt(win.x + 2.5, y + 0.6), win.w - 5.0, seg_h - 1.2), c);
         }
         glass_over(f, s, win, 3.0);
     }
 
-    fn taps(&self) -> Vec<TapId> {
-        alloc::vec![self.tap]
+    fn reads(&self) -> Reads {
+        Reads::taps(&[self.tap])
     }
 
     fn animating(&self, _f: &Frame<'_>) -> bool {
@@ -191,18 +191,18 @@ impl Part for Trace {
             })
             .collect();
         if pts.len() > 1 {
-            s.stroke(Path::polyline(&pts), Stroke::round(with_alpha(th.phosphor, 0.2), 4.0));
-            s.stroke(Path::polyline(&pts), Stroke::round(th.phosphor, 1.4));
+            s.stroke(Path::polyline(&pts), Stroke::round(with_alpha(th.palette.phosphor, 0.2), 4.0));
+            s.stroke(Path::polyline(&pts), Stroke::round(th.palette.phosphor, 1.4));
         }
         if let Some(l) = self.label {
-            let ty = &th.type_;
-            s.text_in(pt(sc.x + 8.0, sc.y + 13.0), l, ty.caption_size, with_alpha(th.phosphor, 0.7), ty.caption.align(stave_ui::scene::TextAlign::Left));
+            let ty = &th.typography;
+            s.text_in(pt(sc.x + 8.0, sc.y + 13.0), l, ty.caption_size, with_alpha(th.palette.phosphor, 0.7), ty.caption.align(stave_ui::scene::TextAlign::Left));
         }
         glass_over(f, s, sc, 6.0);
     }
 
-    fn taps(&self) -> Vec<TapId> {
-        alloc::vec![self.tap]
+    fn reads(&self) -> Reads {
+        Reads::taps(&[self.tap])
     }
 
     fn animating(&self, _f: &Frame<'_>) -> bool {
@@ -245,23 +245,27 @@ impl Part for Pad {
         screens::grid(f, sc, s, 6, 6);
         let (vx, vy) = (f.value(self.x), f.value(self.y));
         let p = pt(sc.x + vx * sc.w, sc.y + (1.0 - vy) * sc.h);
-        let faint = with_alpha(th.phosphor, 0.25);
+        let faint = with_alpha(th.palette.phosphor, 0.25);
         s.stroke(Path::new().move_to(pt(p.x, sc.y)).line_to(pt(p.x, sc.y + sc.h)), Stroke::new(faint, 1.0));
         s.stroke(Path::new().move_to(pt(sc.x, p.y)).line_to(pt(sc.x + sc.w, p.y)), Stroke::new(faint, 1.0));
-        s.solid(Path::circle(p, 9.0), with_alpha(th.phosphor, 0.18));
-        s.solid(Path::circle(p, 4.5), th.phosphor);
-        let ty = &th.type_;
+        s.solid(Path::circle(p, 9.0), with_alpha(th.palette.phosphor, 0.18));
+        s.solid(Path::circle(p, 4.5), th.palette.phosphor);
+        let ty = &th.typography;
         let text = format_xy(f, self.x, self.y);
-        s.text_in(pt(sc.x + sc.w - 8.0, sc.y + sc.h - 8.0), text, ty.caption_size, with_alpha(th.phosphor, 0.75), ty.value.align(stave_ui::scene::TextAlign::Right));
+        s.text_in(pt(sc.x + sc.w - 8.0, sc.y + sc.h - 8.0), text, ty.caption_size, with_alpha(th.palette.phosphor, 0.75), ty.value.align(stave_ui::scene::TextAlign::Right));
         glass_over(f, s, sc, 6.0);
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
         let sc = self.screen(r);
-        alloc::vec![Control {
-            hit: Hit::Rect(sc),
+        out.push(Grab {
+            area: Area::Rect(sc),
             gesture: Gesture::Pad { x: self.x, y: self.y, area: sc },
-        }]
+        });
+    }
+
+    fn reads(&self) -> Reads {
+        Reads::params(&[self.x, self.y])
     }
 }
 

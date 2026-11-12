@@ -6,7 +6,7 @@ use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, TextAlign};
 use stave_ui::Dim;
 
-use crate::part::{leaf, Bake, FaceNode, Part};
+use crate::part::{leaf, Bake, FaceNode, Part, PartId};
 
 /// The product name, with an optional line beneath.
 #[derive(Copy, Clone, Debug)]
@@ -47,22 +47,26 @@ impl Title {
 }
 
 impl Part for Title {
+    fn id(&self) -> Option<PartId> {
+        Some(PartId::Name("title"))
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let x = match self.align {
             TextAlign::Left => r.x,
             TextAlign::Center => r.x + r.w / 2.0,
             TextAlign::Right => r.x + r.w,
         };
         let base = r.y + ty.title_size * 0.95;
-        cx.scene.text_in(pt(x, base), self.name, ty.title_size, th.ink, ty.title.align(self.align));
+        cx.scene.text_in(pt(x, base), self.name, ty.title_size, th.palette.ink, ty.title.align(self.align));
         if let Some(t) = self.tagline {
             cx.scene.text_in(
                 pt(x, base + 8.0 + ty.tagline_size * 1.2),
                 t,
                 ty.tagline_size,
-                th.ink_soft,
+                th.palette.ink_soft,
                 ty.tagline.align(self.align),
             );
         }
@@ -91,13 +95,13 @@ impl Caption {
 impl Part for Caption {
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let x = match self.align {
             TextAlign::Left => r.x,
             TextAlign::Center => r.x + r.w / 2.0,
             TextAlign::Right => r.x + r.w,
         };
         cx.scene
-            .text_in(pt(x, r.y + 10.0), self.text, ty.caption_size, th.ink_soft, ty.caption.align(self.align));
+            .text_in(pt(x, r.y + 10.0), self.text, ty.caption_size, th.palette.ink_soft, ty.caption.align(self.align));
     }
 }

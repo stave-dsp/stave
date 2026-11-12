@@ -11,7 +11,7 @@ use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Pt, Scene, TextAlign};
 
 use crate::material::{self, Occluder};
-use crate::part::{leaf, sprite_key, step_of, Bake, Bind, Control, FaceNode, Frame, Gesture, Hit, Part};
+use crate::part::{leaf, sprite_key, step_of, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, Reads};
 use crate::theme::Theme;
 
 // ----------------------------------------------------------------- toggle
@@ -65,18 +65,18 @@ impl Part for Toggle {
 
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let scale = cx.scale;
         let p = self.pivot(r);
         let nut = material::sprite(22.0, scale, |dx, dy| material::toggle_nut(dx, dy, 9.0, scale));
         cx.image(p.x - 11.0, p.y - 11.0, 22.0, 22.0, nut);
         let legend = self.label.unwrap_or(self.bind.name).to_uppercase();
-        cx.scene.text_in(pt(p.x, r.y + 11.0), legend, ty.legend_size, th.ink, ty.legend);
+        cx.scene.text_in(pt(p.x, r.y + 11.0), legend, ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let th = f.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let names = self.names(f.controller);
         let n = names.len() as u32;
         let cur = step_of(f.value(self.bind), n);
@@ -94,29 +94,29 @@ impl Part for Toggle {
         let font = ty.caption.align(TextAlign::Left);
         for (i, name) in names.iter().enumerate() {
             let i = i as u32;
-            let (color, w) = if i == cur { (th.accent, 750) } else { (th.ink_soft, 600) };
+            let (color, w) = if i == cur { (th.palette.accent, 750) } else { (th.palette.ink_soft, 600) };
             let mut fnt = font;
             fnt.weight = w;
             s.text_in(pt(p.x + 18.0, self.option_y(r, i, n) + 3.0), name.as_str(), ty.caption_size, color, fnt);
         }
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
+    fn grabs(&self, r: Rect, f: &Frame<'_>, out: &mut Vec<Grab>) {
         let p = self.pivot(r);
-        let mut v = alloc::vec![Control {
-            hit: Hit::Circle { c: p, r: 16.0 },
+        out.push(Grab {
+            area: Area::Circle { c: p, r: 16.0 },
             gesture: Gesture::Stepped {
                 bind: self.bind,
                 pitch: 16.0,
             },
-        }];
-        // Each printed option is its own click target. The step count
-        // is unknown here, so lay out three rows; a two-way toggle's
-        // rows sit on the same pitch around the pivot.
-        for (i, n) in [(0u32, 3u32), (1, 3), (2, 3)] {
+        });
+        // Each printed option is its own click target, on the rows paint
+        // prints them.
+        let n = f.controller.steps(self.bind.id).clamp(2, 3);
+        for i in 0..n {
             let y = self.option_y(r, i, n);
-            v.push(Control {
-                hit: Hit::Rect(Rect {
+            out.push(Grab {
+                area: Area::Rect(Rect {
                     x: p.x + 16.0,
                     y: y - OPTION_PITCH / 2.0,
                     w: r.x + r.w - p.x - 16.0,
@@ -125,23 +125,42 @@ impl Part for Toggle {
                 gesture: Gesture::Choose { bind: self.bind, step: i },
             });
         }
-        v
+    }
+
+    fn reads(&self) -> Reads {
+        Reads::params(&[self.bind])
     }
 }
 
 // ------------------------------------------------------------- footswitch
 
-/// A stomp footswitch latching a parameter, with its lamp and legend.
+/// What pressing a footswitch does.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Press {
+    /// Each press flips the parameter.
+    Latch,
+    /// The parameter is on while held, off on release (TAP, FORGET).
+    Momentary,
+}
+
+/// When a footswitch's lamp is lit.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LitWhen {
+    /// While the parameter is on.
+    On,
+    /// While the parameter is off (a bypass: lit while engaged).
+    Off,
+}
+
+/// A stomp footswitch on a parameter, with its lamp and legend.
 #[derive(Copy, Clone, Debug)]
 pub struct Footswitch {
     pub bind: Bind,
     pub label: Option<&'static str>,
-    /// Light the lamp when the parameter is OFF (bypass: lit = engaged).
-    pub invert: bool,
+    pub press: Press,
+    pub lit: LitWhen,
     /// The nut's radius: 21 for a stomp switch, 14 for a panel button.
     pub radius: f64,
-    /// Held, not latched: 1 while pressed, 0 on release.
-    pub momentary: bool,
     /// The lamp's colour (the theme's lamp when None).
     pub color: Option<crate::photo::Rgb>,
 }
@@ -151,21 +170,18 @@ impl Footswitch {
         Footswitch {
             bind,
             label: None,
-            invert: false,
+            press: Press::Latch,
+            lit: LitWhen::On,
             radius: 21.0,
-            momentary: false,
             color: None,
         }
     }
     /// A bypass switch: lit while the effect is engaged.
     pub fn bypass(bind: Bind) -> Self {
         Footswitch {
-            bind,
             label: Some("BYPASS"),
-            invert: true,
-            radius: 21.0,
-            momentary: false,
-            color: None,
+            lit: LitWhen::Off,
+            ..Footswitch::new(bind)
         }
     }
     pub fn label(mut self, l: &'static str) -> Self {
@@ -174,7 +190,12 @@ impl Footswitch {
     }
     /// Held, not latched (a FORGET or TAP button).
     pub fn momentary(mut self) -> Self {
-        self.momentary = true;
+        self.press = Press::Momentary;
+        self
+    }
+    /// When the lamp is lit.
+    pub fn lit(mut self, when: LitWhen) -> Self {
+        self.lit = when;
         self
     }
     /// The lamp's colour (linear RGB; may exceed 1 for a hot core).
@@ -212,7 +233,7 @@ impl Part for Footswitch {
 
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
-        let ty = &th.type_;
+        let ty = &th.typography;
         let scale = cx.scale;
         let b = self.button(r);
         let rad = self.radius;
@@ -223,34 +244,37 @@ impl Part for Footswitch {
         let seat = material::sprite(14.0, scale, |dx, dy| material::lamp_seat(dx, dy, 6.0, scale));
         cx.image(l.x - 7.0, l.y - 7.0, 14.0, 14.0, seat);
         let legend = self.label.unwrap_or(self.bind.name).to_uppercase();
-        cx.scene.text_in(pt(l.x, l.y + 21.0), legend, ty.legend_size, th.ink, ty.legend);
+        cx.scene.text_in(pt(l.x, l.y + 21.0), legend, ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
-        let on = (f.value(self.bind) >= 0.5) != self.invert;
-        if on {
-            lamp_in(f, s, self.lamp(r), self.color.unwrap_or(f.theme.lamp));
+        let on = f.value(self.bind) >= 0.5;
+        if on == (self.lit == LitWhen::On) {
+            lamp_in(f, s, self.lamp(r), self.color.unwrap_or(f.theme.hardware.lamp));
         }
     }
 
-    fn controls(&self, r: Rect) -> Vec<Control> {
-        alloc::vec![Control {
-            hit: Hit::Circle {
+    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+        out.push(Grab {
+            area: Area::Circle {
                 c: self.button(r),
                 r: self.radius + 2.0,
             },
-            gesture: if self.momentary {
-                Gesture::Momentary { bind: self.bind }
-            } else {
-                Gesture::Latch { bind: self.bind }
+            gesture: match self.press {
+                Press::Latch => Gesture::Latch { bind: self.bind },
+                Press::Momentary => Gesture::Momentary { bind: self.bind },
             },
-        }]
+        });
+    }
+
+    fn reads(&self) -> Reads {
+        Reads::params(&[self.bind])
     }
 }
 
 /// Draw a lit LED (theme lamp colour) at `c`.
 pub fn lamp(f: &Frame<'_>, s: &mut Scene, c: Pt) {
-    lamp_in(f, s, c, f.theme.lamp);
+    lamp_in(f, s, c, f.theme.hardware.lamp);
 }
 
 /// Draw a lit LED of colour `col` (linear RGB) at `c`.
@@ -274,13 +298,21 @@ pub enum LampSource {
     Always,
 }
 
-/// An indicator LED with an optional legend under it.
+/// What an indicator lamp looks like.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LampStyle {
+    /// A small LED.
+    Led,
+    /// A faceted jewel pilot lamp (amps).
+    Jewel,
+}
+
+/// An indicator lamp with an optional legend under it.
 #[derive(Copy, Clone, Debug)]
 pub struct Lamp {
     pub source: LampSource,
     pub label: Option<&'static str>,
-    /// A faceted jewel pilot lamp (amps) instead of an LED.
-    pub jewel: bool,
+    pub style: LampStyle,
     /// The lamp's colour (the theme's lamp when None).
     pub color: Option<crate::photo::Rgb>,
 }
@@ -292,7 +324,7 @@ impl Lamp {
         Lamp {
             source: LampSource::Param(b),
             label: None,
-            jewel: false,
+            style: LampStyle::Led,
             color: None,
         }
     }
@@ -300,7 +332,7 @@ impl Lamp {
         Lamp {
             source: LampSource::Tap(id, threshold),
             label: None,
-            jewel: false,
+            style: LampStyle::Led,
             color: None,
         }
     }
@@ -315,7 +347,7 @@ impl Lamp {
     }
     /// A jewel pilot lamp, lit whenever its source is on.
     pub fn jewel(mut self) -> Self {
-        self.jewel = true;
+        self.style = LampStyle::Jewel;
         self
     }
     /// A pilot jewel that is always lit (the amp is on).
@@ -323,17 +355,17 @@ impl Lamp {
         Lamp {
             source: LampSource::Always,
             label: None,
-            jewel: true,
+            style: LampStyle::Jewel,
             color: None,
         }
     }
     pub fn node(self) -> FaceNode {
-        let top = if self.jewel { 2.0 * JEWEL_R + 6.0 } else { 18.0 };
+        let top = if self.style == LampStyle::Jewel { 2.0 * JEWEL_R + 6.0 } else { 18.0 };
         let h = top + if self.label.is_some() { 20.0 } else { 0.0 };
         leaf(self, 44.0, h)
     }
     fn centre(&self, r: Rect) -> Pt {
-        let half = if self.jewel { JEWEL_R + 3.0 } else { 9.0 };
+        let half = if self.style == LampStyle::Jewel { JEWEL_R + 3.0 } else { 9.0 };
         pt(r.x + r.w / 2.0, r.y + half)
     }
 }
@@ -343,8 +375,8 @@ impl Part for Lamp {
         let th = cx.theme;
         let scale = cx.scale;
         let c = self.centre(r);
-        let below = if self.jewel {
-            let col = self.color.unwrap_or(th.lamp);
+        let below = if self.style == LampStyle::Jewel {
+            let col = self.color.unwrap_or(th.hardware.lamp);
             let size = 2.0 * JEWEL_R + 2.0;
             let j = material::sprite(size, scale, |dx, dy| material::jewel(dx, dy, JEWEL_R, col, false, scale));
             cx.image(c.x - size / 2.0, c.y - size / 2.0, size, size, j);
@@ -355,8 +387,8 @@ impl Part for Lamp {
             22.0
         };
         if let Some(l) = self.label {
-            let ty = &th.type_;
-            cx.scene.text_in(pt(c.x, c.y + below), l, ty.caption_size, th.ink_soft, ty.caption);
+            let ty = &th.typography;
+            cx.scene.text_in(pt(c.x, c.y + below), l, ty.caption_size, th.palette.ink_soft, ty.caption);
         }
     }
 
@@ -369,8 +401,8 @@ impl Part for Lamp {
         if !on {
             return;
         }
-        let col = self.color.unwrap_or(f.theme.lamp);
-        if self.jewel {
+        let col = self.color.unwrap_or(f.theme.hardware.lamp);
+        if self.style == LampStyle::Jewel {
             let size = 2.0 * JEWEL_R * 3.0;
             let key = sprite_key(("jewel", col.map(f64::to_bits)));
             f.sprite(s, self.centre(r), size, key, |scale| {
@@ -381,17 +413,11 @@ impl Part for Lamp {
         }
     }
 
-    fn taps(&self) -> Vec<TapId> {
+    fn reads(&self) -> Reads {
         match self.source {
-            LampSource::Tap(id, _) => alloc::vec![id],
-            LampSource::Param(_) | LampSource::Always => Vec::new(),
-        }
-    }
-
-    fn reads(&self) -> Vec<Bind> {
-        match self.source {
-            LampSource::Param(b) => alloc::vec![b],
-            LampSource::Tap(..) | LampSource::Always => Vec::new(),
+            LampSource::Param(b) => Reads::params(&[b]),
+            LampSource::Tap(id, _) => Reads::taps(&[id]),
+            LampSource::Always => Reads::NONE,
         }
     }
 }

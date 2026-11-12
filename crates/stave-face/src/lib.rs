@@ -10,7 +10,7 @@
 //! theme.rs     the look as data: finish, palette, knob family, type, spacing
 //! material.rs  lit surfaces and hardware (one studio light), parallel bakes
 //! photo.rs     the studio: vectors, light, materials, grain, distances, bakers
-//! part.rs      the Part contract: bake (static) / paint (live) / controls
+//! part.rs      the Part contract: bake (static) / paint (live) / grabs / reads
 //! parts/       the catalogue
 //! screens.rs   pictures for displays: graticule, scope, spectrum, curve, envelope
 //! runtime.rs   layout, the cached static layer, live paint, and every
@@ -33,17 +33,20 @@ pub mod runtime;
 pub mod screens;
 pub mod theme;
 
-pub use part::{leaf, on_page, pages, step_of, step_value, Bind, BindParam, Control, FaceNode, Focus, Frame, Gesture, Hit, Part};
+pub use part::{
+    leaf, on_page, on_step, pages, step_of, step_value, Area, Bind, BindParam, FaceNode, Focus, Frame, Gesture, Grab, Part,
+    PartId, Reads,
+};
 pub use stave_core::telemetry::TapId;
 pub use stave_core::Controller;
 pub use parts::*;
 pub use runtime::{Cursor, Face, Mods, Runtime};
-pub use theme::{CapStyle, Finish, Theme, Typography};
+pub use theme::{CapStyle, Coat, Coverings, Finish, Hardware, Palette, Theme, Typography};
 
 /// Everything a face definition needs in one import.
 pub mod prelude {
     pub use crate::parts::*;
-    pub use crate::{on_page, pages, screens, Bind, BindParam, Face, FaceNode, Frame, TapId, Theme};
+    pub use crate::{on_page, on_step, pages, screens, Bind, BindParam, Face, FaceNode, Frame, PartId, Reads, TapId, Theme};
     pub use stave_ui::layout::Rect;
     pub use stave_ui::scene::{pt, Path, Scene, Stroke};
     pub use stave_ui::style::Color;

@@ -6,13 +6,14 @@
 //!   rendered once per size and pixel scale and cached;
 //! * `paint` — the LIVE picture over it (pointers, lamps, readouts,
 //!   displays), every frame something it reads has changed;
-//! * `controls` — where it can be grabbed and what a grab does. The
-//!   runtime owns the gesture: drag, fine-drag, double-click reset,
-//!   scroll, stepping, latching.
+//! * `grabs` — where it can be grabbed and what a grab does (from live
+//!   values when a target moves). The runtime owns the gesture: drag,
+//!   fine-drag, double-click reset, scroll, stepping, latching.
 //!
-//! Parts bind parameters by [`Bind`] (a ParamId and its name) and read
-//! taps by [`TapId`], both through the plugin's [`Controller`]; they
-//! never see the plugin.
+//! Each part declares once what it reads ([`Reads`]: params and taps),
+//! so the runtime knows when to repaint. Parts bind parameters by
+//! [`Bind`] (a ParamId and its name) and read taps by [`TapId`], both
+//! through the plugin's [`Controller`]; they never see the plugin.
 
 extern crate alloc;
 use alloc::sync::Arc;
@@ -74,9 +75,9 @@ pub fn step_value(i: u32, n: u32) -> f64 {
 /// How the pointer relates to a part this frame.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Focus {
-    /// The pointer is over one of the part's controls.
+    /// The pointer is over one of the part's grabs.
     pub hover: bool,
-    /// One of the part's controls is being dragged.
+    /// One of the part's grabs is being dragged.
     pub active: bool,
 }
 
@@ -121,8 +122,8 @@ pub struct Frame<'a> {
     pub sprites: &'a Sprites,
     /// Editor-local page state (see `Pager`).
     pub pages: &'a HashMap<u32, u32>,
-    /// The parameters a display declared it reads (`Display::reads`),
-    /// in order — so a draw fn never hard-codes ids.
+    /// The parameters the part declared it reads ([`Part::reads`]), in
+    /// order — so a draw fn never hard-codes ids.
     pub binds: &'a [Bind],
 }
 
@@ -130,6 +131,11 @@ impl Frame<'_> {
     /// The `i`th declared bind's normalized value (see `binds`).
     pub fn bound(&self, i: usize) -> f64 {
         self.binds.get(i).map_or(0.0, |b| self.controller.normalized(b.id))
+    }
+    /// The `i`th declared bind's parameter: its range, text and steps
+    /// (`denormalize` turns a normalized position into its value).
+    pub fn param(&self, i: usize) -> Option<&dyn AnyParam> {
+        self.controller.param(self.binds.get(i)?.id)
     }
     /// The page shown for page set `key`.
     pub fn page(&self, key: u32) -> u32 {
@@ -180,18 +186,29 @@ impl Bake<'_> {
     }
 }
 
-/// Where a control can be grabbed.
+/// Where a part can be grabbed.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Hit {
+pub enum Area {
     Circle { c: Pt, r: f64 },
     Rect(Rect),
 }
 
-impl Hit {
+impl Area {
     pub fn contains(&self, p: Pt) -> bool {
         match *self {
-            Hit::Circle { c, r } => (p.x - c.x).hypot(p.y - c.y) <= r,
-            Hit::Rect(r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h,
+            Area::Circle { c, r } => (p.x - c.x).hypot(p.y - c.y) <= r,
+            Area::Rect(r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h,
+        }
+    }
+
+    /// The point a pointer aims at to grab it.
+    pub fn centre(&self) -> Pt {
+        match *self {
+            Area::Circle { c, .. } => c,
+            Area::Rect(r) => Pt {
+                x: r.x + r.w / 2.0,
+                y: r.y + r.h / 2.0,
+            },
         }
     }
 }
@@ -238,10 +255,59 @@ impl Gesture {
     }
 }
 
+/// One place a part can be grabbed, and what grabbing it does.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Control {
-    pub hit: Hit,
+pub struct Grab {
+    pub area: Area,
     pub gesture: Gesture,
+}
+
+/// What a part's `paint` reads, declared once: the runtime repaints when
+/// any of it moves, and hands `params` to the draw code in order
+/// ([`Frame::binds`]).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Reads {
+    pub params: Vec<Bind>,
+    pub taps: Vec<TapId>,
+}
+
+impl Reads {
+    /// Reads nothing live (enclosures, print).
+    pub const NONE: Reads = Reads {
+        params: Vec::new(),
+        taps: Vec::new(),
+    };
+
+    /// Reads these parameters.
+    pub fn params(params: &[Bind]) -> Self {
+        Reads {
+            params: params.to_vec(),
+            taps: Vec::new(),
+        }
+    }
+
+    /// Reads these taps.
+    pub fn taps(taps: &[TapId]) -> Self {
+        Reads {
+            params: Vec::new(),
+            taps: taps.to_vec(),
+        }
+    }
+
+    /// And these taps.
+    pub fn and_taps(mut self, taps: &[TapId]) -> Self {
+        self.taps.extend_from_slice(taps);
+        self
+    }
+}
+
+/// A part's stable name, so tests and tools address it by name rather
+/// than coordinates: its bound parameter, or a name given with
+/// `node.id("…")` (or chosen by the part, like a title's "title").
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum PartId {
+    Param(ParamId),
+    Name(&'static str),
 }
 
 /// One leaf of a face.
@@ -252,28 +318,22 @@ pub trait Part: Send + Sync + 'static {
     fn bake(&self, _r: Rect, _cx: &mut Bake<'_>) {}
     /// The live picture.
     fn paint(&self, _r: Rect, _f: &Frame<'_>, _s: &mut Scene) {}
-    /// Grab regions and their gestures.
-    fn controls(&self, _r: Rect) -> Vec<Control> {
-        Vec::new()
-    }
-    /// A grab target placed from LIVE values (a node that moves, a
-    /// handle on a curve): the gesture a press at `p` makes, if any.
-    /// Tried before the fixed `controls`.
-    fn hit(&self, _r: Rect, _f: &Frame<'_>, _p: Pt) -> Option<Gesture> {
-        None
-    }
-    /// The taps `paint` reads (so the runtime repaints when they move).
-    fn taps(&self) -> Vec<TapId> {
-        Vec::new()
+    /// Where the part can be grabbed, topmost last. May read live values
+    /// (a handle that moves with its parameter, a step count).
+    fn grabs(&self, _r: Rect, _f: &Frame<'_>, _out: &mut Vec<Grab>) {}
+    /// The parameters and taps `paint` reads, declared once.
+    fn reads(&self) -> Reads {
+        Reads::NONE
     }
     /// True while the part animates with time alone (a spinning
     /// record): the runtime keeps repainting.
     fn animating(&self, _f: &Frame<'_>) -> bool {
         false
     }
-    /// The parameters `paint` reads, beyond those its controls move.
-    fn reads(&self) -> Vec<Bind> {
-        Vec::new()
+    /// This part's name when its node has none: by default its first
+    /// read parameter.
+    fn id(&self) -> Option<PartId> {
+        self.reads().params.first().map(|b| PartId::Param(b.id))
     }
 }
 
@@ -286,8 +346,20 @@ pub fn leaf(part: impl Part, w: f64, h: f64) -> FaceNode {
 }
 
 /// Show `node` only while page set `key` shows `page` (see `Pager`).
+/// Page set keys are below `0x8000_0000` (above is [`on_step`]'s).
 pub fn on_page(node: FaceNode, key: u32, page: u32) -> FaceNode {
+    debug_assert!(key < STEP_KEY, "page set keys are below 0x8000_0000");
     node.when_key(key, page as u16)
+}
+
+/// The visibility keys at and above this are a stepped parameter's id
+/// (top bit set): [`on_step`].
+pub(crate) const STEP_KEY: u32 = 0x8000_0000;
+
+/// Show `node` only while the stepped parameter `bind` is on step `step`
+/// (an algorithm's controls under its selector).
+pub fn on_step(node: FaceNode, bind: Bind, step: u32) -> FaceNode {
+    node.when_key(STEP_KEY | bind.id.0, step as u16)
 }
 
 /// The pages of page set `key`, overlaid, each stretched to the size of

@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use crate::photo::*;
 use stave_ui::scene::Image;
 
-use crate::theme::{CapStyle, Finish};
+use crate::theme::{CapStyle, Coat};
 
 // ------------------------------------------------------------------ bake
 
@@ -158,9 +158,9 @@ fn noise_slope(x: f64, y: f64, freq: f64, seed: u32, amp: f64) -> (f64, f64) {
 /// A finished surface of base colour `base` at (x, y) with geometric
 /// normal `n` (bevels, domes): the finish perturbs the normal and picks
 /// the reflectance.
-pub fn surface(finish: Finish, base: Rgb, x: f64, y: f64, n: V3) -> Rgb {
+pub fn surface(finish: Coat, base: Rgb, x: f64, y: f64, n: V3) -> Rgb {
     match finish {
-        Finish::Anodized => {
+        Coat::Anodized => {
             // Brushed grain: fine horizontal streaks in both the albedo
             // and the normal, a satin sheen, a little metal in the spec.
             let streak = vnoise(x * 0.04, y * 6.0, 1.0, 11) * 0.6 + vnoise(x * 0.11, y * 2.2, 1.0, 12) * 0.4;
@@ -169,25 +169,25 @@ pub fn surface(finish: Finish, base: Rgb, x: f64, y: f64, n: V3) -> Rgb {
             let paint = plastic(albedo, n, 0.28, 0.32);
             add(mul(paint, 0.9), mul(chrome(n, mix(base, [1.0; 3], 0.35)), 0.08))
         }
-        Finish::Powder => {
+        Coat::Powder => {
             let (sx, sy) = noise_slope(x, y, 0.9, 21, 0.05);
             let n = v3(n.x - sx, n.y - sy, n.z).norm();
             let albedo = mul(base, 0.97 + 0.05 * vnoise(x, y, 0.07, 22));
             plastic(albedo, n, 0.12, 0.55)
         }
-        Finish::Hammertone => {
+        Coat::Hammertone => {
             let (hx, hy) = hammer_slope(x, y);
             let n = v3(n.x - hx, n.y - hy, n.z).norm();
             let paint = plastic(base, n, 0.18, 0.45);
             add(mul(paint, 0.85), mul(chrome(n, mix(base, [1.0; 3], 0.4)), 0.22))
         }
-        Finish::Crinkle => {
+        Coat::Crinkle => {
             let (ax, ay) = noise_slope(x, y, 0.55, 31, 0.35);
             let (bx, by) = noise_slope(x, y, 1.4, 32, 0.18);
             let n = v3(n.x - ax - bx, n.y - ay - by, n.z).norm();
             plastic(base, n, 0.1, 0.6)
         }
-        Finish::Enamel => {
+        Coat::Enamel => {
             let mottle = vnoise(x, y, 0.025, 41) * 0.6 + vnoise(x, y, 0.09, 42) * 0.4;
             let albedo = mix(mul(base, 0.82), mul(base, 1.12), mottle);
             plastic(albedo, n, 0.55, 0.1)

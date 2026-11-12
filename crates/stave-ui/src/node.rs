@@ -29,6 +29,9 @@ pub struct Node<W> {
     /// Layout still solves the node: hidden is not gone, so pages
     /// overlay in a `Stack` and the window never resizes.
     pub when: Option<(u32, u16)>,
+    /// A stable name for this node, so tests and tools address it by
+    /// name rather than coordinates (a face's `PartId`).
+    pub id: Option<&'static str>,
     pub children: Vec<Node<W>>,
 }
 
@@ -38,6 +41,7 @@ pub fn boxed<W>(children: Vec<Node<W>>) -> Node<W> {
         kind: Kind::Box,
         style: Style::default(),
         when: None,
+        id: None,
         children,
     }
 }
@@ -49,6 +53,7 @@ pub fn grid<W>(cols: u16, children: Vec<Node<W>>) -> Node<W> {
             ..Style::default()
         },
         when: None,
+        id: None,
         children,
     }
 }
@@ -60,6 +65,7 @@ pub fn row<W>(children: Vec<Node<W>>) -> Node<W> {
             ..Style::default()
         },
         when: None,
+        id: None,
         children,
     }
 }
@@ -71,6 +77,7 @@ pub fn column<W>(children: Vec<Node<W>>) -> Node<W> {
             ..Style::default()
         },
         when: None,
+        id: None,
         children,
     }
 }
@@ -82,6 +89,7 @@ pub fn stack<W>(children: Vec<Node<W>>) -> Node<W> {
             ..Style::default()
         },
         when: None,
+        id: None,
         children,
     }
 }
@@ -90,6 +98,7 @@ pub fn widget<W>(w: W) -> Node<W> {
         kind: Kind::Widget(w),
         style: Style::default(),
         when: None,
+        id: None,
         children: Vec::new(),
     }
 }
@@ -102,6 +111,7 @@ pub fn spacer<W>() -> Node<W> {
             ..Style::default()
         },
         when: None,
+        id: None,
         children: Vec::new(),
     }
 }
@@ -163,6 +173,11 @@ impl<W> Node<W> {
     /// Conditional visibility (see the `when` field).
     pub fn when_key(mut self, key: u32, index: u16) -> Self {
         self.when = Some((key, index));
+        self
+    }
+    /// Name this node (see the `id` field).
+    pub fn id(mut self, id: &'static str) -> Self {
+        self.id = Some(id);
         self
     }
 }

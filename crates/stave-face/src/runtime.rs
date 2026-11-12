@@ -17,7 +17,11 @@ use stave_ui::scene::{Pt, Scene};
 use stave_ui::{Kind, Layout};
 
 use crate::material::Shadows;
-use crate::part::{step_of, step_value, Bake, Bind, Control, FaceNode, Focus, Frame, Gesture, Part, Sprites};
+use crate::part::{
+    sprite_key, step_of, step_value, Bake, Bind, FaceNode, Focus, Frame, Gesture, Grab, Part, PartId, Reads,
+    Sprites, STEP_KEY,
+};
+use stave_core::ParamId;
 use crate::theme::Theme;
 
 /// A plugin's face: a theme and a part tree.
@@ -57,17 +61,15 @@ pub enum Cursor {
 struct Item {
     part: Arc<dyn Part>,
     rect: Rect,
-    /// Page conditions inherited from the tree: shown only while every
-    /// (page set, page) holds.
+    /// Visibility conditions inherited from the tree: shown only while
+    /// every (page set, page) — or (stepped param, step) — holds.
     when: Vec<(u32, u16)>,
+    /// What `paint` reads, asked once.
+    reads: Reads,
+    /// Its node's id, else the part's own.
+    id: Option<PartId>,
 }
 
-struct Ctl {
-    item: usize,
-    control: Control,
-}
-
-/// A gesture in flight.
 /// What the pointer is on: a part and the gesture a grab there makes.
 #[derive(Clone, Debug, PartialEq)]
 struct Target {
@@ -88,7 +90,11 @@ pub struct Runtime {
     face: Face,
     size: (f64, f64),
     items: Vec<Item>,
-    ctls: Vec<Ctl>,
+    /// Every parameter and tap any part reads, deduplicated once.
+    watch_params: Vec<ParamId>,
+    watch_taps: Vec<TapId>,
+    /// The stepped params some part's visibility follows (`on_step`).
+    step_keys: Vec<u32>,
     baked: Option<(u64, Canvas)>,
     sprites: Sprites,
     drag: Option<Drag>,
@@ -107,6 +113,8 @@ fn flatten(node: &FaceNode, layout: &Layout, when: &[(u32, u16)], out: &mut Vec<
             part: part.clone(),
             rect: layout.rect,
             when: when.clone(),
+            reads: part.reads(),
+            id: node.id.map(PartId::Name).or_else(|| part.id()),
         });
     }
     for (child, cl) in node.children.iter().zip(&layout.children) {
@@ -124,17 +132,25 @@ impl Runtime {
         let layout = stave_ui::solve(&face.root, size);
         let mut items = Vec::new();
         flatten(&face.root, &layout, &[], &mut items);
-        let mut ctls = Vec::new();
-        for (i, it) in items.iter().enumerate() {
-            for control in it.part.controls(it.rect) {
-                ctls.push(Ctl { item: i, control });
+        let mut watch_params: Vec<ParamId> = items.iter().flat_map(|it| it.reads.params.iter().map(|b| b.id)).collect();
+        watch_params.sort_unstable_by_key(|id| id.0);
+        watch_params.dedup();
+        let mut watch_taps: Vec<TapId> = Vec::new();
+        for id in items.iter().flat_map(|it| it.reads.taps.iter().copied()) {
+            if !watch_taps.contains(&id) {
+                watch_taps.push(id);
             }
         }
+        let mut step_keys: Vec<u32> = items.iter().flat_map(|it| &it.when).map(|&(k, _)| k).filter(|&k| k >= STEP_KEY).collect();
+        step_keys.sort_unstable();
+        step_keys.dedup();
         Runtime {
             face,
             size,
             items,
-            ctls,
+            watch_params,
+            watch_taps,
+            step_keys,
             baked: None,
             sprites: Sprites::default(),
             drag: None,
@@ -160,34 +176,88 @@ impl Runtime {
 
     /// Every tap any part reads.
     pub fn taps(&self) -> Vec<TapId> {
-        let mut v: Vec<TapId> = Vec::new();
-        for id in self.items.iter().flat_map(|it| it.part.taps()) {
-            if !v.contains(&id) {
-                v.push(id);
-            }
-        }
-        v
+        self.watch_taps.clone()
     }
 
-    /// Every control's gesture (for binding checks).
-    pub fn gestures(&self) -> Vec<Gesture> {
-        self.ctls.iter().map(|c| c.control.gesture.clone()).collect()
+    /// Every part's id (if it has one) and rect, in paint order.
+    pub fn parts(&self) -> Vec<(Option<PartId>, Rect)> {
+        self.items.iter().map(|it| (it.id, it.rect)).collect()
+    }
+
+    /// The rect of the first part named `id`.
+    pub fn rect(&self, id: PartId) -> Option<Rect> {
+        self.items.iter().find(|it| it.id == Some(id)).map(|it| it.rect)
+    }
+
+    /// The part `name` names: a node id, or a part's role name, or the
+    /// name of the parameter a part is bound to (any case).
+    pub fn find(&self, controller: &dyn Controller, name: &str) -> Option<PartId> {
+        self.items.iter().filter_map(|it| it.id).find(|&id| match id {
+            PartId::Name(n) => n.eq_ignore_ascii_case(name),
+            PartId::Param(p) => controller.param(p).is_some_and(|p| p.meta().name.eq_ignore_ascii_case(name)),
+        })
+    }
+
+    /// The grabs of the part named `id`, as it shows now.
+    pub fn grabs(&self, controller: &dyn Controller, id: PartId) -> Vec<Grab> {
+        let mut out = Vec::new();
+        for (i, it) in self.items.iter().enumerate() {
+            if it.id == Some(id) && self.shown(i, controller) {
+                it.part.grabs(it.rect, &self.frame(i, controller, 1.0, 0.0), &mut out);
+            }
+        }
+        out
+    }
+
+    /// What a press at `p` grabs: the part (by id, if it has one) and the
+    /// gesture.
+    pub fn grab_at(&self, controller: &dyn Controller, p: Pt) -> Option<(Option<PartId>, Gesture)> {
+        self.hit(controller, p).map(|t| (self.items[t.item].id, t.gesture))
+    }
+
+    /// Every grab's gesture, on every page (for binding checks).
+    pub fn gestures(&self, controller: &dyn Controller) -> Vec<Gesture> {
+        let mut out = Vec::new();
+        for (i, it) in self.items.iter().enumerate() {
+            it.part.grabs(it.rect, &self.frame(i, controller, 1.0, 0.0), &mut out);
+        }
+        out.into_iter().map(|g| g.gesture).collect()
     }
 
     /// Every parameter the face moves or reads.
-    pub fn binds(&self) -> Vec<Bind> {
-        let mut v: Vec<Bind> = self.ctls.iter().flat_map(|c| c.control.gesture.binds()).collect();
-        v.extend(self.items.iter().flat_map(|it| it.part.reads()));
+    pub fn binds(&self, controller: &dyn Controller) -> Vec<Bind> {
+        let mut v: Vec<Bind> = self.gestures(controller).iter().flat_map(Gesture::binds).collect();
+        v.extend(self.items.iter().flat_map(|it| it.reads.params.iter().copied()));
         v.sort_unstable_by_key(|b| b.id.0);
         v.dedup_by_key(|b| b.id);
         v
     }
 
-    fn shown(&self, item: usize) -> bool {
-        self.items[item]
-            .when
-            .iter()
-            .all(|&(k, p)| self.pages.get(&k).copied().unwrap_or(0) == u32::from(p))
+    /// The frame part `i` paints and is grabbed with.
+    fn frame<'a>(&'a self, i: usize, controller: &'a dyn Controller, scale: f64, time: f64) -> Frame<'a> {
+        Frame {
+            theme: &self.face.theme,
+            controller,
+            scale,
+            time,
+            focus: self.focus(i),
+            sprites: &self.sprites,
+            pages: &self.pages,
+            binds: &self.items[i].reads.params,
+        }
+    }
+
+    /// The step a visibility key's stepped param is on.
+    fn step(controller: &dyn Controller, key: u32) -> u32 {
+        let id = ParamId(key & !STEP_KEY);
+        step_of(controller.normalized(id), controller.steps(id))
+    }
+
+    fn shown(&self, item: usize, controller: &dyn Controller) -> bool {
+        self.items[item].when.iter().all(|&(k, p)| {
+            let at = if k >= STEP_KEY { Self::step(controller, k) } else { self.page(k) };
+            at == u32::from(p)
+        })
     }
 
     /// The page shown for page set `key`.
@@ -195,10 +265,12 @@ impl Runtime {
         self.pages.get(&key).copied().unwrap_or(0)
     }
 
-    fn page_key(&self) -> u64 {
+    /// Which pages and steps show: the static layer is baked per value.
+    fn page_key(&self, controller: &dyn Controller) -> u64 {
         let mut v: Vec<(u32, u32)> = self.pages.iter().map(|(k, p)| (*k, *p)).collect();
         v.sort_unstable();
-        crate::part::sprite_key(v)
+        v.extend(self.step_keys.iter().map(|&k| (k, Self::step(controller, k))));
+        sprite_key(v)
     }
 
     fn focus(&self, item: usize) -> Focus {
@@ -211,13 +283,13 @@ impl Runtime {
     fn bake(&self, controller: &dyn Controller, scale: f64, text: &mut dyn TextPainter) -> Canvas {
         let mut occ = Vec::new();
         for (i, it) in self.items.iter().enumerate() {
-            if self.shown(i) {
+            if self.shown(i, controller) {
                 it.part.occluders(it.rect, &self.face.theme, &mut occ);
             }
         }
         let shadows = Shadows::new(self.size.0, self.size.1, &occ);
         let mut scene = Scene::new();
-        for (_, it) in self.items.iter().enumerate().filter(|(i, _)| self.shown(*i)) {
+        for (_, it) in self.items.iter().enumerate().filter(|(i, _)| self.shown(*i, controller)) {
             it.part.bake(
                 it.rect,
                 &mut Bake {
@@ -237,7 +309,7 @@ impl Runtime {
 
     /// Paint the whole face at `scale` px/pt into `out`.
     pub fn render(&mut self, controller: &dyn Controller, scale: f64, time: f64, out: &mut Canvas, text: &mut dyn TextPainter) {
-        let key = scale.to_bits() ^ self.page_key().rotate_left(17);
+        let key = scale.to_bits() ^ self.page_key(controller).rotate_left(17);
         if self.baked.as_ref().is_none_or(|(k, _)| *k != key) {
             let c = self.bake(controller, scale, text);
             self.baked = Some((key, c));
@@ -249,44 +321,29 @@ impl Runtime {
         out.px.extend_from_slice(&base.px);
         let mut scene = Scene::new();
         for (i, it) in self.items.iter().enumerate() {
-            if !self.shown(i) {
-                continue;
+            if self.shown(i, controller) {
+                it.part.paint(it.rect, &self.frame(i, controller, scale, time), &mut scene);
             }
-            let f = Frame {
-                theme: &self.face.theme,
-                controller,
-                scale,
-                time,
-                focus: self.focus(i),
-                sprites: &self.sprites,
-                pages: &self.pages,
-                binds: &[],
-            };
-            it.part.paint(it.rect, &f, &mut scene);
         }
         stave_raster::render(&scene, scale, out, text);
         self.memo = self.observe(controller, time);
     }
 
+    /// Everything the picture depends on, as bits: compared each frame
+    /// to decide whether to repaint. Allocates one vector, sorts nothing.
     fn observe(&self, controller: &dyn Controller, time: f64) -> Vec<u64> {
-        let mut v: Vec<u64> = self.binds().iter().map(|b| controller.normalized(b.id).to_bits()).collect();
-        v.extend(self.taps().into_iter().map(|id| controller.tap(id).to_bits()));
-        v.push(self.hover.as_ref().map_or(u64::MAX, |t| crate::part::sprite_key((t.item, format!("{:?}", t.gesture)))));
-        v.push(self.page_key());
+        let mut v: Vec<u64> = Vec::with_capacity(self.watch_params.len() + self.watch_taps.len() + 5);
+        v.extend(self.watch_params.iter().map(|&id| controller.normalized(id).to_bits()));
+        v.extend(self.watch_taps.iter().map(|&id| controller.tap(id).to_bits()));
+        v.push(self.hover.as_ref().map_or(u64::MAX, |t| (t.item as u64) << 32 | gesture_key(&t.gesture)));
+        v.push(self.page_key(controller));
         v.push(controller.preset().map_or(u64::MAX, |p| p as u64));
         v.push(self.drag.as_ref().map_or(u64::MAX, |d| d.target.item as u64));
-        let animating = self.items.iter().enumerate().any(|(i, it)| {
-            it.part.animating(&Frame {
-                theme: &self.face.theme,
-                controller,
-                scale: 1.0,
-                time,
-                focus: self.focus(i),
-                sprites: &self.sprites,
-                pages: &self.pages,
-                binds: &[],
-            })
-        });
+        let animating = self
+            .items
+            .iter()
+            .enumerate()
+            .any(|(i, it)| it.part.animating(&self.frame(i, controller, 1.0, time)));
         if animating {
             v.push(time.to_bits());
         }
@@ -299,34 +356,24 @@ impl Runtime {
         self.baked.is_none() || self.observe(controller, time) != self.memo
     }
 
+    /// The topmost grab under `p`: later parts, and a part's later
+    /// grabs, are on top.
     fn hit(&self, controller: &dyn Controller, p: Pt) -> Option<Target> {
-        // Parts that place their grab targets from live values first
-        // (topmost first), then the fixed controls.
+        let mut grabs = Vec::new();
         for (i, it) in self.items.iter().enumerate().rev() {
-            if !self.shown(i) {
+            if !self.shown(i, controller) {
                 continue;
             }
-            let f = Frame {
-                theme: &self.face.theme,
-                controller,
-                scale: 1.0,
-                time: 0.0,
-                focus: self.focus(i),
-                sprites: &self.sprites,
-                pages: &self.pages,
-                binds: &[],
-            };
-            if let Some(gesture) = it.part.hit(it.rect, &f, p) {
-                return Some(Target { item: i, gesture });
+            grabs.clear();
+            it.part.grabs(it.rect, &self.frame(i, controller, 1.0, 0.0), &mut grabs);
+            if let Some(g) = grabs.iter().rev().find(|g| g.area.contains(p)) {
+                return Some(Target {
+                    item: i,
+                    gesture: g.gesture.clone(),
+                });
             }
         }
-        (0..self.ctls.len())
-            .rev()
-            .find(|&i| self.shown(self.ctls[i].item) && self.ctls[i].control.hit.contains(p))
-            .map(|i| Target {
-                item: self.ctls[i].item,
-                gesture: self.ctls[i].control.gesture.clone(),
-            })
+        None
     }
 
     /// The pointer moved with no button down. Returns true if the hover
@@ -527,6 +574,22 @@ impl Runtime {
             _ => {}
         }
     }
+}
+
+/// A gesture's identity as bits, for change detection (no formatting).
+fn gesture_key(g: &Gesture) -> u64 {
+    let (kind, a, b): (u64, u64, u64) = match *g {
+        Gesture::Rotary { bind, .. } => (1, u64::from(bind.id.0), 0),
+        Gesture::Stepped { bind, .. } => (2, u64::from(bind.id.0), 0),
+        Gesture::Choose { bind, step } => (3, u64::from(bind.id.0), u64::from(step)),
+        Gesture::Latch { bind } => (4, u64::from(bind.id.0), 0),
+        Gesture::Momentary { bind } => (5, u64::from(bind.id.0), 0),
+        Gesture::Pad { x, y, .. } => (6, u64::from(x.id.0), u64::from(y.id.0)),
+        Gesture::Nudge { bind, delta } => (7, u64::from(bind.id.0), delta as u64),
+        Gesture::Preset { delta } => (8, delta as u64, 0),
+        Gesture::Page { key, page } => (9, u64::from(key), u64::from(page)),
+    };
+    (kind << 28) ^ (a << 8) ^ b.rotate_left(40)
 }
 
 fn set_pad(controller: &dyn Controller, x: Bind, y: Bind, area: Rect, p: Pt) {

@@ -10,7 +10,7 @@ use crate::photo::{mix, mul, smoothstep, Rgb};
 use stave_ui::{Dim, Edges};
 
 use crate::material::{self, cov, RRect};
-use crate::part::{Bake, FaceNode, Part};
+use crate::part::{Bake, FaceNode, Part, PartId};
 
 /// What kind of hardware the face is.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -170,6 +170,10 @@ struct PanelPart(Panel);
 const WALL: f64 = 7.0;
 
 impl Part for PanelPart {
+    fn id(&self) -> Option<PartId> {
+        Some(PartId::Name("panel"))
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         match self.0.form {
             Form::Pedal => self.bake_pedal(r, cx),
@@ -184,9 +188,9 @@ impl PanelPart {
     fn bake_pedal(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let m = self.0.margin;
-        let case = RRect::new(r.x + m, r.y + m, r.w - 2.0 * m, r.h - 2.0 * m - WALL, th.radius);
+        let case = RRect::new(r.x + m, r.y + m, r.w - 2.0 * m, r.h - 2.0 * m - WALL, th.finish.radius);
         let (fw, fh) = cx.face;
-        let (surface, finish, desk_c) = (th.surface, th.finish, th.desk);
+        let (surface, finish, desk_c) = (th.finish.surface, th.finish.coat, th.finish.desk);
         let shadows = cx.shadows;
         let scale = cx.scale;
         let wall_c: Rgb = mul(surface, 0.62);
@@ -229,7 +233,7 @@ impl PanelPart {
         let m = self.0.margin;
         let plate = RRect::new(r.x + m, r.y + m, r.w - 2.0 * m, r.h - 2.0 * m, 3.0);
         let (fw, fh) = cx.face;
-        let (surface, finish, desk_c) = (th.surface, th.finish, th.desk);
+        let (surface, finish, desk_c) = (th.finish.surface, th.finish.coat, th.finish.desk);
         let shadows = cx.shadows;
         let scale = cx.scale;
         // The ears are the same plate; a faint seam marks where the
@@ -299,7 +303,7 @@ impl PanelPart {
             RRect::new(face.cx - face.hw, y, face.hw * 2.0, h, 5.0)
         });
         let (fw, fh) = cx.face;
-        let (surface, finish, desk_c, tolex, pipe, cloth) = (th.surface, th.finish, th.desk, th.tolex, th.piping, th.grille);
+        let (surface, finish, desk_c, tolex, pipe, cloth) = (th.finish.surface, th.finish.coat, th.finish.desk, th.coverings.tolex, th.coverings.piping, th.coverings.grille);
         let shadows = cx.shadows;
         let scale = cx.scale;
         let img = material::bake(r.w, r.h, scale, |lx, ly| {
@@ -351,13 +355,13 @@ impl PanelPart {
         }
         // The logo badge on the grille.
         if let (Some(g), Some(text)) = (grille_rect, grille.and_then(|g| g.badge)) {
-            let ty = &th.type_;
+            let ty = &th.typography;
             let size = (g.hh * 0.55).clamp(14.0, 40.0);
             let w = text.chars().count() as f64 * size * 0.62 + size * 1.2;
             let h = size * 1.5;
             let (bx0, by0) = (g.cx - w / 2.0, g.cy - h / 2.0);
             let plate = RRect::new(0.0, 0.0, w, h, h * 0.3);
-            let metal = th.badge;
+            let metal = th.coverings.badge;
             let img = material::bake_rgba(w, h, scale, |x, y| {
                 let d = plate.sd(x, y);
                 if d > 0.5 {
@@ -415,7 +419,7 @@ impl Part for PlatePart {
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let plate = RRect::new(r.x, r.y, r.w, r.h, 9.0);
-        let (base, finish, scale) = (th.plate, th.finish, cx.scale);
+        let (base, finish, scale) = (th.finish.plate, th.finish.coat, cx.scale);
         let shadows = cx.shadows;
         let img = material::bake_rgba(r.w, r.h, scale, |lx, ly| {
             let (x, y) = (lx + r.x, ly + r.y);
@@ -435,10 +439,10 @@ impl Part for PlatePart {
         });
         cx.image(r.x, r.y, r.w, r.h, img);
         if let Some(t) = self.0.title {
-            let ty = &th.type_;
+            let ty = &th.typography;
             let font = ty.caption.align(stave_ui::scene::TextAlign::Left);
             cx.scene
-                .text_in(stave_ui::scene::pt(r.x + 16.0, r.y + 19.0), t, ty.caption_size, th.ink_soft, font);
+                .text_in(stave_ui::scene::pt(r.x + 16.0, r.y + 19.0), t, ty.caption_size, th.palette.ink_soft, font);
         }
     }
 }

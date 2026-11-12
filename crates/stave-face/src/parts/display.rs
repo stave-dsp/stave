@@ -11,7 +11,7 @@ use stave_ui::layout::Rect;
 use stave_ui::scene::{Path, Scene};
 
 use crate::material::{self, Occluder, RRect};
-use crate::part::{leaf, sprite_key, Bake, Bind, FaceNode, Frame, Part};
+use crate::part::{leaf, sprite_key, Bake, Bind, FaceNode, Frame, Part, Reads};
 use crate::theme::Theme;
 
 /// A display's picture: draw into `screen` (face coordinates). Plain fn,
@@ -23,10 +23,9 @@ pub struct Display {
     pub w: f64,
     pub h: f64,
     pub draw: Draw,
-    /// Taps the picture reads.
-    pub taps: &'static [TapId],
-    /// Parameters the picture reads.
-    pub reads: Vec<Bind>,
+    /// The parameters (in the order the draw fn reads them,
+    /// [`Frame::bound`]) and taps the picture reads.
+    pub reads: Reads,
     /// Repaint every frame (the picture moves with time alone).
     pub animated: bool,
 }
@@ -40,17 +39,19 @@ impl Display {
             w,
             h,
             draw,
-            taps: &[],
-            reads: Vec::new(),
+            reads: Reads::NONE,
             animated: false,
         }
     }
-    pub fn taps(mut self, t: &'static [TapId]) -> Self {
-        self.taps = t;
+    /// The taps the picture reads.
+    pub fn taps(mut self, t: &[TapId]) -> Self {
+        self.reads.taps = t.to_vec();
         self
     }
+    /// The parameters the picture reads, in the order the draw fn reads
+    /// them ([`Frame::bound`]).
     pub fn reads(mut self, b: &[Bind]) -> Self {
-        self.reads = b.to_vec();
+        self.reads.params = b.to_vec();
         self
     }
     pub fn animated(mut self) -> Self {
@@ -85,16 +86,11 @@ impl Part for Display {
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let sc = Self::screen(r);
-        let f = Frame { binds: &self.reads, ..*f };
-        (self.draw)(&f, sc, s);
-        glass_over(&f, s, sc, RADIUS);
+        (self.draw)(f, sc, s);
+        glass_over(f, s, sc, RADIUS);
     }
 
-    fn taps(&self) -> Vec<TapId> {
-        self.taps.to_vec()
-    }
-
-    fn reads(&self) -> Vec<Bind> {
+    fn reads(&self) -> Reads {
         self.reads.clone()
     }
 
@@ -118,7 +114,7 @@ pub fn bake_window(cx: &mut Bake<'_>, screen: Rect, radius: f64, lip: f64) {
         material::bezel(lx + r.x, ly + r.y, &win, lip, scale).unwrap_or(([0.0; 3], 0.0))
     });
     cx.image(r.x, r.y, r.w, r.h, img);
-    cx.scene.solid(rrect_path(screen, radius), cx.theme.screen);
+    cx.scene.solid(rrect_path(screen, radius), cx.theme.palette.screen);
 }
 
 /// Lay the glass over a screen (after its live content).

@@ -14,4 +14,4 @@ pub use meter::{Meter, Pad, Reading, Trace};
 pub use panel::{Form, Grille, Panel, Plate, Side, RACK_U};
 pub use print::{Caption, Title};
 pub use select::{Pager, Presets, Selector, Stepper};
-pub use switch::{lamp, lamp_in, Footswitch, Lamp, LampSource, Toggle};
+pub use switch::{lamp, lamp_in, Footswitch, Lamp, LampSource, LampStyle, LitWhen, Press, Toggle};

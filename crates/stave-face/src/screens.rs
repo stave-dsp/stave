@@ -18,7 +18,7 @@ fn alpha(c: Color, a: f64) -> Color {
 
 /// A faint graticule, `cols × rows` divisions.
 pub fn grid(f: &Frame<'_>, r: Rect, s: &mut Scene, cols: u32, rows: u32) {
-    let c = alpha(f.theme.phosphor, 0.08);
+    let c = alpha(f.theme.palette.phosphor, 0.08);
     for i in 1..cols {
         let x = r.x + r.w * f64::from(i) / f64::from(cols);
         s.stroke(Path::new().move_to(pt(x, r.y + 3.0)).line_to(pt(x, r.y + r.h - 3.0)), Stroke::new(c, 1.0));
@@ -34,7 +34,7 @@ pub fn glow_line(f: &Frame<'_>, s: &mut Scene, pts: &[Pt]) {
     if pts.len() < 2 {
         return;
     }
-    let ph = f.theme.phosphor;
+    let ph = f.theme.palette.phosphor;
     s.stroke(Path::polyline(pts), Stroke::round(alpha(ph, 0.16), 5.0));
     s.stroke(Path::polyline(pts), Stroke::round(ph, 1.5));
 }
@@ -93,7 +93,7 @@ pub fn spectrum(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize, sample_ra
     for p in &pts {
         fill = fill.line_to(*p);
     }
-    s.solid(fill.line_to(pt(r.x + r.w, r.y + r.h)).close(), alpha(f.theme.phosphor, 0.12));
+    s.solid(fill.line_to(pt(r.x + r.w, r.y + r.h)).close(), alpha(f.theme.palette.phosphor, 0.12));
     glow_line(f, s, &pts);
 }
 
@@ -101,7 +101,7 @@ pub fn spectrum(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize, sample_ra
 /// both over ±1, with the identity line faint behind it.
 pub fn curve(f: &Frame<'_>, r: Rect, s: &mut Scene) {
     grid(f, r, s, 4, 4);
-    let faint = alpha(f.theme.phosphor, 0.2);
+    let faint = alpha(f.theme.palette.phosphor, 0.2);
     s.stroke(Path::new().move_to(pt(r.x, r.y + r.h)).line_to(pt(r.x + r.w, r.y)), Stroke::new(faint, 1.0));
     let ys = f.controller.curve();
     if ys.len() < 2 {
@@ -136,10 +136,10 @@ pub fn envelope(f: &Frame<'_>, r: Rect, s: &mut Scene, attack: f64, decay: f64, 
     for p in &pts[1..] {
         fill = fill.line_to(*p);
     }
-    s.solid(fill.close(), alpha(f.theme.phosphor, 0.12));
+    s.solid(fill.close(), alpha(f.theme.palette.phosphor, 0.12));
     glow_line(f, s, &pts);
     for p in &pts[1..4] {
-        s.solid(Path::circle(*p, 2.4), f.theme.phosphor);
+        s.solid(Path::circle(*p, 2.4), f.theme.palette.phosphor);
     }
 }
 

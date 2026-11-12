@@ -31,14 +31,14 @@ fn serial() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// A part whose grab regions panic while armed (the runtime asks for
-/// them when a view is made).
+/// A part whose reads panic while armed (the runtime asks for them when
+/// a view is made).
 struct TrapPart;
 
 impl stave_face::Part for TrapPart {
-    fn controls(&self, _r: stave_face::prelude::Rect) -> Vec<stave_face::Control> {
+    fn reads(&self) -> stave_face::Reads {
         assert!(!PANIC_IN_FACE.load(Ordering::SeqCst), "a face bug");
-        Vec::new()
+        stave_face::Reads::NONE
     }
 }
 
