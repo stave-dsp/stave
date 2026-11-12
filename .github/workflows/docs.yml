@@ -1,0 +1,67 @@
+# The documentation site, https://stave-dsp.github.io/stave/: built from
+# the code on every push and pull request, deployed from main. Nothing
+# it generates is committed — every page is made fresh from the commit
+# being built — so a page cannot disagree with the code it ships with.
+# scripts/docsite.sh fails on any rustdoc warning (a broken intra-doc
+# link in an article included), a guide module without an article, a
+# part without a picture, a binary whose --help fails, or a link on any
+# page that goes nowhere. The guide's examples are doctests, run with
+# the workspace's in ci.yml's test job.
+name: docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # macOS: rustdoc documents the crates as the platform the API is
+    # first written for (the Cocoa face), and the CLI page runs every
+    # binary there.
+    name: build the site
+    runs-on: macos-latest
+    # Warm (the rust-cache below) this is a few minutes; the first, cold
+    # build of the docs target dir takes longer.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The changelog is read from the release tags.
+          fetch-depth: 0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: docsite
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
+      - run: scripts/docsite.sh target/site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/site
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    name: deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

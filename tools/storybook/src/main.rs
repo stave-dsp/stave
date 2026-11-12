@@ -80,8 +80,25 @@ fn screenshot(dir: PathBuf, scale: f64) {
     }
 }
 
+const USAGE: &str = "\
+usage: stave-storybook [--screenshot DIR [--scale N]]
+
+  (no options)          live: every part on every theme, draggable;
+                        left/right change theme, Esc quits
+  --screenshot DIR      one PNG per story into DIR (default build/storybook),
+                        offscreen through the real face runtime
+  --scale N             pixels per point for --screenshot (default 2)
+  -h, --help            this text
+
+STAVE_TEXT=embedded sets text in the embedded fonts on macOS too (how
+Windows and Linux show a face).";
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("{USAGE}");
+        return;
+    }
     let scale = args
         .iter()
         .position(|a| a == "--scale")

@@ -198,7 +198,7 @@ pub trait Plugin: Sized + Send + 'static {
         Vec::new()
     }
 
-    /// Restore [`save`](Self::save)'s bytes, written at state `version`;
+    /// Restore `save`'s bytes, written at state `version`;
     /// params are already restored.
     fn load(&mut self, _bytes: &[u8], _version: u32) {}
 }

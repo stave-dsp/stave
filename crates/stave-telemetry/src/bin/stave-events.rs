@@ -12,10 +12,28 @@ use std::process::ExitCode;
 
 use stave_telemetry::events::{check, quiescent, Trace};
 
+const USAGE: &str = "\
+usage: stave-events FILE...
+
+Check event traces (written with STAVE_EVENTS=1 as
+<log dir>/<id>-<pid>-<n>.events) against the protocol's laws: a
+gesture begun once and ended once, a face's edit inside its gesture, no
+gap in the indices, release after a prepare, no fault; and whether a
+gesture was left open at the end.
+
+Prints each file's violations; exits 1 if any file breaks a law, 2 on
+bad usage.
+
+  -h, --help    this text";
+
 fn main() -> ExitCode {
     let files: Vec<String> = std::env::args().skip(1).collect();
+    if files.iter().any(|a| a == "-h" || a == "--help") {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
     if files.is_empty() {
-        eprintln!("usage: stave-events FILE...");
+        eprintln!("{USAGE}");
         return ExitCode::from(2);
     }
     let mut clean = true;

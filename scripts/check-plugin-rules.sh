@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The tree rules as a GATE (docs/writing-a-plugin.md). By our own
+# The tree rules as a GATE (the guide: crates/stave-guide/src/howto/project-layout.md). By our own
 # doctrine — "laws attach to forms; conventions are deferred
 # failures" — style conventions drift unless they fail the build.
 # Every check here exists because its violation actually happened.

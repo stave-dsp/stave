@@ -64,22 +64,26 @@ macro_rules! plugin_checks {
             <$krate::$plugin as $crate::__stave::Plugin>::face(&params).is_some()
         }
 
+        /// stave-host's validation suite ([`crate::validation`]), through the plugin's own VST3 entry points.
         #[test]
         fn passes_validation() {
             $crate::validation::assert_passes($crate::__host::entry_points!($krate));
         }
 
+        /// No allocation in `process` while every parameter moves ([`crate::no_alloc`]). Debug builds only.
         #[test]
         #[cfg(debug_assertions)]
         fn process_never_allocates() {
             $crate::no_alloc::check_no_alloc::<$krate::$plugin>(stave_checks_name(), &$crate::no_alloc::NoAllocConfig::default());
         }
 
+        /// The perf report ([`crate::perf`]): measures and prints the configured cases; never fails. Skips in debug builds.
         #[test]
         fn perf_report_for_the_record() {
             $crate::perf::perf_report::<$krate::$plugin>(stave_checks_name(), &stave_checks_config().perf, &$crate::perf::PerfConfig::default());
         }
 
+        /// Every part on the face binds a parameter the plugin declares ([`crate::face::binds_resolve`]). Only with a face.
         #[test]
         fn face_binds_resolve() {
             if stave_checks_has_face() {
@@ -87,6 +91,7 @@ macro_rules! plugin_checks {
             }
         }
 
+        /// A press at the centre of each named part's grabs grabs that part ([`crate::face::grabs_land`]). Only with a face.
         #[test]
         fn face_grabs_land() {
             if stave_checks_has_face() {
@@ -94,6 +99,7 @@ macro_rules! plugin_checks {
             }
         }
 
+        /// The layout, gesture and overlay laws on every state of the face, and seeded random sessions ([`crate::face::laws`]). Only with a face.
         #[test]
         #[cfg_attr(miri, ignore)]
         fn face_keeps_the_interaction_laws() {
@@ -108,35 +114,41 @@ macro_rules! plugin_checks {
             }
         }
 
+        /// Blocks of 0, 1, odd and full sizes and a re-prepare to a larger maximum: output stays finite ([`crate::checks::block_sizes`]).
         #[test]
         #[cfg_attr(miri, ignore)]
         fn any_block_size() {
             $crate::checks::block_sizes::<$krate::$plugin>();
         }
 
+        /// Prepared from 8 kHz to 768 kHz in a changing order: output stays finite ([`crate::checks::sample_rates`]).
         #[test]
         #[cfg_attr(miri, ignore)]
         fn any_sample_rate() {
             $crate::checks::sample_rates::<$krate::$plugin>();
         }
 
+        /// Prepare, reset and process interleaved; after a reset the plugin sounds as it did fresh ([`crate::checks::prepare_and_reset_cycles`]).
         #[test]
         #[cfg_attr(miri, ignore)]
         fn prepare_and_reset_cycles() {
             $crate::checks::prepare_and_reset_cycles::<$krate::$plugin>();
         }
 
+        /// Every parameter moved at random every block, smoothed and sample-accurate, for each seed ([`crate::checks::random_automation`]).
         #[test]
         #[cfg_attr(miri, ignore)]
         fn random_automation() {
             $crate::checks::random_automation::<$krate::$plugin>(stave_checks_config().seeds);
         }
 
+        /// Random values saved and loaded into a fresh instance: every value comes back and both sound the same ([`crate::checks::state_round_trip`]).
         #[test]
         fn state_round_trip() {
             $crate::checks::state_round_trip::<$krate::$plugin>();
         }
 
+        /// Two fresh instances fed the same input give bit-identical output ([`crate::checks::deterministic`]).
         #[test]
         fn deterministic() {
             $crate::checks::deterministic::<$krate::$plugin>();

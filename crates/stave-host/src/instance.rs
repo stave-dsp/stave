@@ -109,7 +109,7 @@ pub trait Instance {
         Vec::new()
     }
 
-    /// Set a param by name (see [`param::find`](crate::param::find)),
+    /// Set a param by name (see `stave_host::param::find`),
     /// in its own units. Takes effect from the next `process` call.
     fn set_param(&mut self, name: &str, _value: f64) -> Result<(), ParamError> {
         Err(ParamError::NotFound(name.to_string()))

@@ -1,0 +1,92 @@
+<!-- The site's look on rustdoc's pages (passed as --html-in-header by
+     scripts/docsite.sh): its fonts, its paper/ink/accent on rustdoc's
+     light and dark themes, a bar back to the site, and the site's
+     search over guides and API. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&amp;family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap">
+<style>
+:root[data-theme="light"], :root:not([data-theme]) {
+  --main-background-color: #f4f2ec; --main-color: #1a1a18;
+  --sidebar-background-color: #ebe8df; --sidebar-background-color-hover: #e3dfd3; --sidebar-border-color: #d4d0c4;
+  --code-block-background-color: #e8e4d9; --headings-border-bottom-color: #d4d0c4; --border-color: #d4d0c4;
+  --button-background-color: #f4f2ec; --right-side-color: #807d72;
+  --link-color: #a8321d; --sidebar-link-color: #57554d; --sidebar-current-link-background-color: #f4f2ec;
+  --mod-link-color: #a8321d; --type-link-color: #8a3d6b; --trait-link-color: #5a4b9c; --assoc-item-link-color: #a8321d;
+  --function-link-color: #7a5a1c; --macro-link-color: #3d6b3a; --keyword-link-color: #a8321d; --attribute-link-color: #a8321d;
+  --search-input-focused-border-color: #c63d25; --search-result-link-focus-background-color: #e3dfd3;
+  --search-tab-button-selected-border-top-color: #c63d25; --search-tab-button-selected-background: #f4f2ec;
+  --search-tab-button-not-selected-background: #ebe8df; --search-tab-button-not-selected-border-top-color: #ebe8df;
+  --stab-background-color: #f1e6c8; --target-background-color: #f1e6c8; --target-border-color: #c63d25;
+  --code-highlight-kw-color: #a8321d; --code-highlight-kw-2-color: #8a3d6b; --code-highlight-string-color: #4f6b1f;
+  --code-highlight-number-color: #7a5a1c; --code-highlight-comment-color: #807d72; --code-highlight-doc-comment-color: #57554d;
+  --code-highlight-macro-color: #5a4b9c; --code-highlight-attribute-color: #3c5f86; --code-highlight-self-color: #a8321d;
+  --code-highlight-lifetime-color: #4f6b1f; --code-highlight-prelude-color: #2f6f68; --code-highlight-prelude-val-color: #2f6f68;
+  --code-highlight-literal-color: #7a5a1c;
+  --stave-bar-bg: rgba(244,242,236,0.94);
+}
+:root[data-theme="dark"] {
+  --main-background-color: #141412; --main-color: #ecebe5;
+  --sidebar-background-color: #1b1b18; --sidebar-background-color-hover: #23231f; --sidebar-border-color: #34332e;
+  --code-block-background-color: #1f1f1b; --headings-border-bottom-color: #34332e; --border-color: #34332e;
+  --button-background-color: #1b1b18; --right-side-color: #7d7b72;
+  --link-color: #f38a73; --sidebar-link-color: #c9c7be; --sidebar-current-link-background-color: #2a2a25;
+  --mod-link-color: #f38a73; --type-link-color: #e2a4c9; --trait-link-color: #b6a8f0; --assoc-item-link-color: #f38a73;
+  --function-link-color: #e2c27a; --macro-link-color: #a9d39d; --keyword-link-color: #f38a73; --attribute-link-color: #f38a73;
+  --search-input-focused-border-color: #ef6a4f; --search-result-link-focus-background-color: #2a2a25;
+  --search-tab-button-selected-border-top-color: #ef6a4f; --search-tab-button-selected-background: #141412;
+  --search-tab-button-not-selected-background: #1b1b18; --search-tab-button-not-selected-border-top-color: #1b1b18;
+  --stab-background-color: #3a3220; --target-background-color: #3a3220; --target-border-color: #ef6a4f;
+  --code-highlight-kw-color: #f08a6e; --code-highlight-kw-2-color: #e2a4c9; --code-highlight-string-color: #b9cf8a;
+  --code-highlight-number-color: #e2c27a; --code-highlight-comment-color: #8a877c; --code-highlight-doc-comment-color: #a9a79e;
+  --code-highlight-macro-color: #d8a7e0; --code-highlight-attribute-color: #9fb7d4; --code-highlight-self-color: #f08a6e;
+  --code-highlight-lifetime-color: #b9cf8a; --code-highlight-prelude-color: #8fc8bf; --code-highlight-prelude-val-color: #8fc8bf;
+  --code-highlight-literal-color: #e2c27a;
+  --stave-bar-bg: rgba(20,20,18,0.94);
+}
+body.rustdoc, .rustdoc .docblock, .sidebar, .main-heading h1, h2, h3, h4, .search-input { font-family: "IBM Plex Sans", system-ui, sans-serif; }
+.rustdoc code, .rustdoc pre, .item-table dt, .code-header, .sidebar .version, rustdoc-toolbar, .src-line-numbers { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace !important; }
+.docblock pre, .example-wrap pre.rust { border-radius: 6px; }
+.main-heading h1 { letter-spacing: -0.02em; }
+.sidebar-crate h2 a::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; background: #d1432a; vertical-align: 1px; }
+.sidebar .logo-container { display: none; }
+.stave-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 105; height: 40px; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: var(--stave-bar-bg); backdrop-filter: blur(8px); border-bottom: 1px solid var(--sidebar-border-color); font: 500 12.5px "IBM Plex Mono", ui-monospace, monospace; }
+.stave-bar a { color: var(--main-color) !important; text-decoration: none; opacity: 0.75; }
+.stave-bar a:hover { opacity: 1; }
+.stave-bar .wordmark { opacity: 1; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; display: inline-flex; align-items: center; }
+.stave-bar .wordmark::before { content: ""; width: 8px; height: 8px; margin-right: 7px; background: #d1432a; }
+.stave-bar .search-open { margin-left: auto; display: inline-flex; gap: 12px; align-items: center; font: 400 12.5px "IBM Plex Sans", sans-serif; padding: 4px 8px 4px 10px; color: var(--right-side-color); background: var(--sidebar-background-color); border: 1px solid var(--sidebar-border-color); border-radius: 4px; cursor: pointer; }
+.stave-bar .theme-toggle { display: none; }
+.sidebar h3 { font-size: 0.95rem; } .sidebar h2.location { font-size: 1.15rem; } .sidebar-crate h2 { font-size: 1.2rem; }
+.stave-bar kbd { font: 500 10.5px "IBM Plex Mono", monospace; padding: 0 5px; border: 1px solid var(--sidebar-border-color); border-radius: 3px; }
+body.rustdoc { padding-top: 40px; }
+.rustdoc .sidebar { top: 40px; height: calc(100vh - 40px); }
+@media (max-width: 700px) {
+  .stave-bar { position: static; }
+  .stave-bar .nav { display: none; }
+  body.rustdoc { padding-top: 0; }
+  .rustdoc .sidebar { top: var(--topbar-height); height: calc(100vh - var(--topbar-height)); }
+}
+</style>
+<script>
+(function () {
+  // The site root is one level above rustdoc's (the API lives at api/).
+  var vars = document.querySelector('meta[name="rustdoc-vars"]');
+  var root = (vars ? vars.getAttribute("data-root-path") : "./") + "../";
+  window.STAVE_ROOT = root;
+  // Follow the site's theme choice.
+  try {
+    var t = localStorage.getItem("stave-theme");
+    if (t) { localStorage.setItem("rustdoc-use-system-theme", "false"); localStorage.setItem("rustdoc-theme", t); }
+  } catch (e) {}
+  ["assets/site.js"].forEach(function (src) {
+    var s = document.createElement("script");
+    s.defer = true;
+    s.src = root + src;
+    document.head.appendChild(s);
+  });
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".stave-bar a[data-site]").forEach(function (a) { a.href = root + a.getAttribute("data-site"); });
+  });
+})();
+</script>

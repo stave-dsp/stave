@@ -1,0 +1,21 @@
+[package]
+name = "stave-docsite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Builds the documentation site from rustdoc's output and the code itself"
+publish = false
+
+[dependencies]
+serde_json = "1"
+stave-core.workspace = true
+stave-face.workspace = true
+stave-raster.workspace = true
+stave-storybook = { path = "../storybook" }
+stave-ui.workspace = true
+
+[lints]
+workspace = true

@@ -3068,6 +3068,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "stave-docsite"
+version = "0.3.0"
+dependencies = [
+ "serde_json",
+ "stave-core",
+ "stave-face",
+ "stave-raster",
+ "stave-storybook",
+ "stave-ui",
+]
+
+[[package]]
 name = "stave-dsp"
 version = "0.3.0"
 
@@ -3086,6 +3098,24 @@ version = "0.3.0"
 dependencies = [
  "skrifa",
  "stave-raster",
+ "stave-ui",
+]
+
+[[package]]
+name = "stave-guide"
+version = "0.3.0"
+dependencies = [
+ "stave",
+ "stave-core",
+ "stave-dsp",
+ "stave-face",
+ "stave-host",
+ "stave-macros",
+ "stave-measure",
+ "stave-raster",
+ "stave-telemetry",
+ "stave-test",
+ "stave-tilt-vst3",
  "stave-ui",
 ]
 

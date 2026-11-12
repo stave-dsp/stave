@@ -10,7 +10,7 @@
 //! * spread printed so a noisy run discredits itself.
 //!
 //! Debug builds SKIP (opt-level lies about release cost); measure
-//! with `cargo test --release -p <crate> --test perf -- --nocapture`
+//! with `cargo test --release -p <crate> --test checks perf -- --nocapture`
 //! when touching DSP, and update the baselines recorded in each
 //! project's test header when they legitimately move.
 

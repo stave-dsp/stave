@@ -18,6 +18,9 @@ use crate::theme::Theme;
 /// What it draws past the screen's rounded edge is clipped away.
 pub type Draw = fn(&Frame<'_>, Rect, &mut Scene);
 
+/// A recessed screen behind glass for anything live a plugin draws (a
+/// scope, a spectrum): the plugin supplies the picture ([`Draw`]), the
+/// face the bezel, the screen and the glass.
 #[derive(Clone, Debug)]
 pub struct Display {
     pub w: f64,

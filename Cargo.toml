@@ -8,6 +8,7 @@ members = [
     "crates/stave-dsp",
     "crates/stave-face",
     "crates/stave-font",
+    "crates/stave-guide",
     "crates/stave-host",
     "crates/stave-macros",
     "crates/stave-measure",
@@ -23,6 +24,7 @@ members = [
     "crates/stave-vst3",
     "crates/stave-vst3-sys",
 
+    "tools/docsite",
     "tools/stave-bench",
     "tools/stave-play",
     "tools/storybook",

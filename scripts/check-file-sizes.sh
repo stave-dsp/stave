@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# File-size SIGNALS (docs/architecture.md, Conventions) — never failures.
+# File-size SIGNALS (the guide: crates/stave-guide/src/howto/project-layout.md) — never failures.
 # Size is a proxy for mixed concerns; the split decision is human
 # (ratified 2026-07-08: the hard caps + shrink-only ratchet became
 # signals — the ratchet had forced several genuinely good cohesion

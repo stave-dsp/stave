@@ -42,6 +42,9 @@ pub enum Scale {
     None,
 }
 
+/// A rotary knob on a parameter: a lit cap in the theme's style, an
+/// engraved scale, a pointer, and a legend that shows the value while
+/// it is touched.
 #[derive(Copy, Clone, Debug)]
 pub struct Knob {
     pub bind: Bind,

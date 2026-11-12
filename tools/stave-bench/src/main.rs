@@ -1,7 +1,7 @@
 //! stave-bench — the headless host: maximal machine-readable data from
 //! any VST3 plugin. All the work lives in `stave_host::{bench, validate}`;
 //! this binary parses arguments (`cli`), loads, and prints. See `--help` and
-//! docs/host.md.
+//! the guide (crates/stave-guide/src/howto/host-tools.md).
 
 use std::error::Error;
 use std::fs::File;

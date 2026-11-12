@@ -31,8 +31,9 @@ stave-ui-win32.workspace = true
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 stave-ui-x11.workspace = true
 
+[dev-dependencies]
+stave-test.workspace = true
+
 [lints]
 workspace = true
 
-[dev-dependencies]
-stave-test.workspace = true
