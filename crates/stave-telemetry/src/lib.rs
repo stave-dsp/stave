@@ -57,6 +57,7 @@ mod macros;
 mod messages;
 mod scope;
 mod slot;
+mod sync;
 mod tap;
 mod telemetry;
 #[cfg(test)]
@@ -69,3 +70,13 @@ pub use self::messages::Messages;
 pub use self::scope::Scope;
 pub use self::tap::{Tap, TapId, TapReading};
 pub use self::telemetry::Telemetry;
+
+/// The lock-free pieces the loom models (`tests/loom.rs`) check, built on
+/// loom's atomics under `cfg(loom)`: the shipping types, not copies.
+#[cfg(loom)]
+#[doc(hidden)]
+pub mod model {
+    pub use crate::inline_str::InlineStr;
+    pub use crate::messages::Message;
+    pub use crate::slot::{reserve_index, TapSlot};
+}

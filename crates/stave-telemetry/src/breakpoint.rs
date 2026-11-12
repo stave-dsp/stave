@@ -4,6 +4,8 @@
 use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 
 use crate::inline_str::InlineStr;
+use crate::slot::reserve_index;
+use crate::sync::zeroed;
 use crate::{Telemetry, MAX_BREAKPOINTS, NAME_BYTES};
 
 #[repr(C)]
@@ -18,14 +20,16 @@ pub(crate) struct BreakpointSlot {
 }
 
 impl BreakpointSlot {
-    pub(crate) const fn zeroed() -> Self {
-        Self {
-            name: InlineStr::zeroed(),
-            armed: AtomicBool::new(false),
-            mute_on_hit: AtomicBool::new(true),
-            hit_count: AtomicU64::new(0),
-            last_hit_block: AtomicU64::new(0),
-            last_condition_block: AtomicU64::new(0),
+    zeroed! {
+        pub(crate) fn zeroed() -> Self {
+            Self {
+                name: InlineStr::zeroed(),
+                armed: AtomicBool::new(false),
+                mute_on_hit: AtomicBool::new(true),
+                hit_count: AtomicU64::new(0),
+                last_hit_block: AtomicU64::new(0),
+                last_condition_block: AtomicU64::new(0),
+            }
         }
     }
 }
@@ -84,19 +88,12 @@ impl Telemetry {
         {
             return i as u16;
         }
-        loop {
-            let cur = self.breakpoints_used.load(Ordering::Relaxed);
-            if cur as usize >= MAX_BREAKPOINTS {
-                return u16::MAX;
+        match reserve_index(&self.breakpoints_used, MAX_BREAKPOINTS) {
+            Some(i) => {
+                self.breakpoints[i as usize].name.set(name);
+                i
             }
-            if self
-                .breakpoints_used
-                .compare_exchange(cur, cur + 1, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-            {
-                self.breakpoints[cur as usize].name.set(name);
-                return cur;
-            }
+            None => u16::MAX,
         }
     }
 

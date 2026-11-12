@@ -26,6 +26,7 @@
 //! - [`WrapperTaps`] — the I/O peak and CPU taps every wrapper publishes,
 //!   and [`peaks`], the block scan behind them.
 
+mod claim;
 mod erased;
 mod ftz;
 mod gesture;
@@ -36,6 +37,7 @@ mod proofs;
 pub mod state;
 mod taps;
 
+pub use claim::{ClaimCell, ClaimGuard};
 pub use erased::{tail_wire, Erased};
 pub use ftz::ScopedFtz;
 pub use gesture::{GestureEvent, GestureQueue};
@@ -43,8 +45,6 @@ pub use metrics::peaks;
 pub use panic_guard::PanicGuard;
 pub use taps::WrapperTaps;
 
-use core::cell::UnsafeCell;
-use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use std::boxed::Box;
@@ -416,17 +416,14 @@ pub fn sort_param_changes(changes: &mut [crate::process::ParamChange]) {
     }
 }
 
-/// Single-owner cell for [`ProcessorState`]. See module docs for the
-/// protocol; `claim` is the only way in.
-pub struct PluginCell<P: Erased> {
-    state: UnsafeCell<ProcessorState<P>>,
-    claimed: AtomicBool,
-}
+/// Single-owner cell for [`ProcessorState`]: a [`ClaimCell`]. See module
+/// docs for the protocol; `claim` is the only way in.
+pub struct PluginCell<P: Erased>(ClaimCell<ProcessorState<P>>);
 
-// SAFETY: access to `state` is serialized by the `claimed` token —
+// SAFETY: access to the state is serialized by the `ClaimCell` token —
 // `claim` hands out at most one `ProcessorGuard` at a time, and the
 // Acquire/Release pair on the token orders one owner's writes before the
-// next owner's reads.
+// next owner's reads (the loom model checks the shipping `ClaimCell`).
 unsafe impl<P: Erased> Sync for PluginCell<P> {}
 // SAFETY: `P: Send`; the only non-`Send` field is `ptrs`, whose pointers
 // are rewritten every block before use (host channels for that call, or
@@ -436,10 +433,7 @@ unsafe impl<P: Erased> Send for PluginCell<P> {}
 
 impl<P: Erased> PluginCell<P> {
     pub fn new(plugin: P) -> Self {
-        Self {
-            state: UnsafeCell::new(ProcessorState::new(plugin)),
-            claimed: AtomicBool::new(false),
-        }
+        Self(ClaimCell::new(ProcessorState::new(plugin)))
     }
 
     /// Claim exclusive access. `None` means another thread currently
@@ -479,39 +473,12 @@ impl<P: Erased> PluginCell<P> {
     }
 
     fn try_claim_quiet(&self) -> Option<ProcessorGuard<'_, P>> {
-        self.claimed
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .ok()
-            .map(|_| ProcessorGuard { cell: self })
+        self.0.try_claim()
     }
 }
 
 /// Exclusive access to the processor state; released on drop.
-pub struct ProcessorGuard<'a, P: Erased> {
-    cell: &'a PluginCell<P>,
-}
-
-impl<P: Erased> Deref for ProcessorGuard<'_, P> {
-    type Target = ProcessorState<P>;
-    fn deref(&self) -> &ProcessorState<P> {
-        // SAFETY: the claim token guarantees this guard is the sole
-        // accessor for its lifetime.
-        unsafe { &*self.cell.state.get() }
-    }
-}
-
-impl<P: Erased> DerefMut for ProcessorGuard<'_, P> {
-    fn deref_mut(&mut self) -> &mut ProcessorState<P> {
-        // SAFETY: as above.
-        unsafe { &mut *self.cell.state.get() }
-    }
-}
-
-impl<P: Erased> Drop for ProcessorGuard<'_, P> {
-    fn drop(&mut self) {
-        self.cell.claimed.store(false, Ordering::Release);
-    }
-}
+pub type ProcessorGuard<'a, P> = ClaimGuard<'a, ProcessorState<P>>;
 
 /// Framework-owned click-free bypass: a
 /// latency-matched dry path with a 10 ms equal-power crossfade,
@@ -719,10 +686,7 @@ mod tests {
     fn claim_is_exclusive_and_released_on_drop() {
         let cell = PluginCell::new(NullPlugin::new(&Telemetry::new()));
         let g = cell.claim().expect("first claim");
-        assert!(
-            cell.claimed.load(Ordering::Relaxed),
-            "token held while guard lives"
-        );
+        assert!(cell.0.try_claim().is_none(), "token held while guard lives");
         drop(g);
         assert!(cell.claim().is_some(), "claim available again after drop");
     }

@@ -5,6 +5,8 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
+use crate::sync::zeroed_array;
+
 use crate::breakpoint::BreakpointSlot;
 use crate::capture::CaptureFrame;
 use crate::slot::TapSlot;
@@ -21,8 +23,9 @@ const PLUGIN_CAPTURE: u8 = 1;
 #[repr(C)]
 pub struct Telemetry {
     abi_version: u32,
-    pub(crate) taps_used: AtomicU16,
-    pub(crate) breakpoints_used: AtomicU16,
+    /// Slots reserved ([`reserve_index`](crate::slot::reserve_index)).
+    pub(crate) taps_used: crate::sync::AtomicU16,
+    pub(crate) breakpoints_used: crate::sync::AtomicU16,
     pub(crate) paused: AtomicBool,
     pub(crate) block_counter: AtomicU64,
     pub(crate) taps: [TapSlot; MAX_TAPS],
@@ -48,12 +51,12 @@ impl Telemetry {
     pub fn new() -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             abi_version: ABI_VERSION,
-            taps_used: AtomicU16::new(0),
-            breakpoints_used: AtomicU16::new(0),
+            taps_used: crate::sync::AtomicU16::new(0),
+            breakpoints_used: crate::sync::AtomicU16::new(0),
             paused: AtomicBool::new(false),
             block_counter: AtomicU64::new(0),
-            taps: [const { TapSlot::zeroed() }; MAX_TAPS],
-            breakpoints: [const { BreakpointSlot::zeroed() }; MAX_BREAKPOINTS],
+            taps: zeroed_array![TapSlot; MAX_TAPS],
+            breakpoints: zeroed_array![BreakpointSlot; MAX_BREAKPOINTS],
             curve_used: AtomicU16::new(0),
             curve: [const { AtomicU32::new(0) }; CURVE_POINTS],
             capture: CaptureFrame::zeroed(),
