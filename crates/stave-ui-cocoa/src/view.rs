@@ -1,21 +1,22 @@
-//! [`FaceView`]: a `stave_face::Face` in one flipped NSView the size of
-//! the face. It renders the face runtime's canvas, forwards the pointer
-//! (down, drag, up, wheel, hover, exit) with its modifiers and click
-//! count, sets the cursor the runtime asks for, and repaints from its own
-//! timer only when the runtime says something changed. Everything the
-//! face reads and writes goes through its [`Controller`]; the view is a
-//! window, a pointer, a blit and text.
+//! [`FaceView`]: a `stave_face::Face` in one NSView the size of the face.
+//! It renders the face runtime's canvas, forwards the pointer (down,
+//! drag, up, wheel, hover, exit) with its modifiers and click count, sets
+//! the cursor the runtime asks for, and repaints from its own timer only
+//! when the runtime says something changed. Everything the face reads and
+//! writes goes through its [`Controller`]; the view is a window, a
+//! pointer, a blit and text.
 //!
 //! One root reaches the face from Objective-C: the NSView's `face` ivar,
 //! a counted reference to the view's [`Shared`] state. Every callback
 //! takes its own count for the duration of the call, so a callback that
 //! (through the host) closes the editor never frees what it is using; a
 //! callback that arrives while another is running (a nested event loop)
-//! is dropped.
+//! is dropped; a face that panics goes still, and the host lives.
 
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::ffi::c_void;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 extern crate alloc;
@@ -26,7 +27,11 @@ use stave_face::{Cursor, Face, Mods, Runtime};
 use stave_raster::Canvas;
 use stave_ui::scene::{pt, Pt};
 
-use crate::*;
+use crate::cf::{CGPoint, CGRect, CGSize, CfRef};
+use crate::objc::{
+    class, define_class, guard, ivar_offset, send, sel, Args, ClassRef, MainThread, Obj, ObjcBool, Ret, Retained, Sel,
+    YES,
+};
 
 /// What a key press does: return a face to show instead (the view, and
 /// its window, resize to it), or `None` to keep the current one.
@@ -37,7 +42,7 @@ pub type OnKey = Box<dyn FnMut(u16) -> Option<Face>>;
 /// dropping it (or [`detach`](Self::detach)) removes the view.
 ///
 /// Not `Send`: a view lives and dies on the thread that attaches it,
-/// which `attach` requires to be the main thread.
+/// which must be the main thread.
 pub struct FaceView {
     shared: Rc<Shared>,
     mount: Option<Mount>,
@@ -48,6 +53,8 @@ pub struct FaceView {
 struct Shared {
     controller: Box<dyn Controller>,
     ui: RefCell<Ui>,
+    /// Set when face code panicked: the view stops calling it.
+    broken: Cell<bool>,
 }
 
 struct Ui {
@@ -64,12 +71,6 @@ impl Ui {
     }
 }
 
-/// The NSView in its parent, and its repaint timer.
-struct Mount {
-    view: Id,
-    timer: CFRunLoopTimerRef,
-}
-
 impl FaceView {
     /// `face` over `controller`. Touches no Cocoa until `attach`.
     pub fn new(face: Face, controller: Box<dyn Controller>) -> Self {
@@ -82,13 +83,15 @@ impl FaceView {
                     opened: Instant::now(),
                     on_key: None,
                 }),
+                broken: Cell::new(false),
             }),
             mount: None,
         }
     }
 
     /// Hand every key press to `on_key` (a stand-alone window's keys; a
-    /// plugin window's belong to the host).
+    /// plugin window's belong to the host, so without one they go on to
+    /// the next responder).
     pub fn on_key(&mut self, on_key: impl FnMut(u16) -> Option<Face> + 'static) {
         self.shared.ui.borrow_mut().on_key = Some(Box::new(on_key));
     }
@@ -103,37 +106,40 @@ impl FaceView {
         &*self.shared.controller
     }
 
-    /// The NSView, while attached.
-    pub fn ns_view(&self) -> Option<*mut c_void> {
-        self.mount.as_ref().map(|m| m.view)
-    }
-
     /// Show the face in `parent` (replacing any earlier attachment). A
     /// null parent shows nothing.
     ///
+    /// # Panics
+    /// Off the main thread.
+    ///
     /// # Safety
-    /// Main thread; `parent` is null or a live NSView.
+    /// `parent` is null or a live NSView.
     pub unsafe fn attach(&mut self, parent: *mut c_void) {
         self.detach();
-        if parent.is_null() {
+        let Some(parent) = Obj::from_ptr(parent) else {
             return;
-        }
+        };
+        let main = MainThread::new().expect("a face view is attached on the main thread");
         let size = {
             let mut ui = self.shared.ui.borrow_mut();
             ui.opened = Instant::now();
             ui.runtime.size()
         };
-        // SAFETY: this function's contract.
-        self.mount = Some(unsafe { Mount::new(parent, &self.shared, size) });
+        // SAFETY: this function's contract; on the main thread.
+        self.mount = Some(unsafe { Mount::new(main, parent, &self.shared, size) });
     }
 
     /// Remove the view from its parent and stop its timer.
     pub fn detach(&mut self) {
         if let Some(mount) = self.mount.take() {
-            // SAFETY: a mount exists only after `attach`, on the main
-            // thread, and `FaceView` is not `Send`: this is that thread.
-            unsafe { mount.remove() };
+            mount.remove();
         }
+    }
+
+    /// The NSView, while attached (a stand-alone window makes it first
+    /// responder).
+    pub(crate) fn ns_view(&self) -> Option<Obj> {
+        self.mount.as_ref().map(|m| m.view.get())
     }
 }
 
@@ -143,29 +149,74 @@ impl Drop for FaceView {
     }
 }
 
+// --------------------------------------------------------- the mount
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFRunLoopGetCurrent() -> *mut c_void;
+    fn CFRunLoopAddTimer(rl: *mut c_void, timer: *mut c_void, mode: *const c_void);
+    fn CFRunLoopTimerCreate(
+        allocator: *const c_void,
+        fire_date: f64,
+        interval: f64,
+        flags: u64,
+        order: isize,
+        callout: extern "C" fn(timer: *mut c_void, info: *mut c_void),
+        context: *mut TimerContext,
+    ) -> *mut c_void;
+    fn CFRunLoopTimerInvalidate(timer: *mut c_void);
+    fn CFAbsoluteTimeGetCurrent() -> f64;
+    static kCFRunLoopCommonModes: *const c_void;
+}
+
+/// `CFRunLoopTimerContext`.
+#[repr(C)]
+struct TimerContext {
+    version: isize,
+    info: *mut c_void,
+    retain: Option<extern "C" fn(*const c_void) -> *const c_void>,
+    release: Option<extern "C" fn(*const c_void)>,
+    copy_description: Option<extern "C" fn(*const c_void) -> *const c_void>,
+}
+
+/// The NSView in its parent, and its repaint timer.
+struct Mount {
+    view: Retained,
+    timer: CfRef,
+}
+
 impl Mount {
     /// # Safety
-    /// Main thread; `parent` is a live NSView.
-    unsafe fn new(parent: Id, shared: &Rc<Shared>, size: (f64, f64)) -> Self {
-        unsafe {
-            let raw = msg_id(face_view_class() as Id, sel(c"alloc"));
-            let rect = CGRect {
-                origin: CGPoint { x: 0.0, y: 0.0 },
-                size: CGSize { width: size.0, height: size.1 },
-            };
-            let view = msg_id_rect(raw, sel(c"initWithFrame:"), rect);
-            set_shared(view, Rc::into_raw(Rc::clone(shared)));
-            install_tracking(view);
-            msg_void_id(parent, sel(c"addSubview:"), view);
-            let mut context = CFRunLoopTimerContext {
-                version: 0,
-                info: view,
-                retain: None,
-                release: None,
-                copy_description: None,
-            };
-            let interval = 1.0 / 60.0;
-            let timer = CFRunLoopTimerCreate(
+    /// `parent` is a live NSView.
+    unsafe fn new(_main: MainThread, parent: Obj, shared: &Rc<Shared>, (w, h): (f64, f64)) -> Self {
+        let class = face_view_class();
+        // SAFETY: `alloc` and `initWithFrame:` on an NSView subclass, on
+        // the main thread.
+        let view = unsafe {
+            let raw: Option<Obj> = send(class.class.0, sel!(c"alloc"), ());
+            let view: Option<Obj> = send(raw.expect("alloc"), sel!(c"initWithFrame:"), (CGRect::new(0.0, 0.0, w, h),));
+            Retained::from_owned(view.expect("an NSView initializes"))
+        };
+        // SAFETY: a fresh instance of the face view class; the reference
+        // the ivar holds is taken back in `remove`.
+        unsafe { *face_slot(view.get()) = Rc::into_raw(Rc::clone(shared)) };
+        // SAFETY: a live view, on the main thread.
+        unsafe { track_pointer(view.get()) };
+        // SAFETY: `parent` is a live NSView (this function's contract).
+        unsafe { send::<_, ()>(parent, sel!(c"addSubview:"), (view.get(),)) };
+        let mut context = TimerContext {
+            version: 0,
+            info: view.get().as_ptr(),
+            retain: None,
+            release: None,
+            copy_description: None,
+        };
+        let interval = 1.0 / 60.0;
+        // SAFETY: the context is copied by the call; `info` (the view)
+        // outlives the timer, which `remove` invalidates before the view
+        // is released. Added to this (the main) thread's run loop.
+        let timer = unsafe {
+            let t = CFRunLoopTimerCreate(
                 core::ptr::null(),
                 CFAbsoluteTimeGetCurrent() + interval,
                 interval,
@@ -174,323 +225,415 @@ impl Mount {
                 tick,
                 &mut context,
             );
-            CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopCommonModes);
-            Mount { view, timer }
-        }
+            let timer = CfRef::from_create(t).expect("a run loop timer");
+            CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer.as_ptr(), kCFRunLoopCommonModes);
+            timer
+        };
+        Mount { view, timer }
     }
 
+    /// On the main thread: `Mount` is made there (`new` takes the token)
+    /// and is not `Send`.
+    fn remove(self) {
+        // SAFETY: our timer, on the thread whose run loop holds it.
+        unsafe { CFRunLoopTimerInvalidate(self.timer.as_ptr()) };
+        // SAFETY: the view is a live instance of the class; the slot holds
+        // the reference `new` gave it (or null).
+        let shared = unsafe { core::mem::replace(&mut *face_slot(self.view.get()), core::ptr::null()) };
+        // SAFETY: a live view in its parent, on the main thread.
+        unsafe { send::<_, ()>(self.view.get(), sel!(c"removeFromSuperview"), ()) };
+        drop(self.view);
+        drop(self.timer);
+        if !shared.is_null() {
+            // SAFETY: the reference `new` leaked into the slot.
+            drop(unsafe { Rc::from_raw(shared) });
+        }
+    }
+}
+
+extern "C" fn tick(_timer: *mut c_void, info: *mut c_void) {
+    guard((), || {
+        // SAFETY: `info` is the mount's view, live until the timer is
+        // invalidated; run-loop timers fire on the main thread.
+        let Some(view) = Obj::from_ptr(info).map(|v| unsafe { View::new(v) }) else {
+            return;
+        };
+        let dirty = view.with_ui(|shared, ui| ui.runtime.needs_paint(&*shared.controller, ui.time()));
+        if dirty == Some(true) {
+            view.redraw();
+        }
+    });
+}
+
+// ------------------------------------------------------------ the class
+
+/// The face view class, registered once per binary.
+struct FaceViewClass {
+    class: ClassRef,
+    /// Byte offset of the `face` ivar: `*const Shared`, or null.
+    face: isize,
+}
+
+fn face_view_class() -> &'static FaceViewClass {
+    static CLASS: OnceLock<FaceViewClass> = OnceLock::new();
+    CLASS.get_or_init(|| {
+        let class = define_class("StaveFaceView", c"NSView", |c| {
+            c.ivar(c"face");
+            c.method(sel!(c"acceptsFirstMouse:"), yes_for_event as extern "C" fn(Obj, Sel, Option<Obj>) -> ObjcBool);
+            c.method(sel!(c"acceptsFirstResponder"), yes as extern "C" fn(Obj, Sel) -> ObjcBool);
+            c.method(sel!(c"drawRect:"), draw_rect as extern "C" fn(Obj, Sel, CGRect));
+            type OnEvent = extern "C" fn(Obj, Sel, Option<Obj>);
+            c.method(sel!(c"mouseDown:"), mouse_down as OnEvent);
+            c.method(sel!(c"mouseDragged:"), mouse_dragged as OnEvent);
+            c.method(sel!(c"mouseUp:"), mouse_up as OnEvent);
+            c.method(sel!(c"mouseMoved:"), mouse_moved as OnEvent);
+            c.method(sel!(c"mouseExited:"), mouse_exited as OnEvent);
+            c.method(sel!(c"scrollWheel:"), scroll_wheel as OnEvent);
+            c.method(sel!(c"keyDown:"), key_down as OnEvent);
+        });
+        FaceViewClass {
+            class: ClassRef(class),
+            face: ivar_offset(class, c"face"),
+        }
+    })
+}
+
+/// The `face` ivar of a face view.
+///
+/// # Safety
+/// `view` is a live instance of the face view class.
+unsafe fn face_slot(view: Obj) -> *mut *const Shared {
+    // SAFETY: the ivar lies inside the instance (this function's contract).
+    unsafe { view.as_ptr().byte_offset(face_view_class().face).cast() }
+}
+
+/// The face view a method was called on: live for the call, on the main
+/// thread.
+#[derive(Copy, Clone)]
+struct View(Obj, MainThread);
+
+/// The NSEvent a method was called with, live for the call.
+#[derive(Copy, Clone)]
+struct Event(Obj);
+
+impl View {
     /// # Safety
-    /// Main thread.
-    unsafe fn remove(self) {
-        unsafe {
-            CFRunLoopTimerInvalidate(self.timer);
-            CFRelease(self.timer.cast_const());
-            let shared = take_shared(self.view);
-            msg_id(self.view, sel(c"removeFromSuperview"));
-            msg_id(self.view, sel(c"release"));
-            drop(shared);
-        }
+    /// `this` is a live instance of the face view class, used on the main
+    /// thread while it is live (`self` of an AppKit callback is).
+    unsafe fn new(this: Obj) -> Self {
+        // SAFETY: this function's contract.
+        View(this, unsafe { MainThread::assume() })
     }
-}
 
-unsafe extern "C" fn tick(_timer: CFRunLoopTimerRef, info: *mut c_void) {
-    let view = info as Id;
-    let dirty = unsafe { with_ui(view, |shared, ui| ui.runtime.needs_paint(&*shared.controller, ui.time())) };
-    if dirty == Some(true) {
-        unsafe { redraw(view) };
+    /// A message to the view.
+    fn send<A: Args, R: Ret>(self, sel: Sel, args: A) -> R {
+        // SAFETY: a live NSView on the main thread; every call below
+        // names an NSView/NSResponder method with its real signature.
+        unsafe { send(self.0, sel, args) }
     }
-}
 
-// ------------------------------------------------------------- the NSView
-
-unsafe fn face_ivar(view: Id) -> *mut c_void {
-    unsafe { class_getInstanceVariable(object_getClass(view), c"face".as_ptr()) }
-}
-
-unsafe fn set_shared(view: Id, shared: *const Shared) {
-    unsafe { object_setIvar(view, face_ivar(view), shared.cast_mut().cast()) };
-}
-
-/// Clear the view's reference to its state, returning it.
-unsafe fn take_shared(view: Id) -> Option<Rc<Shared>> {
-    unsafe {
-        let p = object_getIvar(view, face_ivar(view)) as *const Shared;
-        set_shared(view, core::ptr::null());
-        (!p.is_null()).then(|| Rc::from_raw(p))
-    }
-}
-
-/// The view's state, counted for the caller: `None` once detached.
-unsafe fn shared_of(view: Id) -> Option<Rc<Shared>> {
-    unsafe {
-        let p = object_getIvar(view, face_ivar(view)) as *const Shared;
+    /// The view's state, counted for the caller: `None` once detached.
+    fn shared(self) -> Option<Rc<Shared>> {
+        // SAFETY: a live face view (constructor contract).
+        let p = unsafe { *face_slot(self.0) };
         if p.is_null() {
             return None;
         }
-        Rc::increment_strong_count(p);
-        Some(Rc::from_raw(p))
-    }
-}
-
-/// Run `f` on the face behind `view`: `None` once detached, or when
-/// another callback is running (a reentrant event is dropped).
-unsafe fn with_ui<R>(view: Id, f: impl FnOnce(&Shared, &mut Ui) -> R) -> Option<R> {
-    let shared = unsafe { shared_of(view) }?;
-    let mut ui = shared.ui.try_borrow_mut().ok()?;
-    Some(f(&shared, &mut ui))
-}
-
-unsafe fn point_in(view: Id, event: Id) -> Pt {
-    unsafe {
-        let loc: unsafe extern "C" fn(Id, Sel) -> CGPoint = core::mem::transmute(objc_msgSend as *const ());
-        let win = loc(event, sel(c"locationInWindow"));
-        let conv: unsafe extern "C" fn(Id, Sel, CGPoint, Id) -> CGPoint = core::mem::transmute(objc_msgSend as *const ());
-        let p = conv(view, sel(c"convertPoint:fromView:"), win, core::ptr::null_mut());
-        // The view is y-up (so the canvas blits upright); faces are y-down.
-        let bounds: unsafe extern "C" fn(Id, Sel) -> CGRect = core::mem::transmute(objc_msgSend as *const ());
-        let h = bounds(view, sel(c"bounds")).size.height;
-        pt(p.x, h - p.y)
-    }
-}
-
-unsafe fn mods_of(event: Id) -> Mods {
-    let flags: u64 = unsafe {
-        let f: unsafe extern "C" fn(Id, Sel) -> u64 = core::mem::transmute(objc_msgSend as *const ());
-        f(event, sel(c"modifierFlags"))
-    };
-    const SHIFT: u64 = 1 << 17;
-    const OPTION: u64 = 1 << 19;
-    const COMMAND: u64 = 1 << 20;
-    Mods {
-        fine: flags & (SHIFT | COMMAND) != 0,
-        reset: flags & OPTION != 0,
-    }
-}
-
-unsafe fn set_cursor(c: Cursor) {
-    let name: &core::ffi::CStr = match c {
-        Cursor::Arrow => c"arrowCursor",
-        Cursor::Grab => c"openHandCursor",
-        Cursor::Grabbing => c"closedHandCursor",
-        Cursor::Point => c"pointingHandCursor",
-    };
-    unsafe {
-        let cur = msg_id(class(c"NSCursor") as Id, sel(name));
-        msg_id(cur, sel(c"set"));
-    }
-}
-
-unsafe fn redraw(view: Id) {
-    unsafe { msg_void_int(view, sel(c"setNeedsDisplay:"), 1) };
-}
-
-unsafe extern "C" fn draw_rect(this: Id, _cmd: Sel, _dirty: CGRect) {
-    let ctx: *mut c_void = unsafe {
-        let cur: Id = msg_id(class(c"NSGraphicsContext") as Id, sel(c"currentContext"));
-        if cur.is_null() {
-            return;
+        // SAFETY: a non-null slot holds the mount's counted reference, so
+        // the count is at least one while we add ours.
+        unsafe {
+            Rc::increment_strong_count(p);
+            Some(Rc::from_raw(p))
         }
-        let f: unsafe extern "C" fn(Id, Sel) -> *mut c_void = core::mem::transmute(objc_msgSend as *const ());
-        f(cur, sel(c"CGContext"))
-    };
-    if ctx.is_null() {
-        return;
     }
-    let scale = unsafe { backing_scale(this) };
-    unsafe {
-        with_ui(this, |shared, ui| {
-            let t = ui.time();
-            let (w, h) = ui.runtime.size();
-            let mut text = crate::offscreen::CoreText::new(scale);
-            let Ui { runtime, canvas, .. } = ui;
-            runtime.render(&*shared.controller, scale, t, canvas, &mut text);
-            crate::offscreen::draw_canvas(ctx, canvas, w, h);
-        });
-    }
-}
 
-unsafe fn backing_scale(view: Id) -> f64 {
-    unsafe {
-        let win: Id = msg_id(view, sel(c"window"));
-        if win.is_null() {
+    /// Run `f` on the face: `None` once detached, while another callback
+    /// is running (a reentrant event is dropped), or after face code
+    /// panicked.
+    fn with_ui<R>(self, f: impl FnOnce(&Shared, &mut Ui) -> R) -> Option<R> {
+        let shared = self.shared()?;
+        if shared.broken.get() {
+            return None;
+        }
+        let mut ui = shared.ui.try_borrow_mut().ok()?;
+        let result = guard(None, || Some(f(&shared, &mut ui)));
+        shared.broken.set(result.is_none());
+        result
+    }
+
+    fn redraw(self) {
+        self.send::<_, ()>(sel!(c"setNeedsDisplay:"), (true,));
+    }
+
+    fn window(self) -> Option<Obj> {
+        self.send(sel!(c"window"), ())
+    }
+
+    fn backing_scale(self) -> f64 {
+        let Some(window) = self.window() else {
             return 2.0;
-        }
-        let f: unsafe extern "C" fn(Id, Sel) -> f64 = core::mem::transmute(objc_msgSend as *const ());
-        let s = f(win, sel(c"backingScaleFactor"));
+        };
+        // SAFETY: the view's live window, on the main thread.
+        let s: f64 = unsafe { send(window, sel!(c"backingScaleFactor"), ()) };
         if s.is_finite() && s >= 1.0 { s } else { 2.0 }
     }
-}
 
-unsafe extern "C" fn mouse_down(this: Id, _cmd: Sel, event: Id) {
-    let (p, mods) = unsafe { (point_in(this, event), mods_of(event)) };
-    let clicks: i64 = unsafe {
-        let f: unsafe extern "C" fn(Id, Sel) -> i64 = core::mem::transmute(objc_msgSend as *const ());
-        f(event, sel(c"clickCount"))
-    };
-    unsafe {
-        let win = msg_id(this, sel(c"window"));
-        if !win.is_null() {
-            msg_void_id(win, sel(c"makeFirstResponder:"), this);
-        }
-        with_ui(this, |shared, ui| {
-            ui.runtime.pointer_down(&*shared.controller, p, mods, clicks.max(1) as u32);
-            set_cursor(ui.runtime.cursor());
-        });
-        redraw(this);
+    /// Where `event` happened, in face coordinates (y down).
+    fn point(self, event: Event) -> Pt {
+        let p: CGPoint = self.send(sel!(c"convertPoint:fromView:"), (event.location(), None::<Obj>));
+        // The view is y-up (so the canvas blits upright); faces are y-down.
+        let bounds: CGRect = self.send(sel!(c"bounds"), ());
+        pt(p.x, bounds.size.height - p.y)
     }
-}
 
-unsafe extern "C" fn mouse_dragged(this: Id, _cmd: Sel, event: Id) {
-    let (p, mods) = unsafe { (point_in(this, event), mods_of(event)) };
-    unsafe {
-        with_ui(this, |shared, ui| ui.runtime.pointer_drag(&*shared.controller, p, mods));
-        redraw(this);
-    }
-}
-
-unsafe extern "C" fn mouse_up(this: Id, _cmd: Sel, event: Id) {
-    let p = unsafe { point_in(this, event) };
-    unsafe {
-        with_ui(this, |shared, ui| {
-            ui.runtime.pointer_up(&*shared.controller);
-            ui.runtime.pointer_move(&*shared.controller, p);
-            set_cursor(ui.runtime.cursor());
-        });
-        redraw(this);
-    }
-}
-
-unsafe extern "C" fn mouse_moved(this: Id, _cmd: Sel, event: Id) {
-    let p = unsafe { point_in(this, event) };
-    let changed = unsafe {
-        with_ui(this, |shared, ui| {
-            let changed = ui.runtime.pointer_move(&*shared.controller, p);
-            set_cursor(ui.runtime.cursor());
-            changed
-        })
-    };
-    if changed == Some(true) {
-        unsafe { redraw(this) };
-    }
-}
-
-unsafe extern "C" fn mouse_exited(this: Id, _cmd: Sel, _event: Id) {
-    unsafe {
-        with_ui(this, |_, ui| ui.runtime.pointer_exit());
-        set_cursor(Cursor::Arrow);
-        redraw(this);
-    }
-}
-
-unsafe extern "C" fn scroll_wheel(this: Id, _cmd: Sel, event: Id) {
-    let (p, mods) = unsafe { (point_in(this, event), mods_of(event)) };
-    let (dy, precise) = unsafe {
-        let f: unsafe extern "C" fn(Id, Sel) -> f64 = core::mem::transmute(objc_msgSend as *const ());
-        let b: unsafe extern "C" fn(Id, Sel) -> bool = core::mem::transmute(objc_msgSend as *const ());
-        (f(event, sel(c"scrollingDeltaY")), b(event, sel(c"hasPreciseScrollingDeltas")))
-    };
-    // Trackpads report points; a wheel notch is about ten of them.
-    let lines = if precise { dy / 10.0 } else { dy };
-    if lines == 0.0 {
-        return;
-    }
-    unsafe {
-        with_ui(this, |shared, ui| ui.runtime.wheel(&*shared.controller, p, lines, mods));
-        redraw(this);
-    }
-}
-
-unsafe extern "C" fn key_down(this: Id, _cmd: Sel, event: Id) {
-    let code: u16 = unsafe {
-        let f: unsafe extern "C" fn(Id, Sel) -> u16 = core::mem::transmute(objc_msgSend as *const ());
-        f(event, sel(c"keyCode"))
-    };
-    let resized = unsafe {
-        with_ui(this, |_, ui| {
-            let face = ui.on_key.as_mut().and_then(|on_key| on_key(code))?;
-            ui.runtime = Runtime::new(face);
-            ui.opened = Instant::now();
-            Some(ui.runtime.size())
-        })
-    };
-    if let Some(Some(size)) = resized {
-        unsafe {
-            let set: unsafe extern "C" fn(Id, Sel, CGSize) = core::mem::transmute(objc_msgSend as *const ());
-            set(this, sel(c"setFrameSize:"), CGSize { width: size.0, height: size.1 });
-            let win = msg_id(this, sel(c"window"));
-            if !win.is_null() {
-                set(win, sel(c"setContentSize:"), CGSize { width: size.0, height: size.1 });
-            }
+    fn focus(self) {
+        if let Some(window) = self.window() {
+            // SAFETY: the view's live window, on the main thread.
+            unsafe { send::<_, bool>(window, sel!(c"makeFirstResponder:"), (self.0,)) };
         }
     }
-    unsafe { redraw(this) };
+
+    /// Resize the view (and its window's content) to `size` points.
+    fn resize(self, (w, h): (f64, f64)) {
+        let size = CGSize { width: w, height: h };
+        self.send::<_, ()>(sel!(c"setFrameSize:"), (size,));
+        if let Some(window) = self.window() {
+            // SAFETY: the view's live window, on the main thread.
+            unsafe { send::<_, ()>(window, sel!(c"setContentSize:"), (size,)) };
+        }
+    }
 }
 
-unsafe extern "C" fn yes(_this: Id, _cmd: Sel) -> bool {
-    true
+impl Event {
+    /// # Safety
+    /// `event` is null or the live NSEvent of the current callback.
+    unsafe fn new(event: Option<Obj>) -> Option<Self> {
+        event.map(Event)
+    }
+
+    fn send<R: Ret>(self, sel: Sel) -> R {
+        // SAFETY: a live NSEvent (constructor contract); every call below
+        // names an NSEvent property with its real type.
+        unsafe { send(self.0, sel, ()) }
+    }
+
+    fn location(self) -> CGPoint {
+        self.send(sel!(c"locationInWindow"))
+    }
+
+    fn mods(self) -> Mods {
+        let flags: u64 = self.send(sel!(c"modifierFlags"));
+        const SHIFT: u64 = 1 << 17;
+        const OPTION: u64 = 1 << 19;
+        const COMMAND: u64 = 1 << 20;
+        Mods {
+            fine: flags & (SHIFT | COMMAND) != 0,
+            reset: flags & OPTION != 0,
+        }
+    }
+
+    fn clicks(self) -> u32 {
+        let n: i64 = self.send(sel!(c"clickCount"));
+        n.clamp(1, i64::from(u32::MAX)) as u32
+    }
+
+    fn key_code(self) -> u16 {
+        self.send(sel!(c"keyCode"))
+    }
+
+    /// Wheel travel in lines (positive = up).
+    fn scroll_lines(self) -> f64 {
+        let dy: f64 = self.send(sel!(c"scrollingDeltaY"));
+        let precise: bool = self.send(sel!(c"hasPreciseScrollingDeltas"));
+        // Trackpads report points; a wheel notch is about ten of them.
+        if precise { dy / 10.0 } else { dy }
+    }
 }
 
-unsafe extern "C" fn yes_event(_this: Id, _cmd: Sel, _e: Id) -> bool {
-    true
+fn set_cursor(_main: MainThread, c: Cursor) {
+    let shape = match c {
+        Cursor::Arrow => sel!(c"arrowCursor"),
+        Cursor::Grab => sel!(c"openHandCursor"),
+        Cursor::Grabbing => sel!(c"closedHandCursor"),
+        Cursor::Point => sel!(c"pointingHandCursor"),
+    };
+    // SAFETY: NSCursor's class properties return a shared cursor, and
+    // `set` takes nothing; on the main thread (the token).
+    unsafe {
+        let cursor: Option<Obj> = send(class(c"NSCursor"), shape, ());
+        if let Some(cursor) = cursor {
+            send::<_, ()>(cursor, sel!(c"set"), ());
+        }
+    }
 }
 
 /// Track the pointer anywhere over the view, active even when the host
 /// window is not key (plugin windows often are not).
-unsafe fn install_tracking(view: Id) {
+///
+/// # Safety
+/// `view` is a live NSView, on the main thread.
+unsafe fn track_pointer(view: Obj) {
     const MOUSE_ENTERED_EXITED: u64 = 0x01;
     const MOUSE_MOVED: u64 = 0x02;
     const ACTIVE_ALWAYS: u64 = 0x80;
     const IN_VISIBLE_RECT: u64 = 0x200;
+    let options = MOUSE_ENTERED_EXITED | MOUSE_MOVED | ACTIVE_ALWAYS | IN_VISIBLE_RECT;
+    // SAFETY: `alloc` + `initWithRect:options:owner:userInfo:` with their
+    // real types; `addTrackingArea:` retains the area, so ours is
+    // released when `area` drops.
     unsafe {
-        let raw = msg_id(class(c"NSTrackingArea") as Id, sel(c"alloc"));
-        let init: unsafe extern "C" fn(Id, Sel, CGRect, u64, Id, Id) -> Id =
-            core::mem::transmute(objc_msgSend as *const ());
-        let zero = CGRect {
-            origin: CGPoint { x: 0.0, y: 0.0 },
-            size: CGSize { width: 0.0, height: 0.0 },
-        };
-        let area = init(
-            raw,
-            sel(c"initWithRect:options:owner:userInfo:"),
-            zero,
-            MOUSE_ENTERED_EXITED | MOUSE_MOVED | ACTIVE_ALWAYS | IN_VISIBLE_RECT,
-            view,
-            core::ptr::null_mut(),
+        let raw: Option<Obj> = send(class(c"NSTrackingArea"), sel!(c"alloc"), ());
+        let area: Option<Obj> = send(
+            raw.expect("alloc"),
+            sel!(c"initWithRect:options:owner:userInfo:"),
+            (CGRect::new(0.0, 0.0, 0.0, 0.0), options, view, None::<Obj>),
         );
-        msg_void_id(view, sel(c"addTrackingArea:"), area);
-        msg_id(area, sel(c"release"));
+        let area = Retained::from_owned(area.expect("a tracking area initializes"));
+        send::<_, ()>(view, sel!(c"addTrackingArea:"), (area.get(),));
     }
 }
 
-unsafe fn face_view_class() -> Class {
-    unsafe {
-        let existing = objc_lookUpClass(c"StaveFaceView".as_ptr());
-        if !existing.is_null() {
-            return existing;
+// ------------------------------------------------------- the methods
+
+/// The body of a view method: the view and its event, inside the panic
+/// boundary.
+fn method(this: Obj, event: Option<Obj>, body: impl FnOnce(View, Event)) {
+    guard((), || {
+        // SAFETY: AppKit calls a view's methods on the main thread, with
+        // the live view as `self` and the live event of the call.
+        let (view, event) = unsafe { (View::new(this), Event::new(event)) };
+        if let Some(event) = event {
+            body(view, event);
         }
-        let cls = objc_allocateClassPair(class(c"NSView"), c"StaveFaceView".as_ptr(), 0);
-        let _ = class_addIvar(
-            cls,
-            c"face".as_ptr(),
-            core::mem::size_of::<*mut c_void>(),
-            core::mem::align_of::<*mut c_void>().trailing_zeros() as u8,
-            c"^v".as_ptr(),
-        );
-        let _ = class_addMethod(cls, sel(c"acceptsFirstMouse:"), yes_event as *const c_void, c"c@:@".as_ptr());
-        let _ = class_addMethod(cls, sel(c"acceptsFirstResponder"), yes as *const c_void, c"c@:".as_ptr());
-        let _ = class_addMethod(cls, sel(c"drawRect:"), draw_rect as *const c_void, c"v@:{CGRect={CGPoint=dd}{CGSize=dd}}".as_ptr());
-        for (name, imp) in [
-            (c"mouseDown:", mouse_down as *const c_void),
-            (c"mouseDragged:", mouse_dragged as *const c_void),
-            (c"mouseUp:", mouse_up as *const c_void),
-            (c"mouseMoved:", mouse_moved as *const c_void),
-            (c"mouseExited:", mouse_exited as *const c_void),
-            (c"scrollWheel:", scroll_wheel as *const c_void),
-            (c"keyDown:", key_down as *const c_void),
-        ] {
-            let _ = class_addMethod(cls, sel(name), imp, c"v@:@".as_ptr());
+    });
+}
+
+extern "C" fn yes(_this: Obj, _cmd: Sel) -> ObjcBool {
+    YES
+}
+
+extern "C" fn yes_for_event(_this: Obj, _cmd: Sel, _event: Option<Obj>) -> ObjcBool {
+    YES
+}
+
+extern "C" fn draw_rect(this: Obj, _cmd: Sel, _dirty: CGRect) {
+    guard((), || {
+        // SAFETY: as in `method`.
+        let view = unsafe { View::new(this) };
+        // SAFETY: NSGraphicsContext's class property and its `CGContext`,
+        // with their real types, during the view's draw on the main thread.
+        let ctx: *mut c_void = unsafe {
+            let Some(current) = send::<_, Option<Obj>>(class(c"NSGraphicsContext"), sel!(c"currentContext"), ()) else {
+                return;
+            };
+            send(current, sel!(c"CGContext"), ())
+        };
+        if ctx.is_null() {
+            return;
         }
-        objc_registerClassPair(cls);
-        cls
-    }
+        let scale = view.backing_scale();
+        view.with_ui(|shared, ui| {
+            let t = ui.time();
+            let (w, h) = ui.runtime.size();
+            let mut text = crate::offscreen::CoreText::new(scale);
+            ui.runtime.render(&*shared.controller, scale, t, &mut ui.canvas, &mut text);
+            // SAFETY: the current drawing pass's live context.
+            unsafe { crate::offscreen::draw_canvas(ctx, &ui.canvas, w, h) };
+        });
+    });
+}
+
+extern "C" fn mouse_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
+    method(this, event, |view, event| {
+        let (p, mods, clicks) = (view.point(event), event.mods(), event.clicks());
+        view.focus();
+        view.with_ui(|shared, ui| {
+            ui.runtime.pointer_down(&*shared.controller, p, mods, clicks);
+            set_cursor(view.1, ui.runtime.cursor());
+        });
+        view.redraw();
+    });
+}
+
+extern "C" fn mouse_dragged(this: Obj, _cmd: Sel, event: Option<Obj>) {
+    method(this, event, |view, event| {
+        let (p, mods) = (view.point(event), event.mods());
+        view.with_ui(|shared, ui| ui.runtime.pointer_drag(&*shared.controller, p, mods));
+        view.redraw();
+    });
+}
+
+extern "C" fn mouse_up(this: Obj, _cmd: Sel, event: Option<Obj>) {
+    method(this, event, |view, event| {
+        let p = view.point(event);
+        view.with_ui(|shared, ui| {
+            ui.runtime.pointer_up(&*shared.controller);
+            ui.runtime.pointer_move(&*shared.controller, p);
+            set_cursor(view.1, ui.runtime.cursor());
+        });
+        view.redraw();
+    });
+}
+
+extern "C" fn mouse_moved(this: Obj, _cmd: Sel, event: Option<Obj>) {
+    method(this, event, |view, event| {
+        let p = view.point(event);
+        let changed = view.with_ui(|shared, ui| {
+            let changed = ui.runtime.pointer_move(&*shared.controller, p);
+            set_cursor(view.1, ui.runtime.cursor());
+            changed
+        });
+        if changed == Some(true) {
+            view.redraw();
+        }
+    });
+}
+
+extern "C" fn mouse_exited(this: Obj, _cmd: Sel, event: Option<Obj>) {
+    method(this, event, |view, _| {
+        view.with_ui(|_, ui| ui.runtime.pointer_exit());
+        set_cursor(view.1, Cursor::Arrow);
+        view.redraw();
+    });
+}
+
+extern "C" fn scroll_wheel(this: Obj, _cmd: Sel, event: Option<Obj>) {
+    method(this, event, |view, event| {
+        let (p, mods, lines) = (view.point(event), event.mods(), event.scroll_lines());
+        if lines == 0.0 {
+            return;
+        }
+        view.with_ui(|shared, ui| ui.runtime.wheel(&*shared.controller, p, lines, mods));
+        view.redraw();
+    });
+}
+
+extern "C" fn key_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
+    method(this, event, |view, event| {
+        let code = event.key_code();
+        // `None`: no key handler, so the key belongs to the host.
+        let handled = view.with_ui(|_, ui| {
+            let on_key = ui.on_key.as_mut()?;
+            let face = on_key(code);
+            if let Some(face) = face {
+                ui.runtime = Runtime::new(face);
+                ui.opened = Instant::now();
+            }
+            Some(ui.runtime.size())
+        });
+        match handled {
+            Some(Some(size)) => {
+                view.resize(size);
+                view.redraw();
+            }
+            _ => {
+                let next: Option<Obj> = view.send(sel!(c"nextResponder"), ());
+                if let Some(next) = next {
+                    // SAFETY: an NSResponder's `keyDown:` with the event
+                    // AppKit gave us, on the main thread.
+                    unsafe { send::<_, ()>(next, sel!(c"keyDown:"), (event.0,)) };
+                }
+            }
+        }
+    });
 }

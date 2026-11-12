@@ -3,6 +3,8 @@
 //! `stave_core::telemetry`.
 //! (Proc-macros must live in a crate of their own.)
 
+#![forbid(unsafe_code)]
+
 use proc_macro::TokenStream;
 
 mod params;

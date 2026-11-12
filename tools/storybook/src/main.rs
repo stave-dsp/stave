@@ -9,6 +9,8 @@
 //! Screenshots are rendered offscreen through the real face runtime and
 //! the platform's text, so they show exactly what a plugin window shows.
 
+#![forbid(unsafe_code)]
+
 mod controller;
 mod live;
 mod stories;

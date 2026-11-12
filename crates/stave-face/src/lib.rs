@@ -24,6 +24,8 @@
 //! is portable: a platform view feeds it pointer events and blits its
 //! canvas (`stave-ui-cocoa`'s `FaceView` on macOS).
 
+#![forbid(unsafe_code)]
+
 pub mod material;
 pub mod part;
 pub mod photo;

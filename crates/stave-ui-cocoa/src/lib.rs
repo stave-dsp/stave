@@ -4,19 +4,18 @@
 //! logic lives here (that is the face's `Controller`).
 //!
 //! Layout: `view.rs` = [`FaceView`], the face's NSView (paint, pointer,
-//! keys, repaint timer); `offscreen.rs` + `text.rs` = the raster blit and
-//! CoreText; `objc.rs` = runtime FFI.
-
-// Unsafe here is Objective-C runtime FFI, documented with the UI overhaul
-// (PLAN S6), not block by block before it.
-#![allow(clippy::undocumented_unsafe_blocks, clippy::missing_safety_doc)]
+//! keys, repaint timer); `app.rs` = a stand-alone window around one;
+//! `offscreen.rs` + `text.rs` = the raster blit and CoreText; `objc.rs` =
+//! the typed Objective-C core every message goes through; `cf.rs` =
+//! CoreFoundation references and CoreGraphics geometry.
 
 pub mod offscreen;
 pub mod text;
 
-pub(crate) mod objc;
-pub(crate) mod view;
+mod app;
+mod cf;
+mod objc;
+mod view;
 
+pub use app::run_app;
 pub use view::{FaceView, OnKey};
-
-pub(crate) use objc::*;
