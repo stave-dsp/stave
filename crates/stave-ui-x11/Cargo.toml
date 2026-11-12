@@ -7,16 +7,15 @@ authors.workspace = true
 repository.workspace = true
 description = "The Linux (X11) platform for a stave face: a child window, the software blit, pointer and keys, on the host's run loop."
 
-[dependencies]
+[target.'cfg(unix)'.dependencies]
 stave-core.workspace = true
 stave-face.workspace = true
-stave-raster.workspace = true
 stave-ui.workspace = true
 stave-ui-shell.workspace = true
 # The X11 protocol in pure Rust (no libX11/libxcb at build or run time).
 x11rb = { version = "0.13", default-features = false }
 
-[dev-dependencies]
+[target.'cfg(unix)'.dev-dependencies]
 x11rb = { version = "0.13", default-features = false, features = ["xtest"] }
 
 [lints]

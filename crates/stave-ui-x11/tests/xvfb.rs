@@ -9,6 +9,8 @@
 //! fails). XTEST moves the one pointer, so the tests take a lock (and
 //! nextest runs this binary one test at a time: `.config/nextest.toml`).
 
+#![cfg(unix)]
+
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -77,6 +79,10 @@ struct Rig {
     parent: Window,
     view: FaceView,
     scale: f64,
+    /// The parent's origin on the root window, in pixels: fake input is
+    /// in root coordinates (and away from the screen's edges, where the
+    /// server clamps the pointer).
+    origin: (i16, i16),
     knob: (f64, f64),
     foot: (f64, f64),
 }
@@ -108,8 +114,8 @@ impl Rig {
             x11rb::COPY_DEPTH_FROM_PARENT,
             parent,
             root,
-            0,
-            0,
+            200,
+            300,
             w as u16,
             h as u16,
             0,
@@ -121,7 +127,9 @@ impl Rig {
         conn.map_window(parent).unwrap();
         conn.sync().unwrap();
         view.attach(parent).expect("the view attaches");
-        let mut rig = Rig { _lock: lock, conn, root, parent, view, scale, knob, foot };
+        let at = conn.translate_coordinates(parent, root, 0, 0).unwrap().reply().unwrap();
+        let origin = (at.dst_x, at.dst_y);
+        let mut rig = Rig { _lock: lock, conn, root, parent, view, scale, origin, knob, foot };
         // Mapped and painted (the first Expose arrives).
         rig.settle();
         Some(rig)
@@ -139,7 +147,7 @@ impl Rig {
     }
 
     fn fake(&self, kind: u8, detail: u8, (x, y): (f64, f64)) {
-        let (x, y) = ((x * self.scale).round() as i16, (y * self.scale).round() as i16);
+        let (x, y) = ((x * self.scale).round() as i16 + self.origin.0, (y * self.scale).round() as i16 + self.origin.1);
         self.conn.xtest_fake_input(kind, detail, x11rb::CURRENT_TIME, self.root, x, y, 0).unwrap();
     }
 

@@ -22,5 +22,11 @@ stave-ui-win32.workspace = true
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 stave-ui-x11.workspace = true
 
+# The gui_window test: a real parent window on each platform.
+[target.'cfg(windows)'.dev-dependencies]
+stave-ui-win32.workspace = true
+[target.'cfg(all(unix, not(target_os = "macos")))'.dev-dependencies]
+x11rb = { version = "0.13", default-features = false }
+
 [lints]
 workspace = true

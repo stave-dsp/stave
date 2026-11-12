@@ -13,7 +13,11 @@
 //! Layout: `view.rs` = [`FaceView`] (window, pointer, keys, blit);
 //! `pixels.rs` = the visual's pixel format; `app.rs` = a stand-alone
 //! window around a view.
+//!
+//! The crate is empty off unix (X11 runs on Linux and the BSDs; macOS
+//! compiles it, for checking, but shows faces with stave-ui-cocoa).
 
+#![cfg(unix)]
 #![forbid(unsafe_code)]
 
 mod app;
