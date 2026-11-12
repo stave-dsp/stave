@@ -158,7 +158,7 @@ macro_rules! same_abi {
     )*};
 }
 
-same_abi!(f64, i64, u64, u16, Option<Obj>, CGPoint, CGSize);
+same_abi!(f64, f32, i64, u64, u16, Option<Obj>, CGPoint, CGSize);
 
 // SAFETY: a non-null object pointer is an `id`.
 unsafe impl Arg for Obj {
@@ -275,6 +275,7 @@ args!(A);
 args!(A, B);
 args!(A, B, C);
 args!(A, B, C, D);
+args!(A, B, C, D, E, F, G, H, I);
 
 /// Send `sel` to `receiver` with `args`, the reply typed as `R`.
 ///

@@ -15,3 +15,7 @@ stave-face.workspace = true
 
 [lints]
 workspace = true
+
+[[test]]
+name = "real_window"
+harness = false

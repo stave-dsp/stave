@@ -507,7 +507,8 @@ impl FaceDriver {
     /// readouts in paint order.
     pub fn texts(&self) -> Vec<Shown> {
         let mut out = Vec::new();
-        let baked = self.runtime.static_layers(&self.controller);
+        // Text sits in points at any scale; a tiny bake keeps it cheap.
+        let baked = self.runtime.static_layers(&self.controller, 0.0625);
         for (layers, live) in [(baked, false), (self.layers(), true)] {
             for layer in layers {
                 for op in &layer.scene.ops {

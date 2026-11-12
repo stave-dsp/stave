@@ -339,9 +339,11 @@ impl Runtime {
             .collect()
     }
 
-    /// The static picture of every shown part (its bake at 1×, images
-    /// and all), in paint order.
-    pub fn static_layers(&self, controller: &dyn Controller) -> Vec<Layer> {
+    /// The static picture of every shown part (its bake at `scale` px/pt,
+    /// images and all), in paint order. Vector and text ops are in points
+    /// whatever the scale; a small scale makes the images cheap when only
+    /// the geometry and text matter.
+    pub fn static_layers(&self, controller: &dyn Controller, scale: f64) -> Vec<Layer> {
         let shadows = self.shadows(controller);
         (0..self.items.len())
             .filter(|&i| self.shown(i, controller))
@@ -350,7 +352,7 @@ impl Runtime {
                 let mut scene = Scene::new();
                 it.part.bake(
                     it.rect,
-                    &mut Bake { theme: &self.face.theme, scale: 1.0, face: self.size, shadows: &shadows, controller, scene: &mut scene },
+                    &mut Bake { theme: &self.face.theme, scale, face: self.size, shadows: &shadows, controller, scene: &mut scene },
                 );
                 Layer { id: it.id, rect: it.rect, scene }
             })

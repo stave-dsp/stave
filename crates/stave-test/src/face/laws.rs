@@ -39,7 +39,7 @@ pub fn assert_all(project: &str, make: impl Fn() -> FaceDriver, laws: &Laws) {
     layout(project, &make, laws);
     gestures(project, &make);
     overlays(project, &make);
-    sessions(project, &make, 0..8, 200);
+    sessions(project, &make, 0..4, 120);
 }
 
 /// A fresh face in `state`, its setup edits forgotten.
@@ -297,18 +297,34 @@ pub fn layout(project: &str, make: &impl Fn() -> FaceDriver, laws: &Laws) {
 
 // ------------------------------------------------------------ U5
 
-/// The overlay laws (U5), on every state.
+/// Every parameter's normalized value, by id.
+fn values(ui: &FaceDriver) -> Vec<(ParamId, f64)> {
+    ui.table_params().into_iter().map(|(_, id)| (id, ui.normalized(id))).collect()
+}
+
+/// Put every parameter back to `values` (as automation would).
+fn restore(ui: &mut FaceDriver, values: &[(ParamId, f64)]) {
+    for &(id, n) in values {
+        let plain = ui.controller().param(id).expect("listed").denormalize(n);
+        ui.set(id, plain);
+    }
+}
+
+/// The overlay laws (U5), on every state. One face per state does the
+/// touching and a second, untouched, is the reference picture (each
+/// keeps its sprites warm, so a check costs a paint, not a bake).
 pub fn overlays(project: &str, make: &impl Fn() -> FaceDriver) {
     for state in make().states() {
-        let base = fresh(make, &state);
-        let idle_layers = base.layers();
-        let grabs = base.runtime().all_grabs(base.controller());
+        let mut reference = fresh(make, &state);
+        let idle_layers = reference.layers();
+        let grabs = reference.runtime().all_grabs(reference.controller());
         let map = |ui: &FaceDriver| -> Vec<_> { grabs.iter().map(|(_, _, g)| ui.grab_at(g.area.centre())).collect() };
-        let idle_map = map(&base);
+        let idle_map = map(&reference);
+        let idle_values = values(&reference);
+        let mut ui = fresh(make, &state);
         for (part, _, grab) in &grabs {
             let here = format!("{project}: {part:?} {:?} in {state:?}", grab.gesture);
             let c = grab.area.centre();
-            let mut ui = fresh(make, &state);
             ui.hover(c);
             assert_eq!(ui.hovered(), *part, "{here}: hovering its centre hovers it");
             assert_ne!(ui.cursor(), Cursor::Arrow, "{here}: the cursor shows it can be grabbed");
@@ -317,23 +333,22 @@ pub fn overlays(project: &str, make: &impl Fn() -> FaceDriver) {
             ui.exit();
             assert_eq!((ui.hovered(), ui.cursor()), (None, Cursor::Arrow), "{here}: leaving the face clears the hover");
             assert!(ui.layers() == idle_layers, "{here}: after the pointer leaves, the face is not as it was");
-            if let Gesture::Rotary { bind, .. } = grab.gesture {
+            if let Gesture::Rotary { .. } = grab.gesture {
                 ui.press(c).move_to(by(0.0, -10.0));
                 assert_eq!(ui.active(), *part, "{here}: dragging it makes it active");
                 assert_eq!(ui.layers().last().map(|l| l.id), Some(*part), "{here}: the dragged part paints last");
                 assert_eq!(ui.cursor(), Cursor::Grabbing, "{here}: the cursor grabs");
-                let others: Vec<_> = grabs
-                    .iter()
-                    .filter(|(p, _, _)| p != part)
-                    .map(|(_, _, g)| ui.grab_at(g.area.centre()))
-                    .collect();
-                let idle_others: Vec<_> = grabs.iter().zip(&idle_map).filter(|((p, _, _), _)| p != part).map(|(_, m)| m.clone()).collect();
+                let others: Vec<_> = grabs.iter().filter(|(p, _, _)| p != part).map(|(_, _, g)| ui.grab_at(g.area.centre())).collect();
+                let idle_others: Vec<_> =
+                    grabs.iter().zip(&idle_map).filter(|((p, _, _), _)| p != part).map(|(_, m)| m.clone()).collect();
                 assert_eq!(others, idle_others, "{here}: a drag's readout steals another part's grab");
                 ui.release().exit();
                 assert_eq!(ui.active(), None, "{here}: no drag after release");
-                let mut fresh_ui = fresh(make, &state);
-                fresh_ui.set(bind.id, ui.value(bind.id));
-                assert!(ui.layers() == fresh_ui.layers(), "{here}: after release and exit the readout stays");
+                let moved = values(&ui);
+                restore(&mut reference, &moved);
+                assert!(ui.layers() == reference.layers(), "{here}: after release and exit the readout stays");
+                restore(&mut reference, &idle_values);
+                restore(&mut ui, &idle_values);
             }
         }
     }

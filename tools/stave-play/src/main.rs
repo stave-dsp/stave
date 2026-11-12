@@ -19,7 +19,8 @@ use stave_host::config::{HostConfig, SampleRate};
 
 const USAGE: &str = "stave-play [PLUGIN.vst3] [--sample-rate HZ] [--block-size N] \
                      [--set NAME=VALUE ...] \
-                     [--screenshot PATH [--note PITCH] [--editor-only]]";
+                     [--screenshot PATH [--note PITCH] [--editor-only]] \
+                     [--face-trace PATH]";
 
 fn main() -> std::process::ExitCode {
     let launch = match parse(std::env::args().skip(1)) {
@@ -104,6 +105,12 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<app::Launch>, 
             "--note" => {
                 let v = value("--note")?;
                 l.screenshot_note = Some(v.parse().map_err(|_| bad("--note", &v))?);
+            }
+            "--face-trace" => {
+                // A stave plugin's face (in this process) appends every
+                // pointer and key event to PATH: a session that replays
+                // as a test (`stave_face::Trace`, `FaceDriver::replay`).
+                std::env::set_var("STAVE_FACE_TRACE", value("--face-trace")?);
             }
             "--set" => {
                 let v = value("--set")?;

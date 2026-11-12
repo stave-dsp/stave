@@ -21,13 +21,42 @@ const PARTIAL: laws::Laws = laws::Laws {
     off_face: &["DRIVE", "TONE", "MIX", "TIME", "RATE", "DEPTH", "SHAPE", "SYNC", "LEVEL", "BYPASS", "HOLD", "WIDTH"],
 };
 
-#[test]
-#[cfg_attr(miri, ignore)]
-fn every_story_keeps_the_interaction_laws() {
-    let names: Vec<String> = stories::all(&StoryParams::default()).into_iter().map(|(n, _)| n).collect();
-    for (i, name) in names.iter().enumerate() {
-        laws::assert_all(&format!("story {name}"), || story(i), &PARTIAL);
-    }
+/// The story named `name`, held to every law.
+fn laws_of(name: &str) {
+    let i = stories::all(&StoryParams::default()).iter().position(|(n, _)| n == name).unwrap_or_else(|| panic!("no story {name}"));
+    laws::assert_all(&format!("story {name}"), || story(i), &PARTIAL);
+}
+
+/// One test per story, so they run side by side.
+macro_rules! story_laws {
+    ($($test:ident: $name:literal),* $(,)?) => {
+        $(
+            #[test]
+            #[cfg_attr(miri, ignore)]
+            fn $test() {
+                laws_of($name);
+            }
+        )*
+
+        #[test]
+        fn every_story_has_its_test() {
+            let names: Vec<String> = stories::all(&StoryParams::default()).into_iter().map(|(n, _)| n).collect();
+            assert_eq!(names, [$($name),*], "a story was added or renamed: list it in story_laws!");
+        }
+    };
+}
+
+story_laws! {
+    graphite_keeps_the_laws: "graphite",
+    cream_keeps_the_laws: "cream",
+    hammertone_keeps_the_laws: "hammertone",
+    oxblood_keeps_the_laws: "oxblood",
+    verdigris_keeps_the_laws: "verdigris",
+    indigo_keeps_the_laws: "indigo",
+    amp_keeps_the_laws: "amp",
+    rack_keeps_the_laws: "rack",
+    cabinet_keeps_the_laws: "cabinet",
+    controls_keeps_the_laws: "controls",
 }
 
 /// The controls story reaches every gesture kind the laws know, across
@@ -61,3 +90,4 @@ fn the_controls_story_covers_every_gesture_kind() {
         assert!(kinds.contains(k), "{k} missing: {kinds:?}");
     }
 }
+

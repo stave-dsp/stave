@@ -1,6 +1,8 @@
 //! [`FaceView`]: a `stave_face::Face` in one NSView the size of the face.
 //! It renders the face runtime's canvas, forwards the pointer (down,
-//! drag, up, wheel, hover, exit) with its modifiers and click count, sets
+//! drag, up, wheel, hover, exit) and keys with their modifiers and click
+//! count — each as a `stave_face::Act`, recorded to the file
+//! `STAVE_FACE_TRACE` names so a session replays as a test — sets
 //! the cursor the runtime asks for, and repaints from its own timer only
 //! when the runtime says something changed. Everything the face reads and
 //! writes goes through its [`Controller`]; the view is a window, a
@@ -22,7 +24,7 @@ use std::time::Instant;
 use std::boxed::Box;
 
 use stave_core::Controller;
-use stave_face::{Cursor, Face, Key, Mods, Runtime};
+use stave_face::{Act, Cursor, Face, Key, Mods, Runtime};
 use stave_raster::Canvas;
 use stave_ui::scene::{pt, Pt};
 
@@ -58,6 +60,9 @@ struct Shared {
 
 struct Ui {
     runtime: Runtime,
+    /// Where every event is recorded, when `STAVE_FACE_TRACE` names a
+    /// file (a session that replays as a test: `stave_face::Trace`).
+    trace: Option<std::fs::File>,
     canvas: Canvas,
     /// The clock animations read: seconds since the face was shown.
     opened: Instant,
@@ -68,16 +73,40 @@ impl Ui {
     fn time(&self) -> f64 {
         self.opened.elapsed().as_secs_f64()
     }
+
+    /// Send `act` to the face (the one path every event takes), and
+    /// record it when tracing.
+    fn act(&mut self, controller: &dyn Controller, act: Act) -> bool {
+        if let Some(file) = self.trace.as_mut() {
+            use std::io::Write;
+            // A trace is a convenience: a full disk never stops the face.
+            let _ = writeln!(file, "{act}");
+        }
+        self.runtime.apply(controller, &act)
+    }
+}
+
+/// The trace file `STAVE_FACE_TRACE` names, appended to (a header line
+/// marks each face opened).
+fn trace_file(size: (f64, f64)) -> Option<std::fs::File> {
+    use std::io::Write;
+    let path = std::env::var_os("STAVE_FACE_TRACE")?;
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path).ok()?;
+    let _ = writeln!(file, "# face {}×{} pt", size.0, size.1);
+    Some(file)
 }
 
 impl FaceView {
     /// `face` over `controller`. Touches no Cocoa until `attach`.
     pub fn new(face: Face, controller: Box<dyn Controller>) -> Self {
+        let runtime = Runtime::new(face);
+        let trace = trace_file(runtime.size());
         FaceView {
             shared: Rc::new(Shared {
                 controller,
                 ui: RefCell::new(Ui {
-                    runtime: Runtime::new(face),
+                    runtime,
+                    trace,
                     canvas: Canvas::new(0, 0),
                     opened: Instant::now(),
                     on_key: None,
@@ -547,7 +576,7 @@ extern "C" fn mouse_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
         let (p, mods, clicks) = (view.point(event), event.mods(), event.clicks());
         view.focus();
         view.with_ui(|shared, ui| {
-            ui.runtime.pointer_down(&*shared.controller, p, mods, clicks);
+            ui.act(&*shared.controller, Act::Press { at: p, mods, clicks });
             set_cursor(view.1, ui.runtime.cursor());
         });
         view.redraw();
@@ -557,7 +586,7 @@ extern "C" fn mouse_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
 extern "C" fn mouse_dragged(this: Obj, _cmd: Sel, event: Option<Obj>) {
     method(this, event, |view, event| {
         let (p, mods) = (view.point(event), event.mods());
-        view.with_ui(|shared, ui| ui.runtime.pointer_drag(&*shared.controller, p, mods));
+        view.with_ui(|shared, ui| ui.act(&*shared.controller, Act::Move { at: p, mods }));
         view.redraw();
     });
 }
@@ -566,8 +595,8 @@ extern "C" fn mouse_up(this: Obj, _cmd: Sel, event: Option<Obj>) {
     method(this, event, |view, event| {
         let p = view.point(event);
         view.with_ui(|shared, ui| {
-            ui.runtime.pointer_up(&*shared.controller);
-            ui.runtime.pointer_move(&*shared.controller, p);
+            ui.act(&*shared.controller, Act::Release);
+            ui.act(&*shared.controller, Act::Hover(p));
             set_cursor(view.1, ui.runtime.cursor());
         });
         view.redraw();
@@ -578,7 +607,7 @@ extern "C" fn mouse_moved(this: Obj, _cmd: Sel, event: Option<Obj>) {
     method(this, event, |view, event| {
         let p = view.point(event);
         let changed = view.with_ui(|shared, ui| {
-            let changed = ui.runtime.pointer_move(&*shared.controller, p);
+            let changed = ui.act(&*shared.controller, Act::Hover(p));
             set_cursor(view.1, ui.runtime.cursor());
             changed
         });
@@ -590,7 +619,7 @@ extern "C" fn mouse_moved(this: Obj, _cmd: Sel, event: Option<Obj>) {
 
 extern "C" fn mouse_exited(this: Obj, _cmd: Sel, event: Option<Obj>) {
     method(this, event, |view, _| {
-        view.with_ui(|_, ui| ui.runtime.pointer_exit());
+        view.with_ui(|shared, ui| ui.act(&*shared.controller, Act::Exit));
         set_cursor(view.1, Cursor::Arrow);
         view.redraw();
     });
@@ -602,7 +631,7 @@ extern "C" fn scroll_wheel(this: Obj, _cmd: Sel, event: Option<Obj>) {
         if lines == 0.0 {
             return;
         }
-        view.with_ui(|shared, ui| ui.runtime.wheel(&*shared.controller, p, lines, mods));
+        view.with_ui(|shared, ui| ui.act(&*shared.controller, Act::Wheel { at: p, lines, mods }));
         view.redraw();
     });
 }
@@ -629,7 +658,7 @@ extern "C" fn key_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
         // key belongs to the host.
         let handled = view.with_ui(|shared, ui| {
             if let Some(key) = face_key(code) {
-                if ui.runtime.key(&*shared.controller, key, mods) {
+                if ui.act(&*shared.controller, Act::Key { key, mods }) {
                     return Some(ui.runtime.size());
                 }
             }

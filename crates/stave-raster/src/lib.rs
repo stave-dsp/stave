@@ -7,7 +7,8 @@
 //! * `path.rs` — flattening (lines, curves, CG-convention arcs) to px.
 //! * `coverage.rs` — exact-area anti-aliasing (signed-area accumulation,
 //!   nonzero winding).
-//! * `stroke.rs` — strokes as polygons (quads, round joins, caps).
+//! * `stroke.rs` — strokes as polygons (quads, mitered joins, butt and
+//!   round caps).
 //! * here — the op loop and compositing: solid and linear-gradient
 //!   fills (gradients interpolate in the encoded colour space and extend
 //!   both ends, as CoreGraphics does), source-over in encoded space, and
@@ -227,32 +228,23 @@ fn draw_image(canvas: &mut Canvas, img: &Image, x: f64, y: f64, w: f64, h: f64) 
     let (sx, sy) = (iw as f64 / w, ih as f64 / h);
     for py in y0..y1 {
         for px in x0..x1 {
-            let (r, g, b, a) = if one_to_one {
-                let (ix, iy) = ((px - x as i64) as usize, (py - y as i64) as usize);
-                if ix >= iw || iy >= ih {
-                    continue;
-                }
-                let s = &img.rgba[(iy * iw + ix) * 4..(iy * iw + ix) * 4 + 4];
-                (s[0] as f32, s[1] as f32, s[2] as f32, s[3] as f32)
-            } else {
-                // Sample at the pixel centre, in image space.
-                let u = (px as f64 + 0.5 - x) * sx - 0.5;
-                let v = (py as f64 + 0.5 - y) * sy - 0.5;
-                if u < -0.5 || v < -0.5 || u > iw as f64 - 0.5 || v > ih as f64 - 0.5 {
-                    continue;
-                }
-                let (u0, v0) = (u.floor().max(0.0) as usize, v.floor().max(0.0) as usize);
-                let (u1, v1) = ((u0 + 1).min(iw - 1), (v0 + 1).min(ih - 1));
-                let (fu, fv) = ((u - u.floor()).clamp(0.0, 1.0) as f32, (v - v.floor()).clamp(0.0, 1.0) as f32);
-                let at = |xx: usize, yy: usize, c: usize| img.rgba[(yy * iw + xx) * 4 + c] as f32;
-                let mut out = [0.0f32; 4];
-                for (c, o) in out.iter_mut().enumerate() {
-                    let top = at(u0, v0, c) + (at(u1, v0, c) - at(u0, v0, c)) * fu;
-                    let bot = at(u0, v1, c) + (at(u1, v1, c) - at(u0, v1, c)) * fu;
-                    *o = top + (bot - top) * fv;
-                }
-                (out[0], out[1], out[2], out[3])
-            };
+            // Sample at the pixel centre, in image space.
+            let u = (px as f64 + 0.5 - x) * sx - 0.5;
+            let v = (py as f64 + 0.5 - y) * sy - 0.5;
+            if u < -0.5 || v < -0.5 || u > iw as f64 - 0.5 || v > ih as f64 - 0.5 {
+                continue;
+            }
+            let (u0, v0) = (u.floor().max(0.0) as usize, v.floor().max(0.0) as usize);
+            let (u1, v1) = ((u0 + 1).min(iw - 1), (v0 + 1).min(ih - 1));
+            let (fu, fv) = ((u - u.floor()).clamp(0.0, 1.0) as f32, (v - v.floor()).clamp(0.0, 1.0) as f32);
+            let at = |xx: usize, yy: usize, c: usize| img.rgba[(yy * iw + xx) * 4 + c] as f32;
+            let mut out = [0.0f32; 4];
+            for (c, o) in out.iter_mut().enumerate() {
+                let top = at(u0, v0, c) + (at(u1, v0, c) - at(u0, v0, c)) * fu;
+                let bot = at(u0, v1, c) + (at(u1, v1, c) - at(u0, v1, c)) * fu;
+                *o = top + (bot - top) * fv;
+            }
+            let [r, g, b, a] = out;
             if a <= 0.0 {
                 continue;
             }

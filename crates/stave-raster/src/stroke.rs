@@ -2,8 +2,11 @@
 //! pass can fill. Each segment becomes a quad; joins are MITERED with a
 //! miter limit of 10, beyond which they bevel (CoreGraphics' defaults —
 //! the join every Stave scene has drawn with); caps are butt or round.
-//! Every polygon is wound the SAME way, so the nonzero union of
-//! overlapping pieces is exact.
+//! Every polygon is wound the SAME way, so overlapping pieces union under
+//! the nonzero rule: covered interiors are exact, but in an anti-aliased
+//! edge pixel where two pieces overlap (a join over its quads) their
+//! partial areas add, so such a pixel can read up to the overlap darker
+//! (clamped at full). A true outline stroker removes that (ledger T9).
 
 use std::vec::Vec;
 

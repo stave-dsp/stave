@@ -17,5 +17,8 @@ mod cf;
 mod objc;
 mod view;
 
+#[doc(hidden)]
+pub mod synthetic;
+
 pub use app::run_app;
 pub use view::{FaceView, OnKey};
