@@ -103,6 +103,16 @@ scripts/gates.sh affected   # only the packages the change can reach
 
 Tests run under [cargo-nextest](https://nexte.st) (`cargo install cargo-nextest`).
 
+## Releasing
+
+```sh
+scripts/release.sh 0.2.0   # version bump, gates, commit, tag v0.2.0, push
+```
+
+Plugin suites pin a release tag;
+[stave-plugins](https://github.com/stave-dsp/stave-plugins) moves to it with
+`scripts/bump-framework.sh v0.2.0`.
+
 CI additionally holds rustc, clippy and rustdoc at zero warnings, and
 runs Miri on the ABI tests, Loom on the lock-free protocols, the
 Steinberg validator and clap-validator on every push to main.
