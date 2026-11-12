@@ -69,3 +69,57 @@ fn concurrent_scan_during_registration() {
         assert_eq!(bus.probes[i].name_str(), *n);
     }
 }
+
+/// S13: a name longer than a slot holds is stored truncated; every later
+/// lookup must compare in the same truncated form, or each block reserves
+/// a fresh slot until the bus is full.
+#[test]
+fn overlong_probe_name_occupies_exactly_one_slot() {
+    let bus = DebugBus::new();
+    let name = "a_forty_byte_probe_name_that_overflows!!";
+    assert_eq!(name.len(), 40);
+    // A fresh per-callsite cache each block (worst case: many instances /
+    // a cold cache) plus a warm one.
+    let warm = AtomicU16::new(u16::MAX);
+    for i in 0..(MAX_PROBES * 2) {
+        let cold = AtomicU16::new(u16::MAX);
+        bus.probe_f64(&cold, name, i as f64);
+        bus.probe_f64(&warm, name, i as f64);
+    }
+    assert_eq!(bus.probes_used.load(Ordering::Acquire), 1);
+    assert_eq!(bus.probes[0].name_str(), &name[..NAME_BYTES - 1]);
+    assert_eq!(
+        bus.probes[0].hits.load(Ordering::Relaxed),
+        (MAX_PROBES * 4) as u64
+    );
+}
+
+#[test]
+fn overlong_breakpoint_name_occupies_exactly_one_slot() {
+    let bus = DebugBus::new();
+    let name = "a_forty_byte_breakpoint_name_overflows!!";
+    for _ in 0..(MAX_BREAKPOINTS * 2) {
+        let cold = AtomicU16::new(u16::MAX);
+        bus.breakpoint_check(&cold, name, false);
+    }
+    assert_eq!(bus.breakpoints_used.load(Ordering::Acquire), 1);
+}
+
+#[test]
+fn inline_str_truncates_on_char_boundary() {
+    // 'é' is 2 bytes; capacity 7 would split the 4th 'é'.
+    assert_eq!(InlineStr::<8>::truncate("éééé"), "ééé");
+    let s: InlineStr<8> = InlineStr::zeroed();
+    s.set("éééé");
+    assert_eq!(s.as_str(), "ééé");
+    assert!(s.matches("éééé"));
+    assert!(s.matches("ééé"));
+    assert!(!s.matches("éé"));
+}
+
+#[test]
+fn literal_probe_macro_compiles_within_limit() {
+    let bus = DebugBus::new();
+    probe!(bus, "exactly_thirty_one_bytes_long__", 1.0);
+    assert_eq!(bus.probes[0].name_str().len(), NAME_BYTES - 1);
+}

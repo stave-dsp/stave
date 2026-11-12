@@ -20,11 +20,9 @@ pub struct CaptureFrame {
 
 impl CaptureFrame {
     pub(crate) const fn zeroed() -> Self {
-        // Cannot init `[AtomicI32; N]` with `const fn` other than via a
-        // manual loop. Use a small unsafe transmute trick: a zeroed byte
-        // array has the same bit pattern as a slice of zeroed AtomicI32.
-        // SAFETY: AtomicI32 has the same layout as i32; all-zero is a
-        // valid initial state (== 0.0_f32).
+        // `AtomicI32` isn't `Copy`, so `[AtomicI32::new(0); N]` won't
+        // compile; an array-repeat of a named `const` item is allowed
+        // (each element is a fresh instance). All-zero bits == 0.0_f32.
         #[allow(clippy::declare_interior_mutable_const)]
         const ZERO: AtomicI32 = AtomicI32::new(0);
         Self {

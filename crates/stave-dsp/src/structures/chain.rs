@@ -236,10 +236,12 @@ impl<const N: usize> Stage for Chain<N> {
             } else {
                 y
             };
-            self.fb_last = match self.fb_filter.as_mut() {
+            let fb = match self.fb_filter.as_mut() {
                 Some(f) => f.tick(raw),
                 None => raw,
             };
+            // A non-finite sample must not recirculate (finite bit-exact).
+            self.fb_last = crate::primitives::denormal::finite_or_zero(fb);
         }
         y
     }

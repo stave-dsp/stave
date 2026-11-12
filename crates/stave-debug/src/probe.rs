@@ -39,7 +39,7 @@ impl DebugBus {
     fn resolve_probe(&self, name: &str) -> u16 {
         let used = self.probes_used.load(Ordering::Acquire) as usize;
         for i in 0..used {
-            if self.probes[i].name_str() == name {
+            if self.probes[i].name.matches(name) {
                 return i as u16;
             }
         }
@@ -80,7 +80,7 @@ impl DebugBus {
     /// stable hit for the common single-instance case.
     pub fn probe_f64(&self, slot_cache: &AtomicU16, name: &str, value: f64) {
         let mut idx = slot_cache.load(Ordering::Relaxed);
-        if (idx as usize) >= MAX_PROBES || self.probes[idx as usize].name_str() != name {
+        if (idx as usize) >= MAX_PROBES || !self.probes[idx as usize].name.matches(name) {
             idx = self.resolve_probe(name);
             slot_cache.store(idx, Ordering::Relaxed);
         }

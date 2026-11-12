@@ -101,10 +101,11 @@ impl Drop for Module {
 /// A dlopen'd library; dlclose on drop.
 struct Library(NonNull<c_void>);
 
-const RTLD_NOW: i32 = 0x2;
-/// Keep each plugin's symbols to itself: macOS defaults to GLOBAL, and
-/// every VST3 exports the same names.
-const RTLD_LOCAL: i32 = 0x4;
+/// Resolve everything up front, and keep each plugin's symbols to
+/// itself: macOS defaults to GLOBAL, and every VST3 exports the same
+/// names. The values are platform-specific (Linux `0x4` is
+/// `RTLD_NOLOAD`, not LOCAL), so they come from libc, never literals.
+const DLOPEN_FLAGS: libc::c_int = libc::RTLD_NOW | libc::RTLD_LOCAL;
 
 impl Library {
     fn open(path: &Path) -> Result<Self, HostError> {
@@ -112,10 +113,10 @@ impl Library {
         let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())
             .map_err(|_| HostError::DlopenFailed(format!("path has a NUL: {}", path.display())))?;
         // SAFETY: plain libc call with a valid C string.
-        let handle = unsafe { dlopen(c_path.as_ptr(), RTLD_NOW | RTLD_LOCAL) };
+        let handle = unsafe { libc::dlopen(c_path.as_ptr(), DLOPEN_FLAGS) };
         NonNull::new(handle).map(Self).ok_or_else(|| {
             // SAFETY: dlerror returns a static, NUL-terminated message.
-            let msg = unsafe { dlerror() };
+            let msg = unsafe { libc::dlerror() };
             let why = if msg.is_null() {
                 "unknown error".into()
             } else {
@@ -135,7 +136,7 @@ impl Library {
     unsafe fn symbol<T: Copy>(&self, name: &CStr) -> Option<T> {
         assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<*mut c_void>());
         // SAFETY: a libc call on the open library with a valid C string.
-        let p = unsafe { dlsym(self.0.as_ptr(), name.as_ptr()) };
+        let p = unsafe { libc::dlsym(self.0.as_ptr(), name.as_ptr()) };
         // SAFETY: pointer-sized (asserted) and the symbol's true type (this
         // function's contract).
         (!p.is_null()).then(|| unsafe { std::mem::transmute_copy::<*mut c_void, T>(&p) })
@@ -152,15 +153,8 @@ impl Library {
 impl Drop for Library {
     fn drop(&mut self) {
         // SAFETY: opened in `open`; nothing from it is referenced anymore.
-        unsafe { dlclose(self.0.as_ptr()) };
+        unsafe { libc::dlclose(self.0.as_ptr()) };
     }
-}
-
-extern "C" {
-    fn dlopen(filename: *const std::ffi::c_char, flag: i32) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const std::ffi::c_char) -> *mut c_void;
-    fn dlclose(handle: *mut c_void) -> i32;
-    fn dlerror() -> *const std::ffi::c_char;
 }
 
 // Every `unsafe` block in these tests plays a loader: it calls this
@@ -169,6 +163,14 @@ extern "C" {
 #[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dlopen_flags_are_now_and_local_never_noload() {
+        assert_eq!(DLOPEN_FLAGS & libc::RTLD_NOW, libc::RTLD_NOW);
+        assert_eq!(DLOPEN_FLAGS & libc::RTLD_LOCAL, libc::RTLD_LOCAL);
+        assert_eq!(DLOPEN_FLAGS & libc::RTLD_NOLOAD, 0, "NOLOAD would refuse every fresh load");
+        assert_eq!(DLOPEN_FLAGS & libc::RTLD_GLOBAL, 0);
+    }
 
     #[test]
     fn missing_library_names_the_path() {

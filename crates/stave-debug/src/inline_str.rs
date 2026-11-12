@@ -39,14 +39,37 @@ impl<const N: usize> InlineStr<N> {
         }
     }
 
-    /// Publish the string. Truncates to N−1 bytes (nul-padded). Must be
-    /// called at most once, by the slot's exclusive owner (see type docs).
+    /// Longest string (in bytes) a slot stores; longer ones are truncated.
+    pub const CAPACITY: usize = N.saturating_sub(1);
+
+    /// The form `s` takes once stored: cut to [`CAPACITY`](Self::CAPACITY)
+    /// bytes, backed off to a char boundary so the result stays UTF-8.
+    /// Every lookup compares against this, so an over-long name still
+    /// matches the slot it was stored in.
+    pub fn truncate(s: &str) -> &str {
+        let mut take = s.len().min(Self::CAPACITY);
+        while !s.is_char_boundary(take) {
+            take -= 1;
+        }
+        &s[..take]
+    }
+
+    /// Whether this slot holds `s` (compared in its truncated form).
+    /// An unpublished slot matches nothing — not even `""`.
+    pub fn matches(&self, s: &str) -> bool {
+        self.is_set() && self.as_str() == Self::truncate(s)
+    }
+
+    /// Publish the string, truncated per [`truncate`](Self::truncate)
+    /// (nul-padded). Must be called at most once, by the slot's exclusive
+    /// owner (see type docs).
     pub fn set(&self, s: &str) {
         debug_assert!(
             !self.ready.load(Ordering::Relaxed),
             "InlineStr::set called twice on the same slot"
         );
-        let take = s.len().min(N.saturating_sub(1));
+        let s = Self::truncate(s);
+        let take = s.len();
         // SAFETY: exclusive ownership per the write protocol — no other
         // thread writes, and no reader dereferences until `ready` below.
         let dst = unsafe { &mut *self.bytes.get() };

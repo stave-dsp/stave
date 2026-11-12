@@ -60,7 +60,9 @@ impl<S: Stage> Stage for Loop<S> {
     fn tick(&mut self, x: f32) -> f32 {
         let fb = self.ring.delayed();
         let y = self.node.tick(x + fb);
-        self.ring.push(y);
+        // One non-finite sample must not recirculate forever: the
+        // history stores 0 in its place (finite values bit-exact).
+        self.ring.push(crate::primitives::denormal::finite_or_zero(y));
         y
     }
     fn latency_samples(&self) -> u32 {

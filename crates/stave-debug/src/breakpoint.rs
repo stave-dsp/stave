@@ -36,7 +36,7 @@ impl DebugBus {
     fn resolve_breakpoint(&self, name: &str) -> u16 {
         let used = self.breakpoints_used.load(Ordering::Acquire) as usize;
         for i in 0..used {
-            if self.breakpoints[i].name_str() == name {
+            if self.breakpoints[i].name.matches(name) {
                 return i as u16;
             }
         }
@@ -66,7 +66,7 @@ impl DebugBus {
     pub fn breakpoint_check(&self, slot_cache: &AtomicU16, name: &str, cond: bool) -> bool {
         let mut idx = slot_cache.load(Ordering::Relaxed);
         // Cache-as-hint; see probe_f64 for the multi-instance rationale.
-        if (idx as usize) >= MAX_BREAKPOINTS || self.breakpoints[idx as usize].name_str() != name {
+        if (idx as usize) >= MAX_BREAKPOINTS || !self.breakpoints[idx as usize].name.matches(name) {
             idx = self.resolve_breakpoint(name);
             slot_cache.store(idx, Ordering::Relaxed);
         }
