@@ -43,7 +43,7 @@ impl<const N: usize> Watch<N> {
     pub fn changed(&mut self, params: [&dyn AnyParam; N]) -> bool {
         let mut now = [0u64; N];
         for (slot, p) in now.iter_mut().zip(params) {
-            *slot = p.plain().to_bits();
+            *slot = p.value().to_bits();
         }
         let hit = self.seen != Some(now);
         self.seen = Some(now);
@@ -121,18 +121,18 @@ impl<const B: usize, const G: usize> ModalWatch<B, G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{FloatParam, Range, Taper};
+    use crate::params::{FloatParam, ParamId, Range};
 
     #[test]
     fn state_semantics() {
-        let p = FloatParam::new(1, "x", 0.5, Range::new(0.0, 1.0, Taper::Linear));
-        let q = FloatParam::new(2, "y", 0.0, Range::new(0.0, 1.0, Taper::Linear));
+        let p = FloatParam::new(ParamId(1), "x", Range::linear(0.0, 1.0)).default(0.5);
+        let q = FloatParam::new(ParamId(2), "y", Range::linear(0.0, 1.0));
         let mut w = Watch::<2>::new();
         assert!(w.changed([&p, &q]), "first poll = initial build");
         assert!(!w.changed([&p, &q]), "steady state");
-        p.set_plain(0.5);
+        p.set_value(0.5);
         assert!(!w.changed([&p, &q]), "same-value write is NOT a change");
-        p.set_plain(0.7);
+        p.set_value(0.7);
         assert!(w.changed([&p, &q]));
         assert!(!w.changed([&p, &q]));
         w.reset();
@@ -143,9 +143,9 @@ mod tests {
     fn modal_semantics() {
         // The forge invariant in miniature: base = [stack], gated = drive
         // (mode 2), bias (mode 3).
-        let stack = FloatParam::new(1, "stack", 0.0, Range::new(0.0, 3.0, Taper::Linear));
-        let drive = FloatParam::new(2, "drive", 4.0, Range::new(0.0, 10.0, Taper::Linear));
-        let bias = FloatParam::new(3, "bias", 0.0, Range::new(0.0, 1.0, Taper::Linear));
+        let stack = FloatParam::new(ParamId(1), "stack", Range::linear(0.0, 3.0));
+        let drive = FloatParam::new(ParamId(2), "drive", Range::linear(0.0, 10.0)).default(4.0);
+        let bias = FloatParam::new(ParamId(3), "bias", Range::linear(0.0, 1.0));
         let mut w = ModalWatch::<1, 2>::new([2, 3]);
         let mode = |s: &FloatParam| s.plain() as usize;
 
@@ -158,13 +158,13 @@ mod tests {
             "steady"
         );
 
-        drive.set_plain(6.0);
+        drive.set_value(6.0);
         assert!(
             !w.changed(mode(&stack), [&stack], [&drive, &bias]),
             "gated edit outside its mode does not fire"
         );
 
-        stack.set_plain(2.0);
+        stack.set_value(2.0);
         assert!(
             w.changed(mode(&stack), [&stack], [&drive, &bias]),
             "entering the mode fires"
@@ -174,12 +174,12 @@ mod tests {
             "the outside edit was consumed by the poll, not replayed"
         );
 
-        drive.set_plain(8.0);
+        drive.set_value(8.0);
         assert!(
             w.changed(mode(&stack), [&stack], [&drive, &bias]),
             "gated edit inside its mode fires"
         );
-        bias.set_plain(0.4);
+        bias.set_value(0.4);
         assert!(
             !w.changed(mode(&stack), [&stack], [&drive, &bias]),
             "the OTHER mode's param stays gated"

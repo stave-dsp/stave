@@ -70,7 +70,7 @@ pub(super) fn new_view<P: Vst3Export>(
     let controller = PluginController::new(
         inst.param_table.clone(),
         inst.telemetry.clone(),
-        inst.programs.presets().to_vec(),
+        inst.programs.presets().clone(),
         Box::new(gestures),
     );
     let view = FaceView::new(face, Box::new(controller));

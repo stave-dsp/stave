@@ -6,6 +6,8 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use std::sync::Arc;
+
 use stave_core::params::Params;
 use stave_core::{ParamId, Preset};
 
@@ -18,12 +20,12 @@ const PROGRAM_LIST_ID: ProgramListId = 1;
 const IS_PROGRAM_CHANGE: i32 = 1 << 15;
 
 pub(crate) struct Programs {
-    presets: Vec<Preset>,
+    presets: Arc<[Preset]>,
     current: AtomicU32,
 }
 
 impl Programs {
-    pub fn new(presets: Vec<Preset>) -> Self {
+    pub fn new(presets: Arc<[Preset]>) -> Self {
         Self {
             presets,
             current: AtomicU32::new(0),
@@ -41,7 +43,8 @@ impl Programs {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn presets(&self) -> &[Preset] {
+    /// The list, shared (every face holds the same one).
+    pub fn presets(&self) -> &Arc<[Preset]> {
         &self.presets
     }
 
@@ -94,7 +97,7 @@ impl Programs {
         self.current.store(index as u32, Ordering::Relaxed);
         for (id, plain) in &self.presets[index].values {
             if let Some(p) = table.by_id(*id) {
-                p.set_plain(*plain);
+                p.set_value(*plain);
             }
         }
         handler.restart_component(RESTART_PARAM_VALUES_CHANGED);

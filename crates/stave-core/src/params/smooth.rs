@@ -1,6 +1,6 @@
 //! A parameter's declared smoothing. The host/state-visible value is
 //! always the unsmoothed target; the glide is render state, owned by the
-//! processor ([`ContinuousControl`](super::ContinuousControl)). Time
+//! plugin ([`Smoother`](super::Smoother)). Time
 //! constants are rate-derived (`1 − exp(−1/(τ·fs))`), never bare
 //! per-sample coefficients.
 
@@ -23,4 +23,14 @@ impl Smooth {
     /// Default smoothing for continuous params: 15 ms exponential —
     /// inaudible lag, no zipper at GUI/automation rates.
     pub const DEFAULT: Smooth = Smooth::Exp { ms: 15.0 };
+
+    /// The usual glide: exponential, time constant `ms`.
+    pub const fn ms(ms: f64) -> Self {
+        Smooth::Exp { ms }
+    }
+
+    /// A straight line reaching the target in exactly `ms`.
+    pub const fn linear_ms(ms: f64) -> Self {
+        Smooth::Linear { ms }
+    }
 }

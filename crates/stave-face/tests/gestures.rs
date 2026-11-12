@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use stave_core::params::{AnyParam, BoolParam, EnumParam, FloatParam, ParamId, Params, Range, Taper};
+use stave_core::params::{AnyParam, BoolParam, EnumParam, FloatParam, ParamId, Params, Range};
 use stave_core::{param_enum, Controller, GestureSink, PluginController, Telemetry};
 use stave_face::prelude::*;
 use stave_face::{step_of, Mods, Runtime};
@@ -83,13 +83,13 @@ fn rig() -> (Runtime, Rig, Pt, Pt, Pt) {
     let toggle = pt(r[1].x + 28.0, r[1].y + 46.0);
     let foot = pt(r[2].x + r[2].w / 2.0, r[2].y + r[2].h - 24.0);
     let table = Arc::new(Table {
-        knob: FloatParam::new(1, "KNOB", 0.25, Range::new(0.0, 1.0, Taper::Linear)),
-        toggle: EnumParam::new(2, "TOGGLE", Mode(0)),
-        foot: BoolParam::new(3, "FOOT", false),
+        knob: FloatParam::new(ParamId(1), "KNOB", Range::linear(0.0, 1.0)).default(0.25),
+        toggle: EnumParam::new(ParamId(2), "TOGGLE", Mode(0)),
+        foot: BoolParam::new(ParamId(3), "FOOT", false),
     });
     table.knob.set_normalized(0.5);
     let log = Log::default();
-    let controller = PluginController::new(table.clone(), Telemetry::new(), Vec::new(), Box::new(log.clone()));
+    let controller = PluginController::new(table.clone(), Telemetry::new(), Vec::new().into(), Box::new(log.clone()));
     (rt, Rig { table, log, controller }, knob, toggle, foot)
 }
 

@@ -33,12 +33,14 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned as _;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
-pub(crate) fn derive(input: TokenStream) -> TokenStream {
+/// `core` is the path of the stave model crate where the deriving crate
+/// sees it (`::stave_core`, or `::stave::__core` through the umbrella).
+pub(crate) fn derive(input: TokenStream, core: proc_macro2::TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    expand(ast).unwrap_or_else(|e| e.to_compile_error().into())
+    expand(ast, core).unwrap_or_else(|e| e.to_compile_error().into())
 }
 
-fn expand(ast: DeriveInput) -> Result<TokenStream, syn::Error> {
+fn expand(ast: DeriveInput, core: proc_macro2::TokenStream) -> Result<TokenStream, syn::Error> {
     let Data::Struct(data) = &ast.data else {
         return Err(syn::Error::new(
             ast.ident.span(),
@@ -67,12 +69,12 @@ fn expand(ast: DeriveInput) -> Result<TokenStream, syn::Error> {
         let span = field.ty.span();
         if kind == Kind::Group {
             counts.push(quote_spanned! {span=>
-                ::stave_core::params::Params::count(&self.#ident)
+                #core::params::Params::count(&self.#ident)
             });
             lookups.push(quote_spanned! {span=>
-                let n = ::stave_core::params::Params::count(&self.#ident);
+                let n = #core::params::Params::count(&self.#ident);
                 if index < n {
-                    return ::stave_core::params::Params::by_index(&self.#ident, index);
+                    return #core::params::Params::by_index(&self.#ident, index);
                 }
                 index -= n;
             });
@@ -81,7 +83,7 @@ fn expand(ast: DeriveInput) -> Result<TokenStream, syn::Error> {
             lookups.push(quote_spanned! {span=>
                 if index == 0 {
                     return ::core::option::Option::Some(
-                        &self.#ident as &dyn ::stave_core::params::AnyParam
+                        &self.#ident as &dyn #core::params::AnyParam
                     );
                 }
                 index -= 1;
@@ -91,21 +93,21 @@ fn expand(ast: DeriveInput) -> Result<TokenStream, syn::Error> {
     if counts.is_empty() {
         return Err(syn::Error::new(
             ast.ident.span(),
-            "#[derive(Params)] on a struct with no param fields — use stave_core::params::NoParams instead",
+            "#[derive(Params)] on a struct with no param fields — use NoParams instead",
         ));
     }
 
     let name = &ast.ident;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
     let expanded = quote! {
-        impl #impl_generics ::stave_core::params::Params for #name #ty_generics #where_clause {
+        impl #impl_generics #core::params::Params for #name #ty_generics #where_clause {
             fn count(&self) -> usize {
                 0 #(+ #counts)*
             }
             fn by_index(
                 &self,
                 index: usize,
-            ) -> ::core::option::Option<&dyn ::stave_core::params::AnyParam> {
+            ) -> ::core::option::Option<&dyn #core::params::AnyParam> {
                 let mut index = index;
                 #(#lookups)*
                 let _ = index;

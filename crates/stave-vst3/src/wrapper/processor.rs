@@ -95,17 +95,17 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     let frames = d.num_samples as usize;
     // Serve the host-accepted configuration.
     let cfg = inst.config.load(Ordering::Acquire);
-    let ports = <P as Plugin>::CONFIGS[cfg.min(<P as Plugin>::CONFIGS.len() - 1)];
+    let ports = P::LAYOUTS[cfg.min(P::LAYOUTS.len() - 1)];
 
-    let input_ptrs = match ports.in_channels() {
+    let input_ptrs = match ports.input_channels() {
         0 => &[],
         _ => process.input(0).unwrap_or(&[]),
     };
 
     let mut param_buf = [stave_core::ParamChange {
         id: stave_core::ParamId(0),
-        sample_offset: 0,
-        plain_value: 0.0,
+        frame: 0,
+        value: 0.0,
         kind: stave_core::ParamChangeKind::Value,
     }; 256];
     let mut param_count = 0;
@@ -118,7 +118,7 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
         (param_count, params_dropped) =
             events::drain_param_changes(&changes, inst.param_table.as_ref(), &mut param_buf);
         // In place: the standard stable sort may allocate.
-        stave_core::wrapper::sort_param_changes(&mut param_buf[..param_count]);
+        stave_core::runtime::sort_param_changes(&mut param_buf[..param_count]);
         inst.diagnostics
             .faults
             .record(ProcessFault::ParamChangesDropped, params_dropped);
@@ -171,8 +171,8 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     }
 
     // FTZ/DAZ backstop for the whole block (manual flushes in
-    // stave-dsp remain primary; see stave_core::wrapper::ScopedFtz).
-    let _ftz = stave_core::ScopedFtz::engage();
+    // stave-dsp remain primary; see stave_core::runtime::ScopedFtz).
+    let _ftz = stave_core::runtime::ScopedFtz::engage();
 
     // Exclusive processor access for the duration of the block.
     let Some(mut proc) = inst.plugin.claim() else {
@@ -185,9 +185,9 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // Aux inputs: aux buses follow the main input, declaration
     // order. An inactive/absent bus (hosts routinely leave sidechains
     // unconnected) becomes a zero-channel buffer — the AuxIn contract.
-    const MAX_AUX: usize = stave_core::wrapper::MAX_AUX_PORTS;
-    let n_aux = ports.aux_in.len().min(MAX_AUX);
-    let main_ins = usize::from(ports.in_channels() > 0);
+    const MAX_AUX: usize = stave_core::runtime::MAX_AUX_PORTS;
+    let n_aux = ports.aux.len().min(MAX_AUX);
+    let main_ins = usize::from(ports.input_channels() > 0);
     let mut aux_ptrs: [&[*mut f32]; MAX_AUX] = [&[]; MAX_AUX];
     for (a, ptrs) in aux_ptrs.iter_mut().enumerate().take(n_aux) {
         *ptrs = process.input(main_ins + a).unwrap_or(&[]);
@@ -195,13 +195,13 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
 
     // Channel lists the buffers can take. In-place hosts (Live, notably)
     // pass input and output pointing at the same memory — which would
-    // violate the AudioBuffer no-alias contract — so overlapping inputs
+    // violate the buffers' no-alias contract — so overlapping inputs
     // are staged through preallocated scratch; null channels read zeroed
     // scratch. Zero-copy otherwise.
     // SAFETY: the host's channel pointers are valid for `frames` (SDK).
-    let block =
+    let borrows =
         unsafe { proc.split_for_block(input_ptrs, output_ptrs, &aux_ptrs[..n_aux], frames) };
-    let (plugin, gate, io) = (block.plugin, block.bypass, block.io);
+    let (plugin, gate, io) = (borrows.plugin, borrows.bypass, borrows.io);
     if io.truncated {
         inst.diagnostics
             .faults
@@ -213,7 +213,7 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // dry path survives in-place processing). The bypass param comes
     // from the table's cached index (no scan).
     let bypass = inst.bypass_id.and_then(|_| inst.param_table.bypass());
-    let bypassed = bypass.is_some_and(|p| p.plain() >= 0.5);
+    let bypassed = bypass.is_some_and(|p| p.value() >= 0.5);
     if bypass.is_some() {
         // SAFETY: `split_for_block` lists are valid for `run` frames.
         unsafe { gate.feed(io.input, run) };
@@ -223,39 +223,34 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // frames, and staging removed any input/output aliasing.
     let (input, output) = unsafe {
         (
-            AudioBuffer::from_raw(io.input, run),
-            AudioBuffer::from_raw(io.output, run),
+            InputBuffer::from_raw(io.input, run),
+            OutputBuffer::from_raw(io.output, run),
         )
     };
-    let mut aux_bufs = [const { AudioBuffer::empty() }; MAX_AUX];
+    let mut aux_bufs = [const { InputBuffer::empty() }; MAX_AUX];
     for (aux, &ptrs) in aux_bufs.iter_mut().zip(&io.aux).take(n_aux) {
         // SAFETY: as above.
-        *aux = unsafe { AudioBuffer::from_raw(ptrs, run) };
+        *aux = unsafe { InputBuffer::from_raw(ptrs, run) };
     }
     let input_ptrs = io.input;
 
-    let mut ctx = ProcessCtx {
-        sample_rate: inst.shared.sample_rate(),
-        frames: run,
-        transport: process.context().map(translate_transport),
-        input,
-        output,
-        aux: &aux_bufs[..n_aux],
-        params: stave_core::ParamBlock::with_dropped(&param_buf[..param_count], params_dropped),
-        events: &events_buf[..event_count],
-    };
+    let mut block = Block::new(inst.shared.sample_rate(), run, input, output)
+        .with_aux(&aux_bufs[..n_aux])
+        .with_transport(process.context().map(translate_transport))
+        .with_params(stave_core::ParamBlock::with_dropped(&param_buf[..param_count], params_dropped))
+        .with_events(&events_buf[..event_count]);
 
     // Generic I/O level metering (read-only) for the editor's frame
     // rails, published as taps below: input pre-process, output
     // post-process.
     // SAFETY: `split_for_block` lists are valid for `run` frames.
-    let input_peaks = unsafe { stave_core::wrapper::peaks(input_ptrs, run) };
+    let input_peaks = unsafe { stave_core::runtime::peaks(input_ptrs, run) };
 
     let block_id = inst.telemetry.tick_block();
     // Time strictly the plugin's own work (Instant is a wait-free
     // syscall pair — no alloc, no lock; audio-thread safe).
     let t_process = std::time::Instant::now();
-    plugin.process(&mut ctx);
+    plugin.process(&mut block);
     let cpu_frac =
         t_process.elapsed().as_secs_f64() / (frames as f64 / f64::from(inst.shared.sample_rate()));
     // Framework bypass: crossfade plugin output with latency-matched
@@ -265,10 +260,10 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
         unsafe { gate.mix(bypassed, output_ptrs, run) };
     }
     // SAFETY: the host's output channels are writable for `frames` (SDK).
-    unsafe { stave_core::wrapper::zero_tail(output_ptrs, run, frames) };
+    unsafe { stave_core::runtime::zero_tail(output_ptrs, run, frames) };
 
     // SAFETY: valid for `frames` (SDK).
-    let output_peaks = unsafe { stave_core::wrapper::peaks(output_ptrs, frames) };
+    let output_peaks = unsafe { stave_core::runtime::peaks(output_ptrs, frames) };
     inst.taps.publish_peaks(input_peaks, output_peaks);
     inst.taps.cpu.set(cpu_frac);
 

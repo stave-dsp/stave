@@ -6,14 +6,17 @@
 //!   bind stepped parameters, and rotaries and pads bind continuous ones;
 //! * a `Choose` gesture's step is in range.
 
-use stave_core::params::{AnyParam, ParamId};
-use stave_face::{Gesture, HasFace, Runtime};
+use std::sync::Arc;
 
-/// Check the face of a freshly constructed plugin `P`.
-pub fn binds_resolve<P: HasFace>(project: &str) {
-    let plugin = P::new();
-    let face = plugin.face().unwrap_or_else(|| panic!("{project}: declares no face"));
-    let table = plugin.param_table();
+use stave::params::{AnyParam, IndexedParams, ParamId, Params};
+use stave::Plugin;
+use stave_face::{Gesture, Runtime};
+
+/// Check the face of `P` over freshly built params.
+pub fn binds_resolve<P: Plugin>(project: &str) {
+    let params = Arc::new(P::Params::default());
+    let face = P::face(&params).unwrap_or_else(|| panic!("{project}: declares no face"));
+    let table: Arc<dyn Params> = Arc::new(IndexedParams::new(params));
     let rt = Runtime::new(face);
     let lookup = |id: ParamId| -> &dyn AnyParam {
         table

@@ -1,4 +1,4 @@
-//! Adapts a `stave_core::Plugin` to a VST3 component exposing three
+//! Adapts a plugin (`stave_core::runtime::Erased`) to a VST3 component exposing three
 //! interfaces (`IComponent`, `IAudioProcessor`, `IEditController`) on one
 //! object. Implements the VST3 multi-interface convention by giving each
 //! interface its own sub-struct (each starts with its own vtable pointer)
@@ -15,12 +15,9 @@ use alloc::sync::Arc;
 use stave_core::diagnostics::{CallError, Diagnostics, ProcessFault, Severity, TelemetrySink};
 use stave_core::params::Params;
 use stave_core::state::StateStore;
-use stave_core::wrapper::state::{self as wrapper_state, MAX_STATE_BYTES};
-use stave_core::wrapper::{PanicGuard, WrapperTaps};
-use stave_core::{
-    AudioBuffer, Event as StaveEvent, EventKind, Plugin, PluginCell, ProcessCtx, SharedState,
-    Telemetry,
-};
+use stave_core::runtime::state::{self as wrapper_state, MAX_STATE_BYTES};
+use stave_core::runtime::{Erased, PanicGuard, PluginCell, SharedState, WrapperTaps};
+use stave_core::{Block, Event as StaveEvent, EventKind, InputBuffer, OutputBuffer, Telemetry};
 
 use crate::buses;
 use crate::events;
@@ -28,7 +25,7 @@ use crate::host::{out_param, string128, tchar_str, ComponentHandler, Process, St
 pub(crate) use crate::host_context::{build_pcr_vtbl, translate_transport};
 use crate::sys::*;
 pub(crate) use crate::wire_strings::{
-    cstr_to_str, write_cstr_into, write_subcategories, write_utf16_name,
+    write_cstr_into, write_subcategories, write_utf16_name,
 };
 
 mod component;
@@ -53,24 +50,37 @@ use view::*;
 // Per-plugin-type glue
 // ===========================================================================
 
-/// Implemented by the `stave_vst3_export!` macro for the user's plugin type.
-/// Lets generic wrapper code reach the per-type statics (factory, class IDs)
-/// that have to live in the user's crate (Rust statics can't be generic).
-pub trait Vst3Export: Plugin + stave_face::HasFace {
-    /// 16-byte TUID identifying this plugin's IComponent class. Must be
-    /// unique across all VST3 plugins on the user's system.
-    const COMPONENT_CID: Tuid;
-    /// 16-byte TUID for the IEditController class. Returned by
-    /// `IComponent::getControllerClassId`; can equal `COMPONENT_CID` since
-    /// we expose component+controller fused on one object.
-    const CONTROLLER_CID: Tuid;
+/// What the VST3 wrapper needs beyond [`Erased`]: class ids, the version
+/// string, and the face. `stave::export!` implements it; the vtables and
+/// the factory are generic, so a plugin type needs no statics of its own.
+pub trait Vst3Export: Erased {
+    /// The IComponent class id: unique across every VST3 plugin on the
+    /// system ([`derive_cid`](crate::ids::derive_cid) of `INFO.id`).
+    const COMPONENT_CID: Tuid = crate::ids::derive_cid(Self::INFO.id, "component");
+    /// The IEditController class id (`IComponent::getControllerClassId`).
+    const CONTROLLER_CID: Tuid = crate::ids::derive_cid(Self::INFO.id, "controller");
+    /// The version hosts show: `INFO.version`, or the exporting crate's.
+    const VERSION: &'static str = Self::INFO.version;
 
-    /// Per-type vtable pointers. The macro emits each as a `static` in the
-    /// user's crate (Rust statics can't be generic) and returns their
-    /// addresses from these methods.
-    fn component_vtbl() -> *const IComponentVtbl;
-    fn processor_vtbl() -> *const IAudioProcessorVtbl;
-    fn controller_vtbl() -> *const IEditControllerVtbl;
+    /// The plugin's face, if it has one.
+    fn face(&self) -> Option<stave_face::Face> {
+        None
+    }
+}
+
+/// The component vtable for `P`, a promoted constant (one per type).
+pub(crate) fn component_vtbl<P: Vst3Export>() -> *const IComponentVtbl {
+    const { &build_component_vtbl::<P>() }
+}
+
+/// The audio-processor vtable for `P`.
+pub(crate) fn processor_vtbl<P: Vst3Export>() -> *const IAudioProcessorVtbl {
+    const { &build_processor_vtbl::<P>() }
+}
+
+/// The edit-controller vtable for `P`.
+pub(crate) fn controller_vtbl<P: Vst3Export>() -> *const IEditControllerVtbl {
+    const { &build_controller_vtbl::<P>() }
 }
 
 // ===========================================================================
@@ -140,8 +150,8 @@ pub struct Instance<P: Vst3Export> {
     /// with the plugin via Arc — host threads read it without touching
     /// the claimed processor.
     pub param_table: Arc<dyn Params>,
-    /// Factory presets, exposed as the program-change parameter and the
-    /// root unit's program list.
+    /// Factory presets (one list, shared with every face), exposed as the
+    /// program-change parameter and the root unit's program list.
     pub(crate) programs: crate::programs::Programs,
     /// Parameter groups as VST3 units (folders).
     pub(crate) units: crate::units::Units,
@@ -158,7 +168,7 @@ pub struct Instance<P: Vst3Export> {
     pub(crate) handler: Arc<ComponentHandler>,
     /// Id of the param flagged `bypass`, if any — drives the
     /// framework-owned click-free bypass gate.
-    pub bypass_id: Option<u32>,
+    pub bypass_id: Option<stave_core::ParamId>,
     /// Tail mirror (like latency): hosts query from any thread.
     pub tail: AtomicU32,
     /// The instance's telemetry. Always allocated; the wrapper publishes
@@ -229,19 +239,43 @@ fn failure_code(error: &CallError) -> Tresult {
 ///
 /// Entries whose whole body is a constant or a single atomic op cannot
 /// panic and are not wrapped.
-pub(crate) fn ffi_entry<P: Plugin, R>(failed: impl FnOnce() -> R, call: impl FnOnce() -> R) -> R {
-    stave_core::diagnostics::log_panics(const { &P::DESCRIPTOR });
+pub(crate) fn ffi_entry<P: Erased, R>(failed: impl FnOnce() -> R, call: impl FnOnce() -> R) -> R {
+    stave_core::diagnostics::log_panics(const { &P::INFO });
     // AssertUnwindSafe: on a panic, whatever `call` built is dropped
     // during the unwind and `failed()` touches none of it.
     std::panic::catch_unwind(core::panic::AssertUnwindSafe(call)).unwrap_or_else(|_| failed())
 }
 
-/// Stable C ABI helper: return a raw pointer to the instance's telemetry.
-/// Used by the per-type exported lookup symbol the `stave_vst3_export!`
-/// macro emits. The pointer is owned by the Instance — the host must not
-/// free it. Lifetime: valid until the plugin instance is released.
-pub fn telemetry_ptr<P: Vst3Export>(inst: &Instance<P>) -> *const Telemetry {
-    Arc::as_ptr(&inst.telemetry)
+/// The `GetPluginFactory` answer for `P`: its factory, a promoted
+/// constant.
+pub fn factory<P: Vst3Export>() -> *mut FUnknown {
+    let factory: &'static FactoryObj = const {
+        &FactoryObj {
+            vtbl: &build_factory_vtbl::<P>(),
+        }
+    };
+    (factory as *const FactoryObj).cast_mut().cast()
+}
+
+/// The `stave_telemetry_for` answer: the telemetry of the instance behind
+/// `component` (any of its interfaces), or null. Owned by the instance —
+/// read only, valid until the instance is released.
+///
+/// # Safety
+/// `component` is null or an interface pointer `P`'s factory created,
+/// still alive.
+pub unsafe fn telemetry_for<P: Vst3Export>(component: *mut c_void) -> *const Telemetry {
+    if component.is_null() {
+        return ptr::null();
+    }
+    // SAFETY: the contract: every interface object starts
+    // `{ vtbl, parent }` (`parent_of`).
+    let parent = unsafe { parent_of::<P>(component.cast()) };
+    if parent.is_null() {
+        return ptr::null();
+    }
+    // SAFETY: a live interface's parent is its live instance.
+    Arc::as_ptr(unsafe { &(*parent).telemetry })
 }
 
 // ===========================================================================
@@ -264,12 +298,8 @@ unsafe fn parent_of<P: Vst3Export>(this: *mut FUnknown) -> *mut Instance<P> {
 
 /// Scratch must fit the WIDEST declared member — the host can
 /// renegotiate configs between activations.
-fn max_in_channels<P: Plugin>() -> usize {
-    P::CONFIGS
-        .iter()
-        .map(|c| c.in_channels() as usize)
-        .max()
-        .unwrap_or(0)
+fn max_in_channels<P: Erased>() -> usize {
+    P::LAYOUTS.iter().map(|c| c.input_channels()).max().unwrap_or(0)
 }
 
 /// Shared view of the instance. This is the ONLY reference entry points

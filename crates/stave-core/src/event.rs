@@ -1,7 +1,7 @@
 #[derive(Copy, Clone, Debug)]
 pub struct Event {
-    /// Sample offset from the start of the current process block.
-    pub frame: u32,
+    /// Frame offset from the start of the block.
+    pub frame: usize,
     pub kind: EventKind,
 }
 
@@ -45,28 +45,10 @@ impl<'a> EventCursor<'a> {
             let event = self
                 .events
                 .get(self.next)
-                .filter(|e| e.frame as usize <= frame)?;
+                .filter(|e| e.frame <= frame)?;
             self.next += 1;
             Some(event)
         })
-    }
-}
-
-impl NoteEvent {
-    /// This note for a voice rack, its pitch resolved by `tuning`
-    /// (key → Hz; tuning is the instrument's business).
-    pub fn voice_event(&self, tuning: impl Fn(i16) -> f32) -> stave_dsp::VoiceEvent {
-        let (id, key) = (self.note_id, self.key);
-        match self.kind {
-            NoteKind::On => stave_dsp::VoiceEvent::On {
-                id,
-                key,
-                hz: tuning(key),
-                velocity: self.velocity as f32,
-            },
-            NoteKind::Off => stave_dsp::VoiceEvent::Off { id, key },
-            NoteKind::Choke => stave_dsp::VoiceEvent::Choke { id, key },
-        }
     }
 }
 
@@ -74,7 +56,7 @@ impl NoteEvent {
 mod tests {
     use super::*;
 
-    fn note(frame: u32, kind: NoteKind, key: i16) -> Event {
+    fn note(frame: usize, kind: NoteKind, key: i16) -> Event {
         Event {
             frame,
             kind: EventKind::Note(NoteEvent {
@@ -97,15 +79,5 @@ mod tests {
         let mut cursor = EventCursor::new(&events);
         let due: Vec<usize> = (0..6).map(|f| cursor.due(f).count()).collect();
         assert_eq!(due, [1, 0, 0, 2, 0, 0]);
-    }
-
-    #[test]
-    fn a_note_becomes_a_voice_event_with_its_tuned_pitch() {
-        let EventKind::Note(on) = note(0, NoteKind::On, 69).kind;
-        let stave_dsp::VoiceEvent::On { hz, velocity, .. } = on.voice_event(|k| f32::from(k) * 2.0)
-        else {
-            panic!("an on stays an on");
-        };
-        assert_eq!((hz, velocity), (138.0, 0.5));
     }
 }

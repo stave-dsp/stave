@@ -23,7 +23,7 @@ impl GestureSink for Vst3Gestures {
     }
     fn perform(&self, id: ParamId, plain: f64) {
         if let Some(p) = self.table.by_id(id) {
-            self.handler.perform_edit(id.0, p.plain_to_normalized(plain));
+            self.handler.perform_edit(id.0, p.normalize(plain));
         }
     }
     fn end(&self, id: ParamId) {

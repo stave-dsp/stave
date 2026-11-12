@@ -1,6 +1,6 @@
 //! Loom model of the `PluginCell` claim-token protocol.
 //!
-//! Models the atomic choreography of `stave_core::wrapper::PluginCell`
+//! Models the atomic choreography of `stave_core::runtime::PluginCell`
 //! (CAS-claim → exclusive access → Release on drop) rather than the
 //! generic production type; keep in sync with `wrapper.rs`. The invariant:
 //! at most one holder at a time, and a successor observes every write

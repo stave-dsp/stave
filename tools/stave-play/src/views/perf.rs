@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use eframe::egui::{self, Color32, Stroke};
-use stave_core::wrapper::WrapperTaps;
+use stave_core::runtime::WrapperTaps;
 use stave_telemetry::Telemetry;
 
 use crate::debug_log::DebugLog;

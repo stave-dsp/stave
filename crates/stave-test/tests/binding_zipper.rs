@@ -14,8 +14,8 @@
 //!    assertion is relative — smoothing must buy ≥ 25 dB over raw
 //!    steps — plus the instrument-teeth floor on the raw side.
 
-use stave_core::params::{AnyParam, ContinuousControl, FloatParam, Range, Smooth, Taper};
-use stave_core::ParamBlock;
+use stave_core::params::{AnyParam, FloatParam, ParamId, Range, Smooth, Smoother};
+use stave_core::{Environment, ParamBlock};
 use stave_measure::zipper::{zipper_report, ZipperConfig};
 
 const N: usize = 32_768;
@@ -27,14 +27,14 @@ const BLOCK: usize = 64;
 /// Render a tone through the param's declared-smoothing read path,
 /// with the target stepped at block rate by `automation(i)`.
 fn render(p: &FloatParam, automation: impl Fn(usize) -> f64) -> Vec<f64> {
-    let mut control = ContinuousControl::new(p);
-    control.prepare(FS, p);
+    let mut control = Smoother::new(p);
+    control.prepare(&Environment::new(FS as f32, BLOCK));
     let two_pi = 2.0 * std::f64::consts::PI;
     let mut out = vec![0.0f64; N];
     for b in 0..(N / BLOCK) {
         let i0 = b * BLOCK;
-        p.set_plain(automation(i0));
-        let mut ramp = control.begin_block(ParamBlock::empty(), p);
+        p.set_value(automation(i0));
+        let mut ramp = control.ramp_over(ParamBlock::empty(), p);
         for (k, slot) in out[i0..i0 + BLOCK].iter_mut().enumerate() {
             let i = i0 + k;
             *slot = ramp.next_f64() * (two_pi * M as f64 * i as f64 / N as f64).sin();
@@ -60,8 +60,8 @@ fn glide_lane(i: usize) -> f64 {
 
 #[test]
 fn declared_smoothing_meets_the_zipper_limit() {
-    let p = FloatParam::new(1, "gain", 0.25, Range::new(0.0, 1.0, Taper::Linear))
-        .with_smooth(Smooth::Exp { ms: 15.0 });
+    let p = FloatParam::new(ParamId(1), "gain", Range::linear(0.0, 1.0)).default(0.25)
+        .smooth(Smooth::ms(15.0));
     let r = zipper_report(
         &render(&p, glide_lane),
         &ZipperConfig {
@@ -80,10 +80,10 @@ fn declared_smoothing_meets_the_zipper_limit() {
 
 #[test]
 fn smoothing_separates_from_raw_steps() {
-    let smoothed = FloatParam::new(1, "gain", 0.25, Range::new(0.0, 1.0, Taper::Linear))
-        .with_smooth(Smooth::Exp { ms: 15.0 });
-    let raw = FloatParam::new(2, "gain", 0.25, Range::new(0.0, 1.0, Taper::Linear))
-        .with_smooth(Smooth::Off);
+    let smoothed = FloatParam::new(ParamId(1), "gain", Range::linear(0.0, 1.0)).default(0.25)
+        .smooth(Smooth::ms(15.0));
+    let raw = FloatParam::new(ParamId(2), "gain", Range::linear(0.0, 1.0)).default(0.25)
+        .smooth(Smooth::Off);
     let r_s = zipper_report(
         &render(&smoothed, square_lane),
         &ZipperConfig {

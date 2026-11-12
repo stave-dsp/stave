@@ -1,18 +1,24 @@
-//! Processor-owned parameter consumers.
-//!
-//! Parameter objects hold the shared target used by hosts, editors, and
-//! state. These types hold the render state: smoothing history, exact-offset
-//! transitions, and values that are only safe to apply during activation.
+//! The processor's side of parameters: a [`Smoother`] runs a
+//! [`FloatParam`]'s declared glide, [`Steps`] follows a stepped param
+//! (bool, enum) at its exact frames. Parameters hold the shared target
+//! (hosts, faces, state); these hold the per-plugin render state.
 
-use super::{FloatParam, ParamId, Range, Smooth};
-use crate::process::{ParamBlock, ParamChangeKind};
+use super::{BoolParam, EnumParam, FloatParam, ParamEnum, ParamId, Range, Smooth};
+use crate::environment::Environment;
+use crate::process::{Block, ParamBlock, ParamChange, ParamChangeKind};
 
-/// A continuous parameter as seen by one processor instance.
+/// A [`FloatParam`]'s glide, owned by the plugin that runs it.
 ///
-/// Construct this beside the DSP it controls, call [`prepare`](Self::prepare)
-/// on activation, and create one [`ContinuousBlock`] per process call.
+/// Build it from the param in `Plugin::new`, [`prepare`](Self::prepare)
+/// it in `Plugin::prepare`, and take one [`Ramp`] per block:
+///
+/// ```ignore
+/// let mut tilt = self.tilt.ramp(block, &self.params.tilt);
+/// // per frame:
+/// let t = tilt.next();
+/// ```
 #[derive(Clone, Debug)]
-pub struct ContinuousControl {
+pub struct Smoother {
     id: ParamId,
     /// The parameter's restore count when last read: a new count means a
     /// restored value, which is jumped to, not glided to.
@@ -24,12 +30,14 @@ pub struct ContinuousControl {
     exp_coeff: f64,
     linear_len: u32,
     linear_remaining: u32,
+    /// Set by `prepare`: the next ramp starts at the param's value.
+    snap_next: bool,
 }
 
-impl ContinuousControl {
-    /// Copy the immutable declaration and initial target from a parameter.
+impl Smoother {
+    /// The glide `param` declares, starting at its current value.
     pub fn new(param: &FloatParam) -> Self {
-        let initial = param.plain().clamp(param.range().min, param.range().max);
+        let initial = param.plain();
         Self {
             id: param.id(),
             restores: param.restores(),
@@ -40,96 +48,100 @@ impl ContinuousControl {
             exp_coeff: 1.0,
             linear_len: 1,
             linear_remaining: 0,
+            snap_next: true,
         }
     }
 
-    /// Derive rate-dependent state and snap to `param`'s target.
-    pub fn prepare(&mut self, sample_rate: f64, param: &FloatParam) {
-        debug_assert_eq!(
-            param.id(),
-            self.id,
-            "a control prepared from another parameter"
-        );
-        let target = param.plain();
+    /// Derive the rate-dependent state; the next ramp starts at the
+    /// param's value as of its block's start, without a glide.
+    pub fn prepare(&mut self, env: &Environment) {
+        let sample_rate = f64::from(env.sample_rate).max(1.0);
         match self.smooth {
             Smooth::Off => {}
             Smooth::Exp { ms } => {
                 let tau = (ms / 1000.0).max(1e-6);
-                self.exp_coeff = 1.0 - (-1.0 / (tau * sample_rate.max(1.0))).exp();
+                self.exp_coeff = 1.0 - (-1.0 / (tau * sample_rate)).exp();
             }
             Smooth::Linear { ms } => {
-                self.linear_len = ((ms / 1000.0) * sample_rate.max(1.0)).round().max(1.0) as u32;
+                self.linear_len = ((ms / 1000.0) * sample_rate).round().max(1.0) as u32;
             }
         }
-        self.snap(target);
+        self.snap_next = true;
     }
 
-    /// Jump to a value without a glide. Use for activation and state restore.
-    pub fn snap(&mut self, target: f64) {
-        let target = self.clamp(target);
-        self.current = target;
-        self.target = target;
+    /// Jump to `value` without a glide.
+    pub fn snap(&mut self, value: f64) {
+        let value = self.clamp(value);
+        self.current = value;
+        self.target = value;
         self.linear_remaining = 0;
     }
 
-    /// Consume this block's timeline and `param`'s latest target.
-    pub fn begin_block<'control, 'block>(
-        &'control mut self,
-        params: ParamBlock<'block>,
-        param: &FloatParam,
-    ) -> ContinuousBlock<'control, 'block> {
-        debug_assert_eq!(
-            param.id(),
-            self.id,
-            "a control read against another parameter"
-        );
-        // The restore protocol (see `FloatParam::restore_plain`): count,
+    /// The value the last ramp reached.
+    pub fn current(&self) -> f32 {
+        self.current as f32
+    }
+
+    /// This block's per-frame values of `param` (the one this smoother
+    /// was built from), honouring the block's timed changes.
+    pub fn ramp<'s>(&'s mut self, block: &Block<'s>, param: &FloatParam) -> Ramp<'s> {
+        self.ramp_over(block.params(), param)
+    }
+
+    /// [`ramp`](Self::ramp) over a bare change list (tests, tools).
+    pub fn ramp_over<'s>(&'s mut self, changes: ParamBlock<'s>, param: &FloatParam) -> Ramp<'s> {
+        debug_assert_eq!(param.id(), self.id, "a smoother read against another parameter");
+        // The restore protocol (see `FloatParam::restore`): count,
         // value, count. A count that moved, or an odd (in-progress) count,
         // means the value read belongs to a restore — snap to it.
         let first = param.restores();
-        let store_target = param.plain();
+        let value = param.plain();
         let second = param.restores();
-        self.begin_block_read(params, first, store_target, second)
+        self.ramp_read(changes, first, value, second)
     }
 
-    /// [`begin_block`](Self::begin_block) after its three loads.
-    fn begin_block_read<'control, 'block>(
-        &'control mut self,
-        params: ParamBlock<'block>,
+    /// [`ramp_over`](Self::ramp_over) after its three loads.
+    fn ramp_read<'s>(
+        &'s mut self,
+        changes: ParamBlock<'s>,
         first: u32,
-        store_target: f64,
+        value: f64,
         second: u32,
-    ) -> ContinuousBlock<'control, 'block> {
-        self.observe_restore(first, store_target, second);
-        let has_points = params
+    ) -> Ramp<'s> {
+        let has_points = changes
             .changes()
             .iter()
             .any(|change| change.id == self.id && change.kind == ParamChangeKind::Value);
-        let final_target = self.clamp(store_target);
+        if core::mem::take(&mut self.snap_next) {
+            // The first block after prepare starts at the param's value
+            // as of the block's start: the table's, unless this block
+            // moves it — then the value before its first point, the last
+            // this smoother saw (the table already holds the block's end).
+            self.restores = first;
+            let start = if has_points { self.target } else { value };
+            self.snap(start);
+        }
+        self.observe_restore(first, value, second);
+        let final_target = self.clamp(value);
         if !has_points {
             self.retarget(final_target);
         }
-        ContinuousBlock {
-            control: self,
-            changes: params.changes(),
+        Ramp {
+            smoother: self,
+            changes: changes.changes(),
             next_change: 0,
-            sample_offset: 0,
+            frame: 0,
             final_target,
         }
     }
 
-    pub fn current(&self) -> f64 {
-        self.current
-    }
-
-    /// One read of the store under the restore protocol: the restore count
+    /// One read of the store under the restore protocol: the count
     /// before (`first`) and after (`second`) reading `value`. Any sign of
     /// a restore — a count other than the last seen, a count that moved
     /// during the read, or an odd count (the writer is mid-restore) —
-    /// snaps; a value that might belong to a restore is never glided to.
-    /// Remembering `first`, not `second`, keeps an unsettled read
-    /// (moved or odd) a restore for the next block too, which snaps again
-    /// to whatever value the restore left.
+    /// snaps. Remembering `first`, not `second`, keeps an unsettled read
+    /// a restore for the next block too, which snaps again to whatever
+    /// value the restore left.
     fn observe_restore(&mut self, first: u32, value: f64, second: u32) {
         if first != self.restores || second != first || first & 1 == 1 {
             self.restores = first;
@@ -141,7 +153,7 @@ impl ContinuousControl {
         if value.is_nan() {
             self.target
         } else {
-            value.clamp(self.range.min, self.range.max)
+            value.clamp(self.range.min(), self.range.max())
         }
     }
 
@@ -183,118 +195,163 @@ impl ContinuousControl {
     }
 }
 
-/// The allocation-free value stream for one process call.
-pub struct ContinuousBlock<'control, 'block> {
-    control: &'control mut ContinuousControl,
-    changes: &'block [crate::process::ParamChange],
+/// One block of a [`Smoother`]'s values: call [`next`](Self::next) once
+/// per frame. Allocation free.
+pub struct Ramp<'s> {
+    smoother: &'s mut Smoother,
+    changes: &'s [ParamChange],
     next_change: usize,
-    sample_offset: u32,
+    frame: usize,
     final_target: f64,
 }
 
-impl ContinuousBlock<'_, '_> {
+impl Ramp<'_> {
+    /// The next frame's value.
     #[inline]
     #[expect(
         clippy::should_implement_trait,
-        reason = "an endless per-sample stream; Option would force unwrap in every DSP loop"
+        reason = "an endless per-frame stream; Option would force unwrap in every DSP loop"
     )]
     pub fn next(&mut self) -> f32 {
         self.next_f64() as f32
     }
 
+    /// [`next`](Self::next) at full precision.
     #[inline]
     pub fn next_f64(&mut self) -> f64 {
         while let Some(change) = self.changes.get(self.next_change) {
-            if change.sample_offset > self.sample_offset {
+            if change.frame > self.frame {
                 break;
             }
             self.next_change += 1;
-            if change.id == self.control.id && change.kind == ParamChangeKind::Value {
-                self.control.retarget(change.plain_value);
+            if change.id == self.smoother.id && change.kind == ParamChangeKind::Value {
+                self.smoother.retarget(change.value);
             }
         }
-        self.sample_offset += 1;
-        self.control.next_value()
+        self.frame += 1;
+        self.smoother.next_value()
     }
 }
 
-impl Drop for ContinuousBlock<'_, '_> {
+impl Drop for Ramp<'_> {
     fn drop(&mut self) {
-        // The store already contains the last host point. If a caller renders
-        // fewer frames than the host supplied, the next block still aims at
-        // the authoritative target.
-        self.control.retarget(self.final_target);
+        // The table already holds the last host point: if fewer frames
+        // were taken than the block has, the next block still aims at it.
+        self.smoother.retarget(self.final_target);
     }
 }
 
-/// One exact-offset transition from a [`DiscreteControl`].
+/// A parameter with discrete steps: [`BoolParam`] and [`EnumParam`].
+pub trait Stepped {
+    /// The value in its natural type.
+    type Value: Copy;
+    fn id(&self) -> ParamId;
+    /// The current value.
+    fn value(&self) -> Self::Value;
+    /// A plain (wire) value as this param's value.
+    fn decode(&self, plain: f64) -> Self::Value;
+}
+
+impl Stepped for BoolParam {
+    type Value = bool;
+    fn id(&self) -> ParamId {
+        BoolParam::id(self)
+    }
+    fn value(&self) -> bool {
+        BoolParam::value(self)
+    }
+    fn decode(&self, plain: f64) -> bool {
+        plain >= 0.5
+    }
+}
+
+impl<T: ParamEnum> Stepped for EnumParam<T> {
+    type Value = T;
+    fn id(&self) -> ParamId {
+        EnumParam::id(self)
+    }
+    fn value(&self) -> T {
+        EnumParam::value(self)
+    }
+    fn decode(&self, plain: f64) -> T {
+        T::from_index(if plain.is_nan() { 0 } else { plain.round().max(0.0) as u32 })
+    }
+}
+
+/// One change of a stepped param, at its frame.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct DiscreteChange<T> {
-    pub sample_offset: u32,
+pub struct Step<T> {
+    pub frame: usize,
     pub value: T,
 }
 
-/// Processor-owned state for bools, enums, and other stepped controls.
-///
-/// The decode function is a plain function pointer so the audio path remains
-/// allocation-free and statically dispatched.
-pub struct DiscreteControl<T: Copy> {
+/// A stepped param as the plugin follows it: the value in force, and
+/// each block's changes at their exact frames.
+#[derive(Clone, Debug)]
+pub struct Steps<T: Copy> {
     id: ParamId,
     value: T,
-    decode: fn(f64) -> T,
 }
 
-impl<T: Copy> DiscreteControl<T> {
-    pub const fn new(id: ParamId, initial: T, decode: fn(f64) -> T) -> Self {
+impl<T: Copy> Steps<T> {
+    /// Follow `param`, starting at its current value.
+    pub fn new<P: Stepped<Value = T>>(param: &P) -> Self {
         Self {
-            id,
-            value: initial,
-            decode,
+            id: param.id(),
+            value: param.value(),
         }
     }
 
+    /// The value in force (after the last block, the param's value).
     pub fn value(&self) -> T {
         self.value
     }
 
-    pub fn begin_block<'control, 'block>(
-        &'control mut self,
-        params: ParamBlock<'block>,
-        store_target: f64,
-    ) -> DiscreteBlock<'control, 'block, T> {
-        let final_value = (self.decode)(store_target);
-        DiscreteBlock {
-            control: self,
-            changes: params.changes(),
-            next_change: 0,
-            final_value,
+    /// This block's changes of `param`, in frame order. When the
+    /// iterator is dropped the value in force is the param's latest.
+    pub fn changes<'s, P: Stepped<Value = T>>(
+        &'s mut self,
+        block: &Block<'s>,
+        param: &'s P,
+    ) -> StepChanges<'s, P> {
+        self.changes_over(block.params(), param)
+    }
+
+    /// [`changes`](Self::changes) over a bare change list (tests, tools).
+    pub fn changes_over<'s, P: Stepped<Value = T>>(
+        &'s mut self,
+        changes: ParamBlock<'s>,
+        param: &'s P,
+    ) -> StepChanges<'s, P> {
+        debug_assert_eq!(param.id(), self.id, "steps read against another parameter");
+        StepChanges {
+            steps: self,
+            param,
+            changes: changes.changes(),
+            next: 0,
         }
     }
-
-    pub fn snap(&mut self, plain: f64) {
-        self.value = (self.decode)(plain);
-    }
 }
 
-/// Exact-offset iterator for one discrete control and process call.
-pub struct DiscreteBlock<'control, 'block, T: Copy> {
-    control: &'control mut DiscreteControl<T>,
-    changes: &'block [crate::process::ParamChange],
-    next_change: usize,
-    final_value: T,
+/// The iterator [`Steps::changes`] returns.
+pub struct StepChanges<'s, P: Stepped> {
+    steps: &'s mut Steps<P::Value>,
+    param: &'s P,
+    changes: &'s [ParamChange],
+    next: usize,
 }
 
-impl<T: Copy> Iterator for DiscreteBlock<'_, '_, T> {
-    type Item = DiscreteChange<T>;
+impl<P: Stepped> Iterator for StepChanges<'_, P> {
+    type Item = Step<P::Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(change) = self.changes.get(self.next_change) {
-            self.next_change += 1;
-            if change.id == self.control.id && change.kind == ParamChangeKind::Value {
-                let value = (self.control.decode)(change.plain_value);
-                self.control.value = value;
-                return Some(DiscreteChange {
-                    sample_offset: change.sample_offset,
+        while let Some(change) = self.changes.get(self.next) {
+            self.next += 1;
+            if change.id == self.steps.id && change.kind == ParamChangeKind::Value {
+                let value = self.param.decode(change.value);
+                self.steps.value = value;
+                return Some(Step {
+                    frame: change.frame,
                     value,
                 });
             }
@@ -303,20 +360,21 @@ impl<T: Copy> Iterator for DiscreteBlock<'_, '_, T> {
     }
 }
 
-impl<T: Copy> Drop for DiscreteBlock<'_, '_, T> {
+impl<P: Stepped> Drop for StepChanges<'_, P> {
     fn drop(&mut self) {
-        self.control.value = self.final_value;
+        self.steps.value = self.param.value();
     }
 }
 
-/// A value whose active form may only change at activation/restart.
+/// A value whose active form may only change at a safe point (the
+/// plugin's `prepare` or `reset`): set it any time, apply it there.
 #[derive(Clone, Debug)]
-pub struct ReconfigureControl<T> {
+pub struct Deferred<T> {
     pending: T,
     active: T,
 }
 
-impl<T: Clone> ReconfigureControl<T> {
+impl<T: Clone> Deferred<T> {
     pub fn new(initial: T) -> Self {
         Self {
             pending: initial.clone(),
@@ -324,7 +382,7 @@ impl<T: Clone> ReconfigureControl<T> {
         }
     }
 
-    pub fn set_pending(&mut self, value: T) {
+    pub fn set(&mut self, value: T) {
         self.pending = value;
     }
 
@@ -336,100 +394,36 @@ impl<T: Clone> ReconfigureControl<T> {
         &self.active
     }
 
-    /// Apply the latest pending value at the processor's safe point.
-    pub fn activate(&mut self) -> &T {
+    /// Make the pending value the active one (at the safe point).
+    pub fn apply(&mut self) -> &T {
         self.active.clone_from(&self.pending);
         &self.active
     }
 }
 
-/// Declares a processor's continuous controls over named [`FloatParam`]
-/// fields of a params struct: `$controls` holds one
-/// [`ContinuousControl`] per field, `$ramps` one block's
-/// [`ContinuousBlock`]s, and `$values` one sample's values.
-///
-/// ```ignore
-/// stave_core::continuous_controls! {
-///     pub struct Controls<MyParams> => Ramps, Values { drive, mix }
-/// }
-/// let mut ramps = self.controls.begin_block(ctx.params, &params);
-/// // per sample:
-/// let Values { drive, mix } = ramps.next();
-/// ```
-#[macro_export]
-macro_rules! continuous_controls {
-    (
-        $(#[$meta:meta])*
-        $vis:vis struct $controls:ident<$params:ty> => $ramps:ident, $values:ident {
-            $($field:ident),+ $(,)?
-        }
-    ) => {
-        $(#[$meta])*
-        $vis struct $controls {
-            $($field: $crate::params::ContinuousControl),+
-        }
-
-        $vis struct $ramps<'control, 'block> {
-            $($field: $crate::params::ContinuousBlock<'control, 'block>),+
-        }
-
-        #[derive(Copy, Clone, Debug)]
-        $vis struct $values {
-            $(pub $field: f32),+
-        }
-
-        impl $controls {
-            $vis fn new(params: &$params) -> Self {
-                Self { $($field: $crate::params::ContinuousControl::new(&params.$field)),+ }
-            }
-
-            $vis fn prepare(&mut self, sample_rate: f64, params: &$params) {
-                $(self.$field.prepare(sample_rate, &params.$field);)+
-            }
-
-            $vis fn begin_block<'control, 'block>(
-                &'control mut self,
-                block: $crate::ParamBlock<'block>,
-                params: &$params,
-            ) -> $ramps<'control, 'block> {
-                $ramps { $($field: self.$field.begin_block(block, &params.$field)),+ }
-            }
-        }
-
-        impl $ramps<'_, '_> {
-            #[expect(
-                clippy::should_implement_trait,
-                reason = "an endless per-sample stream, like ContinuousBlock::next"
-            )]
-            $vis fn next(&mut self) -> $values {
-                $values { $($field: self.$field.next()),+ }
-            }
-        }
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{AnyParam, Taper};
+    use crate::params::AnyParam;
     use crate::process::{ParamChange, ParamChangeKind};
 
     fn param(smooth: Smooth) -> FloatParam {
-        FloatParam::new(7, "drive", 0.0, Range::new(0.0, 1.0, Taper::Linear)).with_smooth(smooth)
+        FloatParam::new(ParamId(7), "drive", Range::linear(0.0, 1.0)).smooth(smooth)
     }
 
     #[test]
     fn continuous_steps_at_the_declared_offset() {
         let p = param(Smooth::Off);
-        let mut control = ContinuousControl::new(&p);
-        p.set_plain(1.0);
+        let mut control = Smoother::new(&p);
+        settle(&mut control, &p, 48_000.0);
+        p.set_value(1.0);
         let points = [ParamChange {
             id: ParamId(7),
-            sample_offset: 3,
-            plain_value: 1.0,
+            frame: 3,
+            value: 1.0,
             kind: ParamChangeKind::Value,
         }];
-        let mut block = control.begin_block(ParamBlock::new(&points), &p);
+        let mut block = control.ramp_over(ParamBlock::new(&points), &p);
         assert_eq!(
             (0..6).map(|_| block.next()).collect::<Vec<_>>(),
             [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
@@ -438,13 +432,13 @@ mod tests {
 
     #[test]
     fn continuous_state_is_owned_by_each_processor() {
-        let p = param(Smooth::Linear { ms: 10.0 });
-        let mut a = ContinuousControl::new(&p);
-        let mut b = ContinuousControl::new(&p);
-        a.prepare(1_000.0, &p);
-        b.prepare(1_000.0, &p);
-        p.set_plain(1.0);
-        let mut block = a.begin_block(ParamBlock::empty(), &p);
+        let p = param(Smooth::linear_ms(10.0));
+        let mut a = Smoother::new(&p);
+        let mut b = Smoother::new(&p);
+        settle(&mut a, &p, 1_000.0);
+        settle(&mut b, &p, 1_000.0);
+        p.set_value(1.0);
+        let mut block = a.ramp_over(ParamBlock::empty(), &p);
         for _ in 0..5 {
             block.next();
         }
@@ -457,25 +451,32 @@ mod tests {
         );
     }
 
-    fn prepared(smooth: Smooth, rate: f64, initial: f64) -> (FloatParam, ContinuousControl) {
-        let p = FloatParam::new(7, "drive", initial, Range::new(0.0, 1.0, Taper::Linear))
-            .with_smooth(smooth);
-        let mut control = ContinuousControl::new(&p);
-        control.prepare(rate, &p);
+    /// Prepare at `rate` and take the first (snapping) ramp.
+    fn settle(control: &mut Smoother, p: &FloatParam, rate: f32) {
+        control.prepare(&Environment::new(rate, 64));
+        drop(control.ramp_over(ParamBlock::empty(), p));
+    }
+
+    fn prepared(smooth: Smooth, rate: f32, initial: f64) -> (FloatParam, Smoother) {
+        let p = FloatParam::new(ParamId(7), "drive", Range::linear(0.0, 1.0))
+            .default(initial)
+            .smooth(smooth);
+        let mut control = Smoother::new(&p);
+        settle(&mut control, &p, rate);
         (p, control)
     }
 
-    fn render(control: &mut ContinuousControl, p: &FloatParam, target: f64, n: usize) -> Vec<f64> {
-        p.set_plain(target);
-        let mut block = control.begin_block(ParamBlock::empty(), p);
+    fn render(control: &mut Smoother, p: &FloatParam, target: f64, n: usize) -> Vec<f64> {
+        p.set_value(target);
+        let mut block = control.ramp_over(ParamBlock::empty(), p);
         (0..n).map(|_| block.next_f64()).collect()
     }
 
-    fn point(offset: u32, value: f64) -> ParamChange {
+    fn point(offset: usize, value: f64) -> ParamChange {
         ParamChange {
             id: ParamId(7),
-            sample_offset: offset,
-            plain_value: value,
+            frame: offset,
+            value,
             kind: ParamChangeKind::Value,
         }
     }
@@ -488,7 +489,7 @@ mod tests {
 
     #[test]
     fn exp_time_constant_is_rate_derived() {
-        let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, 0.0);
+        let (p, mut c) = prepared(Smooth::ms(15.0), 48_000.0, 0.0);
         let tau = (0.015 * 48_000.0) as usize;
         let after_tau = render(&mut c, &p, 1.0, tau)[tau - 1];
         assert!(
@@ -499,7 +500,7 @@ mod tests {
 
     #[test]
     fn linear_arrives_exactly_and_holds() {
-        let (p, mut c) = prepared(Smooth::Linear { ms: 10.0 }, 1_000.0, 0.0);
+        let (p, mut c) = prepared(Smooth::linear_ms(10.0), 1_000.0, 0.0);
         let out = render(&mut c, &p, 1.0, 12);
         assert!((out[4] - 0.5).abs() < 1e-12, "midpoint {}", out[4]);
         assert_eq!(out[9..], [1.0; 3], "exact arrival, then hold");
@@ -507,7 +508,7 @@ mod tests {
 
     #[test]
     fn a_glide_continues_across_blocks() {
-        let (p, mut c) = prepared(Smooth::Linear { ms: 10.0 }, 1_000.0, 0.0);
+        let (p, mut c) = prepared(Smooth::linear_ms(10.0), 1_000.0, 0.0);
         let a = render(&mut c, &p, 1.0, 4);
         let b = render(&mut c, &p, 1.0, 6);
         assert!((a[3] - 0.4).abs() < 1e-12);
@@ -517,7 +518,7 @@ mod tests {
 
     #[test]
     fn a_linear_retarget_restarts_from_the_current_value() {
-        let (p, mut c) = prepared(Smooth::Linear { ms: 10.0 }, 1_000.0, 0.0);
+        let (p, mut c) = prepared(Smooth::linear_ms(10.0), 1_000.0, 0.0);
         render(&mut c, &p, 1.0, 5);
         let out = render(&mut c, &p, 0.0, 10);
         assert!(
@@ -530,10 +531,9 @@ mod tests {
 
     #[test]
     fn a_restored_value_is_jumped_to_not_glided_to() {
-        let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, 0.0);
-        p.set_plain(0.7);
-        (&p as &dyn AnyParam).mark_restored();
-        let mut block = c.begin_block(ParamBlock::empty(), &p);
+        let (p, mut c) = prepared(Smooth::ms(15.0), 48_000.0, 0.0);
+        (&p as &dyn AnyParam).restore(0.7);
+        let mut block = c.ramp_over(ParamBlock::empty(), &p);
         assert_eq!(
             [block.next_f64(), block.next_f64()],
             [0.7, 0.7],
@@ -542,10 +542,10 @@ mod tests {
     }
 
     #[test]
-    fn a_restore_snaps_through_restore_plain() {
-        let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, 0.0);
-        (&p as &dyn AnyParam).restore_plain(0.7);
-        let mut block = c.begin_block(ParamBlock::empty(), &p);
+    fn a_restore_snaps_through_restore() {
+        let (p, mut c) = prepared(Smooth::ms(15.0), 48_000.0, 0.0);
+        (&p as &dyn AnyParam).restore(0.7);
+        let mut block = c.ramp_over(ParamBlock::empty(), &p);
         assert_eq!([block.next_f64(), block.next_f64()], [0.7, 0.7]);
     }
 
@@ -604,7 +604,7 @@ mod tests {
         const OLD: f64 = 0.0;
         const NEW: f64 = 0.7;
         for steps in interleavings(3, 3) {
-            let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, OLD);
+            let (p, mut c) = prepared(Smooth::ms(15.0), 48_000.0, OLD);
             let start = p.restores();
             let (mut count, mut value) = (start, OLD);
             let mut reads = (0u32, 0.0f64, 0u32);
@@ -618,14 +618,14 @@ mod tests {
                 }
             }
             let first: Vec<f64> = {
-                let mut block = c.begin_block_read(ParamBlock::empty(), reads.0, reads.1, reads.2);
+                let mut block = c.ramp_read(ParamBlock::empty(), reads.0, reads.1, reads.2);
                 (0..64).map(|_| block.next_f64()).collect()
             };
             // The writer has finished: the real store holds the restore.
-            (&p as &dyn AnyParam).restore_plain(NEW);
+            (&p as &dyn AnyParam).restore(NEW);
             assert_eq!(p.restores(), start + 2);
             let second: Vec<f64> = {
-                let mut block = c.begin_block(ParamBlock::empty(), &p);
+                let mut block = c.ramp_over(ParamBlock::empty(), &p);
                 (0..64).map(|_| block.next_f64()).collect()
             };
             assert!(
@@ -647,7 +647,7 @@ mod tests {
     #[test]
     fn the_model_catches_the_old_value_then_count_protocol() {
         let glided = interleavings(2, 2).into_iter().any(|steps| {
-            let (p, mut c) = prepared(Smooth::Exp { ms: 15.0 }, 48_000.0, 0.0);
+            let (p, mut c) = prepared(Smooth::ms(15.0), 48_000.0, 0.0);
             let seen = p.restores();
             let (mut count, mut value) = (seen, 0.0);
             let (mut read_value, mut read_count) = (0.0, 0);
@@ -663,7 +663,7 @@ mod tests {
             if read_count != seen {
                 c.snap(read_value);
             }
-            let mut block = c.begin_block_read(ParamBlock::empty(), seen, read_value, seen);
+            let mut block = c.ramp_read(ParamBlock::empty(), seen, read_value, seen);
             let v = block.next_f64();
             v != 0.0 && v != 0.7
         });
@@ -672,10 +672,10 @@ mod tests {
 
     #[test]
     fn a_scheduled_point_retargets_an_exp_glide_at_its_offset() {
-        let (p, mut c) = prepared(Smooth::Exp { ms: 1.0 }, 48_000.0, 0.0);
-        p.set_plain(1.0);
+        let (p, mut c) = prepared(Smooth::ms(1.0), 48_000.0, 0.0);
+        p.set_value(1.0);
         let points = [point(100, 1.0)];
-        let mut block = c.begin_block(ParamBlock::new(&points), &p);
+        let mut block = c.ramp_over(ParamBlock::new(&points), &p);
         let mut before = 0.0;
         for i in 0..300 {
             let v = block.next_f64();
@@ -692,7 +692,7 @@ mod tests {
     fn values_honor_the_declared_range() {
         let (p, mut c) = prepared(Smooth::Off, 48_000.0, 0.5);
         let points = [point(3, 9.0)];
-        let mut block = c.begin_block(ParamBlock::new(&points), &p);
+        let mut block = c.ramp_over(ParamBlock::new(&points), &p);
         for i in 0..8 {
             let v = block.next_f64();
             assert!((0.0..=1.0).contains(&v), "sample {i} escaped: {v}");
@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn exp_settles_onto_the_target() {
-        let (p, mut c) = prepared(Smooth::Exp { ms: 1.0 }, 48_000.0, 0.0);
+        let (p, mut c) = prepared(Smooth::ms(1.0), 48_000.0, 0.0);
         render(&mut c, &p, 1.0, 4_800);
         assert_eq!(
             c.current(),
@@ -711,44 +711,45 @@ mod tests {
     }
 
     #[test]
-    fn discrete_changes_keep_exact_offsets() {
+    fn steps_keep_exact_frames() {
         let points = [
             ParamChange {
                 id: ParamId(9),
-                sample_offset: 2,
-                plain_value: 1.0,
+                frame: 2,
+                value: 1.0,
                 kind: ParamChangeKind::Value,
             },
             ParamChange {
                 id: ParamId(9),
-                sample_offset: 5,
-                plain_value: 0.0,
+                frame: 5,
+                value: 0.0,
                 kind: ParamChangeKind::Value,
             },
         ];
-        let mut control = DiscreteControl::new(ParamId(9), false, |v| v >= 0.5);
-        let changes: Vec<_> = control.begin_block(ParamBlock::new(&points), 0.0).collect();
+        let hold = BoolParam::new(ParamId(9), "Hold", false);
+        let mut steps = Steps::new(&hold);
+        let changes: Vec<_> = steps.changes_over(ParamBlock::new(&points), &hold).collect();
         assert_eq!(
             changes,
             [
-                DiscreteChange {
-                    sample_offset: 2,
+                super::Step {
+                    frame: 2,
                     value: true
                 },
-                DiscreteChange {
-                    sample_offset: 5,
+                super::Step {
+                    frame: 5,
                     value: false
                 },
             ]
         );
-        assert!(!control.value());
+        assert!(!steps.value());
     }
 
     #[test]
-    fn reconfigure_applies_only_at_the_safe_point() {
-        let mut control = ReconfigureControl::new(2u8);
-        control.set_pending(4);
-        assert_eq!(*control.active(), 2);
-        assert_eq!(*control.activate(), 4);
+    fn deferred_applies_only_at_the_safe_point() {
+        let mut d = Deferred::new(2u8);
+        d.set(4);
+        assert_eq!(*d.active(), 2);
+        assert_eq!(*d.apply(), 4);
     }
 }

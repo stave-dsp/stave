@@ -1,6 +1,7 @@
 //! The taps every format wrapper publishes for a stave plugin.
 
-use crate::telemetry::{Tap, Taps};
+use crate::telemetry::Tap;
+use crate::Taps;
 
 /// Published by the wrapper around every `process` call: peak level in
 /// and out (dBFS, −120 floor; all channels, left, right) for the editor's

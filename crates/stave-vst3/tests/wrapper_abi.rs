@@ -19,8 +19,9 @@ use std::ffi::c_void;
 use std::ptr;
 use std::sync::Arc;
 
-use stave_core::params::{FloatParam, Params, Range, Smooth, Taper};
-use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
+use stave_core::params::{FloatParam, Params, Range, Smooth};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Info, Telemetry};
 use stave_vst3::sys::*;
 use stave_vst3::wrapper::FactoryObj;
 
@@ -29,16 +30,16 @@ use stave_vst3::wrapper::FactoryObj;
 // in-place comparison catches both overwritten-input bugs and state skew.
 // ===========================================================================
 
-#[derive(stave_core::params::Params)]
+#[derive(stave_core::Params)]
 struct EchoParams {
     gain: FloatParam,
     mix: FloatParam,
 }
 
 fn unit(id: u32, name: &'static str, default: f64) -> FloatParam {
-    FloatParam::new(id, name, default, Range::new(0.0, 1.0, Taper::Linear))
-        .with_group("Main")
-        .with_smooth(Smooth::Off)
+    FloatParam::new(stave_core::ParamId(id), name, Range::linear(0.0, 1.0)).default(default)
+        .group("Main")
+        .smooth(Smooth::Off)
 }
 
 const TAPS: usize = 16;
@@ -49,18 +50,18 @@ struct TestEcho {
     pos: usize,
 }
 
-impl Plugin for TestEcho {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.echo",
-        name: c"Test Echo",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"ABI soundness fixture",
+impl Erased for TestEcho {
+    const INFO: Info = Info {
+        id: "com.stave.test.echo",
+        name: "Test Echo",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "ABI soundness fixture",
         features: &[],
     };
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         Self {
             params: Arc::new(EchoParams {
                 gain: unit(0, "gain", 0.5),
@@ -71,37 +72,31 @@ impl Plugin for TestEcho {
         }
     }
 
-    fn param_table(&self) -> Arc<dyn Params> {
+    fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        let gain = self.params.gain.plain() as f32;
-        let mix = self.params.mix.plain() as f32;
-        let chans = ctx
-            .output
-            .channel_count()
+    fn process(&mut self, block: &mut Block<'_>) {
+        let gain = self.params.gain.value();
+        let mix = self.params.mix.value();
+        let chans = block.output().channel_count()
             .min(2)
-            .min(ctx.input.channel_count());
-        for f in 0..ctx.frames {
+            .min(block.input().channel_count());
+        for f in 0..block.frames() {
             for c in 0..chans {
-                let x = ctx.input.channel_ref(c)[f];
+                let x = block.input().channel(c)[f];
                 let d = self.dly[c][self.pos];
                 self.dly[c][self.pos] = x;
-                ctx.output.channel(c)[f] = mix * (gain * x + 0.25 * d);
+                block.output().channel_mut(c)[f] = mix * (gain * x + 0.25 * d);
             }
             self.pos = (self.pos + 1) % TAPS;
         }
     }
 }
 
-impl stave_vst3::stave_face::HasFace for TestEcho {}
+impl stave_vst3::wrapper::Vst3Export for TestEcho {}
 
-stave_vst3::stave_vst3_export!(
-    raw TestEcho,
-    component_cid: (0x7e57_0001, 0x7e57_0002, 0x7e57_0003, 0x7e57_0004),
-    controller_cid: (0x7e57_0001, 0x7e57_0002, 0x7e57_0005, 0x7e57_0006),
-);
+stave_vst3::export_vst3!(TestEcho);
 
 // ===========================================================================
 // Minimal host plumbing
@@ -420,8 +415,8 @@ fn refusals_and_process_faults_are_logged() {
     unsafe {
         let host = create_instance();
         let telemetry = &*stave_telemetry_for(host.component.cast());
-        assert_eq!(telemetry.value(stave_core::wrapper::WrapperTaps::IO_IN), Some(-120.0));
-        assert_eq!(telemetry.value(stave_core::wrapper::WrapperTaps::CPU), None);
+        assert_eq!(telemetry.value(stave_core::runtime::WrapperTaps::IO_IN), Some(-120.0));
+        assert_eq!(telemetry.value(stave_core::runtime::WrapperTaps::CPU), None);
         assert_eq!(
             (host.proc_vtbl().process)(host.processor, ptr::null_mut()),
             K_INVALID_ARGUMENT

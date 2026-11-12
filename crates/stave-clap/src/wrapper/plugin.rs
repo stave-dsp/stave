@@ -56,11 +56,12 @@ pub(super) unsafe extern "C" fn plugin_activate<P: ClapExport>(
             };
             inst.shared.set_sample_rate(sample_rate as f32);
             inst.shared.set_max_frames(max_frames);
-            proc.plugin
-                .activate(sample_rate as f32, max_frames as usize);
+            let env = stave_core::Environment::new(sample_rate as f32, max_frames as usize)
+                .with_layout(crate::ports::selected(inst));
+            proc.plugin.prepare(&env);
             proc.plugin.reset();
             proc.prepare_scratch(max_in_channels::<P>(), (max_frames as usize).max(1));
-            let latency = proc.plugin.latency_samples();
+            let latency = proc.plugin.latency();
             proc.bypass.prepare(
                 max_in_channels::<P>(),
                 latency as usize,
@@ -69,7 +70,7 @@ pub(super) unsafe extern "C" fn plugin_activate<P: ClapExport>(
             );
             inst.shared.set_latency(latency);
             inst.tail.store(
-                proc.plugin.tail().to_samples(),
+                stave_core::runtime::tail_wire(proc.plugin.tail()),
                 core::sync::atomic::Ordering::Release,
             );
             inst.shared.set_activated(true);
@@ -98,10 +99,10 @@ pub(super) unsafe extern "C" fn plugin_deactivate<P: ClapExport>(plugin: *const 
         "deactivate",
         || (),
         || {
-            let Some(mut proc) = inst.plugin.claim() else {
+            // Claimed only to order this after a running block.
+            let Some(_proc) = inst.plugin.claim() else {
                 return inst.report("deactivate", &CallError::ProcessorBusy);
             };
-            proc.plugin.deactivate();
             inst.shared.set_activated(false);
         },
     );

@@ -1,75 +1,128 @@
-//! Stave Tilt — a one-knob tilt EQ. **Start here**: this file is the
-//! plugin's root; everything below is one click away.
+//! Stave Tilt — a one-knob tilt EQ, and the shape every stave plugin
+//! copies: params, engine and face, top to bottom, from one import.
 //!
-//! ```text
-//! lib.rs      ← you are here: identity, ports, params, editor —
-//!               the DECLARATIONS half, no behavior
-//! params.rs   every knob, with its forever-stable id
-//! editor.rs   the face, a pure function of params
-//! engine.rs   the ENGINE half: a shelving pair per lane, tilted
-//!               around a pivot — one concept, one file
-//! tests/      the shared checks: validation, editor bindings, no-alloc,
-//!               perf, and THE LAWS (read tests/properties.rs — it tells
-//!               the story of why projects write their own)
-//! ```
-//!
-//! STATUS: **the minimal worked example** (docs/writing-a-plugin.md
-//! points here). A real tilt EQ — ±6 dB seesaw around 650 Hz —
-//! small enough to read whole, complete enough to ship. Born as a
-//! new-developer walkthrough test; its first build had the tilt
-//! knob BACKWARDS and passed every generic gate — the sign law in
-//! tests/properties.rs is the lesson, kept on purpose.
+//! A complementary shelving pair per lane — the low shelf at −tilt dB,
+//! the high shelf at +tilt dB — tips the spectrum around 650 Hz.
+//! `tests/properties.rs` holds the laws only this plugin can state (its
+//! first build had the knob backwards and passed every generic check).
 
-extern crate alloc;
-use alloc::sync::Arc;
+use stave::prelude::*;
 
-use stave_core::{PluginDescriptor, PluginFeature, PortConfig, Spec, StavePlugin};
-use stave_face::{Face, FaceSpec};
-use stave_vst3::stave_vst3_export;
+#[derive(Params)]
+pub struct TiltParams {
+    /// Negative is darker (lows up, highs down), positive brighter.
+    pub tilt: FloatParam,
+    pub output: FloatParam,
+    pub bypass: BoolParam,
+}
 
-mod editor;
-mod engine;
-mod params;
+impl Default for TiltParams {
+    fn default() -> Self {
+        TiltParams {
+            tilt: FloatParam::new(ParamId(1), "Tilt", Range::linear(-6.0, 6.0))
+                .unit(Unit::Db)
+                .smooth(Smooth::ms(30.0)),
+            output: FloatParam::new(ParamId(2), "Output", Range::linear(-24.0, 24.0))
+                .unit(Unit::Db)
+                .smooth(Smooth::ms(5.0)),
+            bypass: BoolParam::bypass(ParamId(3)),
+        }
+    }
+}
 
-pub use engine::TiltEngine;
-pub use params::TiltParams;
+/// Where the seesaw balances: low enough that "brighter" reads as air,
+/// high enough that "darker" keeps a voice's body.
+const PIVOT_HZ: f32 = 650.0;
 
-impl Spec for TiltEngine {
-    /// Stereo FX, stated — the negotiation surface is a declaration.
-    const CONFIGS: &'static [PortConfig] = &[PortConfig::STEREO_FX];
+/// One lane's shelving pair.
+#[derive(Default)]
+struct Shelves {
+    low: Biquad,
+    high: Biquad,
+}
 
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.ryanbahan.stave.tilt.vst3",
-        name: c"Stave Tilt",
-        vendor: c"Ryan Bahan",
-        version: c"0.0.1",
-        url: c"https://github.com/stave-dsp/stave",
-        description: c"A one-knob tilt EQ.",
-        features: &[
-            PluginFeature::AudioEffect,
-            PluginFeature::Eq,
-            PluginFeature::Stereo,
-        ],
+pub struct Tilt {
+    params: Arc<TiltParams>,
+    tilt: Smoother,
+    output: Smoother,
+    shelves: [Shelves; 2],
+    /// The tilt the shelves are voiced for (NaN: not yet).
+    voiced: f32,
+}
+
+impl Plugin for Tilt {
+    const INFO: Info = Info {
+        id: "com.ryanbahan.stave.tilt",
+        name: "Stave Tilt",
+        vendor: "Ryan Bahan",
+        url: "https://github.com/stave-dsp/stave",
+        features: &[Feature::AudioEffect, Feature::Eq, Feature::Stereo],
+        ..Info::EFFECT
     };
+    type Params = TiltParams;
 
-    fn params() -> Arc<TiltParams> {
-        TiltParams::new()
+    fn new(params: &Arc<TiltParams>, _telemetry: &Telemetry) -> Self {
+        Tilt {
+            params: params.clone(),
+            tilt: Smoother::new(&params.tilt),
+            output: Smoother::new(&params.output),
+            shelves: Default::default(),
+            voiced: f32::NAN,
+        }
+    }
+
+    fn prepare(&mut self, env: &Environment) {
+        self.tilt.prepare(env);
+        self.output.prepare(env);
+        for lane in &mut self.shelves {
+            lane.low.prepare(env.sample_rate);
+            lane.high.prepare(env.sample_rate);
+        }
+        self.voiced = f32::NAN;
+    }
+
+    fn process(&mut self, block: &mut Block<'_>) {
+        let mut tilt = self.tilt.ramp(block, &self.params.tilt);
+        let mut output = self.output.ramp(block, &self.params.output);
+        let (shelves, voiced) = (&mut self.shelves, &mut self.voiced);
+        block.lanes::<2>().run(|frame| {
+            let t = tilt.next();
+            if t != *voiced {
+                *voiced = t;
+                for lane in shelves.iter_mut() {
+                    lane.low.set(FilterSpec::LowShelf { hz: PIVOT_HZ, db: -t });
+                    lane.high.set(FilterSpec::HighShelf { hz: PIVOT_HZ, db: t });
+                }
+            }
+            let gain = db_to_amp(output.next());
+            for (lane, s) in shelves.iter_mut().enumerate().take(frame.lanes()) {
+                let x = frame.input(lane);
+                // Flat is bit-exact: no recursion at tilt 0.
+                let y = if t == 0.0 { x } else { s.high.tick(s.low.tick(x)) };
+                frame.write(lane, y * gain);
+            }
+        });
+    }
+
+    fn face(p: &TiltParams) -> Option<Face> {
+        let theme = Theme::graphite();
+        let header = row(vec![
+            Title::new("TILT").tagline("tilt eq · ±6 dB around 650 Hz").node(),
+            Footswitch::bypass(p.bypass.bind()).compact().node(),
+        ])
+        .gap(theme.space(4))
+        .align(Align::Start);
+        let tone = Plate::titled("TONE").around(
+            row(vec![
+                Knob::new(p.tilt.bind()).huge().centered().node(),
+                Knob::new(p.output.bind()).centered().node(),
+            ])
+            .gap(theme.space(4))
+            .align(Align::Center),
+        );
+        let body = column(vec![header, tone]).gap(theme.space(3)).align(Align::Stretch);
+        Some(Face::new(theme, Panel::default().around(body)))
     }
 }
 
-impl FaceSpec for TiltEngine {
-    fn face(params: &TiltParams) -> Option<Face> {
-        Some(editor::face(params))
-    }
-}
-
-/// The plugin: engine + declarations under the framework shell.
-pub type Tilt = StavePlugin<TiltEngine>;
-
-stave_vst3_export!(
-    TiltEngine,
-    component_cid: (0x7C31A2E4, 0x88B14D02, 0xA5E0C9D3, 0x11700001),
-    controller_cid: (0x7C31A2E4, 0x88B14D02, 0xA5E0C9D3, 0x11700002),
-);
-
-stave_clap::stave_clap_export!(TiltEngine); // CLAP build, same cdylib
+stave::export!(Tilt);

@@ -1,54 +1,49 @@
-//! In-process plugin harness. Constructs a `ProcessCtx`, drives the
-//! `Plugin::process` method, returns the output as owned buffers. No FFI,
-//! no bundle load — the fastest possible iteration for unit testing.
-//!
-//! For tests against the bundled .vst3 / .clap dylib, see the
-//! `bundle_host` module (which exercises the full ABI path).
+//! In-process plugin harness: builds a [`Block`] over owned buffers and
+//! drives `Plugin::process`. No FFI, no bundle load — the fastest
+//! iteration for unit tests. (`validation` exercises the full ABI path.)
 
-use stave_core::{AudioBuffer, Event, Plugin, ProcessCtx};
+use std::sync::Arc;
 
-/// Owns input/output buffers around a single `Plugin` instance. Each call
-/// to `render` produces a fresh output snapshot (owned, allocates).
+use stave::__export::Shell;
+use stave::params::Params;
+use stave::{Block, Environment, Event, InputBuffer, OutputBuffer, Plugin, Telemetry};
+use stave_core::runtime::Erased;
+
+/// Owns a plugin, its telemetry, and fixed-size input/output buffers.
+/// Built prepared: [`new`](Self::new) runs `Plugin::prepare`.
 pub struct PluginHarness<P: Plugin> {
-    plugin: P,
+    shell: Shell<P>,
+    telemetry: Arc<Telemetry>,
     sample_rate: f32,
     block_size: usize,
-    input_chans: usize,
-    output_chans: usize,
-    /// Fixed-length channels: `Box<[f32]>`, never `Vec`, so no caller
-    /// can resize one — channels are only ever lent out as `&mut [f32]`.
+    /// Fixed-length channels: `Box<[f32]>`, never `Vec`, so no caller can
+    /// resize one — channels are only ever lent out as slices.
     input_buffers: Vec<Box<[f32]>>,
     output_buffers: Vec<Box<[f32]>>,
-    /// Pointer lists for `AudioBuffer::from_raw`, REBUILT from the
-    /// buffers at the top of every `run_block` (capacity is reserved
-    /// here, so the rebuild never allocates). Never cached across
-    /// calls: a `&mut` lent out in between would invalidate them.
-    in_ptrs: Vec<*mut f32>,
-    out_ptrs: Vec<*mut f32>,
+    /// The pointer lists the block's buffers read, one slot per channel,
+    /// refilled from the buffers every block (never allocates).
+    in_ptrs: Box<[*mut f32]>,
+    out_ptrs: Box<[*mut f32]>,
 }
 
 impl<P: Plugin> PluginHarness<P> {
-    /// Build a harness, allocate buffers, and activate the plugin.
+    /// Build the plugin on its preferred layout, allocate buffers, and
+    /// prepare it at `sample_rate` for blocks of `block_size`.
     pub fn new(sample_rate: f32, block_size: usize) -> Self {
-        let ports = P::CONFIGS[0];
-        let input_chans = ports.in_channels() as usize;
-        let output_chans = ports.out_channels() as usize;
-        let mut plugin = P::new();
-        plugin.activate(sample_rate, block_size);
-        let input_buffers = vec![vec![0.0; block_size].into_boxed_slice(); input_chans];
-        let output_buffers = vec![vec![0.0; block_size].into_boxed_slice(); output_chans];
-        let in_ptrs = Vec::with_capacity(input_chans);
-        let out_ptrs = Vec::with_capacity(output_chans);
+        let layout = P::LAYOUTS[0];
+        let (input_chans, output_chans) = (layout.input_channels(), layout.output_channels());
+        let telemetry = Telemetry::new();
+        let mut shell = <Shell<P> as Erased>::new(&telemetry);
+        shell.prepare(&Environment::new(sample_rate, block_size).with_layout(layout));
         Self {
-            plugin,
+            shell,
+            telemetry,
             sample_rate,
             block_size,
-            input_chans,
-            output_chans,
-            input_buffers,
-            output_buffers,
-            in_ptrs,
-            out_ptrs,
+            input_buffers: vec![vec![0.0; block_size].into_boxed_slice(); input_chans],
+            output_buffers: vec![vec![0.0; block_size].into_boxed_slice(); output_chans],
+            in_ptrs: vec![core::ptr::null_mut(); input_chans].into_boxed_slice(),
+            out_ptrs: vec![core::ptr::null_mut(); output_chans].into_boxed_slice(),
         }
     }
 
@@ -59,77 +54,71 @@ impl<P: Plugin> PluginHarness<P> {
         self.block_size
     }
     pub fn output_channels(&self) -> usize {
-        self.output_chans
+        self.output_buffers.len()
+    }
+    /// Number of input channels the plugin's preferred layout declares.
+    pub fn input_channels(&self) -> usize {
+        self.input_buffers.len()
     }
     pub fn plugin(&self) -> &P {
-        &self.plugin
+        self.shell.plugin()
     }
     pub fn plugin_mut(&mut self) -> &mut P {
-        &mut self.plugin
+        self.shell.plugin_mut()
+    }
+    /// The typed params.
+    pub fn params(&self) -> &Arc<P::Params> {
+        self.shell.params()
+    }
+    /// The params as a table (by name, by id).
+    pub fn table(&self) -> Arc<dyn Params> {
+        Erased::params(&self.shell)
+    }
+    /// The plugin's telemetry.
+    pub fn telemetry(&self) -> &Arc<Telemetry> {
+        &self.telemetry
     }
 
-    /// Fill the input buffer for channel `idx` with `samples`. Length must
-    /// equal `block_size`. Use this for effect-style tests.
+    /// Fill input channel `idx` with `samples` (exactly `block_size`).
     pub fn set_input(&mut self, idx: usize, samples: &[f32]) {
         assert_eq!(samples.len(), self.block_size);
         self.input_buffers[idx].copy_from_slice(samples);
     }
 
-    /// Each input channel as a fixed-length `&mut [f32]` (length
-    /// `block_size`) — writable, never resizable.
+    /// Each input channel, writable, never resizable.
     pub fn inputs_mut(&mut self) -> impl Iterator<Item = &mut [f32]> + '_ {
         self.input_buffers.iter_mut().map(|c| &mut **c)
     }
 
-    /// Input channel `idx` as a fixed-length `&mut [f32]`.
+    /// Input channel `idx`.
     pub fn input_mut(&mut self, idx: usize) -> &mut [f32] {
         &mut self.input_buffers[idx]
     }
 
-    /// The last block's output, one fixed-length slice per channel.
+    /// The last block's output, one slice per channel.
     pub fn outputs(&self) -> &[Box<[f32]>] {
         &self.output_buffers
     }
 
-    /// Process one block in place, allocation-free (the no-alloc and perf
-    /// checks run it under their guard and timer); read it with `outputs`.
+    /// Process one block in place, allocation free (the no-alloc and perf
+    /// checks run it under their guard and timer); read it with
+    /// [`outputs`](Self::outputs).
     pub fn run_block(&mut self, events: &[Event]) {
-        // Fresh pointers every block, derived from the buffers' current
-        // storage (within reserved capacity: no allocation).
-        self.in_ptrs.clear();
-        self.in_ptrs
-            .extend(self.input_buffers.iter_mut().map(|c| c.as_mut_ptr()));
-        self.out_ptrs.clear();
-        self.out_ptrs
-            .extend(self.output_buffers.iter_mut().map(|c| c.as_mut_ptr()));
-        // SAFETY: each pointer was just derived from a live `Box<[f32]>`
-        // of exactly block_size owned by self (fixed length — no API can
-        // resize it); nothing else touches the buffers until `process`
-        // returns; channels are distinct allocations.
-        let (input, mut output) = unsafe {
-            (
-                AudioBuffer::from_raw(&self.in_ptrs, self.block_size),
-                AudioBuffer::from_raw(&self.out_ptrs, self.block_size),
-            )
-        };
-        // Zero outputs each block — synth plugins overwrite, effects may
-        // not. Through the pointers, not `output_buffers`: a fresh `&mut`
-        // to the buffers would invalidate them.
-        for c in 0..output.channel_count() {
-            output.channel(c).fill(0.0);
-        }
-
-        let mut ctx = ProcessCtx {
-            sample_rate: self.sample_rate,
-            frames: self.block_size,
-            transport: None,
-            input,
-            output,
-            aux: &[],
-            params: stave_core::ParamBlock::empty(),
-            events,
-        };
-        self.plugin.process(&mut ctx);
+        let frames = self.block_size;
+        let input = InputBuffer::from_slices(
+            &mut self.in_ptrs,
+            self.input_buffers.iter().map(|c| &**c),
+            frames,
+        );
+        let output = OutputBuffer::from_slices(
+            &mut self.out_ptrs,
+            self.output_buffers.iter_mut().map(|c| &mut **c),
+            frames,
+        );
+        let mut block = Block::new(self.sample_rate, frames, input, output).with_events(events);
+        // Zeroed every block: instruments overwrite, effects may not.
+        block.output().silence();
+        self.shell.process(&mut block);
     }
 
     /// [`run_block`](Self::run_block), returning a copy of the output.
@@ -138,12 +127,11 @@ impl<P: Plugin> PluginHarness<P> {
         self.output_buffers.iter().map(|c| c.to_vec()).collect()
     }
 
-    /// Render `frames` total samples by running successive blocks. `events`
-    /// is delivered at frame 0 of the first block; subsequent blocks see no
-    /// events. For sample-accurate event timing, call `process_block`
-    /// directly and assemble blocks yourself.
+    /// Render `frames` samples in successive blocks. `events` arrive in
+    /// the first block; later blocks see none. For sample-accurate
+    /// timing, call `process_block` and assemble blocks yourself.
     pub fn render(&mut self, frames: usize, events: &[Event]) -> Vec<Vec<f32>> {
-        let mut acc: Vec<Vec<f32>> = vec![Vec::with_capacity(frames); self.output_chans];
+        let mut acc: Vec<Vec<f32>> = vec![Vec::with_capacity(frames); self.output_channels()];
         let mut written = 0;
         let mut first = true;
         while written < frames {
@@ -158,47 +146,52 @@ impl<P: Plugin> PluginHarness<P> {
         }
         acc
     }
-
-    /// Number of input channels declared by the plugin.
-    pub fn input_channels(&self) -> usize {
-        self.input_chans
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use stave_core::PluginDescriptor;
+    use super::PluginHarness;
+    use stave::prelude::*;
+
+    #[derive(Params)]
+    struct NoKnobs {
+        level: FloatParam,
+    }
+
+    impl Default for NoKnobs {
+        fn default() -> Self {
+            NoKnobs {
+                level: FloatParam::new(ParamId(1), "Level", Range::linear(0.0, 1.0)),
+            }
+        }
+    }
 
     /// out[c] = 2 × in[c].
     struct Double;
     impl Plugin for Double {
-        const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-            id: c"com.stave.test.harness-double",
-            name: c"Double",
-            vendor: c"stave tests",
-            version: c"0.0.0",
-            url: c"",
-            description: c"harness fixture",
-            features: &[],
+        const INFO: Info = Info {
+            id: "com.stave.test.harness-double",
+            name: "Double",
+            vendor: "stave tests",
+            ..Info::EFFECT
         };
-        fn new() -> Self {
-            Self
+        type Params = NoKnobs;
+        fn new(_: &Arc<NoKnobs>, _: &Telemetry) -> Self {
+            Double
         }
-        fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-            for c in 0..ctx.output.channel_count().min(ctx.input.channel_count()) {
-                for i in 0..ctx.frames {
-                    let x = ctx.input.channel_ref(c)[i];
-                    ctx.output.channel(c)[i] = 2.0 * x;
+        fn process(&mut self, block: &mut Block<'_>) {
+            let (input, output) = block.io();
+            for (x, y) in input.channels().zip(output.channels_mut()) {
+                for (x, y) in x.iter().zip(y) {
+                    *y = 2.0 * x;
                 }
             }
         }
     }
 
-    /// S2: inputs are lent as fixed-length `&mut [f32]` and the pointer
-    /// list is rebuilt per block, so writes between blocks — through
-    /// every accessor — are what the plugin reads (Miri: no stale
-    /// pointer use).
+    /// S2: inputs are lent as fixed-length slices and the pointer list
+    /// is refilled per block, so writes between blocks — through every
+    /// accessor — are what the plugin reads (Miri: no stale pointer use).
     #[test]
     fn inputs_written_between_blocks_reach_the_plugin() {
         let mut h = PluginHarness::<Double>::new(48_000.0, 16);

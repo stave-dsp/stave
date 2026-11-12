@@ -21,7 +21,7 @@ pub unsafe extern "C" fn entry_get_factory<P: ClapExport>(
     let requested = unsafe { in_text(factory_id, "factory_id") };
     ffi_entry::<P, _>(ptr::null, || {
         if requested.is_ok_and(|id| id == sys::CLAP_PLUGIN_FACTORY_ID) {
-            P::clap_factory() as *const _ as *const c_void
+            factory::<P>() as *const sys::ClapPluginFactory as *const c_void
         } else {
             ptr::null()
         }
@@ -48,7 +48,7 @@ pub unsafe extern "C" fn factory_get_plugin_descriptor<P: ClapExport>(
 ) -> *const sys::ClapPluginDescriptor {
     ffi_entry::<P, _>(ptr::null, || {
         if index == 0 {
-            P::clap_descriptor() as *const _
+            descriptor::<P>() as *const _
         } else {
             ptr::null()
         }
@@ -64,7 +64,7 @@ pub unsafe extern "C" fn factory_create_plugin<P: ClapExport>(
 ) -> *const sys::ClapPlugin {
     // SAFETY: clap.h: null or a nul-terminated id.
     let requested = unsafe { in_text(plugin_id, "plugin_id") };
-    if requested.ok() != Some(P::DESCRIPTOR.id) {
+    if requested.ok().map(CStr::to_bytes) != Some(P::INFO.id.as_bytes()) {
         return ptr::null();
     }
     // `P::new()` and the author hooks below are plugin code. On a panic
@@ -85,11 +85,10 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
     let floor = [WrapperTaps::FLOOR_DB; 3];
     taps.publish_peaks(floor, floor);
 
-    let mut plugin_obj = P::new();
-    plugin_obj.attach_telemetry(telemetry.clone());
-    let param_table = plugin_obj.param_table();
+    let plugin_obj = P::new(&telemetry);
+    let param_table = plugin_obj.params();
     if let Err(e) = param_table.validate() {
-        Diagnostics::new(&P::DESCRIPTOR).log.write(
+        Diagnostics::new(&P::INFO).log.write(
             stave_core::diagnostics::Severity::PluginMisbehaving,
             &format_args!("param table invalid: {e}"),
         );
@@ -100,7 +99,7 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
     let (face, presets) = (plugin_obj.face(), plugin_obj.presets());
     let instance = Box::new(Instance::<P> {
         clap_plugin: sys::ClapPlugin {
-            desc: P::clap_descriptor(),
+            desc: descriptor::<P>(),
             plugin_data: ptr::null_mut(),
             init: Some(plugin_init::<P>),
             destroy: Some(plugin_destroy::<P>),
@@ -144,7 +143,7 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         bypass_id: (0..param_table.count())
             .filter_map(|i| param_table.by_index(i))
             .find(|p| p.meta().flags.bypass)
-            .map(|p| p.meta().id.0),
+            .map(|p| p.meta().id),
         tail: core::sync::atomic::AtomicU32::new(0),
         shared: SharedState::new(44_100.0),
         plugin: PluginCell::new(plugin_obj),
@@ -165,7 +164,7 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         taps,
         // SAFETY: clap.h: the host outlives the instances it creates.
         host: unsafe { Host::new(host) },
-        diagnostics: Diagnostics::new(&P::DESCRIPTOR),
+        diagnostics: Diagnostics::new(&P::INFO),
         guard: PanicGuard::default(),
     });
 

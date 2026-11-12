@@ -11,31 +11,32 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use stave_clap::sys::*;
-use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Info, Telemetry};
 
 struct Silent;
 
-impl Plugin for Silent {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.diagnostics-clap",
-        name: c"Diagnostics (CLAP)",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"diagnostics fixture",
+impl Erased for Silent {
+    const INFO: Info = Info {
+        id: "com.stave.test.diagnostics-clap",
+        name: "Diagnostics (CLAP)",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "diagnostics fixture",
         features: &[],
     };
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         Self
     }
 
-    fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
+    fn process(&mut self, _block: &mut Block<'_>) {}
 }
 
-impl stave_clap::stave_face::HasFace for Silent {}
+impl stave_clap::wrapper::ClapExport for Silent {}
 
-stave_clap::stave_clap_export!(raw Silent);
+stave_clap::export_clap!(Silent);
 
 static MESSAGES: Mutex<Vec<(ClapLogSeverity, String)>> = Mutex::new(Vec::new());
 static CALLBACK_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -112,7 +113,7 @@ fn refused_calls_and_process_faults_reach_the_host_log() {
         let get_factory = clap_entry.get_factory.unwrap();
         let factory = get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr()).cast::<ClapPluginFactory>();
         let create = (*factory).create_plugin.unwrap();
-        let plugin = create(factory, &HOST.0, Silent::DESCRIPTOR.id.as_ptr());
+        let plugin = create(factory, &HOST.0, c"com.stave.test.diagnostics-clap".as_ptr());
         assert!(((*plugin).init.unwrap())(plugin));
         let get_ext = (*plugin).get_extension.unwrap();
 

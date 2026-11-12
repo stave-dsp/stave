@@ -5,10 +5,11 @@
 //! are the instrument's (its `param_enum!`s); the shaping vocabulary
 //! (mode, quant) is shared.
 
+use stave_core::param_enum;
+use stave_core::params::{EnumParam, FloatParam, ParamEnum, ParamId, Range, Smooth, Unit};
 use stave_dsp::RouteSlot;
 
-use crate::param_enum;
-use crate::params::{EnumParam, FloatParam, ParamEnum, Params, Range, Smooth, Taper, Unit};
+use crate::Params;
 
 param_enum! {
     /// Route polarity: the source's natural ±1, or remapped 0..1
@@ -69,40 +70,31 @@ impl<Source: ParamEnum, Target: ParamEnum> RouteParams<Source, Target> {
     /// Slot `slot` (1-based, as hosts show it) with ids `base_id + 1`
     /// through `base_id + 7` in field order — ids are forever, so the
     /// base is the plugin's to choose once.
-    pub fn new(base_id: u32, slot: usize, group: &'static str) -> Self {
+    pub fn new(base: ParamId, slot: usize, group: &'static str) -> Self {
+        let base_id = base.0;
         assert!(
             (1..=MAX_ROUTES).contains(&slot),
             "route slot {slot} of 1..={MAX_ROUTES}"
         );
         let name = |names: [&'static str; MAX_ROUTES]| names[slot - 1];
         Self {
-            src: EnumParam::new(base_id + 1, name(slot_names!("src")), Source::from_index(0))
-                .with_group(group),
-            tgt: EnumParam::new(base_id + 2, name(slot_names!("tgt")), Target::from_index(0))
-                .with_group(group),
-            depth: FloatParam::new(
-                base_id + 3,
-                name(slot_names!("depth")),
-                0.0,
-                Range::new(-1.0, 1.0, Taper::Linear),
-            )
-            .with_group(group)
-            .with_smooth(Smooth::Off),
-            via: EnumParam::new(base_id + 4, name(slot_names!("via")), Source::from_index(0))
-                .with_group(group),
-            mode: EnumParam::new(base_id + 5, name(slot_names!("mode")), RouteMode(0))
-                .with_group(group),
-            lag: FloatParam::new(
-                base_id + 6,
-                name(slot_names!("lag")),
-                0.0,
-                Range::new(0.0, 500.0, Taper::Linear),
-            )
-            .with_unit(Unit::Ms)
-            .with_group(group)
-            .with_smooth(Smooth::Off),
-            quant: EnumParam::new(base_id + 7, name(slot_names!("quant")), RouteQuant(0))
-                .with_group(group),
+            src: EnumParam::new(ParamId(base_id + 1), name(slot_names!("src")), Source::from_index(0))
+                .group(group),
+            tgt: EnumParam::new(ParamId(base_id + 2), name(slot_names!("tgt")), Target::from_index(0))
+                .group(group),
+            depth: FloatParam::new(ParamId(base_id + 3), name(slot_names!("depth")), Range::linear(-1.0, 1.0))
+            .group(group)
+            .smooth(Smooth::Off),
+            via: EnumParam::new(ParamId(base_id + 4), name(slot_names!("via")), Source::from_index(0))
+                .group(group),
+            mode: EnumParam::new(ParamId(base_id + 5), name(slot_names!("mode")), RouteMode(0))
+                .group(group),
+            lag: FloatParam::new(ParamId(base_id + 6), name(slot_names!("lag")), Range::linear(0.0, 500.0))
+            .unit(Unit::Ms)
+            .group(group)
+            .smooth(Smooth::Off),
+            quant: EnumParam::new(ParamId(base_id + 7), name(slot_names!("quant")), RouteQuant(0))
+                .group(group),
         }
     }
 
@@ -111,17 +103,17 @@ impl<Source: ParamEnum, Target: ParamEnum> RouteParams<Source, Target> {
     pub fn slot(&self, block_seconds: f32) -> RouteSlot {
         let lag_ms = self.lag.value();
         RouteSlot {
-            src: self.src.index(),
-            tgt: self.tgt.index(),
+            src: self.src.value().to_index() as usize,
+            tgt: self.tgt.value().to_index() as usize,
             depth: self.depth.value(),
-            via: self.via.index(),
-            uni: self.mode.index() == 1,
+            via: self.via.value().to_index() as usize,
+            uni: self.mode.value() == RouteMode(1),
             lag_k: if lag_ms <= 0.0 {
                 1.0
             } else {
                 1.0 - (-block_seconds / (lag_ms * 0.001)).exp()
             },
-            quant: QUANT_STEPS[self.quant.index().min(QUANT_STEPS.len() - 1)],
+            quant: QUANT_STEPS[(self.quant.value().0 as usize).min(QUANT_STEPS.len() - 1)],
         }
     }
 }
@@ -129,7 +121,7 @@ impl<Source: ParamEnum, Target: ParamEnum> RouteParams<Source, Target> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::AnyParam;
+    use stave_core::params::{AnyParam, Params as _};
 
     param_enum! {
         const SOURCES: Source = ["OFF", "LFO", "VEL"];
@@ -141,7 +133,7 @@ mod tests {
     #[test]
     fn a_slot_numbers_its_ids_and_names_from_its_base() {
         let routes: [RouteParams<Source, Target>; 2] =
-            core::array::from_fn(|i| RouteParams::new(10 * (i as u32 + 1), i + 1, "Mod"));
+            core::array::from_fn(|i| RouteParams::new(ParamId(10 * (i as u32 + 1)), i + 1, "Mod"));
         let ids: Vec<u32> = (0..routes.count())
             .map(|i| routes.by_index(i).unwrap().meta().id.0)
             .collect();
@@ -154,10 +146,10 @@ mod tests {
 
     #[test]
     fn the_slot_carries_the_knobs() {
-        let r: RouteParams<Source, Target> = RouteParams::new(0, 1, "Mod");
-        (&r.src as &dyn AnyParam).set_plain(2.0);
-        (&r.depth as &dyn AnyParam).set_plain(-0.5);
-        (&r.quant as &dyn AnyParam).set_plain(3.0);
+        let r: RouteParams<Source, Target> = RouteParams::new(ParamId(0), 1, "Mod");
+        (&r.src as &dyn AnyParam).set_value(2.0);
+        (&r.depth as &dyn AnyParam).set_value(-0.5);
+        (&r.quant as &dyn AnyParam).set_value(3.0);
         let slot = r.slot(0.001);
         assert_eq!(
             (slot.src, slot.depth, slot.quant, slot.lag_k),

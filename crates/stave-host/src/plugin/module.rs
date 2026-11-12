@@ -24,7 +24,7 @@ pub struct EntryPoints {
 }
 
 /// The [`EntryPoints`] of a stave plugin crate linked into this binary
-/// (the symbols `stave_vst3_export!` defines in it).
+/// (the symbols `stave::export!` defines in it).
 #[macro_export]
 macro_rules! entry_points {
     ($plugin:path) => {{

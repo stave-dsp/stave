@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use std::collections::HashMap;
 
 use stave_core::telemetry::TapId;
-use stave_core::Controller;
+use stave_core::{Controller, Normalized};
 use stave_raster::{Canvas, TextPainter};
 use stave_ui::layout::Rect;
 use stave_ui::scene::{Pt, Scene};
@@ -367,7 +367,7 @@ impl Runtime {
             Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } if clicks >= 2 || mods.reset => {
                 let d = controller.default_normalized(bind.id);
                 controller.begin(bind.id);
-                controller.set(bind.id, d);
+                controller.set(bind.id, Normalized::new(d));
                 controller.end(bind.id);
             }
             Gesture::Rotary { bind, .. } | Gesture::Stepped { bind, .. } => {
@@ -383,18 +383,18 @@ impl Runtime {
             Gesture::Choose { bind, step } => {
                 let n = controller.steps(bind.id);
                 controller.begin(bind.id);
-                controller.set(bind.id, step_value(step, n));
+                controller.set(bind.id, Normalized::new(step_value(step, n)));
                 controller.end(bind.id);
             }
             Gesture::Latch { bind } => {
                 let on = controller.normalized(bind.id) >= 0.5;
                 controller.begin(bind.id);
-                controller.set(bind.id, if on { 0.0 } else { 1.0 });
+                controller.set(bind.id, Normalized::new(if on { 0.0 } else { 1.0 }));
                 controller.end(bind.id);
             }
             Gesture::Momentary { bind } => {
                 controller.begin(bind.id);
-                controller.set(bind.id, 1.0);
+                controller.set(bind.id, Normalized::ONE);
                 self.drag = Some(Drag {
                     target: target.clone(),
                     from: p,
@@ -407,7 +407,7 @@ impl Runtime {
                 let n = controller.steps(bind.id).max(2);
                 let s = i64::from(step_of(controller.normalized(bind.id), n)) + i64::from(delta);
                 controller.begin(bind.id);
-                controller.set(bind.id, step_value(s.clamp(0, i64::from(n) - 1) as u32, n));
+                controller.set(bind.id, Normalized::new(step_value(s.clamp(0, i64::from(n) - 1) as u32, n)));
                 controller.end(bind.id);
             }
             Gesture::Preset { delta } => {
@@ -452,7 +452,7 @@ impl Runtime {
                 let along = (d.from.y - p.y) + 0.5 * (p.x - d.from.x);
                 let k = if d.fine { 0.1 } else { 1.0 };
                 d.moved |= along.abs() > 0.5;
-                controller.set(bind.id, (d.start + along / travel * k).clamp(0.0, 1.0));
+                controller.set(bind.id, Normalized::new((d.start + along / travel * k).clamp(0.0, 1.0)));
             }
             Gesture::Stepped { bind, pitch } => {
                 let n = controller.steps(bind.id).max(2);
@@ -463,7 +463,7 @@ impl Runtime {
                 }
                 let s0 = i64::from(step_of(d.start, n));
                 let s = (s0 + steps).clamp(0, i64::from(n) - 1) as u32;
-                controller.set(bind.id, step_value(s, n));
+                controller.set(bind.id, Normalized::new(step_value(s, n)));
             }
             Gesture::Pad { x, y, area } => {
                 d.moved = true;
@@ -484,12 +484,12 @@ impl Runtime {
                     // A click without a drag steps forward, wrapping.
                     let n = controller.steps(bind.id).max(2);
                     let s = (step_of(d.start, n) + 1) % n;
-                    controller.set(bind.id, step_value(s, n));
+                    controller.set(bind.id, Normalized::new(step_value(s, n)));
                 }
                 controller.end(bind.id);
             }
             Gesture::Momentary { bind } => {
-                controller.set(bind.id, 0.0);
+                controller.set(bind.id, Normalized::ZERO);
                 controller.end(bind.id);
             }
             Gesture::Pad { x, y, .. } => {
@@ -513,7 +513,7 @@ impl Runtime {
                 let k = if mods.fine { 0.002 } else { 0.01 };
                 let v = (controller.normalized(bind.id) + dy * k).clamp(0.0, 1.0);
                 controller.begin(bind.id);
-                controller.set(bind.id, v);
+                controller.set(bind.id, Normalized::new(v));
                 controller.end(bind.id);
             }
             Gesture::Stepped { bind, .. } => {
@@ -521,7 +521,7 @@ impl Runtime {
                 let s = i64::from(step_of(controller.normalized(bind.id), n)) + if dy > 0.0 { 1 } else { -1 };
                 let s = s.clamp(0, i64::from(n) - 1) as u32;
                 controller.begin(bind.id);
-                controller.set(bind.id, step_value(s, n));
+                controller.set(bind.id, Normalized::new(step_value(s, n)));
                 controller.end(bind.id);
             }
             _ => {}
@@ -532,6 +532,6 @@ impl Runtime {
 fn set_pad(controller: &dyn Controller, x: Bind, y: Bind, area: Rect, p: Pt) {
     let nx = ((p.x - area.x) / area.w).clamp(0.0, 1.0);
     let ny = (1.0 - (p.y - area.y) / area.h).clamp(0.0, 1.0);
-    controller.set(x.id, nx);
-    controller.set(y.id, ny);
+    controller.set(x.id, Normalized::new(nx));
+    controller.set(y.id, Normalized::new(ny));
 }

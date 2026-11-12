@@ -12,5 +12,5 @@ static A: AllocDisabler = AllocDisabler;
 
 #[test]
 fn process_never_allocates() {
-    check_no_alloc::<stave_tilt_vst3::Tilt>("tilt", &["tilt", "output"], &NoAllocConfig::default());
+    check_no_alloc::<stave_tilt_vst3::Tilt>("tilt", &["Tilt", "Output"], &NoAllocConfig::default());
 }

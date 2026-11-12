@@ -21,14 +21,16 @@ use quote::{format_ident, quote, quote_spanned};
 use syn::spanned::Spanned as _;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
-pub(crate) fn derive(input: TokenStream) -> TokenStream {
+/// `core` is the path of the stave model crate where the deriving crate
+/// sees it (`::stave_core`, or `::stave::__core` through the umbrella).
+pub(crate) fn derive(input: TokenStream, core: proc_macro2::TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    expand(ast)
+    expand(ast, core)
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }
 
-fn expand(ast: DeriveInput) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn expand(ast: DeriveInput, core: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, syn::Error> {
     let Data::Struct(data) = &ast.data else {
         return Err(syn::Error::new(ast.ident.span(), "#[derive(Taps)] requires a struct"));
     };
@@ -39,7 +41,7 @@ fn expand(ast: DeriveInput) -> Result<proc_macro2::TokenStream, syn::Error> {
         return Err(syn::Error::new(ast.generics.span(), "#[derive(Taps)] takes no generics"));
     }
 
-    let t = quote! { ::stave_core::telemetry };
+    let t = quote! { #core::telemetry };
     let mut consts = Vec::new();
     let mut checks = Vec::new();
     let mut ids = Vec::new();
@@ -86,9 +88,9 @@ fn expand(ast: DeriveInput) -> Result<proc_macro2::TokenStream, syn::Error> {
             /// Every tap's id, in field order.
             pub const ALL: &'static [#t::TapId] = &[#(#ids),*];
 
-            /// Register every tap on `telemetry` (call when the plugin is
-            /// created, not on the audio thread).
-            pub fn new(telemetry: &::std::sync::Arc<#t::Telemetry>) -> Self {
+            /// Register every tap on `telemetry` (in `Plugin::new`, not on
+            /// the audio thread).
+            pub fn new(telemetry: &#t::Telemetry) -> Self {
                 Self { #(#registers),* }
             }
         }

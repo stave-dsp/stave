@@ -12,7 +12,8 @@
 use std::ptr;
 
 use stave_clap::sys::*;
-use stave_core::{Plugin, PluginDescriptor, ProcessCtx, Tail};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Info, Tail, Telemetry};
 
 // Same shape as the VST3 fixture: linear (gain) + stateful (delay).
 const TAPS: usize = 16;
@@ -22,18 +23,18 @@ struct TestEcho {
     pos: usize,
 }
 
-impl Plugin for TestEcho {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.echo-clap",
-        name: c"Test Echo (CLAP)",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"ABI soundness fixture",
+impl Erased for TestEcho {
+    const INFO: Info = Info {
+        id: "com.stave.test.echo-clap",
+        name: "Test Echo (CLAP)",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "ABI soundness fixture",
         features: &[],
     };
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         Self {
             dly: [[0.0; TAPS]; 2],
             pos: 0,
@@ -49,27 +50,25 @@ impl Plugin for TestEcho {
         Tail::Samples(TAPS as u32)
     }
 
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        let chans = ctx
-            .output
-            .channel_count()
+    fn process(&mut self, block: &mut Block<'_>) {
+        let chans = block.output().channel_count()
             .min(2)
-            .min(ctx.input.channel_count());
-        for f in 0..ctx.frames {
+            .min(block.input().channel_count());
+        for f in 0..block.frames() {
             for c in 0..chans {
-                let x = ctx.input.channel_ref(c)[f];
+                let x = block.input().channel(c)[f];
                 let d = self.dly[c][self.pos];
                 self.dly[c][self.pos] = x;
-                ctx.output.channel(c)[f] = 0.5 * x + 0.25 * d;
+                block.output().channel_mut(c)[f] = 0.5 * x + 0.25 * d;
             }
             self.pos = (self.pos + 1) % TAPS;
         }
     }
 }
 
-impl stave_clap::stave_face::HasFace for TestEcho {}
+impl stave_clap::wrapper::ClapExport for TestEcho {}
 
-stave_clap::stave_clap_export!(raw TestEcho);
+stave_clap::export_clap!(TestEcho);
 
 // ===========================================================================
 // Minimal host plumbing
@@ -85,7 +84,7 @@ unsafe fn create_instance() -> HostInstance {
         unsafe { get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr()) } as *const ClapPluginFactory;
     assert!(!factory.is_null(), "factory lookup failed");
     let create = unsafe { (*factory).create_plugin.expect("factory has create_plugin") };
-    let plugin = unsafe { create(factory, ptr::null(), TestEcho::DESCRIPTOR.id.as_ptr()) };
+    let plugin = unsafe { create(factory, ptr::null(), c"com.stave.test.echo-clap".as_ptr()) };
     assert!(!plugin.is_null(), "create_plugin failed");
     let init = unsafe { (*plugin).init.expect("plugin has init") };
     assert!(unsafe { init(plugin) });

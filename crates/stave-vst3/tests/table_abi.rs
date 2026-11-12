@@ -14,10 +14,9 @@ use std::ffi::c_void;
 use std::ptr;
 use std::sync::Arc;
 
-use stave_core::params::{
-    ContinuousControl, FloatParam, ParamFlags, Params, Range, Smooth, Taper, Unit,
-};
-use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
+use stave_core::params::{FloatParam, Params, Range, Smooth, Smoother, Unit};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Environment, Info, Telemetry};
 use stave_vst3::sys::*;
 use stave_vst3::stave_face;
 use stave_vst3::wrapper::FactoryObj;
@@ -29,7 +28,7 @@ const ID_DRIVE: u32 = 7;
 const ID_POWER: u32 = 99;
 const ID_SGAIN: u32 = 55;
 
-#[derive(stave_core::params::Params)]
+#[derive(stave_core::Params)]
 struct TableParams {
     gain: FloatParam,
     drive: FloatParam,
@@ -41,32 +40,22 @@ struct TableParams {
 impl TableParams {
     fn new() -> Self {
         Self {
-            gain: FloatParam::new(ID_GAIN, "gain", 1.0, Range::new(0.0, 1.0, Taper::Linear))
-                .with_smooth(Smooth::Off),
-            drive: FloatParam::new(
-                ID_DRIVE,
-                "drive",
-                0.0,
-                Range::new(-12.0, 36.0, Taper::Linear),
-            )
-            .with_unit(Unit::Db { floor_db: None })
-            .with_group("Main"),
+            gain: FloatParam::new(stave_core::ParamId(ID_GAIN), "gain", Range::linear(0.0, 1.0)).default(1.0)
+                .smooth(Smooth::Off),
+            drive: FloatParam::new(stave_core::ParamId(ID_DRIVE), "drive", Range::linear(-12.0, 36.0))
+            .unit(Unit::Db)
+            .group("Main"),
             // VST3 convention: bypass param TRUE = bypassed.
-            power: stave_core::params::BoolParam::new(ID_POWER, "bypass", false).with_flags(
-                ParamFlags {
-                    bypass: true,
-                    ..Default::default()
-                },
-            ),
-            sgain: FloatParam::new(ID_SGAIN, "sgain", 1.0, Range::new(0.0, 1.0, Taper::Linear)),
+            power: stave_core::params::BoolParam::bypass(stave_core::ParamId(ID_POWER)),
+            sgain: FloatParam::new(stave_core::ParamId(ID_SGAIN), "sgain", Range::linear(0.0, 1.0)).default(1.0),
         }
     }
 }
 
 struct TableGain {
     params: Arc<TableParams>,
-    gain: ContinuousControl,
-    sgain: ContinuousControl,
+    gain: Smoother,
+    sgain: Smoother,
 }
 
 // Transport observation point for the transport-delivery check (single
@@ -75,38 +64,37 @@ static SEEN_TEMPO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 static SEEN_SECONDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static SEEN_PLAYING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-impl Plugin for TableGain {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.table-gain",
-        name: c"Table Gain",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"param-table ABI fixture",
+impl Erased for TableGain {
+    const INFO: Info = Info {
+        id: "com.stave.test.table-gain",
+        name: "Table Gain",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "param-table ABI fixture",
         features: &[],
     };
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         let params = Arc::new(TableParams::new());
         Self {
-            gain: ContinuousControl::new(&params.gain),
-            sgain: ContinuousControl::new(&params.sgain),
+            gain: Smoother::new(&params.gain),
+            sgain: Smoother::new(&params.sgain),
             params,
         }
     }
 
-    fn activate(&mut self, sample_rate: f32, _max_frames: usize) {
-        self.gain.prepare(f64::from(sample_rate), &self.params.gain);
-        self.sgain
-            .prepare(f64::from(sample_rate), &self.params.sgain);
+    fn prepare(&mut self, env: &Environment) {
+        self.gain.prepare(env);
+        self.sgain.prepare(env);
     }
 
-    fn param_table(&self) -> Arc<dyn Params> {
+    fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        if let Some(t) = &ctx.transport {
+    fn process(&mut self, block: &mut Block<'_>) {
+        if let Some(t) = block.transport() {
             SEEN_PLAYING.store(t.playing, std::sync::atomic::Ordering::Relaxed);
             SEEN_TEMPO.store(
                 t.tempo_bpm.unwrap_or(f64::NAN).to_bits(),
@@ -117,32 +105,29 @@ impl Plugin for TableGain {
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
-        let mut gain = self.gain.begin_block(ctx.params, &self.params.gain); // Off → follows schedule exactly
-        let mut sg = self.sgain.begin_block(ctx.params, &self.params.sgain);
-        let chans = ctx.output.channel_count().min(ctx.input.channel_count());
-        for f in 0..ctx.frames {
+        let mut gain = self.gain.ramp(block, &self.params.gain); // Off → follows schedule exactly
+        let mut sg = self.sgain.ramp(block, &self.params.sgain);
+        let frames = block.frames();
+        let (input, output) = block.io();
+        let mut channels: Vec<_> = input.channels().zip(output.channels_mut()).collect();
+        for f in 0..frames {
             let g = gain.next() * sg.next();
-            for c in 0..chans {
-                let x = ctx.input.channel_ref(c)[f];
-                ctx.output.channel(c)[f] = g * x;
+            for (x, y) in channels.iter_mut() {
+                y[f] = g * x[f];
             }
         }
     }
 }
 
 /// A face, so `createView` makes a view.
-impl stave_vst3::stave_face::HasFace for TableGain {
+impl stave_vst3::wrapper::Vst3Export for TableGain {
     fn face(&self) -> Option<stave_face::Face> {
         use stave_face::prelude::*;
         Some(Face::new(Theme::graphite(), Knob::new(self.params.drive.bind()).node()))
     }
 }
 
-stave_vst3::stave_vst3_export!(
-    raw TableGain,
-    component_cid: (0x7ab1_0001, 0x7ab1_0002, 0x7ab1_0003, 0x7ab1_0004),
-    controller_cid: (0x7ab1_0001, 0x7ab1_0002, 0x7ab1_0005, 0x7ab1_0006),
-);
+stave_vst3::export_vst3!(TableGain);
 
 // ===========================================================================
 // Host plumbing (mirrors wrapper_abi.rs)
@@ -453,7 +438,7 @@ fn descriptor_snapshot_is_frozen() {
             snap,
             "42:gain unit='' steps=0 flags=0x1 default=1;\
              7:Main · drive unit='dB' steps=0 flags=0x1 default=0.25;\
-             99:bypass unit='' steps=1 flags=0x10001 default=0;\
+             99:Bypass unit='' steps=1 flags=0x10001 default=0;\
              55:sgain unit='' steps=0 flags=0x1 default=1;",
             "wire descriptor changed — if deliberate, update this snapshot in the same review"
         );
@@ -1042,7 +1027,7 @@ fn bypass_crossfade_is_click_free_and_null_when_engaged() {
     }
 }
 
-/// Host transport reaches ProcessCtx with per-field
+/// Host transport reaches the Block with per-field
 /// validity honored.
 #[test]
 fn transport_reaches_the_plugin() {
@@ -1198,8 +1183,8 @@ fn editor_writes_reach_the_host_and_the_table() {
         // A knob drag on "drive": the gesture conversation and the table.
         let drive = stave_core::ParamId(ID_DRIVE);
         controller.begin(drive);
-        controller.set(drive, 0.5); // 12 dB on −12..36
-        controller.set(drive, 0.125); // −6 dB
+        controller.set(drive, stave_core::Normalized::new(0.5)); // 12 dB on −12..36
+        controller.set(drive, stave_core::Normalized::new(0.125)); // −6 dB
         controller.end(drive);
         assert_eq!(
             handler.log,

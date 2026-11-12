@@ -18,6 +18,7 @@ use stave_telemetry::{TapId, Telemetry, CAPTURE_LEN};
 
 use crate::params::{AnyParam, ParamId, Params};
 use crate::preset::Preset;
+use crate::units::Normalized;
 
 /// What an editor reads and writes on its plugin. Values cross as
 /// NORMALIZED (0–1 in the parameter's own taper); an edit is a gesture,
@@ -28,7 +29,7 @@ pub trait Controller {
     /// Open an edit gesture on `id` (the host's automation bracket).
     fn begin(&self, id: ParamId);
     /// Move `id` to `normalized` inside a gesture.
-    fn set(&self, id: ParamId, normalized: f64);
+    fn set(&self, id: ParamId, normalized: Normalized);
     /// Close the gesture `begin` opened.
     fn end(&self, id: ParamId);
     /// The latest value of tap `id` (0 until the engine publishes it).
@@ -74,7 +75,7 @@ impl dyn Controller + '_ {
     /// The current value as the plugin formats it ("1.20 s", "VINYL").
     pub fn value_text(&self, id: ParamId) -> String {
         self.param(id)
-            .map_or_else(String::new, |p| p.format_plain(p.plain()).as_str().to_string())
+            .map_or_else(String::new, |p| p.format(p.value()).as_str().to_string())
     }
 }
 
@@ -83,7 +84,8 @@ impl dyn Controller + '_ {
 /// the sink tells the host.
 pub trait GestureSink: Send {
     fn begin(&self, id: ParamId);
-    fn perform(&self, id: ParamId, plain: f64);
+    /// `value` in the param's own units.
+    fn perform(&self, id: ParamId, value: f64);
     fn end(&self, id: ParamId);
 }
 
@@ -94,7 +96,7 @@ pub trait GestureSink: Send {
 pub struct PluginController {
     table: Arc<dyn Params>,
     telemetry: Arc<Telemetry>,
-    presets: Vec<Preset>,
+    presets: Arc<[Preset]>,
     current: Cell<Option<usize>>,
     sink: Box<dyn GestureSink>,
 }
@@ -103,7 +105,7 @@ impl PluginController {
     pub fn new(
         table: Arc<dyn Params>,
         telemetry: Arc<Telemetry>,
-        presets: Vec<Preset>,
+        presets: Arc<[Preset]>,
         sink: Box<dyn GestureSink>,
     ) -> Self {
         PluginController {
@@ -115,12 +117,12 @@ impl PluginController {
         }
     }
 
-    /// Write `plain` (clamped into range) and tell the sink.
-    fn perform(&self, p: &dyn AnyParam, plain: f64) {
-        let (lo, hi) = (p.normalized_to_plain(0.0), p.normalized_to_plain(1.0));
-        let plain = plain.clamp(lo.min(hi), lo.max(hi));
-        p.set_plain(plain);
-        self.sink.perform(p.meta().id, plain);
+    /// Write `value` (clamped into range) and tell the sink.
+    fn perform(&self, p: &dyn AnyParam, value: f64) {
+        let (lo, hi) = (p.denormalize(0.0), p.denormalize(1.0));
+        let value = value.clamp(lo.min(hi), lo.max(hi));
+        p.set_value(value);
+        self.sink.perform(p.meta().id, value);
     }
 }
 
@@ -133,9 +135,9 @@ impl Controller for PluginController {
             self.sink.begin(id);
         }
     }
-    fn set(&self, id: ParamId, normalized: f64) {
+    fn set(&self, id: ParamId, normalized: Normalized) {
         if let Some(p) = self.table.by_id(id) {
-            self.perform(p, p.normalized_to_plain(normalized.clamp(0.0, 1.0)));
+            self.perform(p, p.denormalize(normalized.get()));
         }
     }
     fn end(&self, id: ParamId) {
@@ -166,10 +168,10 @@ impl Controller for PluginController {
         let Some(preset) = self.presets.get(index) else {
             return;
         };
-        for &(id, plain) in &preset.values {
+        for &(id, value) in &preset.values {
             if let Some(p) = self.table.by_id(id) {
                 self.sink.begin(id);
-                self.perform(p, plain);
+                self.perform(p, value);
                 self.sink.end(id);
             }
         }
@@ -180,7 +182,7 @@ impl Controller for PluginController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{FloatParam, Range, Taper};
+    use crate::params::{FloatParam, Range};
     use std::sync::Mutex;
 
     struct Drive(FloatParam);
@@ -201,8 +203,8 @@ mod tests {
         fn begin(&self, id: ParamId) {
             self.0.lock().unwrap().push(alloc::format!("begin {}", id.0));
         }
-        fn perform(&self, id: ParamId, plain: f64) {
-            self.0.lock().unwrap().push(alloc::format!("perform {} {plain}", id.0));
+        fn perform(&self, id: ParamId, value: f64) {
+            self.0.lock().unwrap().push(alloc::format!("perform {} {value}", id.0));
         }
         fn end(&self, id: ParamId) {
             self.0.lock().unwrap().push(alloc::format!("end {}", id.0));
@@ -210,10 +212,10 @@ mod tests {
     }
 
     fn rig(presets: Vec<Preset>) -> (PluginController, Arc<Mutex<Vec<String>>>) {
-        let table: Arc<dyn Params> = Arc::new(Drive(FloatParam::new(7, "Drive", 0.0, Range::new(-12.0, 12.0, Taper::Linear))));
+        let table: Arc<dyn Params> = Arc::new(Drive(FloatParam::new(ParamId(7), "Drive", Range::linear(-12.0, 12.0))));
         let log = Log::default();
         let seen = log.0.clone();
-        (PluginController::new(table, Telemetry::new(), presets, Box::new(log)), seen)
+        (PluginController::new(table, Telemetry::new(), presets.into(), Box::new(log)), seen)
     }
 
     #[test]
@@ -221,12 +223,12 @@ mod tests {
         let (c, log) = rig(Vec::new());
         let c: &dyn Controller = &c;
         c.begin(ParamId(7));
-        c.set(ParamId(7), 0.75);
-        c.set(ParamId(7), 2.0);
+        c.set(ParamId(7), Normalized::new(0.75));
+        c.set(ParamId(7), Normalized::new(2.0));
         c.end(ParamId(7));
         assert_eq!(*log.lock().unwrap(), ["begin 7", "perform 7 6", "perform 7 12", "end 7"]);
         assert_eq!(c.normalized(ParamId(7)), 1.0);
-        assert_eq!(c.value_text(ParamId(7)), c.param(ParamId(7)).unwrap().format_plain(12.0).as_str());
+        assert_eq!(c.value_text(ParamId(7)), c.param(ParamId(7)).unwrap().format(12.0).as_str());
     }
 
     #[test]
@@ -234,7 +236,7 @@ mod tests {
         let (c, log) = rig(Vec::new());
         let c: &dyn Controller = &c;
         c.begin(ParamId(9));
-        c.set(ParamId(9), 0.5);
+        c.set(ParamId(9), Normalized::new(0.5));
         c.end(ParamId(9));
         assert!(log.lock().unwrap().is_empty());
         assert_eq!((c.normalized(ParamId(9)), c.steps(ParamId(9))), (0.0, 0));

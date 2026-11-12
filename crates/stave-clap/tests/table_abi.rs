@@ -11,13 +11,14 @@ use std::ptr;
 use std::sync::Arc;
 
 use stave_clap::sys::*;
-use stave_core::params::{ContinuousControl, FloatParam, Params, Range, Smooth, Taper, Unit};
-use stave_core::{Controller, ParamId, Plugin, PluginDescriptor, ProcessCtx};
+use stave_core::params::{FloatParam, Params, Range, Smooth, Smoother, Unit};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Controller, Environment, Info, ParamId, Telemetry};
 
 const ID_GAIN: u32 = 42;
 const ID_DRIVE: u32 = 7;
 
-#[derive(stave_core::params::Params)]
+#[derive(stave_core::Params)]
 struct TableParams {
     gain: FloatParam,
     drive: FloatParam,
@@ -26,84 +27,80 @@ struct TableParams {
 impl TableParams {
     fn new() -> Self {
         Self {
-            gain: FloatParam::new(ID_GAIN, "gain", 1.0, Range::new(0.0, 1.0, Taper::Linear))
-                .with_smooth(Smooth::Off),
-            drive: FloatParam::new(
-                ID_DRIVE,
-                "drive",
-                0.0,
-                Range::new(-12.0, 36.0, Taper::Linear),
-            )
-            .with_unit(Unit::Db { floor_db: None })
-            .with_group("Main"),
+            gain: FloatParam::new(ParamId(ID_GAIN), "gain", Range::linear(0.0, 1.0)).default(1.0)
+                .smooth(Smooth::Off),
+            drive: FloatParam::new(ParamId(ID_DRIVE), "drive", Range::linear(-12.0, 36.0))
+            .unit(Unit::Db)
+            .group("Main"),
         }
     }
 }
 
 struct TableGain {
     params: Arc<TableParams>,
-    gain: ContinuousControl,
+    gain: Smoother,
 }
 
 static SEEN_TEMPO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static SEEN_PLAYING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-impl Plugin for TableGain {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.table-gain-clap",
-        name: c"Table Gain (CLAP)",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"param-table ABI fixture",
+impl Erased for TableGain {
+    const INFO: Info = Info {
+        id: "com.stave.test.table-gain-clap",
+        name: "Table Gain (CLAP)",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "param-table ABI fixture",
         features: &[],
     };
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         let params = Arc::new(TableParams::new());
         Self {
-            gain: ContinuousControl::new(&params.gain),
+            gain: Smoother::new(&params.gain),
             params,
         }
     }
 
-    fn activate(&mut self, sample_rate: f32, _max_frames: usize) {
-        self.gain.prepare(f64::from(sample_rate), &self.params.gain);
+    fn prepare(&mut self, env: &Environment) {
+        self.gain.prepare(env);
     }
 
-    fn param_table(&self) -> Arc<dyn Params> {
+    fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        if let Some(t) = &ctx.transport {
+    fn process(&mut self, block: &mut Block<'_>) {
+        if let Some(t) = block.transport() {
             SEEN_PLAYING.store(t.playing, std::sync::atomic::Ordering::Relaxed);
             SEEN_TEMPO.store(
                 t.tempo_bpm.unwrap_or(f64::NAN).to_bits(),
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
-        let mut gain = self.gain.begin_block(ctx.params, &self.params.gain); // Off → schedule-exact
-        let chans = ctx.output.channel_count().min(ctx.input.channel_count());
-        for f in 0..ctx.frames {
+        let mut gain = self.gain.ramp(block, &self.params.gain); // Off → schedule-exact
+        let frames = block.frames();
+        let (input, output) = block.io();
+        let mut channels: Vec<_> = input.channels().zip(output.channels_mut()).collect();
+        for f in 0..frames {
             let g = gain.next();
-            for c in 0..chans {
-                let x = ctx.input.channel_ref(c)[f];
-                ctx.output.channel(c)[f] = g * x;
+            for (x, y) in channels.iter_mut() {
+                y[f] = g * x[f];
             }
         }
     }
 }
 
 /// A face, so the instance serves `clap.gui`.
-impl stave_clap::stave_face::HasFace for TableGain {
+impl stave_clap::wrapper::ClapExport for TableGain {
     fn face(&self) -> Option<stave_clap::stave_face::Face> {
         use stave_clap::stave_face::prelude::*;
         Some(Face::new(Theme::graphite(), Knob::new(self.params.drive.bind()).node()))
     }
 }
 
-stave_clap::stave_clap_export!(raw TableGain);
+stave_clap::export_clap!(TableGain);
 
 // ===========================================================================
 // Host plumbing
@@ -114,7 +111,7 @@ unsafe fn create() -> *const ClapPlugin {
     let factory =
         unsafe { get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr()) } as *const ClapPluginFactory;
     let create = unsafe { (*factory).create_plugin.expect("create_plugin") };
-    let plugin = unsafe { create(factory, ptr::null(), TableGain::DESCRIPTOR.id.as_ptr()) };
+    let plugin = unsafe { create(factory, ptr::null(), c"com.stave.test.table-gain-clap".as_ptr()) };
     assert!(!plugin.is_null());
     assert!(unsafe { ((*plugin).init.expect("init"))(plugin) });
     plugin
@@ -352,8 +349,8 @@ fn gestures_flow_to_the_host_through_out_events() {
         let c: &dyn Controller = &controller;
         let drive = ParamId(ID_DRIVE);
         c.begin(drive);
-        c.set(drive, 0.5); // 12 dB on −12..36
-        c.set(drive, 0.125); // −6 dB
+        c.set(drive, stave_core::Normalized::new(0.5)); // 12 dB on −12..36
+        c.set(drive, stave_core::Normalized::new(0.125)); // −6 dB
         c.end(drive);
 
         // Host flushes (transport stopped): events arrive in order.
@@ -525,7 +522,7 @@ fn param_value_events_reach_table_and_dsp() {
         assert_eq!(
             f64::from_bits(SEEN_TEMPO.load(std::sync::atomic::Ordering::Relaxed)),
             174.0,
-            "tempo delivered through ProcessCtx.transport"
+            "tempo delivered through Block::transport"
         );
 
         // flush path applies events outside processing too.

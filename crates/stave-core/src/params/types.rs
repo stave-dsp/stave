@@ -8,10 +8,10 @@
 //! removing fields must not shift existing ids — saved automation
 //! lanes and presets key on them.
 //!
-//! Value model: the atomically-stored PLAIN value is the single
-//! host/state-visible truth. Normalized exists only at the wrapper
-//! boundary (via [`Range`]); smoothing is render state, owned by the
-//! processor that renders it ([`ContinuousControl`](super::ContinuousControl)).
+//! Value model: the atomically stored value is the single
+//! host/state-visible truth. Normalized exists only at the host and face
+//! boundary (via [`Range`]); smoothing is per-plugin state, owned by the
+//! plugin that runs it ([`Smoother`](super::Smoother)).
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
@@ -26,7 +26,9 @@ use super::display::{Unit, ValueText};
 use super::smooth::Smooth;
 use super::taper::Range;
 
-/// Behavioral flags, additive. Defaults: automatable, visible.
+/// How hosts treat a parameter. Read only: set through the builders
+/// ([`BoolParam::bypass`], `.hidden()`, `.not_automatable()`), so only a
+/// `BoolParam` can be the bypass.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ParamFlags {
     /// The host bypass param (VST3 `kIsBypass`, CLAP `is_bypass`).
@@ -37,7 +39,7 @@ pub struct ParamFlags {
     pub hidden: bool,
 }
 
-/// Declaration shared by every param kind.
+/// Declaration shared by every param kind (read only).
 #[derive(Clone, Debug)]
 pub struct ParamMeta {
     pub id: ParamId,
@@ -47,39 +49,55 @@ pub struct ParamMeta {
     pub flags: ParamFlags,
 }
 
+impl ParamMeta {
+    fn new(id: ParamId, name: &'static str, unit: Unit) -> Self {
+        Self {
+            id,
+            name,
+            group: "",
+            unit,
+            flags: ParamFlags::default(),
+        }
+    }
+}
+
 // ===========================================================================
 // FloatParam
 // ===========================================================================
 
-/// A continuous parameter: plain f64 target + declared taper, unit, and
-/// framework-owned smoothing.
+/// A continuous parameter: a value in a [`Range`], with a [`Unit`] that
+/// formats it and a [`Smooth`] the plugin's [`Smoother`](super::Smoother)
+/// runs.
+///
+/// ```
+/// use stave_core::params::{FloatParam, ParamId, Range, Smooth, Unit};
+///
+/// let tilt = FloatParam::new(ParamId(1), "Tilt", Range::linear(-6.0, 6.0))
+///     .unit(Unit::Db)
+///     .smooth(Smooth::ms(30.0));
+/// assert_eq!(tilt.value(), 0.0);
+/// ```
 #[derive(Debug)]
 pub struct FloatParam {
     meta: ParamMeta,
     range: Range,
     default: f64,
     smooth: Smooth,
-    /// Plain-value target (f64 bits) — the host/state-visible truth.
+    /// The value (f64 bits) — the host/state-visible truth.
     value: AtomicU64,
     /// Bumped when the value is restored (session load), not moved:
-    /// processor-owned controls jump to a restored value instead of
-    /// gliding to it.
+    /// smoothers jump to a restored value instead of gliding to it.
     restores: AtomicU32,
 }
 
 impl FloatParam {
     /// Declare a param. `id` is FOREVER: pick it once, never reuse or
-    /// renumber (see module docs).
-    pub fn new(id: u32, name: &'static str, default: f64, range: Range) -> Self {
-        let default = default.clamp(range.min, range.max);
+    /// renumber (see module docs). The default is the value in `range`
+    /// nearest 0 until [`default`](Self::default) says otherwise.
+    pub fn new(id: ParamId, name: &'static str, range: Range) -> Self {
+        let default = range.nearest_zero();
         Self {
-            meta: ParamMeta {
-                id: ParamId(id),
-                name,
-                group: "",
-                unit: Unit::Plain { decimals: 2 },
-                flags: ParamFlags::default(),
-            },
+            meta: ParamMeta::new(id, name, Unit::Plain { decimals: 2 }),
             range,
             default,
             smooth: Smooth::DEFAULT,
@@ -88,62 +106,73 @@ impl FloatParam {
         }
     }
 
-    pub fn with_unit(mut self, unit: Unit) -> Self {
+    /// The value a new instance starts at (clamped into the range).
+    pub fn default(mut self, value: f64) -> Self {
+        self.default = value.clamp(self.range.min(), self.range.max());
+        self.value = AtomicU64::new(self.default.to_bits());
+        self
+    }
+
+    /// How the value reads and parses.
+    pub fn unit(mut self, unit: Unit) -> Self {
         self.meta.unit = unit;
         self
     }
 
-    pub fn with_group(mut self, group: &'static str) -> Self {
+    /// The host folder (VST3 unit, CLAP module) the param shows in.
+    pub fn group(mut self, group: &'static str) -> Self {
         self.meta.group = group;
         self
     }
 
-    pub fn with_smooth(mut self, smooth: Smooth) -> Self {
+    /// How the plugin's [`Smoother`](super::Smoother) glides to new values.
+    pub fn smooth(mut self, smooth: Smooth) -> Self {
         self.smooth = smooth;
         self
     }
 
-    pub fn with_flags(mut self, flags: ParamFlags) -> Self {
-        self.meta.flags = flags;
+    /// Hidden from generic editors (still automatable).
+    pub fn hidden(mut self) -> Self {
+        self.meta.flags.hidden = true;
         self
     }
 
-    /// Host/state-visible target, plain units.
-    pub fn plain(&self) -> f64 {
-        f64::from_bits(self.value.load(Ordering::Acquire))
+    /// Left out of the host's automation lists.
+    pub fn not_automatable(mut self) -> Self {
+        self.meta.flags.non_automatable = true;
+        self
     }
 
-    /// The engine read: the current value, TYPED and BOUNDED BY
-    /// THE DECLARATION — already clamped to the declared range, as
-    /// f32. Engines never restate their ranges at a read site (a
-    /// clamp beside a read is a drift hazard: nothing keeps it equal
-    /// to the declaration). `value()` is the block-rate snapshot; a
-    /// per-sample glide is a processor-owned
-    /// [`ContinuousControl`](super::ContinuousControl).
+    /// The value, as `f32`, inside the declared range. A block-rate
+    /// read; a per-frame glide is a [`Smoother`](super::Smoother).
     #[inline]
     pub fn value(&self) -> f32 {
-        self.plain().clamp(self.range.min, self.range.max) as f32
+        self.plain() as f32
+    }
+
+    /// The value at full precision (always inside the range).
+    pub(crate) fn plain(&self) -> f64 {
+        f64::from_bits(self.value.load(Ordering::Acquire))
     }
 
     pub fn range(&self) -> Range {
         self.range
     }
 
-    /// Stable identity copied into processor-owned controls.
     pub fn id(&self) -> ParamId {
         self.meta.id
     }
 
-    /// Declared smoothing copied into processor-owned controls.
+    /// The declared glide.
     pub fn smoothing(&self) -> Smooth {
         self.smooth
     }
 
-    /// The restore count (see [`AnyParam::restore_plain`]): it moves on
-    /// every restore and is odd while one is being written. Readers load
-    /// it, then the value, then it again (all `Acquire`) and snap when it
+    /// The restore count (see [`AnyParam::restore`]): it moves on every
+    /// restore and is odd while one is being written. Readers load it,
+    /// then the value, then it again (all `Acquire`) and snap when it
     /// moved, is odd, or differs from the count they last saw.
-    pub fn restores(&self) -> u32 {
+    pub(crate) fn restores(&self) -> u32 {
         self.restores.load(Ordering::Acquire)
     }
 }
@@ -152,9 +181,8 @@ impl FloatParam {
 // BoolParam
 // ===========================================================================
 
-/// A two-state parameter. Unsmoothed by nature; DSP that needs a
-/// click-free toggle crossfades on its own terms (or uses the
-/// framework bypass, Step 4).
+/// A two-state parameter. Never smoothed: DSP that needs a click-free
+/// toggle crossfades on its own terms.
 #[derive(Debug)]
 pub struct BoolParam {
     meta: ParamMeta,
@@ -164,45 +192,51 @@ pub struct BoolParam {
 }
 
 impl BoolParam {
-    pub fn new(id: u32, name: &'static str, default: bool) -> Self {
+    pub fn new(id: ParamId, name: &'static str, default: bool) -> Self {
         Self {
-            meta: ParamMeta {
-                id: ParamId(id),
-                name,
-                group: "",
-                unit: Unit::Plain { decimals: 0 },
-                flags: ParamFlags::default(),
-            },
+            meta: ParamMeta::new(id, name, Unit::Plain { decimals: 0 }),
             default,
             value: AtomicBool::new(default),
             names: ["off", "on"],
         }
     }
 
-    pub fn with_group(mut self, group: &'static str) -> Self {
+    /// The plugin's bypass: the host's bypass switch (VST3 `kIsBypass`,
+    /// CLAP `is_bypass`), run by the framework as a click-free,
+    /// latency-matched crossfade — the plugin never reads it. The one way
+    /// to declare bypass.
+    pub fn bypass(id: ParamId) -> Self {
+        let mut p = Self::new(id, "Bypass", false);
+        p.meta.flags.bypass = true;
+        p
+    }
+
+    /// The host folder the param shows in.
+    pub fn group(mut self, group: &'static str) -> Self {
         self.meta.group = group;
         self
     }
 
-    pub fn with_flags(mut self, flags: ParamFlags) -> Self {
-        self.meta.flags = flags;
-        self
-    }
-
     /// Display names for the two states (default "off"/"on").
-    pub fn with_names(mut self, off: &'static str, on: &'static str) -> Self {
+    pub fn names(mut self, off: &'static str, on: &'static str) -> Self {
         self.names = [off, on];
         self
     }
 
-    pub fn get(&self) -> bool {
-        self.value.load(Ordering::Acquire)
+    /// Hidden from generic editors (still automatable).
+    pub fn hidden(mut self) -> Self {
+        self.meta.flags.hidden = true;
+        self
     }
 
-    /// The engine read: the current state, as the bool it is.
+    pub fn id(&self) -> ParamId {
+        self.meta.id
+    }
+
+    /// The current state.
     #[inline]
     pub fn value(&self) -> bool {
-        self.get()
+        self.value.load(Ordering::Acquire)
     }
 }
 
@@ -266,42 +300,36 @@ pub struct EnumParam<T: ParamEnum> {
 }
 
 impl<T: ParamEnum> EnumParam<T> {
-    pub fn new(id: u32, name: &'static str, default: T) -> Self {
+    pub fn new(id: ParamId, name: &'static str, default: T) -> Self {
         assert!(T::COUNT >= 2, "EnumParam needs at least 2 positions");
         Self {
-            meta: ParamMeta {
-                id: ParamId(id),
-                name,
-                group: "",
-                unit: Unit::Plain { decimals: 0 },
-                flags: ParamFlags::default(),
-            },
+            meta: ParamMeta::new(id, name, Unit::Plain { decimals: 0 }),
             default: default.to_index(),
             index: AtomicU32::new(default.to_index()),
             _marker: core::marker::PhantomData,
         }
     }
 
-    pub fn with_group(mut self, group: &'static str) -> Self {
+    /// The host folder the param shows in.
+    pub fn group(mut self, group: &'static str) -> Self {
         self.meta.group = group;
         self
     }
 
-    pub fn with_flags(mut self, flags: ParamFlags) -> Self {
-        self.meta.flags = flags;
+    /// Hidden from generic editors (still automatable).
+    pub fn hidden(mut self) -> Self {
+        self.meta.flags.hidden = true;
         self
     }
 
-    pub fn get(&self) -> T {
-        T::from_index(self.index.load(Ordering::Acquire).min(T::COUNT - 1))
+    pub fn id(&self) -> ParamId {
+        self.meta.id
     }
 
-    /// The engine read: the current selection as a plain index,
-    /// bounded by the declared variant count — what a `match` over
-    /// selector positions wants, without `.get().0 as usize`.
+    /// The current selection.
     #[inline]
-    pub fn index(&self) -> usize {
-        self.get().to_index() as usize
+    pub fn value(&self) -> T {
+        T::from_index(self.index.load(Ordering::Acquire).min(T::COUNT - 1))
     }
 }
 
@@ -309,29 +337,33 @@ impl<T: ParamEnum> EnumParam<T> {
 // AnyParam — the object-safe host/wrapper view
 // ===========================================================================
 
-/// What wrappers, editors, and state consume. Everything here
-/// is `&self` + atomics: callable from any host thread. NOT the audio
-/// read path — that's the typed field access above.
+/// One parameter seen without its type: what wrappers, faces and state
+/// read and write. Values here are plain `f64` in the parameter's own
+/// units (a bool is 0 or 1, an enum its index); normalized is 0–1 in
+/// the parameter's taper. Everything is `&self` + atomics: callable from
+/// any thread. A plugin reads its params through the typed fields
+/// instead.
 pub trait AnyParam: Send + Sync {
     fn meta(&self) -> &ParamMeta;
 
-    /// Plain-value truth.
-    fn plain(&self) -> f64;
-    /// Host/state write. Clamps into range; a restore also calls
-    /// [`mark_restored`](Self::mark_restored).
-    fn set_plain(&self, plain: f64);
+    /// The value.
+    fn value(&self) -> f64;
+    /// A host/state write. Clamps into range; NaN writes the default.
+    fn set_value(&self, value: f64);
 
-    /// Normalized 0..=1 view for host ABIs.
+    /// The value, normalized.
     fn normalized(&self) -> f64;
     fn set_normalized(&self, n: f64);
     fn default_normalized(&self) -> f64;
-    fn plain_to_normalized(&self, plain: f64) -> f64;
-    fn normalized_to_plain(&self, n: f64) -> f64;
+    /// `value` → normalized.
+    fn normalize(&self, value: f64) -> f64;
+    /// Normalized → value.
+    fn denormalize(&self, n: f64) -> f64;
 
-    /// Display of an arbitrary plain value (hosts format automation
-    /// lane positions, not just the current value).
-    fn format_plain(&self, plain: f64) -> ValueText;
-    /// Typed entry → plain value.
+    /// Text for any value (hosts label automation lanes, not just the
+    /// current value).
+    fn format(&self, value: f64) -> ValueText;
+    /// Typed entry → value.
     fn parse(&self, text: &str) -> Option<f64>;
 
     /// 0 = continuous; N ≥ 2 = stepped with [`step_name`](Self::step_name).
@@ -342,16 +374,10 @@ pub trait AnyParam: Send + Sync {
         None
     }
 
-    /// The value was restored (session load), not moved: renderers jump
-    /// to it rather than glide. Restored state must not fade in.
-    /// Prefer [`restore_plain`](Self::restore_plain), which writes the
-    /// value and the mark as one protocol.
-    fn mark_restored(&self) {}
-    /// Restore `plain` (session load): the value is jumped to, never
-    /// glided to, by every renderer reading it concurrently.
-    fn restore_plain(&self, plain: f64) {
-        self.set_plain(plain);
-        self.mark_restored();
+    /// Restore `value` (session load): every smoother reading it jumps to
+    /// it, never glides — restored state must not fade in.
+    fn restore(&self, value: f64) {
+        self.set_value(value);
     }
     /// Display hint for generic editors: logarithmic knob travel.
     fn display_log(&self) -> bool {
@@ -363,14 +389,14 @@ impl AnyParam for FloatParam {
     fn meta(&self) -> &ParamMeta {
         &self.meta
     }
-    fn plain(&self) -> f64 {
-        FloatParam::plain(self)
+    fn value(&self) -> f64 {
+        self.plain()
     }
-    fn set_plain(&self, plain: f64) {
-        let v = if plain.is_nan() {
+    fn set_value(&self, value: f64) {
+        let v = if value.is_nan() {
             self.default
         } else {
-            plain.clamp(self.range.min, self.range.max)
+            value.clamp(self.range.min(), self.range.max())
         };
         self.value.store(v.to_bits(), Ordering::Release);
     }
@@ -378,31 +404,27 @@ impl AnyParam for FloatParam {
         self.range.normalize(self.plain())
     }
     fn set_normalized(&self, n: f64) {
-        self.set_plain(self.range.denormalize(n));
+        self.set_value(self.range.denormalize(n));
     }
     fn default_normalized(&self) -> f64 {
         self.range.normalize(self.default)
     }
-    fn plain_to_normalized(&self, plain: f64) -> f64 {
-        self.range.normalize(plain)
+    fn normalize(&self, value: f64) -> f64 {
+        self.range.normalize(value)
     }
-    fn normalized_to_plain(&self, n: f64) -> f64 {
+    fn denormalize(&self, n: f64) -> f64 {
         self.range.denormalize(n)
     }
-    fn format_plain(&self, plain: f64) -> ValueText {
-        self.meta.unit.format(plain)
+    fn format(&self, value: f64) -> ValueText {
+        self.meta.unit.format(value)
     }
     fn parse(&self, text: &str) -> Option<f64> {
         self.meta
             .unit
             .parse(text)
-            .map(|v| v.clamp(self.range.min, self.range.max))
+            .map(|v| v.clamp(self.range.min(), self.range.max()))
     }
-    fn mark_restored(&self) {
-        // +2 keeps the count even: no restore is in progress.
-        self.restores.fetch_add(2, Ordering::Release);
-    }
-    fn restore_plain(&self, plain: f64) {
+    fn restore(&self, value: f64) {
         // Bracket the value store with the count: odd while writing, even
         // (and moved) after. A reader that sees this value also sees an
         // odd or moved count: the Release store below orders the first
@@ -411,11 +433,11 @@ impl AnyParam for FloatParam {
         // old value with a moved count snaps to the old value, then snaps
         // again next block. Neither interleaving glides.
         self.restores.fetch_add(1, Ordering::Release);
-        self.set_plain(plain);
+        self.set_value(value);
         self.restores.fetch_add(1, Ordering::Release);
     }
     fn display_log(&self) -> bool {
-        matches!(self.range.taper, super::taper::Taper::Log)
+        matches!(self.range.taper(), super::taper::Taper::Log)
     }
 }
 
@@ -423,47 +445,32 @@ impl AnyParam for BoolParam {
     fn meta(&self) -> &ParamMeta {
         &self.meta
     }
-    fn plain(&self) -> f64 {
-        if self.get() {
-            1.0
-        } else {
-            0.0
-        }
+    fn value(&self) -> f64 {
+        f64::from(u8::from(BoolParam::value(self)))
     }
-    fn set_plain(&self, plain: f64) {
-        self.value.store(plain >= 0.5, Ordering::Release);
+    fn set_value(&self, value: f64) {
+        let on = if value.is_nan() { self.default } else { value >= 0.5 };
+        self.value.store(on, Ordering::Release);
     }
     fn normalized(&self) -> f64 {
-        self.plain()
+        AnyParam::value(self)
     }
     fn set_normalized(&self, n: f64) {
-        self.set_plain(n);
+        self.set_value(n);
     }
     fn default_normalized(&self) -> f64 {
-        if self.default {
-            1.0
-        } else {
-            0.0
-        }
+        f64::from(u8::from(self.default))
     }
-    fn plain_to_normalized(&self, plain: f64) -> f64 {
-        if plain >= 0.5 {
-            1.0
-        } else {
-            0.0
-        }
+    fn normalize(&self, value: f64) -> f64 {
+        f64::from(u8::from(value >= 0.5))
     }
-    fn normalized_to_plain(&self, n: f64) -> f64 {
-        if n >= 0.5 {
-            1.0
-        } else {
-            0.0
-        }
+    fn denormalize(&self, n: f64) -> f64 {
+        f64::from(u8::from(n >= 0.5))
     }
-    fn format_plain(&self, plain: f64) -> ValueText {
+    fn format(&self, value: f64) -> ValueText {
         let mut t = ValueText::default();
         use core::fmt::Write as _;
-        let _ = t.write_str(self.names[usize::from(plain >= 0.5)]);
+        let _ = t.write_str(self.names[usize::from(value >= 0.5)]);
         t
     }
     fn parse(&self, text: &str) -> Option<f64> {
@@ -488,34 +495,34 @@ impl<T: ParamEnum> AnyParam for EnumParam<T> {
     fn meta(&self) -> &ParamMeta {
         &self.meta
     }
-    fn plain(&self) -> f64 {
+    fn value(&self) -> f64 {
         self.index.load(Ordering::Acquire) as f64
     }
-    fn set_plain(&self, plain: f64) {
-        let i = if plain.is_nan() {
+    fn set_value(&self, value: f64) {
+        let i = if value.is_nan() {
             self.default
         } else {
-            plain.round().max(0.0) as u32
+            value.round().max(0.0) as u32
         };
         self.index.store(i.min(T::COUNT - 1), Ordering::Release);
     }
     fn normalized(&self) -> f64 {
-        self.plain() / (T::COUNT - 1) as f64
+        AnyParam::value(self) / (T::COUNT - 1) as f64
     }
     fn set_normalized(&self, n: f64) {
-        self.set_plain(n.clamp(0.0, 1.0) * (T::COUNT - 1) as f64);
+        self.set_value(n.clamp(0.0, 1.0) * (T::COUNT - 1) as f64);
     }
     fn default_normalized(&self) -> f64 {
         self.default as f64 / (T::COUNT - 1) as f64
     }
-    fn plain_to_normalized(&self, plain: f64) -> f64 {
-        (plain / (T::COUNT - 1) as f64).clamp(0.0, 1.0)
+    fn normalize(&self, value: f64) -> f64 {
+        (value / (T::COUNT - 1) as f64).clamp(0.0, 1.0)
     }
-    fn normalized_to_plain(&self, n: f64) -> f64 {
+    fn denormalize(&self, n: f64) -> f64 {
         (n.clamp(0.0, 1.0) * (T::COUNT - 1) as f64).round()
     }
-    fn format_plain(&self, plain: f64) -> ValueText {
-        let i = (plain.round().max(0.0) as u32).min(T::COUNT - 1);
+    fn format(&self, value: f64) -> ValueText {
+        let i = (value.round().max(0.0) as u32).min(T::COUNT - 1);
         let mut t = ValueText::default();
         use core::fmt::Write as _;
         let _ = t.write_str(T::name(i));
@@ -540,9 +547,8 @@ impl<T: ParamEnum> AnyParam for EnumParam<T> {
 // ===========================================================================
 
 /// The parameter table a plugin exposes: iteration for wrappers,
-/// id lookup for events/state. Step 1.3's `#[derive(Params)]`
-/// implements this; hand impls are supported (and how the derive is
-/// tested).
+/// id lookup for events/state. `#[derive(Params)]` implements it; hand
+/// impls are supported (and how the derive is tested).
 pub trait Params: Send + Sync {
     fn count(&self) -> usize;
     /// Stable declaration order (which does NOT define ids).
@@ -604,7 +610,7 @@ pub trait Params: Send + Sync {
 /// once at instance creation: [`by_id`](Params::by_id) is a binary search
 /// plus one `by_index`, [`bypass`](Params::bypass) one `by_index` —
 /// neither scans nor allocates, so both are audio-thread safe.
-/// [`StavePlugin`](crate::StavePlugin) serves its table through this.
+/// The plugin runtime serves every table through this.
 pub struct IndexedParams<T: ?Sized> {
     /// (id, index), sorted by id; the first declaration wins a duplicate
     /// (which [`Params::validate`] refuses anyway).
@@ -730,7 +736,8 @@ impl Params for NoParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{Taper, Unit};
+    use crate::params::Unit;
+    use crate::Environment;
 
     #[derive(Copy, Clone, Debug, PartialEq)]
     enum Character {
@@ -767,14 +774,11 @@ mod tests {
     impl TestParams {
         fn new() -> Self {
             Self {
-                drive: FloatParam::new(1, "drive", 0.0, Range::new(-12.0, 36.0, Taper::Linear))
-                    .with_unit(Unit::Db { floor_db: None })
-                    .with_group("Main"),
-                character: EnumParam::new(2, "character", Character::Triode).with_group("Main"),
-                bypass: BoolParam::new(3, "bypass", false).with_flags(ParamFlags {
-                    bypass: true,
-                    ..Default::default()
-                }),
+                drive: FloatParam::new(ParamId(1), "drive", Range::linear(-12.0, 36.0))
+                    .unit(Unit::Db)
+                    .group("Main"),
+                character: EnumParam::new(ParamId(2), "character", Character::Triode).group("Main"),
+                bypass: BoolParam::bypass(ParamId(3)),
             }
         }
     }
@@ -804,17 +808,11 @@ mod tests {
             // Ids out of declaration order, as authors pick them.
             let params = (0..n)
                 .map(|i| {
-                    let p = FloatParam::new(
-                        (i * 7919) % 100_003,
-                        "p",
-                        0.0,
-                        Range::new(0.0, 1.0, Taper::Linear),
-                    );
+                    let p = FloatParam::new(ParamId((i * 7919) % 100_003), "p", Range::linear(0.0, 1.0));
                     if i == n - 1 {
-                        p.with_flags(ParamFlags {
-                            bypass: true,
-                            ..Default::default()
-                        })
+                        let mut p = p;
+                        p.meta.flags.bypass = true;
+                        p
                     } else {
                         p
                     }
@@ -887,8 +885,8 @@ mod tests {
             }
         }
         let d = Dup(
-            FloatParam::new(7, "a", 0.0, Range::new(0.0, 1.0, Taper::Linear)),
-            FloatParam::new(7, "b", 0.0, Range::new(0.0, 1.0, Taper::Linear)),
+            FloatParam::new(ParamId(7), "a", Range::linear(0.0, 1.0)),
+            FloatParam::new(ParamId(7), "b", Range::linear(0.0, 1.0)),
         );
         match d.validate() {
             Err(ParamTableError::DuplicateId { id, first, second }) => {
@@ -904,33 +902,34 @@ mod tests {
         let p = TestParams::new();
         let drive = &p.drive as &dyn AnyParam;
         drive.set_normalized(0.5);
-        assert!((drive.plain() - 12.0).abs() < 1e-12); // -12..36 midpoint
-        assert_eq!(&*drive.format_plain(drive.plain()), "12.0 dB");
-        drive.set_plain(999.0); // clamps
-        assert_eq!(drive.plain(), 36.0);
+        assert!((drive.value() - 12.0).abs() < 1e-12); // -12..36 midpoint
+        assert_eq!(&*drive.format(drive.value()), "12.0 dB");
+        drive.set_value(999.0); // clamps
+        assert_eq!(drive.value(), 36.0);
         assert_eq!(drive.normalized(), 1.0);
-        drive.set_plain(f64::NAN); // NaN → default, never stored
-        assert!(drive.plain().is_finite());
+        drive.set_value(f64::NAN); // NaN → default, never stored
+        assert!(drive.value().is_finite());
         assert_eq!(drive.parse("-6 dB"), Some(-6.0));
     }
 
     #[test]
     fn audio_read_path_is_smoothed_and_typed() {
         let p = TestParams::new();
-        let mut drive = crate::params::ContinuousControl::new(&p.drive);
-        drive.prepare(48_000.0, &p.drive);
-        (&p.drive as &dyn AnyParam).set_plain(6.0);
-        // prepare() snapped to the pre-set value 0.0; the new target
+        let mut drive = crate::params::Smoother::new(&p.drive);
+        drive.prepare(&Environment::new(48_000.0, 64));
+        drop(drive.ramp_over(crate::process::ParamBlock::empty(), &p.drive));
+        (&p.drive as &dyn AnyParam).set_value(6.0);
+        // The first ramp after prepare snapped to 0.0; the new target
         // glides — first sample must move toward 6 but not arrive.
-        let mut ramp = drive.begin_block(crate::process::ParamBlock::empty(), &p.drive);
+        let mut ramp = drive.ramp_over(crate::process::ParamBlock::empty(), &p.drive);
         let first = ramp.next_f64();
         assert!(first > 0.0 && first < 6.0, "glide, not step: {first}");
         // Typed enum access on the audio thread: a plain match, no
         // strings, no floats.
-        assert_eq!(p.character.get(), Character::Triode);
+        assert_eq!(p.character.value(), Character::Triode);
         (&p.character as &dyn AnyParam).set_normalized(1.0);
-        assert_eq!(p.character.get(), Character::Tape);
-        assert!(!p.bypass.get());
+        assert_eq!(p.character.value(), Character::Tape);
+        assert!(!p.bypass.value());
     }
 
     #[test]
@@ -942,13 +941,13 @@ mod tests {
         assert_eq!(c.step_name(3), None);
         // Normalized midpoint rounds to the middle step.
         c.set_normalized(0.5);
-        assert_eq!(c.plain(), 1.0);
-        assert_eq!(&*c.format_plain(1.0), "DIODE");
+        assert_eq!(c.value(), 1.0);
+        assert_eq!(&*c.format(1.0), "DIODE");
         assert_eq!(c.parse("tape"), Some(2.0));
         assert_eq!(c.parse("fuzz"), None);
         // Out-of-range plain clamps to the last step.
-        c.set_plain(99.0);
-        assert_eq!(c.plain(), 2.0);
+        c.set_value(99.0);
+        assert_eq!(c.value(), 2.0);
     }
 
     /// Host thread writes targets while the audio thread renders
@@ -958,8 +957,8 @@ mod tests {
     fn concurrent_host_writes_during_audio_ramps() {
         use std::sync::Arc;
         let p = Arc::new(TestParams::new());
-        let mut drive = crate::params::ContinuousControl::new(&p.drive);
-        drive.prepare(48_000.0, &p.drive);
+        let mut drive = crate::params::Smoother::new(&p.drive);
+        drive.prepare(&Environment::new(48_000.0, 64));
         let host = {
             let p = Arc::clone(&p);
             std::thread::spawn(move || {
@@ -970,7 +969,7 @@ mod tests {
             })
         };
         for _ in 0..50 {
-            let mut ramp = drive.begin_block(crate::process::ParamBlock::empty(), &p.drive);
+            let mut ramp = drive.ramp_over(crate::process::ParamBlock::empty(), &p.drive);
             for _ in 0..8 {
                 let v = ramp.next_f64();
                 assert!(
@@ -978,16 +977,16 @@ mod tests {
                     "escaped range: {v}"
                 );
             }
-            let _ = p.character.get();
+            let _ = p.character.value();
         }
         host.join().unwrap();
     }
 
     #[test]
     fn bool_param_names_and_parse() {
-        let b = BoolParam::new(9, "power", true).with_names("BYPASSED", "ACTIVE");
+        let b = BoolParam::new(ParamId(9), "power", true).names("BYPASSED", "ACTIVE");
         let any = &b as &dyn AnyParam;
-        assert_eq!(&*any.format_plain(1.0), "ACTIVE");
+        assert_eq!(&*any.format(1.0), "ACTIVE");
         assert_eq!(any.parse("bypassed"), Some(0.0));
         assert_eq!(any.step_count(), 2);
         assert_eq!(any.default_normalized(), 1.0);

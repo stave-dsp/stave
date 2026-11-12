@@ -5,7 +5,7 @@
 use super::PluginCell;
 use crate::diagnostics::{CallError, Diagnostics};
 use crate::params::Params;
-use crate::plugin::Plugin;
+use super::Erased;
 use crate::state::{self, StateStore};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -18,27 +18,27 @@ pub const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
 
 /// The chunk to hand the host. A busy audio thread costs the plugin's
 /// extra state (logged), not the save.
-pub fn save<P: Plugin>(
+pub fn save<P: Erased>(
     plugin: &PluginCell<P>,
     table: &dyn Params,
     store: &Mutex<StateStore>,
     diagnostics: &Diagnostics,
 ) -> Vec<u8> {
     let extra = match plugin.claim_with_retry(STATE_CLAIM_WAIT) {
-        Some(proc) => proc.plugin.save_extra(),
+        Some(proc) => proc.plugin.save(),
         None => {
             diagnostics.report("save state", &CallError::ExtraStateSkipped);
             Vec::new()
         }
     };
     let store = store.lock().unwrap_or_else(PoisonError::into_inner);
-    state::save(table, P::state_version(), &extra, &store)
+    state::save(table, P::STATE_VERSION, &extra, &store)
 }
 
 /// Applies `bytes`; on a decode error nothing changes. Parameters are
 /// live once decoded; extra state that cannot reach a busy plugin fails
 /// the call.
-pub fn load<P: Plugin>(
+pub fn load<P: Erased>(
     bytes: &[u8],
     plugin: &PluginCell<P>,
     table: &dyn Params,
@@ -51,7 +51,7 @@ pub fn load<P: Plugin>(
         &mut store.lock().unwrap_or_else(PoisonError::into_inner),
     )?;
     match plugin.claim_with_retry(STATE_CLAIM_WAIT) {
-        Some(mut proc) => proc.plugin.load_extra(&extra, report.plugin_version),
+        Some(mut proc) => proc.plugin.load(&extra, report.plugin_version),
         None if !extra.is_empty() => return Err(CallError::ProcessorBusy),
         None => {}
     }

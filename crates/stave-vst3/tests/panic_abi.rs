@@ -10,7 +10,8 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Info, Telemetry};
 use stave_vst3::stave_face;
 use stave_vst3::sys::*;
 use stave_vst3::wrapper::FactoryObj;
@@ -41,39 +42,35 @@ impl stave_face::Part for TrapPart {
     }
 }
 
-impl Plugin for Panics {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.panics",
-        name: c"Panics",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"panic containment fixture",
+impl Erased for Panics {
+    const INFO: Info = Info {
+        id: "com.stave.test.panics",
+        name: "Panics",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "panic containment fixture",
         features: &[],
     };
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         assert!(!PANIC_IN_NEW.load(Ordering::SeqCst), "a constructor bug");
         Self
     }
 
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        ctx.output.channel(0).fill(0.5);
+    fn process(&mut self, block: &mut Block<'_>) {
+        block.output().channel_mut(0).fill(0.5);
         panic!("a plugin bug");
     }
 }
 
-impl stave_face::HasFace for Panics {
+impl stave_vst3::wrapper::Vst3Export for Panics {
     fn face(&self) -> Option<stave_face::Face> {
         Some(stave_face::Face::new(stave_face::Theme::graphite(), stave_face::leaf(TrapPart, 10.0, 10.0)))
     }
 }
 
-stave_vst3::stave_vst3_export!(
-    raw Panics,
-    component_cid: (0x7e57_0101, 0x7e57_0102, 0x7e57_0103, 0x7e57_0104),
-    controller_cid: (0x7e57_0101, 0x7e57_0102, 0x7e57_0105, 0x7e57_0106),
-);
+stave_vst3::export_vst3!(Panics);
 
 #[repr(C)]
 struct RawObj<V> {

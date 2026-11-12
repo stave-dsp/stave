@@ -13,11 +13,11 @@ fn perf_report_for_the_record() {
         &[
             PerfCase {
                 name: "FLAT",
-                set: &[("tilt", 0.0)],
+                set: &[("Tilt", 0.0)],
             },
             PerfCase {
                 name: "FULL TILT",
-                set: &[("tilt", 6.0)],
+                set: &[("Tilt", 6.0)],
             },
         ],
         &PerfConfig::default(),

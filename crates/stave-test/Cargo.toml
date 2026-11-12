@@ -10,6 +10,7 @@ description = "The plugin test harness and bars, and the DSP conformance suites"
 
 [dependencies]
 assert_no_alloc = "1"
+stave.workspace = true
 stave-measure.workspace = true
 stave-core.workspace = true
 stave-face.workspace = true

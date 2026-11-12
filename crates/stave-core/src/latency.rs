@@ -16,7 +16,7 @@
 //! region tail rounds UP — a tail bound may be conservative, a
 //! latency report may not.
 
-use crate::plugin::Tail;
+use crate::Tail;
 
 /// Serial composition: latencies sum.
 pub fn serial(paths: &[u32]) -> u32 {

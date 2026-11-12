@@ -3,10 +3,28 @@
 
 use core::ffi::{c_char, CStr};
 
-use stave_core::{Plugin, PluginFeature};
+use stave_core::runtime::Erased;
+use stave_core::Feature;
 
-pub(crate) fn write_cstr_into(dst: &mut [c_char], src: &CStr) {
-    let bytes = src.to_bytes();
+/// Text a host field takes: a `str` or a `CStr`, written without its nul.
+pub(crate) trait WireText {
+    fn wire_bytes(&self) -> &[u8];
+}
+
+impl WireText for str {
+    fn wire_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl WireText for CStr {
+    fn wire_bytes(&self) -> &[u8] {
+        self.to_bytes()
+    }
+}
+
+pub(crate) fn write_cstr_into<S: WireText + ?Sized>(dst: &mut [c_char], src: &S) {
+    let bytes = src.wire_bytes();
     let n = bytes.len().min(dst.len().saturating_sub(1));
     for i in 0..n {
         dst[i] = bytes[i] as c_char;
@@ -31,11 +49,11 @@ pub(crate) fn write_utf16_name(dst: &mut [u16], src: &str) {
     }
 }
 
-pub(crate) fn write_subcategories<P: Plugin>(dst: &mut [c_char]) {
+pub(crate) fn write_subcategories<P: Erased>(dst: &mut [c_char]) {
     // Concatenate feature strings into "Cat1|Cat2|...". Bounded by dst len.
     let mut pos = 0;
     let mut first = true;
-    for f in <P as Plugin>::DESCRIPTOR.features {
+    for f in P::INFO.features {
         let bytes = vst3_subcategory_bytes(*f);
         if bytes.is_empty() {
             continue;
@@ -61,37 +79,33 @@ pub(crate) fn write_subcategories<P: Plugin>(dst: &mut [c_char]) {
     }
 }
 
-pub(crate) fn vst3_subcategory_bytes(f: PluginFeature) -> &'static [u8] {
+pub(crate) fn vst3_subcategory_bytes(f: Feature) -> &'static [u8] {
     match f {
-        PluginFeature::Instrument | PluginFeature::Synthesizer => b"Instrument|Synth",
-        PluginFeature::Sampler => b"Instrument|Sampler",
-        PluginFeature::Drum => b"Instrument|Drum",
-        PluginFeature::AudioEffect => b"Fx",
-        PluginFeature::Filter => b"Fx|Filter",
-        PluginFeature::Delay => b"Fx|Delay",
-        PluginFeature::Reverb => b"Fx|Reverb",
-        PluginFeature::Distortion => b"Fx|Distortion",
-        PluginFeature::Eq => b"Fx|EQ",
-        PluginFeature::Analyzer => b"Analyzer",
-        PluginFeature::Stereo => b"Stereo",
-        PluginFeature::Mono => b"Mono",
+        Feature::Instrument | Feature::Synthesizer => b"Instrument|Synth",
+        Feature::Sampler => b"Instrument|Sampler",
+        Feature::Drum => b"Instrument|Drum",
+        Feature::AudioEffect => b"Fx",
+        Feature::Filter => b"Fx|Filter",
+        Feature::Delay => b"Fx|Delay",
+        Feature::Reverb => b"Fx|Reverb",
+        Feature::Distortion => b"Fx|Distortion",
+        Feature::Eq => b"Fx|EQ",
+        Feature::Analyzer => b"Analyzer",
+        Feature::Stereo => b"Stereo",
+        Feature::Mono => b"Mono",
         _ => b"",
     }
 }
 
-pub(crate) fn cstr_to_str(s: &CStr) -> &str {
-    s.to_str().unwrap_or("")
-}
-
 /// Feature classification shared by bus/category logic.
-pub(crate) fn plugin_is_instrument<P: Plugin>() -> bool {
-    for f in <P as Plugin>::DESCRIPTOR.features {
+pub(crate) fn plugin_is_instrument<P: Erased>() -> bool {
+    for f in P::INFO.features {
         if matches!(
             f,
-            PluginFeature::Instrument
-                | PluginFeature::Synthesizer
-                | PluginFeature::Sampler
-                | PluginFeature::Drum
+            Feature::Instrument
+                | Feature::Synthesizer
+                | Feature::Sampler
+                | Feature::Drum
         ) {
             return true;
         }

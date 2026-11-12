@@ -55,9 +55,9 @@ fn get_info<P: ClapExport>(
         name: [0; sys::CLAP_NAME_SIZE],
         module: [0; sys::CLAP_PATH_SIZE],
         // CLAP is plain-valued on the wire: min/max/default in plain units.
-        min_value: p.normalized_to_plain(0.0),
-        max_value: p.normalized_to_plain(1.0),
-        default_value: p.normalized_to_plain(p.default_normalized()),
+        min_value: p.denormalize(0.0),
+        max_value: p.denormalize(1.0),
+        default_value: p.denormalize(p.default_normalized()),
     };
     write_c_str(&mut out.name, meta.name);
     write_c_str(&mut out.module, meta.group);
@@ -78,7 +78,7 @@ pub(super) unsafe extern "C" fn params_get_value<P: ClapExport>(
     };
     inst.call("params.get_value", || {
         let result = out.and_then(|out| {
-            *out = param(inst, param_id)?.plain();
+            *out = param(inst, param_id)?.value();
             Ok(())
         });
         result
@@ -101,7 +101,7 @@ pub(super) unsafe extern "C" fn params_value_to_text<P: ClapExport>(
     };
     inst.call("params.value_to_text", || {
         let result = out.and_then(|out| {
-            write_c_str(out, &param(inst, param_id)?.format_plain(value));
+            write_c_str(out, &param(inst, param_id)?.format(value));
             Ok(())
         });
         result
@@ -203,8 +203,8 @@ pub(super) fn apply_param_events(
         if let Some(slot) = dst.get_mut(written) {
             *slot = stave_core::ParamChange {
                 id,
-                sample_offset: ev.header.time,
-                plain_value: ev.value,
+                frame: ev.header.time as usize,
+                value: ev.value,
                 kind,
             };
             written += 1;
@@ -212,7 +212,7 @@ pub(super) fn apply_param_events(
             dropped = dropped.saturating_add(1);
         }
         if kind == stave_core::ParamChangeKind::Value {
-            p.set_plain(ev.value);
+            p.set_value(ev.value);
         }
     }
     (written, dropped)

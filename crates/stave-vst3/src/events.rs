@@ -27,13 +27,13 @@ pub(crate) fn drain_param_changes(
         };
         let mut last_plain = None;
         for (offset, value) in queue.points() {
-            let offset = offset.max(0) as u32;
-            let plain = p.normalized_to_plain(value);
+            let offset = offset.max(0) as usize;
+            let plain = p.denormalize(value);
             if let Some(slot) = dst.get_mut(written) {
                 *slot = ParamChange {
                     id: stave_core::ParamId(id),
-                    sample_offset: offset,
-                    plain_value: plain,
+                    frame: offset,
+                    value: plain,
                     kind: ParamChangeKind::Value,
                 };
                 written += 1;
@@ -43,7 +43,7 @@ pub(crate) fn drain_param_changes(
             last_plain = Some(plain);
         }
         if let Some(plain) = last_plain {
-            p.set_plain(plain);
+            p.set_value(plain);
         }
     }
     (written, dropped)
@@ -87,7 +87,7 @@ pub(crate) fn translate_input_events(
             continue;
         };
         *slot = StaveEvent {
-            frame: ev.sample_offset as u32,
+            frame: ev.sample_offset.max(0) as usize,
             kind,
         };
         written += 1;

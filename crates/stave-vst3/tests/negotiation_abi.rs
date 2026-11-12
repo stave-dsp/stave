@@ -13,61 +13,55 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use stave_core::{Arrangement, AuxIn, Plugin, PluginDescriptor, PortConfig, ProcessCtx};
+use stave_core::runtime::Erased;
+use stave_core::{Aux, Block, Channels, Info, Layout, Telemetry};
 use stave_vst3::sys::*;
 use stave_vst3::wrapper::FactoryObj;
 
 struct TwoConfig;
 
-impl Plugin for TwoConfig {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.twoconfig",
-        name: c"Two Config",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"K4d negotiation fixture",
+impl Erased for TwoConfig {
+    const INFO: Info = Info {
+        id: "com.stave.test.twoconfig",
+        name: "Two Config",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "K4d negotiation fixture",
         features: &[],
     };
 
-    const CONFIGS: &'static [PortConfig] = &[
-        PortConfig {
-            main_in: Some(Arrangement::Stereo),
-            main_out: Arrangement::Stereo,
-            aux_in: &[AuxIn {
+    const LAYOUTS: &'static [Layout] = &[
+        Layout {
+            aux: &[Aux {
                 name: "sidechain",
-                arrangement: Arrangement::Stereo,
+                channels: Channels::Stereo,
             }],
+            ..Layout::STEREO
         },
-        PortConfig::STEREO_FX,
-        PortConfig {
-            main_in: Some(Arrangement::Surround51),
-            main_out: Arrangement::Surround51,
-            aux_in: &[],
+        Layout::STEREO,
+        Layout {
+            input: Some(Channels::Surround51),
+            output: Channels::Surround51,
+            aux: &[],
         },
     ];
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         Self
     }
 
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        let chans = ctx.output.channel_count().min(ctx.input.channel_count());
-        for c in 0..chans {
-            for f in 0..ctx.frames {
-                ctx.output.channel(c)[f] = ctx.input.channel_ref(c)[f];
-            }
+    fn process(&mut self, block: &mut Block<'_>) {
+        let (input, output) = block.io();
+        for (x, y) in input.channels().zip(output.channels_mut()) {
+            y.copy_from_slice(x);
         }
     }
 }
 
-impl stave_vst3::stave_face::HasFace for TwoConfig {}
+impl stave_vst3::wrapper::Vst3Export for TwoConfig {}
 
-stave_vst3::stave_vst3_export!(
-    raw TwoConfig,
-    component_cid: (0x7e57_0011, 0x7e57_0012, 0x7e57_0013, 0x7e57_0014),
-    controller_cid: (0x7e57_0011, 0x7e57_0012, 0x7e57_0015, 0x7e57_0016),
-);
+stave_vst3::export_vst3!(TwoConfig);
 
 #[repr(C)]
 struct RawObj<V> {

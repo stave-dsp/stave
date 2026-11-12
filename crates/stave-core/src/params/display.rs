@@ -15,8 +15,10 @@ use core::fmt::Write as _;
 pub enum Unit {
     /// Bare number, `decimals` places.
     Plain { decimals: u8 },
-    /// Decibels. Values at or below `floor_db` (if set) read "-inf".
-    Db { floor_db: Option<i16> },
+    /// Decibels.
+    Db,
+    /// Decibels, where values at or below the floor (dB) read "-inf".
+    DbFloor(i16),
     /// Hertz; ≥ 1000 renders as kHz ("2.40 kHz"). The switch is judged on
     /// the value rounded as it would show in Hz, so 999.96 reads
     /// "1.00 kHz", never "1000.0 Hz".
@@ -80,12 +82,20 @@ impl core::fmt::Write for ValueText {
 }
 
 impl Unit {
+    /// The "-inf" floor of a [`Unit::DbFloor`].
+    fn db_floor(&self) -> Option<i16> {
+        match *self {
+            Unit::DbFloor(f) => Some(f),
+            _ => None,
+        }
+    }
+
     /// Bare unit suffix for host fields that carry units separately
     /// from values (VST3 `ParameterInfo::units`).
     pub fn label(&self) -> &'static str {
         match self {
             Unit::Plain { .. } => "",
-            Unit::Db { .. } => "dB",
+            Unit::Db | Unit::DbFloor(_) => "dB",
             Unit::Hz => "Hz",
             Unit::Ms => "ms",
             Unit::Percent => "%",
@@ -106,7 +116,8 @@ impl Unit {
             Unit::Plain { decimals } => {
                 write!(out, "{:.*}", *decimals as usize, plain)
             }
-            Unit::Db { floor_db } => {
+            Unit::Db | Unit::DbFloor(_) => {
+                let floor_db = self.db_floor();
                 // The floor is judged on the value as shown: −59.96 reads
                 // "-60.0 dB", which would parse back onto a −60 floor.
                 if floor_db.is_some_and(|f| shown(plain, 1) <= f as f64) {
@@ -155,7 +166,8 @@ impl Unit {
         let t = core::str::from_utf8(&lower_buf[..t.len().min(VALUE_TEXT_BYTES)]).ok()?;
 
         match self {
-            Unit::Db { floor_db } => {
+            Unit::Db | Unit::DbFloor(_) => {
+                let floor_db = self.db_floor();
                 if t.starts_with("-inf") {
                     return floor_db.map(|f| f as f64);
                 }
@@ -226,20 +238,16 @@ mod tests {
     #[test]
     fn format_matrix() {
         assert_eq!(
-            &*Unit::Db {
-                floor_db: Some(-60)
-            }
+            &*Unit::DbFloor(-60)
             .format(-6.0),
             "-6.0 dB"
         );
         assert_eq!(
-            &*Unit::Db {
-                floor_db: Some(-60)
-            }
+            &*Unit::DbFloor(-60)
             .format(-60.0),
             "-inf dB"
         );
-        assert_eq!(&*Unit::Db { floor_db: None }.format(-60.0), "-60.0 dB");
+        assert_eq!(&*Unit::Db.format(-60.0), "-60.0 dB");
         assert_eq!(&*Unit::Hz.format(440.0), "440.0 Hz");
         assert_eq!(&*Unit::Hz.format(2400.0), "2.40 kHz");
         assert_eq!(&*Unit::Ms.format(15.0), "15.0 ms");
@@ -253,9 +261,7 @@ mod tests {
 
     #[test]
     fn parse_accepts_format_output_and_shorthand() {
-        let db = Unit::Db {
-            floor_db: Some(-60),
-        };
+        let db = Unit::DbFloor(-60);
         assert_eq!(db.parse("-6.0 dB"), Some(-6.0));
         assert_eq!(db.parse("-inf dB"), Some(-60.0));
         assert_eq!(db.parse("-INF"), Some(-60.0));
@@ -281,9 +287,7 @@ mod tests {
     fn format_parse_fixpoint() {
         let cases: &[(Unit, f64)] = &[
             (
-                Unit::Db {
-                    floor_db: Some(-60),
-                },
+                Unit::DbFloor(-60),
                 -6.0,
             ),
             (Unit::Hz, 440.0),
@@ -317,14 +321,10 @@ mod tests {
             Unit::Plain { decimals: 1 },
             Unit::Plain { decimals: 2 },
             Unit::Plain { decimals: 4 },
-            Unit::Db { floor_db: None },
-            Unit::Db {
-                floor_db: Some(-60),
-            },
-            Unit::Db {
-                floor_db: Some(-100),
-            },
-            Unit::Db { floor_db: Some(0) },
+            Unit::Db,
+            Unit::DbFloor(-60),
+            Unit::DbFloor(-100),
+            Unit::DbFloor(0),
             Unit::Hz,
             Unit::Ms,
             Unit::Percent,
@@ -390,9 +390,7 @@ mod tests {
         assert_eq!(&*Unit::Ms.format(999.9999999999999), "1.00 s");
         assert_eq!(&*Unit::Ms.format(999.94), "999.9 ms");
         assert_eq!(&*Unit::Hz.format(999.96), "1.00 kHz");
-        let db = Unit::Db {
-            floor_db: Some(-60),
-        };
+        let db = Unit::DbFloor(-60);
         assert_eq!(&*db.format(-59.96), "-inf dB");
         assert_eq!(&*db.format(-59.94), "-59.9 dB");
     }

@@ -1,4 +1,7 @@
-//! Shared machinery for format wrappers (VST3, CLAP, future AU).
+//! The plugin runtime the format wrappers (VST3, CLAP) drive: the
+//! erased plugin contract ([`Erased`]) and the machinery every wrapper
+//! shares. Not author API — an author implements `stave::Plugin`, and
+//! `stave::export!` adapts it to [`Erased`].
 //!
 //! Host ABIs hand every entry point the same raw instance pointer from
 //! whatever thread the host likes. The types here turn that into a sound
@@ -16,18 +19,24 @@
 //!   race.
 //! - [`ProcessorState`] — the plugin plus preallocated scratch for
 //!   in-place hosts (input and output pointing at the same memory, which
-//!   Live and others do routinely and which `AudioBuffer`'s no-alias
+//!   Live and others do routinely and which the buffers' no-alias
 //!   contract forbids passing through directly).
 //! - [`ranges_alias`] — the overlap detector wrappers use to decide when
 //!   the scratch copy is needed.
 //! - [`WrapperTaps`] — the I/O peak and CPU taps every wrapper publishes,
 //!   and [`peaks`], the block scan behind them.
 
+mod erased;
+mod ftz;
+mod gesture;
 mod metrics;
 mod panic_guard;
 pub mod state;
 mod taps;
 
+pub use erased::{tail_wire, Erased};
+pub use ftz::ScopedFtz;
+pub use gesture::{GestureEvent, GestureQueue};
 pub use metrics::peaks;
 pub use panic_guard::PanicGuard;
 pub use taps::WrapperTaps;
@@ -40,7 +49,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use crate::plugin::Plugin;
+
 
 /// Cross-thread instance state. Every field is an atomic: interface
 /// objects read and write through `&self` from any thread the host picks.
@@ -50,7 +59,7 @@ pub struct SharedState {
     sample_rate_bits: AtomicU32,
     max_frames: AtomicU32,
     activated: AtomicBool,
-    /// Mirror of `Plugin::latency_samples`, refreshed on activate. Hosts
+    /// Mirror of `Erased::latency`, refreshed on activate. Hosts
     /// query latency from the main thread while audio runs; reading the
     /// plugin directly there would alias the audio thread's exclusive
     /// borrow.
@@ -107,7 +116,7 @@ pub const MAX_AUX_PORTS: usize = 4;
 
 /// The processor-side half of an instance: the plugin itself plus the
 /// preallocated buffers the wrapper needs on the audio thread.
-pub struct ProcessorState<P: Plugin> {
+pub struct ProcessorState<P: Erased> {
     pub plugin: P,
     /// Framework-owned click-free bypass.
     pub bypass: BypassGate,
@@ -122,7 +131,8 @@ pub struct ProcessorState<P: Plugin> {
 }
 
 /// One block's channel pointer lists, ready for
-/// [`AudioBuffer::from_raw`](crate::AudioBuffer::from_raw): no nulls, and
+/// [`InputBuffer::from_raw`](crate::InputBuffer::from_raw) and
+/// [`OutputBuffer::from_raw`](crate::OutputBuffer::from_raw): no nulls, and
 /// staged inputs never alias the outputs.
 pub struct BlockIo<'a> {
     pub input: &'a [*mut f32],
@@ -137,7 +147,7 @@ pub struct BlockIo<'a> {
 }
 
 /// Every audio-thread borrow a wrapper needs for one block.
-pub struct Block<'a, P> {
+pub struct BlockBorrows<'a, P> {
     pub plugin: &'a mut P,
     pub bypass: &'a mut BypassGate,
     pub io: BlockIo<'a>,
@@ -145,23 +155,23 @@ pub struct Block<'a, P> {
 
 /// Scratch channels for the widest declared configuration: main in +
 /// main out + every aux input.
-fn declared_channels<P: Plugin>() -> usize {
-    P::CONFIGS
+fn declared_channels<P: Erased>() -> usize {
+    P::LAYOUTS
         .iter()
         .map(|c| {
-            c.in_channels() as usize
-                + c.out_channels() as usize
-                + c.aux_in
+            c.input_channels()
+                + c.output_channels()
+                + c.aux
                     .iter()
                     .take(MAX_AUX_PORTS)
-                    .map(|a| a.arrangement.channels() as usize)
+                    .map(|a| a.channels.count())
                     .sum::<usize>()
         })
         .max()
         .unwrap_or(0)
 }
 
-impl<P: Plugin> ProcessorState<P> {
+impl<P: Erased> ProcessorState<P> {
     pub fn new(plugin: P) -> Self {
         Self {
             plugin,
@@ -208,7 +218,7 @@ impl<P: Plugin> ProcessorState<P> {
         output: &'a [*mut f32],
         aux: &[&'a [*mut f32]],
         frames: usize,
-    ) -> Block<'a, P> {
+    ) -> BlockBorrows<'a, P> {
         let stage = ranges_alias(input, output, frames);
         let aux = &aux[..aux.len().min(MAX_AUX_PORTS)];
         let has_null = |ptrs: &[*mut f32]| ptrs.iter().any(|p| p.is_null());
@@ -253,7 +263,7 @@ impl<P: Plugin> ProcessorState<P> {
         for (i, &list) in aux.iter().enumerate() {
             aux_lists[i] = resolve(aux_at[i], list);
         }
-        Block {
+        BlockBorrows {
             plugin: &mut self.plugin,
             bypass: &mut self.bypass,
             io: BlockIo {
@@ -358,7 +368,7 @@ pub fn sort_param_changes(changes: &mut [crate::process::ParamChange]) {
     for i in 1..changes.len() {
         let mut j = i;
         // Strictly greater: equal frames keep arrival order.
-        while j > 0 && changes[j - 1].sample_offset > changes[j].sample_offset {
+        while j > 0 && changes[j - 1].frame > changes[j].frame {
             changes.swap(j - 1, j);
             j -= 1;
         }
@@ -367,7 +377,7 @@ pub fn sort_param_changes(changes: &mut [crate::process::ParamChange]) {
 
 /// Single-owner cell for [`ProcessorState`]. See module docs for the
 /// protocol; `claim` is the only way in.
-pub struct PluginCell<P: Plugin> {
+pub struct PluginCell<P: Erased> {
     state: UnsafeCell<ProcessorState<P>>,
     claimed: AtomicBool,
 }
@@ -376,14 +386,14 @@ pub struct PluginCell<P: Plugin> {
 // `claim` hands out at most one `ProcessorGuard` at a time, and the
 // Acquire/Release pair on the token orders one owner's writes before the
 // next owner's reads.
-unsafe impl<P: Plugin> Sync for PluginCell<P> {}
+unsafe impl<P: Erased> Sync for PluginCell<P> {}
 // SAFETY: `P: Send`; the only non-`Send` field is `ptrs`, whose pointers
 // are rewritten every block before use (host channels for that call, or
 // `scratch`, owned by the same state and moved with it) and never read
 // across a move.
-unsafe impl<P: Plugin> Send for PluginCell<P> {}
+unsafe impl<P: Erased> Send for PluginCell<P> {}
 
-impl<P: Plugin> PluginCell<P> {
+impl<P: Erased> PluginCell<P> {
     pub fn new(plugin: P) -> Self {
         Self {
             state: UnsafeCell::new(ProcessorState::new(plugin)),
@@ -436,11 +446,11 @@ impl<P: Plugin> PluginCell<P> {
 }
 
 /// Exclusive access to the processor state; released on drop.
-pub struct ProcessorGuard<'a, P: Plugin> {
+pub struct ProcessorGuard<'a, P: Erased> {
     cell: &'a PluginCell<P>,
 }
 
-impl<P: Plugin> Deref for ProcessorGuard<'_, P> {
+impl<P: Erased> Deref for ProcessorGuard<'_, P> {
     type Target = ProcessorState<P>;
     fn deref(&self) -> &ProcessorState<P> {
         // SAFETY: the claim token guarantees this guard is the sole
@@ -449,14 +459,14 @@ impl<P: Plugin> Deref for ProcessorGuard<'_, P> {
     }
 }
 
-impl<P: Plugin> DerefMut for ProcessorGuard<'_, P> {
+impl<P: Erased> DerefMut for ProcessorGuard<'_, P> {
     fn deref_mut(&mut self) -> &mut ProcessorState<P> {
         // SAFETY: as above.
         unsafe { &mut *self.cell.state.get() }
     }
 }
 
-impl<P: Plugin> Drop for ProcessorGuard<'_, P> {
+impl<P: Erased> Drop for ProcessorGuard<'_, P> {
     fn drop(&mut self) {
         self.cell.claimed.store(false, Ordering::Release);
     }
@@ -555,9 +565,7 @@ impl BypassGate {
         self.engaged = bypassed;
         // ring_len == 0 means unprepared — dry.is_empty() does NOT:
         // a GENERATOR (0-input instrument) has no dry channels, and
-        // its bypassed output is SILENCE, not a no-op (the chime
-        // consumer found bypass never engaging for any 0-input
-        // plugin — the fifth instrument lock).
+        // its bypassed output is SILENCE, not a no-op.
         if self.ring_len == 0 {
             return;
         }
@@ -606,170 +614,10 @@ impl BypassGate {
     }
 }
 
-/// RAII flush-to-zero guard ("belt AND
-/// braces"): engaged at wrapper process entry so any recursive state a
-/// future cell forgets to flush manually can't become an x86/arm
-/// denormal perf cliff. Manual flushes in stave-dsp remain the primary
-/// mechanism — this is the backstop. Engage/restore is a single
-/// control-register write (~ns per block).
-pub struct ScopedFtz {
-    #[cfg(target_arch = "aarch64")]
-    saved: u64,
-    #[cfg(target_arch = "x86_64")]
-    saved: u32,
-}
-
-impl ScopedFtz {
-    #[inline]
-    pub fn engage() -> Self {
-        // Miri interprets floats deterministically and cannot execute
-        // the FP-control-register asm; FTZ is hardware state with no
-        // meaning there. No-op under the interpreter so every wrapper
-        // process path stays Miri-checkable.
-        // SAFETY: reads FPCR and sets only its FZ bit — no memory, no
-        // stack; `Drop` restores the saved value on this thread.
-        #[cfg(all(target_arch = "aarch64", not(miri)))]
-        unsafe {
-            let saved: u64;
-            core::arch::asm!("mrs {}, fpcr", out(reg) saved, options(nomem, nostack));
-            // FZ (bit 24): flush denormal outputs/inputs to zero.
-            core::arch::asm!("msr fpcr, {}", in(reg) saved | (1 << 24), options(nomem, nostack));
-            Self { saved }
-        }
-        #[cfg(all(target_arch = "aarch64", miri))]
-        {
-            Self { saved: 0 }
-        }
-        // SAFETY: sets only MXCSR's FZ and DAZ bits; `Drop` restores the
-        // saved value on this thread.
-        #[cfg(all(target_arch = "x86_64", not(miri)))]
-        unsafe {
-            let saved = core::arch::x86_64::_mm_getcsr();
-            // FZ (bit 15) + DAZ (bit 6).
-            core::arch::x86_64::_mm_setcsr(saved | 0x8040);
-            Self { saved }
-        }
-        #[cfg(all(target_arch = "x86_64", miri))]
-        {
-            Self { saved: 0 }
-        }
-        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-        Self {}
-    }
-}
-
-impl Drop for ScopedFtz {
-    fn drop(&mut self) {
-        // SAFETY: restores the control register `engage` read.
-        #[cfg(all(target_arch = "aarch64", not(miri)))]
-        unsafe {
-            core::arch::asm!("msr fpcr, {}", in(reg) self.saved, options(nomem, nostack));
-        }
-        // SAFETY: as above.
-        #[cfg(all(target_arch = "x86_64", not(miri)))]
-        unsafe {
-            core::arch::x86_64::_mm_setcsr(self.saved);
-        }
-    }
-}
-
-/// A GUI-side parameter gesture event, en route to the host.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum GestureEvent {
-    Begin { id: u32 },
-    Value { id: u32, plain: f64 },
-    End { id: u32 },
-}
-
-const GESTURE_CAP: usize = 64;
-
-/// Bounded SPSC ring for UI→audio gesture delivery (CLAP emits param
-/// changes through `out_events` on the audio thread; VST3 calls its
-/// handler directly from the UI thread and doesn't need this).
-///
-/// Producer: UI thread (`push`). Consumer: audio thread (`pop`).
-/// Overflow drops the NEWEST event and counts it — never silent;
-/// a 64-deep ring only overflows if audio is wedged.
-pub struct GestureQueue {
-    kinds: [core::sync::atomic::AtomicU8; GESTURE_CAP],
-    ids: [AtomicU32; GESTURE_CAP],
-    values: [core::sync::atomic::AtomicU64; GESTURE_CAP],
-    head: AtomicU32, // consumer position
-    tail: AtomicU32, // producer position
-    dropped: AtomicU32,
-}
-
-impl Default for GestureQueue {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl GestureQueue {
-    pub fn new() -> Self {
-        Self {
-            kinds: [const { core::sync::atomic::AtomicU8::new(0) }; GESTURE_CAP],
-            ids: [const { AtomicU32::new(0) }; GESTURE_CAP],
-            values: [const { core::sync::atomic::AtomicU64::new(0) }; GESTURE_CAP],
-            head: AtomicU32::new(0),
-            tail: AtomicU32::new(0),
-            dropped: AtomicU32::new(0),
-        }
-    }
-
-    /// UI-thread producer. Returns false (and counts) on overflow.
-    pub fn push(&self, ev: GestureEvent) -> bool {
-        let tail = self.tail.load(Ordering::Relaxed);
-        let head = self.head.load(Ordering::Acquire);
-        if tail.wrapping_sub(head) as usize >= GESTURE_CAP {
-            self.dropped.fetch_add(1, Ordering::Relaxed);
-            return false;
-        }
-        let slot = tail as usize % GESTURE_CAP;
-        let (kind, id, bits) = match ev {
-            GestureEvent::Begin { id } => (1u8, id, 0u64),
-            GestureEvent::Value { id, plain } => (2, id, plain.to_bits()),
-            GestureEvent::End { id } => (3, id, 0),
-        };
-        self.kinds[slot].store(kind, Ordering::Relaxed);
-        self.ids[slot].store(id, Ordering::Relaxed);
-        self.values[slot].store(bits, Ordering::Relaxed);
-        // Publish AFTER the payload: the consumer gates on tail.
-        self.tail.store(tail.wrapping_add(1), Ordering::Release);
-        true
-    }
-
-    /// Audio-thread consumer.
-    pub fn pop(&self) -> Option<GestureEvent> {
-        let head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Acquire);
-        if head == tail {
-            return None;
-        }
-        let slot = head as usize % GESTURE_CAP;
-        let kind = self.kinds[slot].load(Ordering::Relaxed);
-        let id = self.ids[slot].load(Ordering::Relaxed);
-        let bits = self.values[slot].load(Ordering::Relaxed);
-        self.head.store(head.wrapping_add(1), Ordering::Release);
-        Some(match kind {
-            1 => GestureEvent::Begin { id },
-            3 => GestureEvent::End { id },
-            _ => GestureEvent::Value {
-                id,
-                plain: f64::from_bits(bits),
-            },
-        })
-    }
-
-    pub fn dropped(&self) -> u32 {
-        self.dropped.load(Ordering::Relaxed)
-    }
-}
-
 /// True if any pointer range `[p, p+frames)` in `a` overlaps any in `b`.
 /// Null pointers are skipped. Used to detect in-place processing, where
 /// the input must be staged through scratch before building the
-/// no-alias `AudioBuffer` pair.
+/// no-alias input/output buffer pair.
 pub fn ranges_alias(a: &[*mut f32], b: &[*mut f32], frames: usize) -> bool {
     if frames == 0 {
         return false;
@@ -801,29 +649,34 @@ pub fn ranges_alias(a: &[*mut f32], b: &[*mut f32], frames: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::PluginDescriptor;
-    use crate::process::ProcessCtx;
+    use crate::params::ParamId;
+    use crate::info::{Info, Layout};
+    use crate::params::Params;
+    use crate::process::Block;
+    use alloc::sync::Arc;
+    use stave_telemetry::Telemetry;
 
     struct NullPlugin;
-    impl Plugin for NullPlugin {
-        const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-            id: c"test.null",
-            name: c"Null",
-            vendor: c"test",
-            version: c"0.0.0",
-            url: c"",
-            description: c"",
-            features: &[],
+    impl Erased for NullPlugin {
+        const INFO: Info = Info {
+            id: "test.null",
+            name: "Null",
+            vendor: "test",
+            ..Info::EFFECT
         };
-        fn new() -> Self {
+        const LAYOUTS: &'static [Layout] = &[Layout::STEREO];
+        fn new(_telemetry: &Telemetry) -> Self {
             NullPlugin
         }
-        fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
+        fn params(&self) -> Arc<dyn Params> {
+            Arc::new(crate::params::NoParams)
+        }
+        fn process(&mut self, _block: &mut Block<'_>) {}
     }
 
     #[test]
     fn claim_is_exclusive_and_released_on_drop() {
-        let cell = PluginCell::new(NullPlugin::new());
+        let cell = PluginCell::new(NullPlugin::new(&Telemetry::new()));
         let g = cell.claim().expect("first claim");
         assert!(
             cell.claimed.load(Ordering::Relaxed),
@@ -864,17 +717,17 @@ mod tests {
             std::thread::spawn(move || {
                 for i in 0..40u32 {
                     q.push(GestureEvent::Value {
-                        id: i,
-                        plain: f64::from(i),
+                        id: ParamId(i),
+                        value: f64::from(i),
                     });
                 }
             })
         };
         let mut got = Vec::new();
         while got.len() < 40 {
-            if let Some(GestureEvent::Value { id, plain }) = q.pop() {
-                assert_eq!(plain, f64::from(id), "payload matches publication order");
-                got.push(id);
+            if let Some(GestureEvent::Value { id, value }) = q.pop() {
+                assert_eq!(value, f64::from(id.0), "payload matches publication order");
+                got.push(id.0);
             } else {
                 std::thread::yield_now();
             }
@@ -885,7 +738,7 @@ mod tests {
 
         // Overflow: 65th unconsumed push drops and counts.
         for i in 0..65u32 {
-            q.push(GestureEvent::Begin { id: i });
+            q.push(GestureEvent::Begin { id: ParamId(i) });
         }
         assert_eq!(q.dropped(), 1, "overflow counted, never silent");
     }
@@ -911,20 +764,22 @@ mod tests {
     /// A stereo effect with one sidechain: 2 in + 2 out + 2 aux = 6
     /// scratch channels.
     struct SideFx;
-    impl Plugin for SideFx {
-        const DESCRIPTOR: PluginDescriptor = NullPlugin::DESCRIPTOR;
-        const CONFIGS: &'static [crate::plugin::PortConfig] = &[crate::plugin::PortConfig {
-            main_in: Some(crate::plugin::Arrangement::Stereo),
-            main_out: crate::plugin::Arrangement::Stereo,
-            aux_in: &[crate::plugin::AuxIn {
+    impl Erased for SideFx {
+        const INFO: Info = NullPlugin::INFO;
+        const LAYOUTS: &'static [Layout] = &[Layout {
+            aux: &[crate::info::Aux {
                 name: "side",
-                arrangement: crate::plugin::Arrangement::Stereo,
+                channels: crate::info::Channels::Stereo,
             }],
+            ..Layout::STEREO
         }];
-        fn new() -> Self {
+        fn new(_telemetry: &Telemetry) -> Self {
             SideFx
         }
-        fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
+        fn params(&self) -> Arc<dyn Params> {
+            Arc::new(crate::params::NoParams)
+        }
+        fn process(&mut self, _block: &mut Block<'_>) {}
     }
 
     fn channel<'a>(ptr: *mut f32, frames: usize) -> &'a [f32] {
@@ -936,7 +791,7 @@ mod tests {
 
     #[test]
     fn staging_copies_and_zeroes_null_channels() {
-        let mut state = ProcessorState::new(SideFx::new());
+        let mut state = ProcessorState::new(SideFx);
         state.prepare_scratch(2, 8);
         let mut buf = [1.0f32, 2.0, 3.0, 4.0];
         let mut out_r = [9.0f32; 4];
@@ -963,7 +818,7 @@ mod tests {
     /// (outputs must not alias one another).
     #[test]
     fn null_channels_become_distinct_zeroed_scratch() {
-        let mut state = ProcessorState::new(SideFx::new());
+        let mut state = ProcessorState::new(SideFx);
         state.prepare_scratch(2, 8);
         let mut a = [1.0f32; 8];
         let mut b = [2.0f32; 8];
@@ -989,7 +844,7 @@ mod tests {
     /// is cut to fit — never grown — and says so.
     #[test]
     fn a_block_past_the_prepared_scratch_is_truncated_not_grown() {
-        let mut state = ProcessorState::new(SideFx::new());
+        let mut state = ProcessorState::new(SideFx);
         state.prepare_scratch(2, 4);
         let (scratch, slots) = (state.scratch.as_ptr(), state.ptrs.len());
         let mut buf = [5.0f32; 16];
@@ -1039,10 +894,10 @@ mod tests {
     #[test]
     fn param_changes_sort_by_frame_then_arrival() {
         use crate::process::{ParamChange, ParamChangeKind};
-        let change = |offset: u32, seq: u32| ParamChange {
+        let change = |offset: usize, seq: u32| ParamChange {
             id: crate::ParamId(seq),
-            sample_offset: offset,
-            plain_value: 0.0,
+            frame: offset,
+            value: 0.0,
             kind: ParamChangeKind::Value,
         };
         let mut changes = [
@@ -1054,7 +909,7 @@ mod tests {
             change(5, 5),
         ];
         sort_param_changes(&mut changes);
-        let order: Vec<(u32, u32)> = changes.iter().map(|c| (c.sample_offset, c.id.0)).collect();
+        let order: Vec<(usize, u32)> = changes.iter().map(|c| (c.frame, c.id.0)).collect();
         assert_eq!(order, [(0, 1), (0, 4), (3, 3), (5, 0), (5, 2), (5, 5)]);
     }
 }

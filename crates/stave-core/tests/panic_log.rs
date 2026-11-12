@@ -1,16 +1,13 @@
 //! The panic hook is process-wide, so this check has a binary of its own.
 
 use stave_core::diagnostics::{log_dir, log_panics};
-use stave_core::PluginDescriptor;
+use stave_core::Info;
 
-const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-    id: c"com.stave.test.panic-log",
-    name: c"Panic Log",
-    vendor: c"stave tests",
-    version: c"0.0.0",
-    url: c"",
-    description: c"",
-    features: &[],
+const DESCRIPTOR: Info = Info {
+    id: "com.stave.test.panic-log",
+    name: "Panic Log",
+    vendor: "stave tests",
+    ..Info::EFFECT
 };
 
 #[test]

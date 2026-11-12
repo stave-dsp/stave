@@ -1,16 +1,19 @@
-use crate::buffer::AudioBuffer;
+//! [`Block`]: one `process` call's audio, events and parameter changes.
+
+use crate::buffer::{InputBuffer, OutputBuffer};
 use crate::event::Event;
 use crate::params::ParamId;
 
-/// One host parameter change on the current process timeline.
+/// One host parameter change on the block's timeline.
 ///
-/// Values are always in the parameter's declared plain units. Wrappers
-/// normalize their native representation before constructing this value.
+/// `value` is in the parameter's declared (plain) units; the wrappers
+/// convert their wire representation before building it.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ParamChange {
     pub id: ParamId,
-    pub sample_offset: u32,
-    pub plain_value: f64,
+    /// Frame offset from the start of the block.
+    pub frame: usize,
+    pub value: f64,
     pub kind: ParamChangeKind,
 }
 
@@ -20,11 +23,11 @@ pub enum ParamChangeKind {
     Modulation,
 }
 
-/// The parameter timeline for one process call.
+/// The parameter timeline for one process call, ordered by frame.
 ///
-/// Changes are ordered by sample offset. The latest target is also committed
-/// to the shared parameter store by the wrapper, but processors use this view
-/// when timing inside the block matters.
+/// The latest target is also in the shared parameter table; a
+/// [`Smoother`](crate::params::Smoother) reads this when timing inside
+/// the block matters.
 #[derive(Copy, Clone, Debug)]
 pub struct ParamBlock<'a> {
     changes: &'a [ParamChange],
@@ -39,24 +42,21 @@ impl<'a> ParamBlock<'a> {
         }
     }
 
-    /// Construct a block whose fixed wrapper buffer overflowed.
+    /// A block whose fixed wrapper buffer overflowed by `dropped` points.
     pub const fn with_dropped(changes: &'a [ParamChange], dropped: u32) -> Self {
         Self { changes, dropped }
     }
 
     pub const fn empty() -> Self {
-        Self {
-            changes: &[],
-            dropped: 0,
-        }
+        Self::new(&[])
     }
 
     pub fn changes(self) -> &'a [ParamChange] {
         self.changes
     }
 
-    /// Number of host points omitted because the wrapper's bounded storage
-    /// was full. Consumers can publish or assert this; overflow is explicit.
+    /// Host points left out because the wrapper's bounded storage was
+    /// full (also counted as a fault).
     pub const fn dropped(self) -> u32 {
         self.dropped
     }
@@ -66,28 +66,116 @@ impl<'a> ParamBlock<'a> {
     }
 }
 
-/// Everything a plugin needs to render one block of audio.
-pub struct ProcessCtx<'a> {
-    pub sample_rate: f32,
-    pub frames: usize,
-    pub transport: Option<Transport>,
-    pub input: AudioBuffer<'a>,
-    pub output: AudioBuffer<'a>,
-    /// Aux inputs (sidechains), in the DECLARED order of the served
-    /// `PortConfig`'s `aux_in`. Wrappers guarantee one entry per
-    /// declared aux; an unconnected/silent port arrives as a
-    /// zero-channel buffer — the `AuxIn` contract is that the plugin
-    /// is fully functional with every aux absent.
-    pub aux: &'a [AudioBuffer<'a>],
-    /// Ordered host parameter changes for this block.
-    pub params: ParamBlock<'a>,
-    /// Musical events only. Parameter values have their own timeline above.
-    pub events: &'a [Event],
+/// Everything a plugin needs to process one block of audio. Built by the
+/// format wrappers (and test harnesses); read through its methods.
+pub struct Block<'a> {
+    sample_rate: f32,
+    frames: usize,
+    transport: Option<Transport>,
+    input: InputBuffer<'a>,
+    output: OutputBuffer<'a>,
+    aux: &'a [InputBuffer<'a>],
+    params: ParamBlock<'a>,
+    events: &'a [Event],
 }
 
-/// Host timeline state. Fields are `Option` because hosts declare
-/// validity per field (VST3 state bits, CLAP flags) — a fabricated
-/// default tempo is worse than an honest `None`.
+impl<'a> Block<'a> {
+    /// A block of `frames` frames at `sample_rate` Hz: no aux inputs, no
+    /// transport, no events, no parameter changes until the `with_`
+    /// methods add them.
+    pub fn new(
+        sample_rate: f32,
+        frames: usize,
+        input: InputBuffer<'a>,
+        output: OutputBuffer<'a>,
+    ) -> Self {
+        Self {
+            sample_rate,
+            frames,
+            transport: None,
+            input,
+            output,
+            aux: &[],
+            params: ParamBlock::empty(),
+            events: &[],
+        }
+    }
+
+    /// Aux (sidechain) inputs, one per aux bus of the served layout, in
+    /// order; an unconnected bus is [`InputBuffer::empty`].
+    pub fn with_aux(mut self, aux: &'a [InputBuffer<'a>]) -> Self {
+        self.aux = aux;
+        self
+    }
+
+    pub fn with_transport(mut self, transport: Option<Transport>) -> Self {
+        self.transport = transport;
+        self
+    }
+
+    /// Musical events, ordered by frame.
+    pub fn with_events(mut self, events: &'a [Event]) -> Self {
+        self.events = events;
+        self
+    }
+
+    /// Parameter changes, ordered by frame.
+    pub fn with_params(mut self, params: ParamBlock<'a>) -> Self {
+        self.params = params;
+        self
+    }
+
+    /// Frames in this block.
+    pub fn frames(&self) -> usize {
+        self.frames
+    }
+
+    /// Hz.
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    /// The host's timeline, when it gives one.
+    pub fn transport(&self) -> Option<&Transport> {
+        self.transport.as_ref()
+    }
+
+    /// Musical events (notes), ordered by frame. Parameter changes have
+    /// their own timeline ([`params`](Self::params)).
+    pub fn events(&self) -> &'a [Event] {
+        self.events
+    }
+
+    /// The parameter changes inside this block.
+    pub fn params(&self) -> ParamBlock<'a> {
+        self.params
+    }
+
+    /// The main input (no channels for an instrument).
+    pub fn input(&self) -> &InputBuffer<'a> {
+        &self.input
+    }
+
+    /// The main output.
+    pub fn output(&mut self) -> &mut OutputBuffer<'a> {
+        &mut self.output
+    }
+
+    /// The main input and output at once: read one while writing the
+    /// other.
+    pub fn io(&mut self) -> (&InputBuffer<'a>, &mut OutputBuffer<'a>) {
+        (&self.input, &mut self.output)
+    }
+
+    /// Aux input `i` of the served layout; `None` past the declared aux
+    /// buses (an unconnected one has no channels).
+    pub fn aux(&self, i: usize) -> Option<&InputBuffer<'a>> {
+        self.aux.get(i)
+    }
+}
+
+/// The host's timeline. Every field the host can leave out is an
+/// `Option` — a made-up tempo is worse than none.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Transport {
     pub playing: bool,
@@ -106,14 +194,14 @@ mod tests {
         let changes = [
             ParamChange {
                 id: ParamId(2),
-                sample_offset: 7,
-                plain_value: 0.5,
+                frame: 7,
+                value: 0.5,
                 kind: ParamChangeKind::Value,
             },
             ParamChange {
                 id: ParamId(3),
-                sample_offset: 9,
-                plain_value: 1.0,
+                frame: 9,
+                value: 1.0,
                 kind: ParamChangeKind::Modulation,
             },
         ];

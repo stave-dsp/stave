@@ -118,15 +118,22 @@ pub struct Migrations {
 impl Migrations {
     /// `old` ids found in a chunk load as `new`. Chain across versions
     /// by declaring each hop.
-    pub fn renamed(&mut self, old: u32, new: u32) -> &mut Self {
-        self.renames.push((old, new));
+    ///
+    /// ```
+    /// use stave_core::{state::Migrations, ParamId};
+    ///
+    /// let m = Migrations::default().renamed(ParamId(4), ParamId(9));
+    /// # let _ = m;
+    /// ```
+    pub fn renamed(mut self, old: ParamId, new: ParamId) -> Self {
+        self.renames.push((old.0, new.0));
         self
     }
 
-    /// Rewrite the plain value of `id` on load (unit changes, range
+    /// Rewrite the stored value of `id` on load (unit changes, range
     /// re-anchoring). Runs after renames, keyed by the NEW id.
-    pub fn rescaled(&mut self, id: u32, f: Rescale) -> &mut Self {
-        self.rescales.push((id, f));
+    pub fn rescaled(mut self, id: ParamId, f: Rescale) -> Self {
+        self.rescales.push((id.0, f));
         self
     }
 
@@ -139,13 +146,13 @@ impl Migrations {
     /// run in declaration order so state can cross more than one semantic
     /// revision.
     pub fn rescaled_before(
-        &mut self,
+        mut self,
         first_version_with_current_semantics: u32,
-        id: u32,
+        id: ParamId,
         transform: Rescale,
-    ) -> &mut Self {
+    ) -> Self {
         self.versioned_rescales
-            .push((first_version_with_current_semantics, id, transform));
+            .push((first_version_with_current_semantics, id.0, transform));
         self
     }
 
@@ -192,7 +199,7 @@ pub fn save(table: &dyn Params, plugin_version: u32, extra: &[u8], store: &State
         // would be an author bug caught at instance creation.
         let Some(p) = table.by_index(i) else { continue };
         out.extend_from_slice(&p.meta().id.0.to_le_bytes());
-        out.extend_from_slice(&p.plain().to_bits().to_le_bytes());
+        out.extend_from_slice(&p.value().to_bits().to_le_bytes());
     }
     for &(id, bits) in &store.unknown_params {
         out.extend_from_slice(&id.to_le_bytes());
@@ -321,7 +328,7 @@ pub fn load(
         match table.by_id(ParamId(id)) {
             Some(p) => {
                 // Restored state must not fade in.
-                p.restore_plain(value);
+                p.restore(value);
                 report.applied += 1;
             }
             None => {
@@ -336,7 +343,7 @@ pub fn load(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{FloatParam, Range, Smooth, Taper};
+    use crate::params::{FloatParam, Range, Smooth};
 
     struct T2(FloatParam, FloatParam);
     impl Params for T2 {
@@ -352,10 +359,10 @@ mod tests {
 
     fn table() -> T2 {
         T2(
-            FloatParam::new(10, "drive", 0.0, Range::new(-12.0, 36.0, Taper::Linear))
-                .with_smooth(Smooth::Off),
-            FloatParam::new(11, "cutoff", 1200.0, Range::new(20.0, 20_000.0, Taper::Log))
-                .with_smooth(Smooth::Off),
+            FloatParam::new(ParamId(10), "drive", Range::linear(-12.0, 36.0)).default(0.0)
+                .smooth(Smooth::Off),
+            FloatParam::new(ParamId(11), "cutoff", Range::log(20.0, 20_000.0)).default(1200.0)
+                .smooth(Smooth::Off),
         )
     }
 
@@ -364,8 +371,8 @@ mod tests {
     #[test]
     fn round_trip_is_bit_exact() {
         let a = table();
-        (&a.0 as &dyn AnyParam).set_plain(6.5);
-        (&a.1 as &dyn AnyParam).set_plain(632.4553);
+        (&a.0 as &dyn AnyParam).set_value(6.5);
+        (&a.1 as &dyn AnyParam).set_value(632.4553);
         let chunk = save(&a, 3, b"hello", &StateStore::default());
 
         let b = table();
@@ -374,8 +381,8 @@ mod tests {
         assert_eq!(report.applied, 2);
         assert_eq!(report.plugin_version, 3);
         assert_eq!(extra, b"hello");
-        assert_eq!(b.0.plain().to_bits(), 6.5f64.to_bits());
-        assert_eq!(b.1.plain().to_bits(), 632.4553f64.to_bits());
+        assert_eq!(AnyParam::value(&b.0).to_bits(), 6.5f64.to_bits());
+        assert_eq!(AnyParam::value(&b.1).to_bits(), 632.4553f64.to_bits());
     }
 
     #[test]
@@ -383,7 +390,7 @@ mod tests {
         // "v9" chunk: two known params, one unknown param, one unknown
         // section — as written by a future version of the plugin.
         let future = table();
-        (&future.0 as &dyn AnyParam).set_plain(1.0);
+        (&future.0 as &dyn AnyParam).set_value(1.0);
         let mut future_store = StateStore::default();
         future_store.unknown_params.push((999, 0.777f64.to_bits()));
         future_store.unknown_sections.push((77, vec![1, 2, 3, 4]));
@@ -410,7 +417,7 @@ mod tests {
     #[test]
     fn migrations_rename_then_rescale() {
         let a = table();
-        (&a.0 as &dyn AnyParam).set_plain(12.0);
+        (&a.0 as &dyn AnyParam).set_value(12.0);
         let chunk = save(&a, 1, &[], &StateStore::default());
 
         // v2 renamed 10 → 20… so build a table with the NEW id, plus a
@@ -425,15 +432,16 @@ mod tests {
             }
         }
         let v2 = V2(
-            FloatParam::new(20, "drive", 0.0, Range::new(-12.0, 36.0, Taper::Linear))
-                .with_smooth(Smooth::Off),
+            FloatParam::new(ParamId(20), "drive", Range::linear(-12.0, 36.0)).default(0.0)
+                .smooth(Smooth::Off),
         );
-        let mut m = Migrations::default();
-        m.renamed(10, 20).rescaled(20, |v| v * 0.5);
+        let m = Migrations::default()
+            .renamed(ParamId(10), ParamId(20))
+            .rescaled(ParamId(20), |v| v * 0.5);
         let mut store = StateStore::default();
         let (report, _) = load(&chunk, &v2, &m, &mut store).unwrap();
         assert_eq!(report.applied, 1);
-        assert_eq!(v2.0.plain(), 6.0);
+        assert_eq!(v2.0.value(), 6.0);
         // Old id 11 has no home in V2 → retained, not lost.
         assert_eq!(report.unknown_params, 1);
     }
@@ -441,15 +449,14 @@ mod tests {
     #[test]
     fn versioned_rescale_only_changes_state_with_old_plain_units() {
         let old_table = table();
-        (&old_table.0 as &dyn AnyParam).set_plain(2.0);
+        (&old_table.0 as &dyn AnyParam).set_value(2.0);
         let oldest_chunk = save(&old_table, 0, &[], &StateStore::default());
         let old_chunk = save(&old_table, 1, &[], &StateStore::default());
         let current_chunk = save(&old_table, 2, &[], &StateStore::default());
 
-        let mut migrations = Migrations::default();
-        migrations
-            .rescaled_before(1, 10, |value| value + 1.0)
-            .rescaled_before(2, 10, |value| value * 2.0);
+        let migrations = Migrations::default()
+            .rescaled_before(1, ParamId(10), |value| value + 1.0)
+            .rescaled_before(2, ParamId(10), |value| value * 2.0);
 
         let loaded_oldest_table = table();
         load(
@@ -459,7 +466,7 @@ mod tests {
             &mut StateStore::default(),
         )
         .unwrap();
-        assert_eq!(loaded_oldest_table.0.plain(), 6.0);
+        assert_eq!(loaded_oldest_table.0.value(), 6.0);
 
         let loaded_old_table = table();
         load(
@@ -469,7 +476,7 @@ mod tests {
             &mut StateStore::default(),
         )
         .unwrap();
-        assert_eq!(loaded_old_table.0.plain(), 4.0);
+        assert_eq!(loaded_old_table.0.value(), 4.0);
 
         let loaded_current_table = table();
         load(
@@ -479,7 +486,7 @@ mod tests {
             &mut StateStore::default(),
         )
         .unwrap();
-        assert_eq!(loaded_current_table.0.plain(), 2.0);
+        assert_eq!(loaded_current_table.0.value(), 2.0);
     }
 
     #[test]
@@ -514,7 +521,7 @@ mod tests {
             Err(StateError::UnsupportedFormat { found: 99 })
         ));
         // A clean error applies nothing: table keeps its values.
-        assert_eq!(t.0.plain(), 0.0);
+        assert_eq!(t.0.value(), 0.0);
     }
 
     /// Mutational fuzz, deterministic: every mutant of a valid chunk

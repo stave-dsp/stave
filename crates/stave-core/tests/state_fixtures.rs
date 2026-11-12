@@ -5,7 +5,7 @@
 //! params change, add a new fixture — never regenerate an old one.
 //! A failure here means shipped sessions would break.
 
-use stave_core::params::{AnyParam, FloatParam, Params, Range, Smooth, Taper};
+use stave_core::params::{AnyParam, FloatParam, ParamId, Params, Range, Smooth};
 use stave_core::state::{load, Migrations, StateStore};
 
 /// v1-basic.stve: format v1, plugin_version 1, params
@@ -25,10 +25,10 @@ impl Params for T2 {
 
 fn table() -> T2 {
     T2(
-        FloatParam::new(10, "drive", 0.0, Range::new(-12.0, 36.0, Taper::Linear))
-            .with_smooth(Smooth::Off),
-        FloatParam::new(11, "cutoff", 1200.0, Range::new(20.0, 20_000.0, Taper::Log))
-            .with_smooth(Smooth::Off),
+        FloatParam::new(ParamId(10), "drive", Range::linear(-12.0, 36.0))
+            .smooth(Smooth::Off),
+        FloatParam::new(ParamId(11), "cutoff", Range::log(20.0, 20_000.0)).default(1200.0)
+            .smooth(Smooth::Off),
     )
 }
 
@@ -42,8 +42,8 @@ fn v1_basic_loads_forever() {
     assert_eq!(report.applied, 2);
     assert_eq!(report.unknown_params, 1, "id 999 retained, not lost");
     assert_eq!(report.unknown_sections, 1, "tag 77 retained");
-    assert_eq!(t.0.plain().to_bits(), 6.5f64.to_bits());
-    assert_eq!(t.1.plain().to_bits(), 632.4553f64.to_bits());
+    assert_eq!(AnyParam::value(&t.0).to_bits(), 6.5f64.to_bits());
+    assert_eq!(AnyParam::value(&t.1).to_bits(), 632.4553f64.to_bits());
     assert_eq!(extra, b"legacy-extra");
 }
 

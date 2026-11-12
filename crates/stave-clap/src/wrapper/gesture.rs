@@ -48,13 +48,13 @@ impl ClapGestures {
 
 impl GestureSink for ClapGestures {
     fn begin(&self, id: ParamId) {
-        self.push(GestureEvent::Begin { id: id.0 });
+        self.push(GestureEvent::Begin { id });
     }
-    fn perform(&self, id: ParamId, plain: f64) {
-        self.push(GestureEvent::Value { id: id.0, plain });
+    fn perform(&self, id: ParamId, value: f64) {
+        self.push(GestureEvent::Value { id, value });
     }
     fn end(&self, id: ParamId) {
-        self.push(GestureEvent::End { id: id.0 });
+        self.push(GestureEvent::End { id });
     }
 }
 
@@ -81,22 +81,22 @@ pub(super) fn emit_gestures(gestures: &GestureQueue, out: Option<OutputEvents<'_
                 };
                 out.try_push(&sys::ClapEventParamGesture {
                     header: header(core::mem::size_of::<sys::ClapEventParamGesture>(), kind),
-                    param_id: id,
+                    param_id: id.0,
                 });
             }
-            GestureEvent::Value { id, plain } => {
+            GestureEvent::Value { id, value } => {
                 out.try_push(&sys::ClapEventParamValue {
                     header: header(
                         core::mem::size_of::<sys::ClapEventParamValue>(),
                         sys::CLAP_EVENT_PARAM_VALUE,
                     ),
-                    param_id: id,
+                    param_id: id.0,
                     cookie: ptr::null_mut(),
                     note_id: -1,
                     port_index: -1,
                     channel: -1,
                     key: -1,
-                    value: plain,
+                    value,
                 });
             }
         }

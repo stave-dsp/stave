@@ -1,0 +1,362 @@
+//! # stave — write an audio plugin
+//!
+//! One dependency, one import, one trait, one macro:
+//!
+//! ```
+//! use stave::prelude::*;
+//!
+//! #[derive(Params)]
+//! pub struct GainParams {
+//!     pub gain: FloatParam,
+//!     pub bypass: BoolParam,
+//! }
+//!
+//! impl Default for GainParams {
+//!     fn default() -> Self {
+//!         GainParams {
+//!             gain: FloatParam::new(ParamId(1), "Gain", Range::linear(-24.0, 24.0))
+//!                 .unit(Unit::Db)
+//!                 .smooth(Smooth::ms(10.0)),
+//!             bypass: BoolParam::bypass(ParamId(2)),
+//!         }
+//!     }
+//! }
+//!
+//! pub struct Gain {
+//!     params: Arc<GainParams>,
+//!     gain: Smoother,
+//! }
+//!
+//! impl Plugin for Gain {
+//!     const INFO: Info = Info { id: "com.example.gain", name: "Gain", vendor: "Example", ..Info::EFFECT };
+//!     type Params = GainParams;
+//!
+//!     fn new(params: &Arc<GainParams>, _telemetry: &Telemetry) -> Self {
+//!         Gain { params: params.clone(), gain: Smoother::new(&params.gain) }
+//!     }
+//!
+//!     fn prepare(&mut self, env: &Environment) {
+//!         self.gain.prepare(env);
+//!     }
+//!
+//!     fn process(&mut self, block: &mut Block<'_>) {
+//!         let mut gain = self.gain.ramp(block, &self.params.gain);
+//!         block.lanes::<2>().run(|frame| {
+//!             let g = db_to_amp(gain.next());
+//!             for lane in 0..frame.lanes() {
+//!                 frame.write(lane, frame.input(lane) * g);
+//!             }
+//!         });
+//!     }
+//! }
+//!
+//! stave::export!(Gain);
+//! ```
+//!
+//! `stave::export!` makes the crate (a `cdylib`) a VST3 and a CLAP plugin
+//! at once. The framework owns everything around `process`: bypass
+//! (click-free, latency matched), parameter automation and state,
+//! presets, the face's window, denormals, panics at the host boundary.
+//!
+//! The pieces, when you need more than the prelude:
+//! [`params`], [`dsp`] (the DSP library), [`face`] (the design system),
+//! [`telemetry`] (engine → face values).
+
+#![forbid(unsafe_code)]
+#![deny(rust_2018_idioms)]
+
+use std::sync::Arc;
+
+// The derives name `::stave::__core`; inside this crate that is `crate`.
+extern crate self as stave;
+
+/// The model crate, for the derives' generated paths.
+#[doc(hidden)]
+pub use stave_core as __core;
+
+pub mod route;
+mod voice;
+
+pub use stave_core::{
+    block, buffer, controller, diagnostics, environment, event, info, params, preset, process,
+    state, telemetry, units,
+};
+pub use stave_core::{
+    Aux, Block, Channels, Controller, Environment, Event, EventCursor, EventKind, Feature, Info,
+    InputBuffer, LaneFrame, Lanes, Layout, NoteEvent, NoteKind, Normalized, OutputBuffer, ParamId,
+    Peaks, Preset, Tail, Tap, TapId, Telemetry, Transport,
+};
+pub use stave_core::{brk_if, param_enum, probe};
+/// `#[derive(Params)]`: the parameter table of a struct of params.
+pub use stave_macros::StaveParams as Params;
+/// `#[derive(Taps)]`: a telemetry table of a struct of taps.
+pub use stave_macros::StaveTaps as Taps;
+pub use voice::ToVoiceEvent;
+
+/// The DSP library: stages, filters, delays, oscillators, circuits.
+pub use stave_dsp as dsp;
+/// The design system: parts, themes, layout.
+pub use stave_face as face;
+pub use stave_face::Face;
+
+use stave_core::params::Params as ParamTable;
+use stave_core::state::Migrations;
+
+/// An audio plugin: the one trait an author implements.
+///
+/// The framework builds `Self::Params` (its `Default`), then the plugin
+/// with [`new`](Self::new); [`prepare`](Self::prepare)s it for the host's
+/// conditions; and calls [`process`](Self::process) once per block on
+/// the audio thread. Everything else has a default.
+pub trait Plugin: Sized + Send + 'static {
+    /// Identity: id (forever), name, vendor, kind.
+    const INFO: Info;
+    /// The supported bus layouts, preferred first; never empty.
+    const LAYOUTS: &'static [Layout] = &[Layout::STEREO];
+    /// Bumped when saved state changes shape; `migrations` maps old to new.
+    const STATE_VERSION: u32 = 0;
+    /// The parameter table (`#[derive(Params)]`), built by its `Default`.
+    type Params: ParamTable + Default + 'static;
+
+    /// Build the plugin: its smoothers and steps from `params`, its taps
+    /// on `telemetry`. May allocate.
+    fn new(params: &Arc<Self::Params>, telemetry: &Telemetry) -> Self;
+
+    /// Derive everything that depends on the sample rate, block size or
+    /// layout. May allocate; called again whenever they change.
+    fn prepare(&mut self, _env: &Environment) {}
+
+    /// Clear DSP state (delay lines, filters, envelopes), not params.
+    /// Realtime.
+    fn reset(&mut self) {}
+
+    /// One block. Realtime: no allocation, no locks, no blocking.
+    fn process(&mut self, block: &mut Block<'_>);
+
+    /// Samples of delay the host compensates for.
+    fn latency(&self) -> u32 {
+        0
+    }
+
+    /// How long output rings after input stops.
+    fn tail(&self) -> Tail {
+        Tail::None
+    }
+
+    /// The editor: a pure function of the params.
+    fn face(_params: &Self::Params) -> Option<Face> {
+        None
+    }
+
+    /// Factory presets, declared against the params.
+    fn presets(_params: &Self::Params) -> Vec<Preset> {
+        Vec::new()
+    }
+
+    /// How to load state saved at an older `STATE_VERSION`.
+    fn migrations() -> Migrations {
+        Migrations::default()
+    }
+
+    /// State beyond params (rare): bytes for the session.
+    fn save(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    /// Restore [`save`](Self::save)'s bytes, written at state `version`;
+    /// params are already restored.
+    fn load(&mut self, _bytes: &[u8], _version: u32) {}
+}
+
+/// Everything a plugin's source needs, in one import.
+pub mod prelude {
+    pub use std::sync::Arc;
+
+    pub use crate::{
+        Block, Channels, Environment, Event, EventCursor, EventKind, Face, Feature, Info, Layout,
+        NoteEvent, NoteKind, Params, ParamId, Plugin, Preset, Tail, Tap, TapId, Taps, Telemetry,
+        ToVoiceEvent, Transport,
+    };
+    /// The table trait (`table.by_name(..)`), beside the derive.
+    pub use stave_core::params::Params;
+    pub use stave_core::param_enum;
+    pub use stave_core::params::{
+        BoolParam, EnumParam, FloatParam, ParamEnum, Range, Smooth, Smoother, Step, Steps, Unit,
+    };
+    pub use stave_core::state::Migrations;
+    pub use stave_dsp::{
+        amp_to_db, db_to_amp, soft_clip, Biquad, DcBlocker, DelayLine, FilterSpec, OnePole,
+        Oversampled2x, PerChannel, Stage, Svf,
+    };
+    pub use stave_face::prelude::*;
+}
+
+/// The bridge from [`Plugin`] to the format wrappers. Not author API:
+/// [`export!`] names it.
+#[doc(hidden)]
+pub mod __export {
+    use super::*;
+    use stave_core::params::IndexedParams;
+    use stave_core::runtime::Erased;
+
+    pub use stave_clap as clap;
+    pub use stave_vst3 as vst3;
+
+    /// Per-crate facts only the exporting crate knows (`export!`
+    /// implements it there).
+    pub trait Export: Plugin {
+        /// The exporting crate's `CARGO_PKG_VERSION`.
+        const CRATE_VERSION: &'static str;
+        /// VST3 class ids `[component, controller]`, when they must stay
+        /// what an earlier build shipped; `None` derives them from
+        /// `INFO.id`.
+        const VST3_CLASS_IDS: Option<[[u32; 4]; 2]> = None;
+    }
+
+    /// A [`Plugin`] with its params, table and presets: what the wrappers
+    /// instantiate.
+    pub struct Shell<P: Plugin> {
+        plugin: P,
+        params: Arc<P::Params>,
+        table: Arc<dyn ParamTable>,
+        presets: Arc<[Preset]>,
+    }
+
+    impl<P: Plugin> Shell<P> {
+        pub fn plugin(&self) -> &P {
+            &self.plugin
+        }
+        pub fn plugin_mut(&mut self) -> &mut P {
+            &mut self.plugin
+        }
+        pub fn params(&self) -> &Arc<P::Params> {
+            &self.params
+        }
+    }
+
+    impl<P: Plugin> Erased for Shell<P> {
+        const INFO: Info = P::INFO;
+        const LAYOUTS: &'static [Layout] = P::LAYOUTS;
+        const STATE_VERSION: u32 = P::STATE_VERSION;
+
+        fn new(telemetry: &Telemetry) -> Self {
+            let params = Arc::new(P::Params::default());
+            let plugin = P::new(&params, telemetry);
+            let table = Arc::new(IndexedParams::new(params.clone()));
+            let presets = P::presets(&params).into();
+            Shell {
+                plugin,
+                params,
+                table,
+                presets,
+            }
+        }
+        fn params(&self) -> Arc<dyn ParamTable> {
+            self.table.clone()
+        }
+        fn presets(&self) -> Arc<[Preset]> {
+            self.presets.clone()
+        }
+        fn prepare(&mut self, env: &Environment) {
+            self.plugin.prepare(env);
+        }
+        fn reset(&mut self) {
+            self.plugin.reset();
+        }
+        fn process(&mut self, block: &mut Block<'_>) {
+            self.plugin.process(block);
+        }
+        fn latency(&self) -> u32 {
+            self.plugin.latency()
+        }
+        fn tail(&self) -> Tail {
+            self.plugin.tail()
+        }
+        fn migrations() -> Migrations {
+            P::migrations()
+        }
+        fn save(&self) -> Vec<u8> {
+            self.plugin.save()
+        }
+        fn load(&mut self, bytes: &[u8], version: u32) {
+            self.plugin.load(bytes, version);
+        }
+    }
+
+    /// `INFO.version`, or the crate's when it is empty.
+    const fn version<P: Export>() -> &'static str {
+        if P::INFO.version.is_empty() {
+            P::CRATE_VERSION
+        } else {
+            P::INFO.version
+        }
+    }
+
+    const fn class_id<P: Export>(role: usize, name: &str) -> vst3::sys::Tuid {
+        match P::VST3_CLASS_IDS {
+            Some(ids) => {
+                let [a, b, c, d] = ids[role];
+                vst3::sys::make_tuid(a, b, c, d)
+            }
+            None => vst3::ids::derive_cid(P::INFO.id, name),
+        }
+    }
+
+    impl<P: Export> vst3::wrapper::Vst3Export for Shell<P> {
+        const COMPONENT_CID: vst3::sys::Tuid = class_id::<P>(0, "component");
+        const CONTROLLER_CID: vst3::sys::Tuid = class_id::<P>(1, "controller");
+        const VERSION: &'static str = version::<P>();
+        fn face(&self) -> Option<Face> {
+            P::face(&self.params)
+        }
+    }
+
+    impl<P: Export> clap::wrapper::ClapExport for Shell<P> {
+        const VERSION: &'static str = version::<P>();
+        fn face(&self) -> Option<Face> {
+            P::face(&self.params)
+        }
+    }
+}
+
+/// Make this crate a VST3 and a CLAP plugin of `$plugin` (a [`Plugin`]).
+/// Once per `cdylib` crate.
+///
+/// ```ignore
+/// stave::export!(Tilt);
+/// ```
+///
+/// The VST3 class ids derive from `INFO.id`. A plugin that shipped with
+/// other ids keeps them (each id four `u32`s, as in the VST3 SDK's
+/// `DECLARE_CLASS_IID`):
+///
+/// ```ignore
+/// stave::export!(Saga, vst3_class_ids: {
+///     component: [0x7C31A2E4, 0x88B14D02, 0xA5E0C9D3, 0x11700001],
+///     controller: [0x7C31A2E4, 0x88B14D02, 0xA5E0C9D3, 0x11700002],
+/// });
+/// ```
+#[macro_export]
+macro_rules! export {
+    ($plugin:ty $(,)?) => {
+        impl $crate::__export::Export for $plugin {
+            const CRATE_VERSION: &'static str = ::core::env!("CARGO_PKG_VERSION");
+        }
+        $crate::export!(@entries $plugin);
+    };
+    ($plugin:ty, vst3_class_ids: {
+        component: [$c1:expr, $c2:expr, $c3:expr, $c4:expr $(,)?],
+        controller: [$e1:expr, $e2:expr, $e3:expr, $e4:expr $(,)?] $(,)?
+    } $(,)?) => {
+        impl $crate::__export::Export for $plugin {
+            const CRATE_VERSION: &'static str = ::core::env!("CARGO_PKG_VERSION");
+            const VST3_CLASS_IDS: ::core::option::Option<[[u32; 4]; 2]> =
+                ::core::option::Option::Some([[$c1, $c2, $c3, $c4], [$e1, $e2, $e3, $e4]]);
+        }
+        $crate::export!(@entries $plugin);
+    };
+    (@entries $plugin:ty) => {
+        $crate::__export::vst3::export_vst3!($crate::__export::Shell<$plugin>);
+        $crate::__export::clap::export_clap!($crate::__export::Shell<$plugin>);
+    };
+}

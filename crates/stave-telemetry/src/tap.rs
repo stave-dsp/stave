@@ -114,10 +114,10 @@ impl Tap {
     /// Register `id` on `telemetry` (find its slot, or reserve one that
     /// reads 0 until the first `set`). Allocation-free, but not for the
     /// audio thread's hot path: call it when the plugin is created.
-    pub fn register(telemetry: &Arc<Telemetry>, id: TapId) -> Self {
+    pub fn register(telemetry: &Telemetry, id: TapId) -> Self {
         let slot = telemetry.register_tap(id);
         Tap {
-            telemetry: (slot != NO_SLOT).then(|| Arc::clone(telemetry)),
+            telemetry: (slot != NO_SLOT).then(|| telemetry.shared()),
             slot,
         }
     }

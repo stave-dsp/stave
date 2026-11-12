@@ -138,7 +138,7 @@ pub(super) unsafe extern "C" fn ec_get_param_string_by_value<P: Vst3Export>(
             };
             write_utf16_name(
                 dst,
-                &p.format_plain(p.normalized_to_plain(value_normalized)),
+                &p.format(p.denormalize(value_normalized)),
             );
             K_RESULT_OK
         },
@@ -187,7 +187,7 @@ pub(super) unsafe extern "C" fn ec_get_param_value_by_string<P: Vst3Export>(
                 return K_RESULT_FALSE;
             };
             let parsed = match p {
-                Some(p) => p.parse(text).map(|plain| p.plain_to_normalized(plain)),
+                Some(p) => p.parse(text).map(|plain| p.normalize(plain)),
                 None => inst.programs.find(text),
             };
             match parsed {
@@ -214,7 +214,7 @@ pub(super) unsafe extern "C" fn ec_normalized_param_to_plain<P: Vst3Export>(
         || {
             let table = &inst.param_table;
             match table.by_id(stave_core::ParamId(id)) {
-                Some(p) => p.normalized_to_plain(value_normalized),
+                Some(p) => p.denormalize(value_normalized),
                 None if id == stave_core::ParamId::PROGRAM.0 && inst.programs.exposed() => {
                     inst.programs.index_of(value_normalized) as f64
                 }
@@ -227,21 +227,21 @@ pub(super) unsafe extern "C" fn ec_normalized_param_to_plain<P: Vst3Export>(
 pub(super) unsafe extern "C" fn ec_plain_param_to_normalized<P: Vst3Export>(
     this: *mut FUnknown,
     id: ParamId,
-    plain_value: ParamValue,
+    value: ParamValue,
 ) -> ParamValue {
     // SAFETY: host contract (see `crate::host`).
     let inst = unsafe { parent_ref::<P>(this) };
     inst.guarded(
         "plainParamToNormalized",
-        || plain_value,
+        || value,
         || {
             let table = &inst.param_table;
             match table.by_id(stave_core::ParamId(id)) {
-                Some(p) => p.plain_to_normalized(plain_value),
+                Some(p) => p.normalize(value),
                 None if id == stave_core::ParamId::PROGRAM.0 && inst.programs.exposed() => {
-                    inst.programs.normalized_of(plain_value)
+                    inst.programs.normalized_of(value)
                 }
-                None => plain_value,
+                None => value,
             }
         },
     )

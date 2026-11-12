@@ -10,7 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use stave_clap::sys::*;
-use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Info, Telemetry};
 
 struct Panics;
 
@@ -25,31 +26,31 @@ fn serial() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-impl Plugin for Panics {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.panics-clap",
-        name: c"Panics (CLAP)",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"panic containment fixture",
+impl Erased for Panics {
+    const INFO: Info = Info {
+        id: "com.stave.test.panics-clap",
+        name: "Panics (CLAP)",
+        vendor: "stave tests",
+        version: "0.0.0",
+        url: "",
+        description: "panic containment fixture",
         features: &[],
     };
 
-    fn new() -> Self {
+    fn new(_telemetry: &Telemetry) -> Self {
         assert!(!PANIC_IN_NEW.load(Ordering::SeqCst), "a constructor bug");
         Self
     }
 
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        ctx.output.channel(0).fill(0.5);
+    fn process(&mut self, block: &mut Block<'_>) {
+        block.output().channel_mut(0).fill(0.5);
         panic!("a plugin bug");
     }
 }
 
-impl stave_clap::stave_face::HasFace for Panics {}
+impl stave_clap::wrapper::ClapExport for Panics {}
 
-stave_clap::stave_clap_export!(raw Panics);
+stave_clap::export_clap!(Panics);
 
 #[test]
 fn a_panicking_process_is_contained_and_the_instance_goes_silent() {
@@ -60,7 +61,7 @@ fn a_panicking_process_is_contained_and_the_instance_goes_silent() {
         let plugin = ((*factory).create_plugin.unwrap())(
             factory,
             ptr::null(),
-            Panics::DESCRIPTOR.id.as_ptr(),
+            c"com.stave.test.panics-clap".as_ptr(),
         );
         assert!(((*plugin).init.unwrap())(plugin));
         assert!(((*plugin).activate.unwrap())(plugin, 48_000.0, 1, 64));
@@ -109,12 +110,12 @@ fn a_panicking_constructor_fails_create_plugin() {
         let factory = get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr()).cast::<ClapPluginFactory>();
         let create = (*factory).create_plugin.unwrap();
         PANIC_IN_NEW.store(true, Ordering::SeqCst);
-        let plugin = create(factory, ptr::null(), Panics::DESCRIPTOR.id.as_ptr());
+        let plugin = create(factory, ptr::null(), c"com.stave.test.panics-clap".as_ptr());
         PANIC_IN_NEW.store(false, Ordering::SeqCst);
         assert!(plugin.is_null());
 
         // The factory still works afterwards.
-        let plugin = create(factory, ptr::null(), Panics::DESCRIPTOR.id.as_ptr());
+        let plugin = create(factory, ptr::null(), c"com.stave.test.panics-clap".as_ptr());
         assert!(!plugin.is_null());
         assert!(((*plugin).init.unwrap())(plugin));
         ((*plugin).destroy.unwrap())(plugin);

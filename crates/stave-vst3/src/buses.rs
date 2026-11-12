@@ -1,6 +1,6 @@
 //! IComponent bus surface + IAudioProcessor arrangement negotiation
 //! buses and arrangements are DERIVED from the plugin's
-//! declared `PortConfig` set. The unit of negotiation is the WHOLE
+//! declared `Layout` set. The unit of negotiation is the WHOLE
 //! configuration: `setBusArrangements` searches CONFIGS for a member
 //! matching the full proposal (main + aux inputs, in declaration
 //! order) and SELECTS it — per-instance, served by every bus query
@@ -9,7 +9,7 @@
 
 use core::sync::atomic::Ordering;
 
-use stave_core::{Arrangement, Plugin, PortConfig};
+use stave_core::{Channels, Layout};
 
 use crate::host::{host_array, out_param};
 use crate::sys::*;
@@ -18,9 +18,9 @@ use crate::wrapper::{ffi_entry, parent_ref, Instance, Vst3Export};
 use stave_core::diagnostics::CallError;
 
 /// The instance's host-accepted configuration.
-fn accepted<P: Vst3Export>(inst: &Instance<P>) -> PortConfig {
+pub(crate) fn accepted<P: Vst3Export>(inst: &Instance<P>) -> Layout {
     let idx = inst.config.load(Ordering::Acquire);
-    <P as Plugin>::CONFIGS[idx.min(<P as Plugin>::CONFIGS.len() - 1)]
+    P::LAYOUTS[idx.min(P::LAYOUTS.len() - 1)]
 }
 
 pub(crate) unsafe extern "C" fn comp_get_bus_count<P: Vst3Export>(
@@ -33,13 +33,13 @@ pub(crate) unsafe extern "C" fn comp_get_bus_count<P: Vst3Export>(
     ffi_entry::<P, _>(|| 0, || bus_count::<P>(accepted(inst), media_type, dir))
 }
 
-fn bus_count<P: Vst3Export>(ports: PortConfig, media_type: i32, dir: i32) -> i32 {
+fn bus_count<P: Vst3Export>(ports: Layout, media_type: i32, dir: i32) -> i32 {
     if media_type == MEDIA_TYPE_AUDIO {
         if dir == BUS_DIR_INPUT {
             // Main (if any) + declared aux buses, declaration order.
-            let main = if ports.in_channels() > 0 { 1 } else { 0 };
-            main + ports.aux_in.len() as i32
-        } else if ports.out_channels() > 0 {
+            let main = if ports.input_channels() > 0 { 1 } else { 0 };
+            main + ports.aux.len() as i32
+        } else if ports.output_channels() > 0 {
             1
         } else {
             0
@@ -76,7 +76,7 @@ pub(crate) unsafe extern "C" fn comp_get_bus_info<P: Vst3Export>(
 }
 
 fn bus_info<P: Vst3Export>(
-    ports: PortConfig,
+    ports: Layout,
     media_type: i32,
     dir: i32,
     index: i32,
@@ -93,26 +93,26 @@ fn bus_info<P: Vst3Export>(
 
     if media_type == MEDIA_TYPE_AUDIO {
         if dir == BUS_DIR_INPUT {
-            let main = if ports.in_channels() > 0 { 1 } else { 0 };
+            let main = if ports.input_channels() > 0 { 1 } else { 0 };
             if index < main {
-                info.channel_count = ports.in_channels() as i32;
+                info.channel_count = ports.input_channels() as i32;
                 write_utf16_name(&mut info.name, "Input");
             } else {
                 // Aux buses follow the main input, declaration order.
                 let aux = ports
-                    .aux_in
+                    .aux
                     .get((index - main) as usize)
                     .ok_or(out_of_range)?;
                 info.bus_type = BUS_TYPE_AUX;
-                info.channel_count = aux.arrangement.channels() as i32;
+                info.channel_count = aux.channels.count() as i32;
                 write_utf16_name(&mut info.name, aux.name);
             }
             Ok(())
         } else {
-            if index != 0 || ports.out_channels() == 0 {
+            if index != 0 || ports.output_channels() == 0 {
                 return Err(out_of_range);
             }
-            info.channel_count = ports.out_channels() as i32;
+            info.channel_count = ports.output_channels() as i32;
             write_utf16_name(&mut info.name, "Output");
             Ok(())
         }
@@ -149,30 +149,30 @@ pub(crate) unsafe extern "C" fn comp_activate_bus(
 
 /// The semantic map: a declared `Arrangement` IS a speaker
 /// arrangement — never reconstructed from a channel count.
-pub(crate) fn speaker_arr(a: Arrangement) -> SpeakerArrangement {
+pub(crate) fn speaker_arr(a: Channels) -> SpeakerArrangement {
     match a {
-        Arrangement::Mono => K_MONO,
-        Arrangement::Stereo => K_STEREO,
-        Arrangement::Surround51 => K_51,
+        Channels::Mono => K_MONO,
+        Channels::Stereo => K_STEREO,
+        Channels::Surround51 => K_51,
     }
 }
 
 /// Does `member` match the host's full proposal?
 fn member_matches(
-    member: &PortConfig,
+    member: &Layout,
     inputs: &[SpeakerArrangement],
     outputs: &[SpeakerArrangement],
 ) -> bool {
     let declared_ins = member
-        .main_in
+        .input
         .into_iter()
-        .chain(member.aux_in.iter().map(|aux| aux.arrangement))
+        .chain(member.aux.iter().map(|aux| aux.channels))
         .map(speaker_arr);
-    let ins_ok = inputs.len() == usize::from(member.main_in.is_some()) + member.aux_in.len()
+    let ins_ok = inputs.len() == usize::from(member.input.is_some()) + member.aux.len()
         && inputs.iter().copied().eq(declared_ins);
-    let outs_ok = match (member.out_channels() > 0, outputs) {
+    let outs_ok = match (member.output_channels() > 0, outputs) {
         (false, []) => true,
-        (true, [main]) => *main == speaker_arr(member.main_out),
+        (true, [main]) => *main == speaker_arr(member.output),
         _ => false,
     };
     ins_ok && outs_ok
@@ -202,7 +202,7 @@ pub(crate) unsafe extern "C" fn ap_set_bus_arrangements<P: Vst3Export>(
     };
     ffi_entry::<P, _>(
         || K_INTERNAL_ERROR,
-        || match <P as Plugin>::CONFIGS
+        || match P::LAYOUTS
             .iter()
             .position(|member| member_matches(member, inputs, outputs))
         {
@@ -233,7 +233,7 @@ pub(crate) unsafe extern "C" fn ap_get_bus_arrangement<P: Vst3Export>(
 }
 
 fn bus_arrangement(
-    ports: PortConfig,
+    ports: Layout,
     dir: i32,
     index: i32,
     arr: &mut SpeakerArrangement,
@@ -243,21 +243,21 @@ fn bus_arrangement(
         return Err(out_of_range);
     }
     let arrangement: SpeakerArrangement = if dir == BUS_DIR_INPUT {
-        let main = if ports.main_in.is_some() { 1 } else { 0 };
+        let main = if ports.input.is_some() { 1 } else { 0 };
         if index < main {
-            speaker_arr(ports.main_in.expect("main == 1"))
+            speaker_arr(ports.input.expect("main == 1"))
         } else {
             let aux = ports
-                .aux_in
+                .aux
                 .get((index - main) as usize)
                 .ok_or(out_of_range)?;
-            speaker_arr(aux.arrangement)
+            speaker_arr(aux.channels)
         }
     } else {
         if index != 0 {
             return Err(out_of_range);
         }
-        speaker_arr(ports.main_out)
+        speaker_arr(ports.output)
     };
     *arr = arrangement;
     Ok(())

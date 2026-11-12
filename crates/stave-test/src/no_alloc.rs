@@ -5,8 +5,8 @@
 //! its global allocator — the guard cannot fire otherwise.
 
 use assert_no_alloc::assert_no_alloc;
-use stave_core::params::AnyParam;
-use stave_core::{Event, EventKind, NoteEvent, NoteKind, Plugin, Telemetry};
+use stave::params::AnyParam;
+use stave::{Event, EventKind, NoteEvent, NoteKind, Plugin};
 use stave_measure::signal::{Noise, Signal, Sine};
 
 use crate::PluginHarness;
@@ -61,7 +61,6 @@ pub fn check_no_alloc<P: Plugin>(name: &str, wiggle: &[&str], config: &NoAllocCo
     let block = config.block_size;
     let total = config.warmup_blocks + config.guarded_blocks;
     let mut h = PluginHarness::<P>::new(config.sample_rate, block);
-    h.plugin_mut().attach_telemetry(Telemetry::new());
     let is_instrument = h.input_channels() == 0;
 
     let note = |kind, b: usize| Event {
@@ -93,7 +92,7 @@ pub fn check_no_alloc<P: Plugin>(name: &str, wiggle: &[&str], config: &NoAllocCo
         .map(|f| config.noise.at(0, f) + tone.at(0, f))
         .collect();
 
-    let table = h.plugin().param_table();
+    let table = h.table();
     let params: Vec<&dyn AnyParam> = wiggle
         .iter()
         .map(|n| {
@@ -121,7 +120,7 @@ pub fn check_no_alloc<P: Plugin>(name: &str, wiggle: &[&str], config: &NoAllocCo
             // Each param on its own sine through its full range.
             for (k, p) in params.iter().enumerate() {
                 let t = (b as f64 * 0.13 + k as f64 * 0.37).sin() * 0.5 + 0.5;
-                p.set_plain(p.normalized_to_plain(t));
+                p.set_value(p.denormalize(t));
             }
             run_block(&mut h, config.warmup_blocks + b);
         }

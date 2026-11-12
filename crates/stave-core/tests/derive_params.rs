@@ -3,8 +3,9 @@
 //! `#[param(skip)]` excludes non-param fields.
 
 use stave_core::params::{
-    BoolParam, EnumParam, FloatParam, ParamEnum, ParamId, Params, Range, Smooth, Taper, Unit,
+    BoolParam, EnumParam, FloatParam, ParamEnum, ParamId, Params, Range, Smooth, Unit,
 };
+use stave_core::Params;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum Voice {
@@ -39,13 +40,13 @@ struct DemoParams {
 impl DemoParams {
     fn new() -> Self {
         Self {
-            drive: FloatParam::new(10, "drive", 0.0, Range::new(-12.0, 36.0, Taper::Linear))
-                .with_unit(Unit::Db { floor_db: None })
-                .with_smooth(Smooth::Exp { ms: 15.0 }),
-            cutoff: FloatParam::new(11, "cutoff", 1200.0, Range::new(20.0, 20_000.0, Taper::Log))
-                .with_unit(Unit::Hz),
-            voice: EnumParam::new(12, "voice", Voice::Flat),
-            power: BoolParam::new(13, "power", true),
+            drive: FloatParam::new(ParamId(10), "drive", Range::linear(-12.0, 36.0))
+                .unit(Unit::Db)
+                .smooth(Smooth::ms(15.0)),
+            cutoff: FloatParam::new(ParamId(11), "cutoff", Range::log(20.0, 20_000.0)).default(1200.0)
+                .unit(Unit::Hz),
+            voice: EnumParam::new(ParamId(12), "voice", Voice::Flat),
+            power: BoolParam::new(ParamId(13), "power", true),
             _scratch: Vec::new(),
         }
     }
@@ -74,11 +75,11 @@ fn derive_table_is_id_addressable_and_live() {
     cutoff.set_normalized(0.5);
     // Log 20..20k midpoint = geometric mean.
     assert!(
-        (cutoff.plain() - 632.455).abs() < 0.01,
+        (cutoff.value() - 632.455).abs() < 0.01,
         "{}",
-        cutoff.plain()
+        cutoff.value()
     );
-    assert_eq!(&*cutoff.format_plain(cutoff.plain()), "632.5 Hz");
+    assert_eq!(&*cutoff.format(cutoff.value()), "632.5 Hz");
     // The dyn view and the typed field are the same object.
-    assert_eq!(p.cutoff.plain(), cutoff.plain());
+    assert_eq!(f64::from(p.cutoff.value()), cutoff.value() as f32 as f64);
 }

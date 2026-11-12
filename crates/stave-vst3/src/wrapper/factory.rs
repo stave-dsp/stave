@@ -62,7 +62,7 @@ pub(super) unsafe extern "C" fn factory_get_factory_info<P: Vst3Export>(
             // SAFETY: all-zero is a valid `PFactoryInfo` (char arrays, an
             // integer).
             *dst = unsafe { mem::zeroed() };
-            let desc = <P as Plugin>::DESCRIPTOR;
+            let desc = P::INFO;
             write_cstr_into(&mut dst.vendor, desc.vendor);
             write_cstr_into(&mut dst.url, desc.url);
             // Email — we don't have one in the descriptor; leave empty.
@@ -92,7 +92,7 @@ pub(super) unsafe extern "C" fn factory_get_class_info<P: Vst3Export>(
     ffi_entry::<P, _>(
         || K_INTERNAL_ERROR,
         || {
-            let desc = <P as Plugin>::DESCRIPTOR;
+            let desc = P::INFO;
             // SAFETY: all-zero is a valid `PClassInfo` (a byte id, integers, char
             // arrays).
             *dst = unsafe { mem::zeroed() };
@@ -117,7 +117,7 @@ pub(super) unsafe extern "C" fn factory_get_class_info_2<P: Vst3Export>(
     ffi_entry::<P, _>(
         || K_INTERNAL_ERROR,
         || {
-            let desc = <P as Plugin>::DESCRIPTOR;
+            let desc = P::INFO;
             // SAFETY: all-zero is a valid `PClassInfo2` (a byte id, integers, char
             // arrays).
             *dst = unsafe { mem::zeroed() };
@@ -128,7 +128,7 @@ pub(super) unsafe extern "C" fn factory_get_class_info_2<P: Vst3Export>(
             dst.class_flags = 0;
             write_subcategories::<P>(&mut dst.sub_categories);
             write_cstr_into(&mut dst.vendor, desc.vendor);
-            write_cstr_into(&mut dst.version, desc.version);
+            write_cstr_into(&mut dst.version, P::VERSION);
             write_cstr_into(&mut dst.sdk_version, c"VST 3.7.0");
             K_RESULT_OK
         },
@@ -147,18 +147,18 @@ pub(super) unsafe extern "C" fn factory_get_class_info_unicode<P: Vst3Export>(
     ffi_entry::<P, _>(
         || K_INTERNAL_ERROR,
         || {
-            let desc = <P as Plugin>::DESCRIPTOR;
+            let desc = P::INFO;
             // SAFETY: all-zero is a valid `PClassInfoW` (a byte id, integers, char
             // arrays).
             *dst = unsafe { mem::zeroed() };
             dst.cid = P::COMPONENT_CID;
             dst.cardinality = K_MANY_INSTANCES;
             write_cstr_into(&mut dst.category, CATEGORY_EFFECT);
-            write_utf16_name(&mut dst.name, cstr_to_str(desc.name));
+            write_utf16_name(&mut dst.name, desc.name);
             dst.class_flags = 0;
             write_subcategories::<P>(&mut dst.sub_categories);
-            write_utf16_name(&mut dst.vendor, cstr_to_str(desc.vendor));
-            write_utf16_name(&mut dst.version, cstr_to_str(desc.version));
+            write_utf16_name(&mut dst.vendor, desc.vendor);
+            write_utf16_name(&mut dst.version, P::VERSION);
             write_utf16_name(&mut dst.sdk_version, "VST 3.7.0");
             K_RESULT_OK
         },
@@ -213,15 +213,14 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
     let floor = [WrapperTaps::FLOOR_DB; 3];
     taps.publish_peaks(floor, floor);
 
-    let mut plugin_obj = P::new();
-    plugin_obj.attach_telemetry(telemetry.clone());
-    let diagnostics = Diagnostics::new(&P::DESCRIPTOR);
+    let plugin_obj = P::new(&telemetry);
+    let diagnostics = Diagnostics::new(&P::INFO);
     diagnostics.log.add(Box::new(TelemetrySink(telemetry.clone())));
-    let (param_table, face) = (plugin_obj.param_table(), plugin_obj.face());
+    let (param_table, face) = (plugin_obj.params(), plugin_obj.face());
     if let Err(e) = param_table.validate() {
         // Author bug (duplicate or reserved ids): refuse the instance
         // loudly rather than corrupt automation.
-        Diagnostics::new(&P::DESCRIPTOR).log.write(
+        Diagnostics::new(&P::INFO).log.write(
             Severity::PluginMisbehaving,
             &format_args!("param table invalid: {e}"),
         );
@@ -232,7 +231,7 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
     // hosts may query it before setActive.
     let programs = crate::programs::Programs::new(plugin_obj.presets());
     let shared = SharedState::new(44_100.0);
-    shared.set_latency(plugin_obj.latency_samples());
+    shared.set_latency(plugin_obj.latency());
     let inst = Box::into_raw(Box::new(Instance::<P> {
         component: ComponentObj {
             vtbl: ptr::null(),
@@ -264,7 +263,7 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
         bypass_id: (0..param_table.count())
             .filter_map(|i| param_table.by_index(i))
             .find(|p| p.meta().flags.bypass)
-            .map(|p| p.meta().id.0),
+            .map(|p| p.meta().id),
         units: crate::units::Units::new(param_table.as_ref()),
         param_table,
         programs,
@@ -283,11 +282,11 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
     // because each sub-object needs the parent's heap address.
     // SAFETY: `inst` is the fresh, unshared allocation.
     unsafe {
-        (*inst).component.vtbl = P::component_vtbl();
+        (*inst).component.vtbl = component_vtbl::<P>();
         (*inst).component.parent = inst;
-        (*inst).processor.vtbl = P::processor_vtbl();
+        (*inst).processor.vtbl = processor_vtbl::<P>();
         (*inst).processor.parent = inst;
-        (*inst).controller.vtbl = P::controller_vtbl();
+        (*inst).controller.vtbl = controller_vtbl::<P>();
         (*inst).controller.parent = inst;
         (*inst).pcr.vtbl = ptr::addr_of!((*inst).pcr_vtbl);
         (*inst).pcr.parent = inst;

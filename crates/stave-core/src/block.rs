@@ -5,7 +5,7 @@
 //! each lane count); the framework keeps the mechanics.
 //!
 //! ```ignore
-//! let lanes = ctx.lanes::<2>();
+//! let lanes = block.lanes::<2>();
 //! match lanes.active() {
 //!     2 => {
 //!         let peaks = lanes.run(|fr| {
@@ -21,7 +21,7 @@
 
 use core::marker::PhantomData;
 
-use crate::process::ProcessCtx;
+use crate::process::Block;
 
 /// Block peaks, measured by the scaffolding: `input` is the raw
 /// per-frame peak over the active input lanes (before the engine
@@ -33,7 +33,7 @@ pub struct Peaks {
 }
 
 /// Lane-sliced access to one block. Constructed by
-/// [`ProcessCtx::lanes`]; undriven output channels are zeroed at
+/// [`Block::lanes`]; undriven output channels are zeroed at
 /// construction, so an early return can never leak stale samples.
 pub struct Lanes<'c, const MAX: usize> {
     frames: usize,
@@ -43,7 +43,7 @@ pub struct Lanes<'c, const MAX: usize> {
     in_active: usize,
     in_ptrs: [*const f32; MAX],
     out_ptrs: [*mut f32; MAX],
-    _borrows_ctx: PhantomData<&'c mut ()>,
+    _borrows_block: PhantomData<&'c mut ()>,
 }
 
 /// One frame's view: read the inputs, write the outputs. Writes are
@@ -54,18 +54,17 @@ pub struct LaneFrame<'l, const MAX: usize> {
     peak_out: &'l mut f32,
 }
 
-impl<'a> ProcessCtx<'a> {
+impl Block<'_> {
     /// The block's lane view, at most `MAX` lanes (the engine's own
-    /// capacity). For an EFFECT, active = min(inputs, outputs, MAX);
-    /// for a GENERATOR (zero inputs — instruments) the lanes are
-    /// OUTPUT-driven: active = min(outputs, MAX) and `input()` reads
-    /// silence (the chime consumer forced this: min(0, out) locked
-    /// every instrument out of its own outputs). Output channels
-    /// beyond the active set are zeroed here and now.
+    /// capacity). For an effect, active = min(inputs, outputs, MAX); for
+    /// a generator (no inputs: instruments) the lanes follow the
+    /// outputs, active = min(outputs, MAX), and `input()` reads silence.
+    /// Output channels beyond the active set are zeroed here and now.
     pub fn lanes<const MAX: usize>(&mut self) -> Lanes<'_, MAX> {
-        let frames = self.frames;
-        let in_chans = self.input.channel_count();
-        let out_chans = self.output.channel_count();
+        let frames = self.frames();
+        let (input, output) = self.io();
+        let in_chans = input.channel_count();
+        let out_chans = output.channel_count();
         let active = if in_chans == 0 {
             out_chans.min(MAX)
         } else {
@@ -74,15 +73,17 @@ impl<'a> ProcessCtx<'a> {
         let in_active = in_chans.min(active);
         // Undriven outputs are silence, unconditionally.
         for c in active..out_chans {
-            self.output.channel(c)[..frames].fill(0.0);
+            output.channel_mut(c)[..frames].fill(0.0);
         }
         let mut in_ptrs = [core::ptr::null::<f32>(); MAX];
         let mut out_ptrs = [core::ptr::null_mut::<f32>(); MAX];
-        for l in 0..active {
-            if l < in_active {
-                in_ptrs[l] = self.input.channel_ref(l).as_ptr();
-            }
-            out_ptrs[l] = self.output.channel(l).as_mut_ptr();
+        for l in 0..in_active {
+            in_ptrs[l] = input.channel(l).as_ptr();
+        }
+        // Each output channel's pointer is taken once, from the buffer's
+        // own list (no reborrow of one channel through another).
+        for (l, &ptr) in output.ptrs().iter().take(active).enumerate() {
+            out_ptrs[l] = ptr;
         }
         Lanes {
             frames,
@@ -90,7 +91,7 @@ impl<'a> ProcessCtx<'a> {
             in_active,
             in_ptrs,
             out_ptrs,
-            _borrows_ctx: PhantomData,
+            _borrows_block: PhantomData,
         }
     }
 }
@@ -115,7 +116,7 @@ impl<'c, const MAX: usize> Lanes<'c, MAX> {
         for f in 0..self.frames {
             for l in 0..self.in_active {
                 // SAFETY: `in_ptrs[l]` came from a live channel slice
-                // of at least `frames` samples (AudioBuffer::from_raw
+                // of at least `frames` samples (InputBuffer::from_raw
                 // contract); `f < frames`, `l < in_active`.
                 let x = unsafe { *self.in_ptrs[l].add(f) };
                 peaks.input = peaks.input.max(x.abs());
@@ -132,6 +133,12 @@ impl<'c, const MAX: usize> Lanes<'c, MAX> {
 }
 
 impl<const MAX: usize> LaneFrame<'_, MAX> {
+    /// How many lanes are live (as [`Lanes::active`]).
+    #[inline]
+    pub fn lanes(&self) -> usize {
+        self.lanes.active
+    }
+
     /// This frame's position in the block (scopes, schedules).
     #[inline]
     pub fn index(&self) -> usize {
@@ -147,7 +154,7 @@ impl<const MAX: usize> LaneFrame<'_, MAX> {
         if lane >= self.lanes.in_active {
             return 0.0; // a generator's inputs are silence
         }
-        // SAFETY: bounds asserted; pointer validity per from_raw.
+        // SAFETY: bounds asserted; pointer validity per InputBuffer::from_raw.
         unsafe { *self.lanes.in_ptrs[lane].add(self.index) }
     }
 
@@ -157,7 +164,7 @@ impl<const MAX: usize> LaneFrame<'_, MAX> {
         assert!(lane < self.lanes.active, "lane {lane} is not active");
         *self.peak_out = self.peak_out.max(value.abs());
         // SAFETY: bounds asserted; pointer validity + no-alias per
-        // from_raw; the ctx borrow held by Lanes keeps these live.
+        // OutputBuffer::from_raw; the block borrow held by Lanes keeps these live.
         unsafe { *self.lanes.out_ptrs[lane].add(self.index) = value };
     }
 }

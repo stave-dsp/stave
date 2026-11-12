@@ -2966,6 +2966,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "stave"
+version = "0.2.0"
+dependencies = [
+ "stave-clap",
+ "stave-core",
+ "stave-dsp",
+ "stave-face",
+ "stave-macros",
+ "stave-vst3",
+]
+
+[[package]]
 name = "stave-bench"
 version = "0.2.0"
 dependencies = [
@@ -3102,6 +3114,7 @@ name = "stave-test"
 version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
+ "stave",
  "stave-core",
  "stave-dsp",
  "stave-face",
@@ -3115,13 +3128,9 @@ name = "stave-tilt-vst3"
 version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
- "stave-clap",
- "stave-core",
- "stave-dsp",
- "stave-face",
+ "stave",
  "stave-host",
  "stave-test",
- "stave-vst3",
 ]
 
 [[package]]

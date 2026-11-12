@@ -15,8 +15,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use stave_clap::sys::*;
-use stave_core::params::{BoolParam, FloatParam, ParamFlags, Range, Taper};
-use stave_core::{PluginDescriptor, ProcessCtx, Processor, Spec};
+use stave_core::params::{BoolParam, FloatParam, IndexedParams, Params, Range};
+use stave_core::runtime::Erased;
+use stave_core::{Block, Info, ParamId, Telemetry};
 
 // ---------------------------------------------------------------------------
 // Allocation counting, per thread, only while armed.
@@ -63,7 +64,7 @@ fn allocations_in(f: impl FnOnce()) -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// Fixture: a StavePlugin (indexed table) with many params and a bypass.
+// Fixture: an indexed table with many params and a bypass.
 // ---------------------------------------------------------------------------
 
 const PARAMS: u32 = 64;
@@ -74,7 +75,7 @@ struct WideParams {
     bypass: BoolParam,
 }
 
-impl stave_core::params::Params for WideParams {
+impl Params for WideParams {
     fn count(&self) -> usize {
         self.knobs.len() + 1
     }
@@ -91,55 +92,51 @@ impl stave_core::params::Params for WideParams {
 static SORTED: AtomicBool = AtomicBool::new(false);
 static SEEN: AtomicUsize = AtomicUsize::new(0);
 
-struct Wide;
+struct Wide {
+    table: Arc<dyn Params>,
+}
 
-impl Processor for Wide {
-    type Params = WideParams;
-    fn new(_params: Arc<WideParams>) -> Self {
-        Wide
-    }
-    fn process(&mut self, ctx: &mut ProcessCtx<'_>) {
-        let changes = ctx.params.changes();
-        // Each event's value encodes its arrival order.
-        let sorted = changes.windows(2).all(|w| {
-            (w[0].sample_offset, w[0].plain_value) < (w[1].sample_offset, w[1].plain_value)
+impl Erased for Wide {
+    const INFO: Info = Info {
+        id: "com.stave.test.wide-clap",
+        name: "Wide (CLAP)",
+        vendor: "stave tests",
+        description: "realtime fixture",
+        features: &[],
+        ..Info::EFFECT
+    };
+    fn new(_telemetry: &Telemetry) -> Self {
+        let params = Arc::new(WideParams {
+            knobs: (0..PARAMS)
+                .map(|i| FloatParam::new(ParamId(i), "knob", Range::linear(0.0, 1.0)))
+                .collect(),
+            bypass: BoolParam::bypass(ParamId(BYPASS_ID)),
         });
+        Wide {
+            table: Arc::new(IndexedParams::new(params)),
+        }
+    }
+    fn params(&self) -> Arc<dyn Params> {
+        self.table.clone()
+    }
+    fn process(&mut self, block: &mut Block<'_>) {
+        let changes = block.params().changes();
+        // Each event's value encodes its arrival order.
+        let sorted = changes
+            .windows(2)
+            .all(|w| (w[0].frame, w[0].value) < (w[1].frame, w[1].value));
         SORTED.store(sorted, Ordering::SeqCst);
         SEEN.store(changes.len(), Ordering::SeqCst);
-        for c in 0..ctx.output.channel_count() {
-            ctx.output
-                .channel(c)
-                .copy_from_slice(ctx.input.channel_ref(c));
+        let (input, output) = block.io();
+        for (x, y) in input.channels().zip(output.channels_mut()) {
+            y.copy_from_slice(x);
         }
     }
 }
 
-impl stave_clap::stave_face::FaceSpec for Wide {}
+impl stave_clap::wrapper::ClapExport for Wide {}
 
-impl Spec for Wide {
-    const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
-        id: c"com.stave.test.wide-clap",
-        name: c"Wide (CLAP)",
-        vendor: c"stave tests",
-        version: c"0.0.0",
-        url: c"",
-        description: c"realtime fixture",
-        features: &[],
-    };
-    fn params() -> Arc<WideParams> {
-        Arc::new(WideParams {
-            knobs: (0..PARAMS)
-                .map(|i| FloatParam::new(i, "knob", 0.0, Range::new(0.0, 1.0, Taper::Linear)))
-                .collect(),
-            bypass: BoolParam::new(BYPASS_ID, "bypass", false).with_flags(ParamFlags {
-                bypass: true,
-                ..Default::default()
-            }),
-        })
-    }
-}
-
-stave_clap::stave_clap_export!(Wide);
+stave_clap::export_clap!(Wide);
 
 // ---------------------------------------------------------------------------
 // Host side: an input event list of param values.
@@ -191,7 +188,7 @@ fn a_block_of_many_param_changes_is_sorted_without_allocating() {
         let plugin = ((*factory).create_plugin.unwrap())(
             factory,
             ptr::null(),
-            <Wide as Spec>::DESCRIPTOR.id.as_ptr(),
+            c"com.stave.test.wide-clap".as_ptr(),
         );
         assert!(!plugin.is_null());
         assert!(((*plugin).init.unwrap())(plugin));

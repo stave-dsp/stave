@@ -12,7 +12,7 @@ pub use faults::{FaultCounts, ProcessFault};
 pub use log::{log_dir, FileSink, Log, LogSink, Severity, TelemetrySink};
 pub use panic_log::log_panics;
 
-use crate::PluginDescriptor;
+use crate::Info;
 
 pub struct Diagnostics {
     pub log: Log,
@@ -21,11 +21,11 @@ pub struct Diagnostics {
 
 impl Diagnostics {
     /// Logs to `<log_dir>/<plugin id>.log`.
-    pub fn new(descriptor: &PluginDescriptor) -> Self {
+    pub fn new(info: &Info) -> Self {
         let file = log_dir().map(|dir| -> Box<dyn LogSink> {
             Box::new(FileSink {
-                path: dir.join(format!("{}.log", descriptor.id.to_string_lossy())),
-                source: descriptor.name.to_string_lossy().into_owned(),
+                path: dir.join(format!("{}.log", info.id)),
+                source: info.name.to_string(),
             })
         });
         Self {

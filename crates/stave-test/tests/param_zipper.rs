@@ -4,8 +4,8 @@
 //! worse — the harness proves smoothing earns its cost, in both
 //! directions.
 
-use stave_core::params::{AnyParam, ContinuousControl, FloatParam, Range, Smooth, Taper};
-use stave_core::ParamBlock;
+use stave_core::params::{AnyParam, FloatParam, ParamId, Range, Smooth, Smoother};
+use stave_core::{Environment, ParamBlock};
 use stave_measure::zipper::{zipper_report, ZipperConfig};
 
 const N: usize = 32_768;
@@ -19,15 +19,15 @@ const GUARD_HZ: f64 = 200.0;
 /// exactly what DAW automation playback does.
 fn render(param: &FloatParam) -> Vec<f64> {
     let any = param as &dyn AnyParam;
-    let mut control = ContinuousControl::new(param);
-    control.prepare(FS, param);
+    let mut control = Smoother::new(param);
+    control.prepare(&Environment::new(FS as f32, BLOCK));
     let two_pi = 2.0 * std::f64::consts::PI;
     let tau_samples = 0.015 * FS;
     let trajectory = |i: usize| 0.25 + 0.75 * (1.0 - (-(i as f64) / tau_samples).exp());
     let mut out = Vec::with_capacity(N);
     for block_start in (0..N).step_by(BLOCK) {
-        any.set_plain(trajectory(block_start)); // host automation point
-        let mut ramp = control.begin_block(ParamBlock::empty(), param);
+        any.set_value(trajectory(block_start)); // host automation point
+        let mut ramp = control.ramp_over(ParamBlock::empty(), param);
         for i in block_start..block_start + BLOCK {
             let g = ramp.next_f64();
             out.push(g * (two_pi * M as f64 * i as f64 / N as f64).sin());
@@ -38,9 +38,9 @@ fn render(param: &FloatParam) -> Vec<f64> {
 
 #[test]
 fn default_smoothing_meets_the_limit_and_off_is_worse() {
-    let smoothed = FloatParam::new(1, "gain", 0.25, Range::new(0.0, 1.0, Taper::Linear)); // Smooth::DEFAULT
-    let unsmoothed = FloatParam::new(2, "gain", 0.25, Range::new(0.0, 1.0, Taper::Linear))
-        .with_smooth(Smooth::Off);
+    let smoothed = FloatParam::new(ParamId(1), "gain", Range::linear(0.0, 1.0)).default(0.25); // Smooth::DEFAULT
+    let unsmoothed = FloatParam::new(ParamId(2), "gain", Range::linear(0.0, 1.0)).default(0.25)
+        .smooth(Smooth::Off);
 
     let r_smooth = zipper_report(
         &render(&smoothed),

@@ -1,7 +1,7 @@
 //! The telemetry block itself: fixed capacity, lock-free, shared between
 //! a plugin's audio thread and its editor or host.
 
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
@@ -36,13 +36,17 @@ pub struct Telemetry {
     /// L/R, the default) or the plugin (`claim_capture`).
     capture_owner: AtomicU8,
     messages: Messages,
+    /// This block's own `Arc`, so a [`Tap`](crate::Tap) registered
+    /// through `&Telemetry` keeps the block alive. Last: the layout a
+    /// host reads ends before it.
+    me: Weak<Telemetry>,
 }
 
 impl Telemetry {
     /// A fresh block, on the heap (it is kilobytes) and shared: the
     /// wrapper, the plugin's taps and the editor each hold the `Arc`.
     pub fn new() -> Arc<Self> {
-        Arc::new(Self {
+        Arc::new_cyclic(|me| Self {
             abi_version: ABI_VERSION,
             taps_used: AtomicU16::new(0),
             breakpoints_used: AtomicU16::new(0),
@@ -55,7 +59,15 @@ impl Telemetry {
             capture: CaptureFrame::zeroed(),
             capture_owner: AtomicU8::new(0),
             messages: Messages::zeroed(),
+            me: me.clone(),
         })
+    }
+
+    /// The shared handle to this block.
+    pub fn shared(&self) -> Arc<Telemetry> {
+        // Every `Telemetry` is built by `new`, inside its `Arc`, and
+        // `&self` proves that `Arc` is alive.
+        self.me.upgrade().expect("a Telemetry lives in the Arc `new` made")
     }
 
     /// The layout version this block was built with ([`ABI_VERSION`]).

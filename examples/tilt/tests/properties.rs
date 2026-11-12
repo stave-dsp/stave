@@ -5,52 +5,30 @@
 //! * the PIVOT holds still (±0.1 dB at 650 Hz at full tilt);
 //! * tilt 0 is BIT-FLAT (true bypass, not a unity recursion).
 
-use std::sync::Arc;
-
-use stave_core::{AudioBuffer, Plugin, ProcessCtx, Telemetry};
+use stave_test::PluginHarness;
+use stave_tilt_vst3::Tilt;
 
 const FS: f32 = 48_000.0;
 const BLOCK: usize = 256;
 
 fn render(set: &[(&str, f64)], input: &[f32]) -> Vec<f32> {
-    let mut plugin = stave_tilt_vst3::Tilt::new();
-    let telemetry = Telemetry::new();
-    plugin.attach_telemetry(telemetry.clone());
-    let table = plugin.param_table();
+    let mut h = PluginHarness::<Tilt>::new(FS, BLOCK);
+    let table = h.table();
     for (n, v) in set {
         table
             .by_name(n)
             .unwrap_or_else(|| panic!("param '{n}'"))
-            .set_plain(*v);
+            .set_value(*v);
     }
-    plugin.activate(FS, BLOCK);
     let mut out = Vec::with_capacity(input.len());
-    let mut in_l = vec![0.0f32; BLOCK];
-    let mut in_r = vec![0.0f32; BLOCK];
-    let mut out_l = vec![0.0f32; BLOCK];
-    let mut out_r = vec![0.0f32; BLOCK];
     for chunk in input.chunks(BLOCK) {
-        in_l[..chunk.len()].copy_from_slice(chunk);
-        in_l[chunk.len()..].fill(0.0);
-        in_r.copy_from_slice(&in_l);
-        let mut in_ptrs = [core::ptr::null_mut(); 2];
-        let mut out_ptrs = [core::ptr::null_mut(); 2];
-        let inb = AudioBuffer::from_slices(&mut in_ptrs, [&mut in_l, &mut in_r], BLOCK);
-        let outb = AudioBuffer::from_slices(&mut out_ptrs, [&mut out_l, &mut out_r], BLOCK);
-        let mut ctx = ProcessCtx {
-            sample_rate: FS,
-            frames: BLOCK,
-            transport: None,
-            input: inb,
-            output: outb,
-            aux: &[],
-            params: stave_core::ParamBlock::empty(),
-            events: &[],
-        };
-        plugin.process(&mut ctx);
-        out.extend_from_slice(&out_l);
+        for ch in h.inputs_mut() {
+            ch[..chunk.len()].copy_from_slice(chunk);
+            ch[chunk.len()..].fill(0.0);
+        }
+        h.run_block(&[]);
+        out.extend_from_slice(&h.outputs()[0]);
     }
-    let _ = Arc::strong_count(&telemetry);
     out
 }
 
@@ -64,7 +42,7 @@ fn sine(freq: f32, n: usize) -> Vec<f32> {
 /// skipping the first half (filter + ramp settling).
 fn gain_db(freq: f32, tilt: f64) -> f64 {
     let input = sine(freq, 48_000);
-    let out = render(&[("tilt", tilt)], &input);
+    let out = render(&[("Tilt", tilt)], &input);
     let rms = |w: &[f32]| {
         (w.iter().map(|x| f64::from(*x) * f64::from(*x)).sum::<f64>() / w.len() as f64).sqrt()
     };
@@ -103,7 +81,7 @@ fn the_pivot_holds_still() {
 #[test]
 fn zero_tilt_is_bit_flat() {
     let input = sine(1_000.0, 12_800);
-    let out = render(&[("tilt", 0.0)], &input);
+    let out = render(&[("Tilt", 0.0)], &input);
     for (i, (x, y)) in input.iter().zip(&out).enumerate() {
         assert!(x.to_bits() == y.to_bits(), "sample {i}: {x} vs {y}");
     }

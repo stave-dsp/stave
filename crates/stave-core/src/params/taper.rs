@@ -53,14 +53,50 @@ pub enum Taper {
 
 /// A parameter's plain-value range plus its taper. The single source of
 /// truth for normalized↔plain everywhere (wrappers, editor, state).
+///
+/// Fields are private: every constructor validates, so a `Range` the
+/// taper cannot represent (a log range through zero) cannot exist.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Range {
-    pub min: f64,
-    pub max: f64,
-    pub taper: Taper,
+    min: f64,
+    max: f64,
+    taper: Taper,
 }
 
 impl Range {
+    /// `min..=max`, straight line.
+    pub fn linear(min: f64, max: f64) -> Self {
+        Self::new(min, max, Taper::Linear)
+    }
+
+    /// `min..=max`, equal travel per octave; `0 < min`.
+    pub fn log(min: f64, max: f64) -> Self {
+        Self::new(min, max, Taper::Log)
+    }
+
+    /// `min..=max` with `midpoint` at half travel; `min < midpoint < max`.
+    pub fn skewed(min: f64, max: f64, midpoint: f64) -> Self {
+        Self::new(min, max, Taper::Skewed { midpoint })
+    }
+
+    pub fn min(&self) -> f64 {
+        self.min
+    }
+
+    pub fn max(&self) -> f64 {
+        self.max
+    }
+
+    pub fn taper(&self) -> Taper {
+        self.taper
+    }
+
+    /// The value inside the range nearest 0 — a param's default when it
+    /// declares none.
+    pub fn nearest_zero(&self) -> f64 {
+        0.0f64.clamp(self.min, self.max)
+    }
+
     /// Construct, validating taper preconditions. Panics on a range the
     /// taper can't represent — these are author-written constants, and
     /// a wrong one must fail at first construction, not misbehave in a
