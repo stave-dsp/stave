@@ -615,12 +615,37 @@ struct Check {
 
 fn checks_of(src: &str) -> Result<Vec<Check>> {
     let body = &src[src.find("macro_rules! plugin_checks").ok_or("no plugin_checks! macro")?..];
+    // Only this macro: the helper macros after it mount tests of their own.
+    let body = match body["macro_rules!".len()..].find("macro_rules!") {
+        Some(end) => &body[..end + "macro_rules!".len()],
+        None => body,
+    };
     let mut out = Vec::new();
     let mut doc = String::new();
     let mut when = Vec::new();
     let mut is_test = false;
+    // Inside a documented `mod` of tests (one check, many tests): its depth.
+    let mut in_mod: Option<i32> = None;
     for line in body.lines() {
         let t = line.trim();
+        if let Some(depth) = in_mod.as_mut() {
+            *depth += t.matches('{').count() as i32 - t.matches('}').count() as i32;
+            if *depth <= 0 {
+                in_mod = None;
+            }
+            continue;
+        }
+        if let Some(rest) = t.strip_prefix("mod ").filter(|r| r.ends_with('{')) {
+            // A group of tests that is one check (`passes_validation`).
+            let name = rest.trim_end_matches('{').trim().to_string();
+            if doc.trim().is_empty() {
+                return Err(format!("plugin_checks!: mod {name} has no doc comment").into());
+            }
+            out.push(Check { name, doc: doc.trim().to_string(), when: std::mem::take(&mut when) });
+            doc.clear();
+            in_mod = Some(1);
+            continue;
+        }
         if let Some(d) = t.strip_prefix("///") {
             doc.push_str(d.trim());
             doc.push(' ');
