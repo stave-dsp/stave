@@ -25,6 +25,7 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 
 use crate::pixels::Format;
 
@@ -236,7 +237,9 @@ impl FaceView {
     pub fn detach(&mut self) {
         if let Some(m) = self.mount.get_mut().take() {
             let _ = m.conn.destroy_window(m.window);
-            let _ = m.conn.flush();
+            // A round trip, not a flush: the window is gone before the
+            // host (on its own connection) looks at its tree again.
+            let _ = m.conn.sync();
         }
     }
 
