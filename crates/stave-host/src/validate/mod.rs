@@ -136,6 +136,9 @@ pub struct Check {
 /// Every threshold and duration the checks judge by.
 #[derive(Clone, Debug, Default)]
 pub struct SuiteConfig {
+    /// Which of its params a per-param check (sweep, glide, solver)
+    /// takes: all by default.
+    pub params: ParamShard,
     pub excitation: Excitation,
     pub output: OutputConfig,
     pub sweep: SweepConfig,
@@ -147,6 +150,43 @@ pub struct SuiteConfig {
     pub deadline: DeadlineConfig,
     pub state: StateConfig,
     pub bypass: BypassConfig,
+}
+
+/// One of `count` disjoint parts of a check's params: the param at
+/// position `i` of the check's list is in part `i % count`. The parts
+/// cover every param once, so a per-param check run part by part (each
+/// on its own fresh instances, side by side) judges what it judges run
+/// whole.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ParamShard {
+    pub part: usize,
+    pub count: usize,
+}
+
+impl ParamShard {
+    /// Every param.
+    pub const ALL: Self = Self { part: 0, count: 1 };
+
+    /// Part `part` (from 0) of `count`.
+    pub fn new(part: usize, count: usize) -> Self {
+        assert!(part < count, "part {part} of {count}");
+        Self { part, count }
+    }
+
+    /// The params of `list` in this part, in order.
+    pub fn take<T>(&self, list: Vec<T>) -> Vec<T> {
+        list.into_iter()
+            .enumerate()
+            .filter(|(i, _)| i % self.count == self.part)
+            .map(|(_, p)| p)
+            .collect()
+    }
+}
+
+impl Default for ParamShard {
+    fn default() -> Self {
+        Self::ALL
+    }
 }
 
 /// What drives the instance under test: noise for an effect, a held
@@ -321,6 +361,18 @@ mod tests {
         assert_eq!(causes[0], "could not load a fresh instance");
         assert_eq!(causes[1], "could not open /x.vst3");
         assert_eq!(causes[2], "dlopen failed: no such file");
+    }
+
+    #[test]
+    fn param_parts_cover_every_param_once() {
+        for count in 1..6 {
+            let mut seen: Vec<usize> = (0..count)
+                .flat_map(|part| ParamShard::new(part, count).take((0..11).collect()))
+                .collect();
+            seen.sort_unstable();
+            assert_eq!(seen, (0..11).collect::<Vec<_>>(), "{count} parts");
+        }
+        assert_eq!(ParamShard::default(), ParamShard::ALL);
     }
 
     #[test]

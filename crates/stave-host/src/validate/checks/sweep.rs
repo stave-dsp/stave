@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::drive::Driver;
-use crate::validate::{CheckError, Ctx, Outcome};
+use crate::validate::{CheckError, Ctx, Outcome, ParamShard};
 use stave_measure::level::{db, Meter};
 
 #[derive(Copy, Clone, Debug)]
@@ -36,15 +36,20 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let (excitation, config) = (&ctx.config.excitation, ctx.config.sweep);
     let mut inst = ctx.fresh()?;
     let (signal, notes) = excitation.for_instance(inst.as_ref());
-    let params: Vec<_> = inst
-        .params()
-        .into_iter()
-        .filter(|c| c.sweepable())
-        .collect();
+    let params: Vec<_> = ctx.config.params.take(
+        inst.params()
+            .into_iter()
+            .filter(|c| c.sweepable())
+            .collect(),
+    );
     let mut d = Driver::new(inst.as_mut());
     d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
     if params.is_empty() {
-        return Ok(Outcome::not_applicable("no sweepable params"));
+        return Ok(Outcome::not_applicable(if ctx.config.params == ParamShard::ALL {
+            "no sweepable params"
+        } else {
+            "no sweepable params in this part"
+        }));
     }
     let mut offenders = vec![];
     let mut loudest = (f64::NEG_INFINITY, json!(null));
@@ -93,8 +98,8 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
 mod tests {
     use super::*;
     use crate::testing::{Delay, Feedback, Gain};
-    use crate::validate::checks::outcome;
-    use crate::validate::Status;
+    use crate::validate::checks::{outcome, outcome_with};
+    use crate::validate::{Status, SuiteConfig};
 
     #[test]
     fn sane_ranges_pass_and_count_params() {
@@ -126,6 +131,22 @@ mod tests {
             values.iter().all(|&v| v > 1.0),
             "only feedback above 1 grows: {values:?}"
         );
+    }
+
+    #[test]
+    fn parts_sweep_every_param_once_and_the_runaway_in_its_own_part() {
+        let part = |i| SuiteConfig { params: ParamShard::new(i, 2), ..SuiteConfig::default() };
+        let swept: Vec<_> = (0..2)
+            .map(|i| outcome_with(param_sweep, part(i), || Box::new(Gain::new(1, 1))))
+            .collect();
+        assert!(swept.iter().all(|v| v.status == Status::Pass));
+        let total: u64 = swept.iter().map(|v| v.details["params_swept"].as_u64().unwrap()).sum();
+        assert_eq!(total, 2);
+        // Feedback's one param is in part 0; part 1 has nothing to sweep.
+        let runaway = outcome_with(param_sweep, part(0), || Box::new(Feedback::new(1)));
+        assert_eq!(runaway.status, Status::Fail);
+        let empty = outcome_with(param_sweep, part(1), || Box::new(Feedback::new(1)));
+        assert_eq!(empty.status, Status::NotApplicable);
     }
 
     #[test]

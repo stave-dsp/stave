@@ -78,8 +78,16 @@ pub(crate) fn outcome(
     check: fn(&mut super::Ctx) -> Result<super::Outcome, super::CheckError>,
     make: impl Fn() -> Box<dyn crate::instance::Instance>,
 ) -> super::Outcome {
+    outcome_with(check, super::SuiteConfig::default(), make)
+}
+
+#[cfg(test)]
+pub(crate) fn outcome_with(
+    check: fn(&mut super::Ctx) -> Result<super::Outcome, super::CheckError>,
+    config: super::SuiteConfig,
+    make: impl Fn() -> Box<dyn crate::instance::Instance>,
+) -> super::Outcome {
     let mut f = || Ok(make());
-    let config = super::SuiteConfig::default();
     check(&mut super::Ctx {
         factory: &mut f,
         config: &config,

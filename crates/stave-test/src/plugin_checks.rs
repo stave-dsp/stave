@@ -13,7 +13,9 @@
 //! ```
 //!
 //! It mounts, as separate tests: stave-host's validation through the
-//! plugin's VST3 entry points; no allocation in `process` while every
+//! plugin's VST3 entry points (`passes_validation::*`, a test per check
+//! and the per-param checks in parts, so they run side by side — see
+//! [`crate::validation`]); no allocation in `process` while every
 //! parameter moves (debug builds; the file's global allocator is the
 //! guard's, so give the macro a test file of its own); the perf report
 //! (release builds); the face's bindings, grabs and interaction laws (if
@@ -64,10 +66,25 @@ macro_rules! plugin_checks {
             <$krate::$plugin as $crate::__stave::Plugin>::face(&params).is_some()
         }
 
-        /// stave-host's validation suite ([`crate::validation`]), through the plugin's own VST3 entry points.
-        #[test]
-        fn passes_validation() {
-            $crate::validation::assert_passes($crate::__host::entry_points!($krate));
+        /// stave-host's validation suite (stave_test::validation), through the plugin's own VST3
+        /// entry points: a test per check, the per-param checks in parts.
+        mod passes_validation {
+            use $crate::__host::validate::ParamShard;
+
+            fn check(name: &str) {
+                $crate::validation::assert_check_passes($crate::__host::entry_points!($krate), name, ParamShard::ALL);
+            }
+
+            fn part(name: &str, part: usize) {
+                let params = ParamShard::new(part, $crate::validation::PARTS);
+                $crate::validation::assert_check_passes($crate::__host::entry_points!($krate), name, params);
+            }
+
+            $crate::__validation_tests! {
+                whole: reproducible, no_nan_inf, self_noise, silence_tail, deadline_headroom,
+                    state_roundtrip, channels_linked, channels_split, bypass_honest;
+                parts: param_sweep, params_glide, solver_converges;
+            }
         }
 
         /// No allocation in `process` while every parameter moves ([`crate::no_alloc`]). Debug builds only.
@@ -152,6 +169,51 @@ macro_rules! plugin_checks {
         #[test]
         fn deterministic() {
             $crate::checks::deterministic::<$krate::$plugin>();
+        }
+    };
+}
+
+/// The validation tests [`plugin_checks!`](macro@crate::plugin_checks)
+/// mounts: one per whole check, [`PARTS`](crate::validation::PARTS) per
+/// per-param check, and a test that they are every check of the suite.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __validation_tests {
+    (whole: $($whole:ident),* ; parts: $($parts:ident),* ;) => {
+        $(
+            #[test]
+            fn $whole() {
+                check(stringify!($whole));
+            }
+        )*
+        $(
+            mod $parts {
+                #[test]
+                fn part_1_of_4() {
+                    super::part(stringify!($parts), 0);
+                }
+                #[test]
+                fn part_2_of_4() {
+                    super::part(stringify!($parts), 1);
+                }
+                #[test]
+                fn part_3_of_4() {
+                    super::part(stringify!($parts), 2);
+                }
+                #[test]
+                fn part_4_of_4() {
+                    super::part(stringify!($parts), 3);
+                }
+            }
+        )*
+
+        #[test]
+        fn every_check_is_mounted() {
+            let mut mounted = vec![$(stringify!($whole),)* $(stringify!($parts),)*];
+            let mut suite: Vec<&str> = $crate::__host::validate::ALL.iter().map(|c| c.name).collect();
+            mounted.sort_unstable();
+            suite.sort_unstable();
+            assert_eq!(mounted, suite, "plugin_checks! mounts other checks than stave-host's suite runs");
         }
     };
 }

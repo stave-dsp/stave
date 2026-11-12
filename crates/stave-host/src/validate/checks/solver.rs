@@ -24,11 +24,12 @@ pub fn solver_converges(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         return Ok(Outcome::not_applicable("no solver telemetry"));
     }
     let (signal, notes) = excitation.for_instance(inst.as_ref());
-    let params: Vec<_> = inst
-        .params()
-        .into_iter()
-        .filter(|c| c.sweepable())
-        .collect();
+    let params: Vec<_> = ctx.config.params.take(
+        inst.params()
+            .into_iter()
+            .filter(|c| c.sweepable())
+            .collect(),
+    );
     let mut d = Driver::new(inst.as_mut());
     let hold = d.frames_for(config.hold_seconds);
     d.skip(hold, signal.as_ref(), &notes);

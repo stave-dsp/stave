@@ -87,10 +87,15 @@ pub fn params_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
             "no automatable continuous params",
         ));
     }
+    // Every param is parked for the held run; only this part's are moved.
+    let moved_params = ctx.config.params.take(params.clone());
+    if moved_params.is_empty() {
+        return Ok(Outcome::not_applicable("no params in this part"));
+    }
     let held = run(instance.as_mut(), excitation, &config, &params, None)?;
     let mut steps = vec![];
     let mut measured = 0;
-    for c in &params {
+    for c in &moved_params {
         let mut inst = ctx.fresh()?;
         let moved = run(inst.as_mut(), excitation, &config, &params, Some(c))?;
         let effect: Vec<f32> = moved.iter().zip(&held).map(|(m, h)| m - h).collect();
