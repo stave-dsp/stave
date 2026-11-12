@@ -1,0 +1,6 @@
+# The toolchain CI and every machine build with, so a green local build
+# means a green CI build. Bump deliberately (and fix new lints in the same
+# commit); .github/workflows/canary.yml tries the newest stable weekly.
+[toolchain]
+channel = "1.96.0"
+components = ["clippy", "rustfmt"]

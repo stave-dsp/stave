@@ -370,9 +370,9 @@ local one (stave-play, the old Cocoa widgets), and clap-validator, built
 from its git HEAD, no longer compiles. The plugins repo waits on its
 framework deploy key.
 
-- [ ] **C1** Pin the toolchain in `rust-toolchain.toml` (both repos) so local and CI agree; a scheduled job builds on the newest stable and opens an issue on new lints instead of breaking `main`.
-- [ ] **C2** An MSRV job (1.81, the declared `rust-version`) so the floor is real.
-- [ ] **C3** Pin external tools (clap-validator to a tag/rev, the VST3 SDK to a tag; add Tracktion's pluginval) and cache their builds.
+- [x] **C1** (rust-toolchain.toml 1.96.0 in both repos; weekly canary on newest stable opens an issue) Pin the toolchain in `rust-toolchain.toml` (both repos) so local and CI agree; a scheduled job builds on the newest stable and opens an issue on new lints instead of breaking `main`.
+- [x] **C2** An MSRV job so the floor is real. Measured: dependencies (icu 2.2 via url/eframe) need 1.86, so `rust-version` is 1.86, and CI checks it.
+- [x] **C3** (clap-validator 0.4.1, VST3 SDK v3.8.1_build_84 in both repos; pluginval still to add) Pin external tools (clap-validator to a tag/rev, the VST3 SDK to a tag; add Tracktion's pluginval) and cache their builds.
 - [ ] **C4** Sanitizers where Miri can't reach: AddressSanitizer and ThreadSanitizer (nightly) over the ABI tests, stave-host hosting a real plugin bundle, and the face runtime; a scheduled job.
 - [ ] **C5** Fuzzing (`cargo-fuzz`, short in PRs, long nightly): state chunk load (host-supplied bytes), param text parsing, the VST3/CLAP event and param-change paths, the rasterizer.
 - [ ] **C6** Every plugin through the realtime checks in CI (no allocation, no locks in `process`), via `plugin_checks!` (T3), plus the extended validator checks (T4).

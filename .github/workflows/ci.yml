@@ -1,8 +1,8 @@
-# CI and the soundness gate. Every bar here is blocking: the claim "the
+# CI: the soundness gate and the rest. Every bar here is blocking: the claim "the
 # unsafe core is Miri-clean and Loom-modelled" is only worth making
 # while this stays green. Builds are --locked against the committed
 # Cargo.lock.
-name: soundness
+name: ci
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       # The tree rules (scripts/gates.sh runs the same set locally).
@@ -42,7 +42,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets --locked
         env:
@@ -51,14 +51,23 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  msrv:
+    # The declared rust-version is a promise: hold it.
+    name: MSRV (1.86)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.86.0 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with: { key: msrv }
+      - run: cargo +1.86.0 check --workspace --all-targets --locked
+
   clippy:
     name: clippy (zero warnings, workspace lint policy)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
@@ -96,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p stave-core -p stave-debug --test loom --release
         env:
@@ -108,10 +117,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - name: Install clap-validator
-        run: cargo install --locked --git https://github.com/free-audio/clap-validator.git clap-validator
+        run: cargo install --locked --git https://github.com/free-audio/clap-validator.git --tag 0.4.1 clap-validator
       - run: scripts/validate-formats.sh clap
 
   vst3-validator:
@@ -121,18 +130,18 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - name: Cache VST3 SDK build
         id: sdk-cache
         uses: actions/cache@v4
         with:
           path: vst3sdk
-          key: vst3sdk-validator-${{ runner.os }}-v1
+          key: vst3sdk-validator-${{ runner.os }}-v3.8.1_build_84
       - name: Build Steinberg validator
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --recurse-submodules --shallow-submodules \
+          git clone --depth 1 --branch v3.8.1_build_84 --recurse-submodules --shallow-submodules \
             https://github.com/steinbergmedia/vst3sdk.git vst3sdk
           cmake -S vst3sdk -B vst3sdk/build -DCMAKE_BUILD_TYPE=Release \
             -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF \
@@ -153,7 +162,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - run: >-
           cargo check --all-targets --locked

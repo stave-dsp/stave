@@ -236,5 +236,5 @@ for only the packages the change can reach.
 
 Ship = both bundle formats validate clean: Steinberg validator 47/0
 and clap-validator 0-fail (CI runs both on push; the local recipes
-are in `.github/workflows/soundness.yml`). New ABI-touching tests
+are in `.github/workflows/ci.yml`). New ABI-touching tests
 also run under Miri.
