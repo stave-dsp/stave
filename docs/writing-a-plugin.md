@@ -49,7 +49,7 @@ deleted).
 
 ```
 <name>/
-  Cargo.toml            # [dependencies] stave; dev-deps: stave-test (+ assert_no_alloc)
+  Cargo.toml            # [dependencies] stave; [dev-dependencies] stave-test
   src/
     lib.rs              # THE ROOT — params, the Plugin impl, export!;
                         #   small plugins are this one file (Tilt)
@@ -124,11 +124,10 @@ what's over threshold; you decide on concept seams.
 
 ## Performance
 
-- **The perf report** (`stave_test::perf::perf_report`,
-  colocated as `tests/perf.rs` like the no-alloc check): every project
-  declares its representative configurations. It skips in debug
-  builds and MEASURES under
-  `cargo test --release -p <crate> --test perf -- --nocapture` — run
+- **The perf report** (`stave_test::perf::perf_report`, mounted by
+  `plugin_checks!` in `tests/checks.rs`): every project declares its
+  representative configurations. It skips in debug builds and MEASURES
+  under `cargo test --release -p <crate> --test checks perf -- --nocapture` — run
   it when touching DSP. It DOCUMENTS, it does not block (a perf gate
   on desktop hardware cries wolf): the printed table (median
   ns/frame, % of budget, spread) is the living record — update the
@@ -144,7 +143,7 @@ what's over threshold; you decide on concept seams.
   suddenly expensive."
 - **Profiling**: attach Instruments (or `samply record`) to the
   release perf report — it is a clean hot loop of exactly the plugin:
-  `cargo test --release -p <crate> --test perf` and sample that
+  `cargo test --release -p <crate> --test checks perf` and sample that
   process. Flag-level tuning is DONE (thin LTO + codegen-units 1 +
   apple-m1 baseline, measured; fat LTO measured and rejected — see
   .cargo/config.toml); the remaining frontier is algorithmic, and
@@ -245,25 +244,50 @@ Every project ships `tests/` with at least:
   duck + `Aux` contract, smear's garden and surround-lift bit-exactness,
   eddy's field topology properties. A project without its own
   property tests is not done.
-- `validation.rs` — `stave_test::validation::assert_passes(
-  stave_host::entry_points!(your_crate))`: stave-host's validation
-  suite through your VST3 exports. Passing it is the price of
-  admission to a plugin suite.
-- `editor.rs` — `stave_test::face::binds_resolve::<YourPlugin>(name)`:
-  every bind resolves against the table, and stepped gestures bind
-  stepped params, continuous ones continuous params; and
-  `stave_test::face::grabs_land::<YourPlugin>(name)`: every part lies
-  inside the face, and a press at the centre of each grab grabs that
-  part.
-- `no_alloc.rs` — `stave_test::no_alloc` with YOUR wiggle list:
-  sweep the params that rebuild tables and switch structure, not
-  just the easy trims. The test binary installs `AllocDisabler`.
+- `checks.rs` — one line, every check a plugin owes:
+
+  ```rust
+  stave_test::plugin_checks!(your_crate::YourPlugin, {
+      perf: vec![PerfCase { name: "HEAVY", set: &[("Drive", 1.0)] }],
+  });
+  ```
+
+  stave-host's validation suite through your VST3 exports; no
+  allocation in `process` while EVERY parameter sweeps (no wiggle list
+  to drift); the perf report; the face's bindings, grabs and interaction
+  laws on every page and step (when there is a face); and the host
+  behaviours pluginval and clap-validator probe — 0-frame, odd and
+  oversized blocks, every sample rate from 8 kHz to 768 kHz,
+  prepare/reset cycles that must sound as fresh, seeded random
+  automation (smoothed and sample-accurate), a state round trip that
+  sounds the same, and determinism. The macro installs the no-alloc
+  guard as the file's global allocator, so it gets a file of its own.
+- `editor.rs` — your face's own promises, through
+  `stave_test::FaceDriver`, which drives a face as a person does:
+
+  ```rust
+  let mut ui = FaceDriver::of::<Tilt>();
+  ui.press("tilt").move_to(dy(-55.0));    // a quarter of the travel up
+  assert_eq!(ui.value("tilt"), 3.0);
+  assert!(ui.shows("3.0 dB"));            // the readout, while dragging
+  ui.release().exit();
+  ui.assert_bracketed();                  // every edit begin → end
+  ```
+
+  Aim at a part by name (its param, its role or `node.id("…")`) or an
+  exact point; read values, the edits sent to the host, hover, focus,
+  cursor, the text shown and the trace that replays the session.
+- `golden.rs` (if the look matters) — `stave_test::assert_golden!`
+  per interaction state, drawn by the driver with deterministic text;
+  `STAVE_BLESS=1` writes the goldens under `tests/golden/`.
 
 Shared machinery lives in the `stave-test` LIB (`PluginHarness` —
-drive your `Plugin` in-process, no FFI — validation, face checks,
-no-alloc check); `crates/stave-test/tests/` holds the
-framework-level checks and the kernel/primitive conformance suites — they
-test the vocabulary, not you.
+drive your `Plugin` in-process, no FFI, with a chosen layout, aux
+inputs, transport, sample-accurate changes and state; it is also a
+stave-host `Instance`, so every host measurement runs on it);
+`crates/stave-test/tests/` holds the framework-level checks and the
+kernel/primitive conformance suites — they test the vocabulary, not
+you.
 
 **Refactors of shipped DSP use the bit-pin method**:
 write a throwaway FNV-hash pin over real configs BEFORE the change

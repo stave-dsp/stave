@@ -113,7 +113,7 @@ pub fn perf_report<P: Plugin>(project: &str, cases: &[PerfCase], config: &PerfCo
                 for ch in h.inputs_mut() {
                     ch.copy_from_slice(&input[at..at + block]);
                 }
-                h.run_block(events);
+                h.process(events);
                 events = &[];
             }
         };

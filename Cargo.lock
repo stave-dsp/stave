@@ -3132,9 +3132,7 @@ dependencies = [
 name = "stave-tilt-vst3"
 version = "0.2.0"
 dependencies = [
- "assert_no_alloc",
  "stave",
- "stave-host",
  "stave-test",
 ]
 

@@ -1,24 +1,8 @@
-//! The face, as a person uses it: bindings resolve against the table,
-//! every grab lands where a person aims, the face keeps every
-//! interaction law, and Tilt's own controls do what their legends say.
+//! The face, as a person uses it: Tilt's own controls do what their
+//! legends say (the generic face laws run in `checks.rs`).
 
-use stave_test::face::{dy, laws, FaceDriver, Key};
+use stave_test::face::{dy, FaceDriver, Key};
 use stave_tilt_vst3::Tilt;
-
-#[test]
-fn face_binds_resolve() {
-    stave_test::face::binds_resolve::<Tilt>("tilt");
-}
-
-#[test]
-fn face_grabs_land() {
-    stave_test::face::grabs_land::<Tilt>("tilt");
-}
-
-#[test]
-fn face_keeps_the_interaction_laws() {
-    laws::assert_all("tilt", FaceDriver::of::<Tilt>, &laws::Laws::default());
-}
 
 #[test]
 fn dragging_the_tilt_knob_up_brightens_and_shows_the_value() {

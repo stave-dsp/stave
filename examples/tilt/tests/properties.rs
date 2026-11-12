@@ -12,21 +12,17 @@ const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 256;
 
 fn run(set: &[(&str, f64)], input: &[f32]) -> Vec<f32> {
-    let mut h = PluginHarness::<Tilt>::new(SAMPLE_RATE, BLOCK);
-    let table = h.table();
-    for (n, v) in set {
-        table
-            .by_name(n)
-            .unwrap_or_else(|| panic!("param '{n}'"))
-            .set_value(*v);
-    }
+    let mut h = set
+        .iter()
+        .fold(PluginHarness::<Tilt>::builder().sample_rate(SAMPLE_RATE).block_size(BLOCK), |b, (n, v)| b.set(n, *v))
+        .build();
     let mut out = Vec::with_capacity(input.len());
     for chunk in input.chunks(BLOCK) {
         for ch in h.inputs_mut() {
             ch[..chunk.len()].copy_from_slice(chunk);
             ch[chunk.len()..].fill(0.0);
         }
-        h.run_block(&[]);
+        h.process(&[]);
         out.extend_from_slice(&h.outputs()[0]);
     }
     out

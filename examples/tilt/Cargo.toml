@@ -15,9 +15,7 @@ crate-type = ["cdylib", "rlib"]
 stave.workspace = true
 
 [dev-dependencies]
-assert_no_alloc = "1"
 stave-test = { path = "../../crates/stave-test" }
-stave-host = { path = "../../crates/stave-host" }
 
 [lints]
 workspace = true

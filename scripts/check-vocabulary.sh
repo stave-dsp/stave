@@ -47,7 +47,7 @@ report "\`Host\` names the DAW; the editor's side is \`Controller\`" \
 AUTHOR=(crates/stave/ crates/stave-core/src/ examples/ ':!crates/stave-core/src/runtime/')
 
 report "\"render\" means pixels; audio is processed (process, run)" \
-  -i '\brender(s|ed|ing)?\b' -- "${AUTHOR[@]}"
+  -i '\brender(s|ed|ing)?\b' -- "${AUTHOR[@]}" ':!*/tests/golden.rs'
 # (diagnostics report what a host did, in the host ABI's words.)
 report "the lifecycle is prepare / reset / process (activate is the wrappers')" \
   -i '\b(activate|deactivate|activation|activated)\b' -- "${AUTHOR[@]}" ':!crates/stave-core/src/diagnostics/'

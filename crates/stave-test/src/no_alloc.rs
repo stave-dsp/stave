@@ -1,6 +1,6 @@
-//! The no-alloc checks as a library: every project's colocated
-//! no_alloc test drives its full process loop under an
-//! allocation-panicking guard while `wiggle` params sweep per block.
+//! The no-alloc check: the full process loop under an
+//! allocation-panicking guard while every parameter sweeps its range,
+//! each on its own sine, block by block (`plugin_checks!` mounts it).
 //! The TEST BINARY must install `assert_no_alloc::AllocDisabler` as
 //! its global allocator — the guard cannot fire otherwise.
 
@@ -57,7 +57,7 @@ fn storm_key(block: usize) -> i16 {
     36 + (block as i16 * 7) % 48
 }
 
-pub fn check_no_alloc<P: Plugin>(name: &str, wiggle: &[&str], config: &NoAllocConfig) {
+pub fn check_no_alloc<P: Plugin>(name: &str, config: &NoAllocConfig) {
     let block = config.block_size;
     let total = config.warmup_blocks + config.guarded_blocks;
     let mut h = PluginHarness::<P>::new(config.sample_rate, block);
@@ -93,19 +93,12 @@ pub fn check_no_alloc<P: Plugin>(name: &str, wiggle: &[&str], config: &NoAllocCo
         .collect();
 
     let table = h.table();
-    let params: Vec<&dyn AnyParam> = wiggle
-        .iter()
-        .map(|n| {
-            table
-                .by_name(n)
-                .unwrap_or_else(|| panic!("{name}: param '{n}' unknown"))
-        })
-        .collect();
+    let params: Vec<&dyn AnyParam> = (0..table.count()).filter_map(|i| table.by_index(i)).collect();
     let run_block = |h: &mut PluginHarness<P>, b: usize| {
         for ch in h.inputs_mut() {
             ch.copy_from_slice(&input[b * block..(b + 1) * block]);
         }
-        h.run_block(&storm[b]);
+        h.process(&storm[b]);
         assert!(
             h.outputs().iter().all(|ch| ch[block - 1].is_finite()),
             "{name}: non-finite output"
