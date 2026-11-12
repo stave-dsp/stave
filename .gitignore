@@ -1,0 +1,15 @@
+/target
+/build
+**/*.rs.bk
+.DS_Store
+*.clap.dSYM
+__pycache__/
+*.pyc
+
+# Local-only: agent worktrees, scratch projects, and third-party reference
+# material (commercial IRs, captures) that must never be committed.
+/.claude/
+/projects/
+**/refs/
+*.wav
+*.npy

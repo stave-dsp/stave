@@ -1,0 +1,96 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/stave-clap",
+    "crates/stave-core",
+    "crates/stave-debug",
+    "crates/stave-dsp",
+    "crates/stave-host",
+    "crates/stave-macros",
+    "crates/stave-measure",
+    "crates/stave-raster",
+    "crates/stave-test",
+    "crates/stave-ui",
+    "crates/stave-ui-cocoa",
+    "crates/stave-vst3",
+
+    "tools/stave-bench",
+    "tools/stave-play",
+    "tools/storybook",
+
+    "plugins/anvil",
+    "plugins/chime",
+    "plugins/dynamo",
+    "plugins/eddy",
+    "plugins/forge",
+    "plugins/halo",
+    "plugins/heirloom",
+    "plugins/multiband-comp",
+    "plugins/multiband-comp/profile",
+    "plugins/opal",
+    "plugins/saga",
+    "plugins/smear",
+    "plugins/tilt",
+    "plugins/tolex",
+    "plugins/vault",
+    "plugins/aeolian",
+    "plugins/ribbon",
+    "plugins/revenant",
+    "plugins/engram",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["Ryan Bahan <ryan@ryanbahan.com>"]
+repository = "https://github.com/ryancbahan/stave"
+rust-version = "1.80"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
+
+[workspace.lints.clippy]
+ptr_cast_constness = "deny"
+# Every `unsafe` block names the invariant that makes it sound; every
+# `unsafe fn` states its contract.
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+# DSP loops index several parallel buffers with one counter; zip chains read worse.
+needless_range_loop = "allow"
+
+[workspace.dependencies]
+libc = "0.2"
+stave-ui = { path = "crates/stave-ui" }
+stave-ui-cocoa = { path = "crates/stave-ui-cocoa" }
+stave-raster = { path = "crates/stave-raster" }
+stave-macros = { path = "crates/stave-macros" }
+stave-core = { path = "crates/stave-core" }
+stave-clap = { path = "crates/stave-clap" }
+stave-vst3 = { path = "crates/stave-vst3" }
+stave-debug = { path = "crates/stave-debug" }
+stave-dsp = { path = "crates/stave-dsp" }
+stave-test = { path = "crates/stave-test" }
+stave-host = { path = "crates/stave-host" }
+stave-measure = { path = "crates/stave-measure" }
+thiserror = "2"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+# Unwind, not abort: the format wrappers catch a plugin panic at the entry
+# point (`PanicGuard`) so it silences the instance instead of the DAW.
+strip = "symbols"
+
+[profile.dev]
+opt-level = 1
+# No debuginfo: on macOS ("unpacked") every build otherwise leaves its
+# object files in target/debug/deps for the debugger, never collected —
+# half a million files made a no-op cargo call take seconds to minutes.
+# Panics still name functions; for a debugger session build with
+# `--profile debugging`.
+debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true

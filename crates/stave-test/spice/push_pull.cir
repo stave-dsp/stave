@@ -1,0 +1,28 @@
+* The push-pull pair's static transfer: two 12AX7 halves (Koren plate,
+* Dempwolf RSD-1 grid current), each grid fed through the phase
+* inverter's 40k at the class point -3.5 V +/- x, 300 V through 100k
+* per plate, fixed bias. The x ramp -16 V -> +16 V is quasi-static (no
+* reactive parts). Output: the plate difference v(p2) - v(p1).
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+VX x 0 PWL(0 -16 20m 16)
+B1 in1 0 V = {-3.5 + V(x)}
+B2 in2 0 V = {-3.5 - V(x)}
+RS1 in1 g1 40k
+RS2 in2 g2 40k
+VB b 0 300
+RA1 b p1 100k
+RA2 b p2 100k
+BG1 g1 0 I = {gg*pow(ln(1+exp(cg*V(g1)))/cg, xi) + ig0}
+BG2 g2 0 I = {gg*pow(ln(1+exp(cg*V(g2)))/cg, xi) + ig0}
+BP1 p1 0 I = {2*pow((V(p1)/kp)*ln(1+exp(kp*(1/mu+V(g1)/sqrt(kvb+V(p1)*V(p1))))), ex)/kg1}
+BP2 p2 0 I = {2*pow((V(p2)/kp)*ln(1+exp(kp*(1/mu+V(g2)/sqrt(kvb+V(p2)*V(p2))))), ex)/kg1}
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p2,p1)
+.endc
+.end

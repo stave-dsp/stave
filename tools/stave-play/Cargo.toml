@@ -1,0 +1,31 @@
+[package]
+name = "stave-play"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Windowed plugin host: play a plugin, hear it, watch it"
+publish = false
+
+[dependencies]
+stave-measure.workspace = true
+stave-host.workspace = true
+stave-vst3.workspace = true
+stave-debug.workspace = true
+thiserror.workspace = true
+cpal = "0.15"
+crossbeam-queue = "0.3"
+eframe = { version = "0.27", default-features = false, features = ["default_fonts", "wgpu"] }
+rfd = "0.14"
+rustfft = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+# Sampled CPU profiling of the audio thread, with flamegraph export.
+pprof = { version = "0.14", default-features = false, features = ["flamegraph"] }
+raw-window-handle = "0.6"
+
+[lints]
+workspace = true

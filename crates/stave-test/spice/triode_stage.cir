@@ -1,0 +1,22 @@
+* The triode stage's tabulated half: Koren 12AX7 plate current (Koren
+* 2003, the T12AX7 card) and Dempwolf RSD-1 grid current, grid fed
+* through the 68k stopper, fixed bias, 300 V through 100k. No reactive
+* parts, so every point of the -10 V -> +10 V input ramp is a DC
+* solution: the waveform is the static transfer. Output: the plate.
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+V1 in 0 PWL(0 -10 20m 10)
+RS in g 68k
+VB b 0 300
+RA b p 100k
+BG g 0 I = {gg*pow(ln(1+exp(cg*V(g)))/cg, xi) + ig0}
+BP p 0 I = {2*pow((V(p)/kp)*ln(1+exp(kp*(1/mu+V(g)/sqrt(kvb+V(p)*V(p))))), ex)/kg1}
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p)
+.endc
+.end

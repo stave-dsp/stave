@@ -1,0 +1,22 @@
+* B+ supply: 450 V peak full-wave (|sin| source = center-tapped pair),
+* 20 ohm rectifier + winding resistance, 1N4007, 32u reservoir, 10 H /
+* 100 ohm choke, 32u filter cap. Load 20 mA, stepping to 80 mA from
+* 0.3 s to 0.4 s. Switch-on from discharged. Output: B+.
+BS s 0 V = {abs(450*sin(2*pi*60*time))}
+RR s a 20
+D1 a r DR
+.model DR D(IS=7.03n N=1.8)
+C1 r 0 32u IC=0
+L1 r m 10 IC=0
+RL m b 100
+C2 b 0 32u IC=0
+IL b 0 PWL(0 20m 0.3 20m 0.30001 80m 0.4 80m 0.40001 20m)
+.options interp reltol=1e-6 abstol=1e-12 vntol=1e-9
+.tran 20.8333333u 0.5 0 1u UIC
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(b)
+.endc
+.end

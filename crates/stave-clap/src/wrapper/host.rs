@@ -1,0 +1,363 @@
+//! Safe views of what a CLAP host hands the plugin. Each view has one
+//! `unsafe` constructor carrying clap.h's contract — a pointer the host
+//! passes is null or valid, function pointers included, for the call that
+//! passed it (the host itself: for the plugin's lifetime) — and safe
+//! methods after it. A view keeps the host's own pointer to pass back to
+//! the host's functions: a C host may recover its enclosing object from
+//! it, which a pointer derived from a Rust reference to the struct alone
+//! would not allow.
+
+use super::*;
+use stave_core::diagnostics::Severity;
+use stave_core::ParamChangeKind;
+
+/// The `clap_host` that created the instance. Calls pass the host's own
+/// pointer back (a C host may recover its object from it), never one
+/// derived from a Rust reference.
+#[derive(Copy, Clone)]
+pub(super) struct Host(*const sys::ClapHost);
+
+// SAFETY: the host's `get_extension` and `request_callback` are
+// [thread-safe] (clap.h); `Host` only reads the struct.
+unsafe impl Send for Host {}
+// SAFETY: as above.
+unsafe impl Sync for Host {}
+
+impl Host {
+    /// # Safety
+    /// `host` is null or the `clap_host` passed to `create_plugin`, which
+    /// outlives every instance it creates.
+    pub(super) unsafe fn new(host: *const sys::ClapHost) -> Option<Self> {
+        (!host.is_null()).then_some(Self(host))
+    }
+
+    fn get(self) -> &'static sys::ClapHost {
+        // SAFETY: non-null and valid for the plugin's lifetime (`new`).
+        unsafe { &*self.0 }
+    }
+
+    /// Asks for `on_main_thread`. [thread-safe]
+    pub(super) fn request_callback(self) {
+        if let Some(request_callback) = self.get().request_callback {
+            // SAFETY: the host's own function, called with the host.
+            unsafe { request_callback(self.0) };
+        }
+    }
+
+    /// The host's `clap.log`. Only from `init` on (clap.h).
+    pub(super) fn log(self) -> Option<HostLog> {
+        let get_extension = self.get().get_extension?;
+        // SAFETY: the host's own function, called with the host.
+        let ext = unsafe { get_extension(self.0, sys::CLAP_EXT_LOG.as_ptr()) };
+        // SAFETY: for `clap.log` a host returns null or a
+        // `clap_host_log` that lives as long as the host.
+        let log = unsafe { ext.cast::<sys::ClapHostLog>().as_ref() }?.log?;
+        Some(HostLog { host: self, log })
+    }
+}
+
+/// The host's `clap.log` as a log sink.
+pub(super) struct HostLog {
+    host: Host,
+    log: unsafe extern "C" fn(*const sys::ClapHost, sys::ClapLogSeverity, *const c_char),
+}
+
+impl stave_core::diagnostics::LogSink for HostLog {
+    fn write(&self, severity: Severity, message: &dyn core::fmt::Display) {
+        let Ok(text) = std::ffi::CString::new(message.to_string().replace('\0', " ")) else {
+            return;
+        };
+        // SAFETY: `clap_host_log.log` is [thread-safe]; `text` outlives
+        // the call.
+        unsafe { (self.log)(self.host.0, severity as sys::ClapLogSeverity, text.as_ptr()) };
+    }
+}
+
+/// One `process` call's `clap_process`.
+pub(super) struct Process<'a>(&'a sys::ClapProcess);
+
+impl<'a> Process<'a> {
+    /// # Safety
+    /// `process` is null or the `clap_process` of the current call.
+    pub(super) unsafe fn new(process: *const sys::ClapProcess) -> Option<Self> {
+        // SAFETY: this function's contract.
+        unsafe { process.as_ref() }.map(Self)
+    }
+
+    pub(super) fn frames(&self) -> usize {
+        self.0.frames_count as usize
+    }
+
+    /// Input port `port`'s channel pointers; `None` when the host gave
+    /// no such port or no 32-bit buffers for it.
+    pub(super) fn input(&self, port: usize) -> Option<&'a [*mut f32]> {
+        if port >= self.0.audio_inputs_count as usize || self.0.audio_inputs.is_null() {
+            return None;
+        }
+        // SAFETY: `audio_inputs` holds `audio_inputs_count` buffers.
+        channels(unsafe { &*self.0.audio_inputs.add(port) })
+    }
+
+    pub(super) fn output(&self) -> Option<&'a [*mut f32]> {
+        if self.0.audio_outputs_count == 0 {
+            return None;
+        }
+        // SAFETY: `audio_outputs` is null or holds
+        // `audio_outputs_count` buffers.
+        channels(unsafe { self.0.audio_outputs.as_ref() }?)
+    }
+
+    /// Zero every output channel: what a disabled instance plays.
+    pub(super) fn silence_output(&self) {
+        let frames = self.frames();
+        for &channel in self.output().unwrap_or(&[]) {
+            if !channel.is_null() {
+                // SAFETY: an output channel is writable for `frames`
+                // (clap.h).
+                unsafe { core::slice::from_raw_parts_mut(channel, frames) }.fill(0.0);
+            }
+        }
+    }
+
+    pub(super) fn transport(&self) -> Option<&'a sys::ClapEventTransport> {
+        // SAFETY: null or valid for the call.
+        unsafe { self.0.transport.as_ref() }
+    }
+
+    pub(super) fn in_events(&self) -> Option<InputEvents<'a>> {
+        // SAFETY: null or valid for the call.
+        unsafe { InputEvents::new(self.0.in_events) }
+    }
+
+    pub(super) fn out_events(&self) -> Option<OutputEvents<'a>> {
+        // SAFETY: null or valid for the call.
+        unsafe { OutputEvents::new(self.0.out_events) }
+    }
+}
+
+fn channels(buffer: &sys::ClapAudioBuffer) -> Option<&[*mut f32]> {
+    if buffer.data32.is_null() {
+        return None;
+    }
+    // SAFETY: a non-null `data32` holds `channel_count` channel pointers.
+    Some(unsafe {
+        core::slice::from_raw_parts(buffer.data32.cast_const(), buffer.channel_count as usize)
+    })
+}
+
+/// The core-space events the wrapper reads.
+pub(super) enum CoreEvent<'a> {
+    /// `clap_event_param_mod` has `clap_event_param_value`'s layout, its
+    /// `amount` where `value` is.
+    Param(ParamChangeKind, &'a sys::ClapEventParamValue),
+    Note(NoteKind, &'a sys::ClapEventNote),
+}
+
+pub(super) struct InputEvents<'a> {
+    list: *const sys::ClapInputEvents,
+    lifetime: core::marker::PhantomData<&'a sys::ClapInputEvents>,
+    size: unsafe extern "C" fn(*const sys::ClapInputEvents) -> u32,
+    get: unsafe extern "C" fn(*const sys::ClapInputEvents, u32) -> *const sys::ClapEventHeader,
+}
+
+impl<'a> InputEvents<'a> {
+    /// # Safety
+    /// `list` is null or a `clap_input_events` valid for the current call.
+    pub(super) unsafe fn new(list: *const sys::ClapInputEvents) -> Option<Self> {
+        // SAFETY: this function's contract.
+        let fns = unsafe { list.as_ref() }?;
+        Some(Self {
+            list,
+            lifetime: core::marker::PhantomData,
+            size: fns.size?,
+            get: fns.get?,
+        })
+    }
+
+    /// In the host's order (sorted by time, clap.h).
+    pub(super) fn iter(&self) -> impl Iterator<Item = CoreEvent<'a>> + '_ {
+        // SAFETY: the list's own functions, called with the list.
+        let count = unsafe { (self.size)(self.list) };
+        (0..count).filter_map(move |i| {
+            // SAFETY: as above; `i` < size.
+            let event = unsafe { (self.get)(self.list, i) };
+            // SAFETY: null or a valid event, header first.
+            let header = unsafe { event.as_ref() }?;
+            if header.space_id != sys::CLAP_CORE_EVENT_SPACE_ID {
+                return None;
+            }
+            // Cast from the host's pointer, not from `header`: a
+            // reference to the header covers only the header's bytes.
+            let param = |change| {
+                // SAFETY: a core event of this type, whose layout
+                // `ClapEventParamValue` mirrors.
+                CoreEvent::Param(change, unsafe {
+                    &*event.cast::<sys::ClapEventParamValue>()
+                })
+            };
+            let note = |note_kind| {
+                // SAFETY: a core note event.
+                CoreEvent::Note(note_kind, unsafe { &*event.cast::<sys::ClapEventNote>() })
+            };
+            match header.r#type {
+                sys::CLAP_EVENT_PARAM_VALUE => Some(param(ParamChangeKind::Value)),
+                sys::CLAP_EVENT_PARAM_MOD => Some(param(ParamChangeKind::Modulation)),
+                sys::CLAP_EVENT_NOTE_ON => Some(note(NoteKind::On)),
+                sys::CLAP_EVENT_NOTE_OFF => Some(note(NoteKind::Off)),
+                sys::CLAP_EVENT_NOTE_CHOKE => Some(note(NoteKind::Choke)),
+                _ => None,
+            }
+        })
+    }
+}
+
+pub(super) struct OutputEvents<'a> {
+    list: *const sys::ClapOutputEvents,
+    lifetime: core::marker::PhantomData<&'a sys::ClapOutputEvents>,
+    try_push:
+        unsafe extern "C" fn(*const sys::ClapOutputEvents, *const sys::ClapEventHeader) -> bool,
+}
+
+impl<'a> OutputEvents<'a> {
+    /// # Safety
+    /// `list` is null or a `clap_output_events` valid for the current call.
+    pub(super) unsafe fn new(list: *const sys::ClapOutputEvents) -> Option<Self> {
+        // SAFETY: this function's contract.
+        let fns = unsafe { list.as_ref() }?;
+        Some(Self {
+            list,
+            lifetime: core::marker::PhantomData,
+            try_push: fns.try_push?,
+        })
+    }
+
+    /// `event` must begin with its header (every `#[repr(C)]` CLAP
+    /// event does) and `header.size` must be its size.
+    pub(super) fn try_push<E>(&self, event: &E) -> bool {
+        // SAFETY: the list's own function; the host copies `size` bytes
+        // from the header, which `event` spans.
+        unsafe { (self.try_push)(self.list, core::ptr::from_ref(event).cast()) }
+    }
+}
+
+/// A host stream to save state into.
+pub(super) struct OutputStream<'a> {
+    stream: *const sys::ClapOstream,
+    lifetime: core::marker::PhantomData<&'a sys::ClapOstream>,
+    write: unsafe extern "C" fn(*const sys::ClapOstream, *const c_void, u64) -> i64,
+}
+
+impl<'a> OutputStream<'a> {
+    /// # Safety
+    /// `stream` is null or a `clap_ostream` valid for the current call.
+    pub(super) unsafe fn new(stream: *const sys::ClapOstream) -> Result<Self, CallError> {
+        // SAFETY: this function's contract.
+        let fns = unsafe { stream.as_ref() }.ok_or(CallError::NullArgument("stream"))?;
+        Ok(Self {
+            stream,
+            lifetime: core::marker::PhantomData,
+            write: fns.write.ok_or(CallError::IncompleteStream)?,
+        })
+    }
+
+    pub(super) fn write_all(&self, bytes: &[u8]) -> Result<(), CallError> {
+        let mut pos = 0;
+        while pos < bytes.len() {
+            let rest = &bytes[pos..];
+            // SAFETY: the stream's own function; `rest` is readable for
+            // its length.
+            let n = unsafe { (self.write)(self.stream, rest.as_ptr().cast(), rest.len() as u64) };
+            if n <= 0 {
+                return Err(CallError::StreamWrite {
+                    written: pos,
+                    of: bytes.len(),
+                });
+            }
+            pos += n as usize;
+        }
+        Ok(())
+    }
+}
+
+/// A host stream to load state from.
+pub(super) struct InputStream<'a> {
+    stream: *const sys::ClapIstream,
+    lifetime: core::marker::PhantomData<&'a sys::ClapIstream>,
+    read: unsafe extern "C" fn(*const sys::ClapIstream, *mut c_void, u64) -> i64,
+}
+
+impl<'a> InputStream<'a> {
+    /// # Safety
+    /// `stream` is null or a `clap_istream` valid for the current call.
+    pub(super) unsafe fn new(stream: *const sys::ClapIstream) -> Result<Self, CallError> {
+        // SAFETY: this function's contract.
+        let fns = unsafe { stream.as_ref() }.ok_or(CallError::NullArgument("stream"))?;
+        Ok(Self {
+            stream,
+            lifetime: core::marker::PhantomData,
+            read: fns.read.ok_or(CallError::IncompleteStream)?,
+        })
+    }
+
+    pub(super) fn read_to_end(&self, limit: usize) -> Result<Vec<u8>, CallError> {
+        let mut bytes = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            // SAFETY: the stream's own function; `chunk` is writable for
+            // its length.
+            let n =
+                unsafe { (self.read)(self.stream, chunk.as_mut_ptr().cast(), chunk.len() as u64) };
+            match n {
+                0 => return Ok(bytes),
+                n if n < 0 => return Err(CallError::StreamRead),
+                n => bytes.extend_from_slice(&chunk[..n as usize]),
+            }
+            if bytes.len() > limit {
+                return Err(CallError::StateTooLarge { limit });
+            }
+        }
+    }
+}
+
+/// An out-parameter the host passed.
+///
+/// # Safety
+/// `ptr` is null or valid for writes for the current call.
+pub(crate) unsafe fn out_param<'a, T>(
+    ptr: *mut T,
+    name: &'static str,
+) -> Result<&'a mut T, CallError> {
+    // SAFETY: this function's contract.
+    unsafe { ptr.as_mut() }.ok_or(CallError::NullArgument(name))
+}
+
+/// A text buffer of `size` chars the host passed for the plugin to fill.
+///
+/// # Safety
+/// `ptr` is null or valid for `size` char writes for the current call.
+pub(super) unsafe fn out_text<'a>(
+    ptr: *mut c_char,
+    size: u32,
+    name: &'static str,
+) -> Result<&'a mut [c_char], CallError> {
+    if ptr.is_null() || size == 0 {
+        return Err(CallError::NullArgument(name));
+    }
+    // SAFETY: this function's contract.
+    Ok(unsafe { core::slice::from_raw_parts_mut(ptr, size as usize) })
+}
+
+/// A nul-terminated string the host passed.
+///
+/// # Safety
+/// `ptr` is null or a nul-terminated string valid for the current call.
+pub(crate) unsafe fn in_text<'a>(
+    ptr: *const c_char,
+    name: &'static str,
+) -> Result<&'a CStr, CallError> {
+    if ptr.is_null() {
+        return Err(CallError::NullArgument(name));
+    }
+    // SAFETY: this function's contract.
+    Ok(unsafe { CStr::from_ptr(ptr) })
+}

@@ -1,0 +1,24 @@
+* Passive treble/bass/mid tone stack (Yeh & Smith, DAFx-06), no load.
+* C1 250p, C2 100n, C3 47n, treble 250k, bass 1M, mid 25k, slope 100k.
+* The treble wiper is the output; the bass pot runs from the treble
+* pot's foot to the mid pot's top; C3 lands on the mid pot's wiper.
+* Pots: treble 0.5, bass 0.5, mid 0.5. Output |Vo/Vi| over 20 Hz-20 kHz
+* (first column = frequency).
+VI i 0 DC 0 AC 1
+C1 i t 250p
+RT1 t o 125000
+RT2 o b 125000
+R4 i n 100000
+C2 n b 100n
+RB b j 500000
+RM1 j w 12500
+RM2 w 0 12500
+C3 n w 47n
+.ac dec 20 20 20k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(o)
+.endc
+.end

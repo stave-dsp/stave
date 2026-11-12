@@ -1,0 +1,29 @@
+[package]
+name = "stave-anvil-vst3"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Stave Anvil — a physically modelled metal amp head."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+stave-core.workspace = true
+stave-ui.workspace = true
+stave-vst3.workspace = true
+stave-clap.workspace = true
+stave-dsp.workspace = true
+
+[dev-dependencies]
+assert_no_alloc = "1"
+stave-test = { path = "../../crates/stave-test" }
+stave-host = { path = "../../crates/stave-host" }
+stave-tolex-vst3 = { path = "../tolex" }
+rustfft = "6"
+
+[lints]
+workspace = true

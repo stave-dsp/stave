@@ -1,0 +1,13 @@
+* RC low-pass step response: checks the oracle itself against 1 - exp(-t/RC).
+V1 in 0 PWL(0 0 1n 1)
+R1 in out 1k
+C1 out 0 100n
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 5m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

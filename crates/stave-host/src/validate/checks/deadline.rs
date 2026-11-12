@@ -1,0 +1,78 @@
+use serde_json::json;
+
+use crate::render::Driver;
+use crate::validate::{CheckError, Ctx, Outcome, Status};
+use stave_measure::stats::Summary;
+
+/// `p99 / budget` below `pass_below` passes, at or above `fail_at` fails.
+#[derive(Copy, Clone, Debug)]
+pub struct DeadlinePolicy {
+    pub warmup_seconds: f64,
+    pub run_seconds: f64,
+    pub pass_below: f64,
+    pub fail_at: f64,
+}
+
+impl Default for DeadlinePolicy {
+    fn default() -> Self {
+        Self {
+            warmup_seconds: 0.5,
+            run_seconds: 2.0,
+            pass_below: 0.5,
+            fail_at: 1.0,
+        }
+    }
+}
+
+impl DeadlinePolicy {
+    fn classify(&self, fraction_of_budget: f64) -> Status {
+        if fraction_of_budget < self.pass_below {
+            Status::Pass
+        } else if fraction_of_budget < self.fail_at {
+            Status::Info
+        } else {
+            Status::Fail
+        }
+    }
+}
+
+pub fn deadline_headroom(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
+    let (excitation, policy) = (&ctx.policy.excitation, ctx.policy.deadline);
+    let mut inst = ctx.fresh()?;
+    let (signal, notes) = excitation.for_instance(inst.as_ref());
+    let rate = inst.layout().sample_rate;
+    let mut d = Driver::new(inst.as_mut());
+    d.skip(d.frames_for(policy.warmup_seconds), signal.as_ref(), &notes);
+    let mut ns = vec![];
+    let n = d.frames_for(policy.run_seconds);
+    d.run(n, signal.as_ref(), &notes, |b| {
+        ns.push(b.process_time.as_nanos() as f64)
+    });
+    let budget = d.block() as f64 / rate * 1e9;
+    let p99 = Summary::of(&ns).map_or(0.0, |s| s.p99);
+    let frac = p99 / budget;
+    let status = policy.classify(frac);
+    let details = json!({ "p99_ns_per_block": p99, "budget_ns": budget, "p99_of_budget": frac });
+    Ok(Outcome { status, details })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::Gain;
+    use crate::validate::checks::outcome;
+
+    #[test]
+    fn thresholds() {
+        let policy = DeadlinePolicy::default();
+        assert_eq!(policy.classify(0.1), Status::Pass);
+        assert_eq!(policy.classify(0.5), Status::Info);
+        assert_eq!(policy.classify(1.0), Status::Fail);
+    }
+
+    #[test]
+    fn a_trivial_plugin_has_headroom() {
+        let v = outcome(deadline_headroom, || Box::new(Gain::new(2, 2)));
+        assert_eq!(v.status, Status::Pass, "{:?}", v.details);
+    }
+}

@@ -1,0 +1,14 @@
+# Apple Silicon shipping baseline: every AS Mac is >= M1, so
+# apple-m1 tuning is safe to DISTRIBUTE (never -Ctarget-cpu=native,
+# which pins artifacts to the build machine's exact core). Measured
+# 2026-07-06 on the eddy engine, ns/frame, repeats: PRISM 381→357
+# (-6.3%), CIRCUIT 94.2→91.5 (-2.6%), PLATE/SHIFT within noise.
+# Fat LTO was measured the same day and REJECTED: no gain over thin
+# (cross-crate inlining already saturated), slower builds.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "target-cpu=apple-m1"]
+
+# Plugins built and run by cargo (tests, stave-play) log here, not into
+# the user's log directory.
+[env]
+STAVE_LOG_DIR = { value = "target/logs", relative = true }

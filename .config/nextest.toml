@@ -1,0 +1,7 @@
+[profile.default]
+# A test past 30 s is reported; one past 2 min has hung and is killed.
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[profile.ci]
+fail-fast = false
+slow-timeout = { period = "30s", terminate-after = 4 }

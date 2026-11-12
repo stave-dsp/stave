@@ -1,0 +1,21 @@
+* 12AX7 common-cathode stage: Koren's plate law (no grid current or
+* interelectrode capacitance), 300 V through 100k, 1.5k cathode bypassed
+* by 22u, grid driven directly. Output: the plate.
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+V1 g 0 SIN(0 0.5 1k)
+VB b 0 300
+RA b p 100k
+RK k 0 1.5k
+CK k 0 22u
+BE e1 0 V = {V(p,k)/kp*ln(1+exp(kp*(1/mu+V(g,k)/sqrt(kvb+V(p,k)*V(p,k)))))}
+RE e1 0 1G
+BI p k I = {V(e1) > 0 ? 2*pow(V(e1),ex)/kg1 : 0}
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p)
+.endc
+.end

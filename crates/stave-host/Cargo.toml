@@ -1,0 +1,29 @@
+[package]
+name = "stave-host"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Host any VST3 plugin, drive it, and measure it: loading, rendering, analysis, the bench and the validation suite"
+
+[dependencies]
+thiserror.workspace = true
+libc.workspace = true
+stave-measure.workspace = true
+stave-dsp.workspace = true
+stave-vst3.workspace = true
+stave-debug.workspace = true
+stave-core.workspace = true
+crossbeam-queue = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+assert_no_alloc = "1"
+# A real stave plugin, hosted in-process through the full VST3 path.
+stave-tilt-vst3 = { path = "../../plugins/tilt" }
+
+[lints]
+workspace = true

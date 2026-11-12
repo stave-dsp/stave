@@ -1,0 +1,161 @@
+# CI and the soundness gate. Every bar here is blocking: the claim "the
+# unsafe core is Miri-clean and Loom-modelled" is only worth making
+# while this stays green. Builds are --locked against the committed
+# Cargo.lock.
+name: soundness
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: build + test (workspace)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      # The tree rules (scripts/gates.sh runs the same set locally).
+      - run: scripts/check-file-sizes.sh
+      - run: scripts/check-view-bindings.sh
+      - run: scripts/check-plugin-rules.sh
+      - run: cargo build --workspace --locked
+      - run: cargo nextest run --workspace --locked --profile ci
+      - run: cargo test --workspace --doc --locked
+
+  warnings:
+    name: zero warnings (rustc + rustdoc)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-targets --locked
+        env:
+          RUSTFLAGS: -D warnings
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  clippy:
+    name: clippy (zero warnings, workspace lint policy)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
+      - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+
+  miri:
+    name: miri (stave-core, stave-debug)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +nightly miri test -p stave-core -p stave-debug
+
+  miri-abi:
+    # The strongest bar in this file: the FULL wrapper path (factory →
+    # vtables → in-place process → two instances → release) interpreted
+    # under the memory model. This caught the CLAP field-provenance bug
+    # (factory returned a first-field & pointer; reconstructing
+    # &Instance from it was UB). macOS runner: stave-vst3 declares
+    # Cocoa externs.
+    name: miri (wrapper ABI paths)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +nightly miri test -p stave-vst3 -p stave-clap --test wrapper_abi --test table_abi --test diagnostics_abi --test negotiation_abi --test panic_abi
+
+  loom:
+    name: loom (protocol models)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p stave-core -p stave-debug --test loom --release
+        env:
+          RUSTFLAGS: --cfg loom
+
+  clap-validator:
+    # The industry's own CLAP test suite against every plugin.
+    name: clap-validator (every plugin)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install clap-validator
+        run: cargo install --locked --git https://github.com/free-audio/clap-validator.git clap-validator
+      - run: scripts/validate-formats.sh clap
+
+  vst3-validator:
+    # Steinberg's own validator (the SDK is MIT) against every plugin.
+    # The SDK build is cached; cold runs add ~5 minutes.
+    name: Steinberg VST3 validator (every plugin)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache VST3 SDK build
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: vst3sdk
+          key: vst3sdk-validator-${{ runner.os }}-v1
+      - name: Build Steinberg validator
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/steinbergmedia/vst3sdk.git vst3sdk
+          cmake -S vst3sdk -B vst3sdk/build -DCMAKE_BUILD_TYPE=Release \
+            -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF \
+            -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
+            -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF
+          cmake --build vst3sdk/build --target validator -j3
+      - run: scripts/validate-formats.sh vst3
+        env:
+          VALIDATOR: vst3sdk/build/bin/Release/validator
+
+  cross-compile:
+    # The portable crates must never grow platform assumptions: the DSP
+    # and plugin core, the CLAP wrapper, and the UI stack below the
+    # Cocoa backend (stave-ui's view model, stave-raster's renderer) —
+    # the path to a non-macOS editor. ubuntu-latest IS
+    # x86_64-unknown-linux-gnu.
+    name: portable crates check (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: >-
+          cargo check --all-targets --locked
+          -p stave-core -p stave-dsp -p stave-debug -p stave-measure -p stave-macros
+          -p stave-ui -p stave-raster -p stave-clap

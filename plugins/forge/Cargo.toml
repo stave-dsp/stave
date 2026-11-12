@@ -1,0 +1,29 @@
+[package]
+name = "stave-forge-vst3"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Forge — amp-topology saturation bench: two clipping stages with real interstage memory, slew grit, and iron hysteresis"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+stave-core.workspace = true
+stave-ui.workspace = true
+stave-vst3.workspace = true
+stave-clap.workspace = true
+stave-dsp.workspace = true
+
+[dev-dependencies]
+assert_no_alloc = "1"
+stave-measure = { path = "../../crates/stave-measure" }
+stave-test = { path = "../../crates/stave-test" }
+stave-host = { path = "../../crates/stave-host" }
+
+[lints]
+workspace = true

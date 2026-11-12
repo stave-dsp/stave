@@ -1,0 +1,14 @@
+* Interstage coupling: 22n into a 1M grid leak (corner 7.234 Hz), driven
+* from rest by 1 V at 50 Hz. Output: the grid.
+V1 i 0 SIN(0 1 50)
+C1 i o 22n
+R1 o 0 1meg
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 0.1 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(o)
+.endc
+.end

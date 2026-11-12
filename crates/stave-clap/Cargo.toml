@@ -1,0 +1,15 @@
+[package]
+name = "stave-clap"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "CLAP audio plugin backend for the stave framework"
+
+[dependencies]
+stave-core.workspace = true
+
+[lints]
+workspace = true

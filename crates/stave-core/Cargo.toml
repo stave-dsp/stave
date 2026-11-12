@@ -1,0 +1,21 @@
+[package]
+name = "stave-core"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Core audio plugin abstractions for the stave framework"
+
+[dependencies]
+stave-macros.workspace = true
+stave-debug.workspace = true
+stave-ui.workspace = true
+stave-dsp.workspace = true
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
+[lints]
+workspace = true
