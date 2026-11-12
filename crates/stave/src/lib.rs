@@ -246,7 +246,8 @@ pub trait Exported: Plugin {
 pub struct Identity {
     /// The CLAP plugin id (`Info::id`).
     pub clap: &'static str,
-    /// The VST3 component class id, as the 16 bytes hosts print in hex.
+    /// The VST3 component class id, as the 16 bytes hosts print in hex
+    /// (the same on every platform).
     pub vst3_component: [u8; 16],
     /// The VST3 edit-controller class id.
     pub vst3_controller: [u8; 16],
@@ -263,10 +264,11 @@ pub struct Identity {
 /// assert_eq!(id.vst3_component, [0x5A, 0x7F, /* … */]);
 /// ```
 pub const fn identity<P: Exported>() -> Identity {
+    use __export::vst3::sys::canonical_tuid;
     Identity {
         clap: P::INFO.id,
-        vst3_component: __export::class_id::<P>(0, "component"),
-        vst3_controller: __export::class_id::<P>(1, "controller"),
+        vst3_component: canonical_tuid(__export::class_id::<P>(0, "component")),
+        vst3_controller: canonical_tuid(__export::class_id::<P>(1, "controller")),
     }
 }
 

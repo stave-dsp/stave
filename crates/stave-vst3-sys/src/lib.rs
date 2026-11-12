@@ -183,6 +183,17 @@ pub const fn make_tuid(l1: u32, l2: u32, l3: u32, l4: u32) -> Tuid {
     ]
 }
 
+/// A TUID in the order hosts print it (`l1 l2 l3 l4`, each big-endian):
+/// [`make_tuid`]'s layout undone. The same bytes on every platform.
+pub const fn canonical_tuid(t: Tuid) -> [u8; 16] {
+    #[cfg(windows)]
+    let t = [
+        t[3], t[2], t[1], t[0], t[5], t[4], t[7], t[6], t[8], t[9], t[10], t[11], t[12], t[13],
+        t[14], t[15],
+    ];
+    t
+}
+
 // ===========================================================================
 // Interface IIDs
 // ===========================================================================
@@ -996,6 +1007,16 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_tuids_read_the_same_on_every_platform() {
+        let t = make_tuid(0x7C31A2E4, 0x88B14D02, 0xA5E0C9D3, 0x11700001);
+        let want = [
+            0x7C, 0x31, 0xA2, 0xE4, 0x88, 0xB1, 0x4D, 0x02, 0xA5, 0xE0, 0xC9, 0xD3, 0x11, 0x70,
+            0x00, 0x01,
+        ];
+        assert_eq!(canonical_tuid(t), want);
+    }
 
     /// funknown.h, non-COM branch (macOS/Linux).
     #[cfg(not(windows))]
