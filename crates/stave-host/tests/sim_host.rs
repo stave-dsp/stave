@@ -58,6 +58,7 @@ fn a_seed_replays_exactly() {
     let a = simulate(tilt(), 7, SimConfig::default()).expect("seed 7 passes");
     let b = simulate(tilt(), 7, SimConfig::default()).expect("seed 7 passes");
     assert_eq!(a, b);
+    assert!(a.events > 0, "the plugin's event trace was read and validated");
     let c = simulate(tilt(), 8, SimConfig::default()).expect("seed 8 passes");
     assert_ne!(a.digest, c.digest, "different seeds, different runs");
 }

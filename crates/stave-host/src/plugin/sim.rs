@@ -14,7 +14,9 @@
 
 use std::fmt;
 
-use stave_model::lifecycle::{self, HostCall, Lifecycle};
+use stave_model::lifecycle::{self, BlockExpect, HostCall, Lifecycle};
+use stave_telemetry::events::{check, Recorder};
+use stave_telemetry::{Event, Fault};
 use stave_vst3_sys::{
     AudioBusBuffers, ProcessData, ProcessSetup, K_INVALID_ARGUMENT, K_RESULT_OK,
     PROCESS_MODE_REALTIME, SAMPLE_SIZE_32,
@@ -54,6 +56,8 @@ pub struct SimReport {
     /// FNV-1a over every output sample and every result code: two runs
     /// of one seed must agree.
     pub digest: u64,
+    /// Records in the plugin's event trace, every one validated.
+    pub events: usize,
 }
 
 /// A run that broke a law: replay with `simulate(entry, seed, config)`.
@@ -175,9 +179,29 @@ fn run(entry: EntryPoints, seed: u64, rng: Rng, config: SimConfig) -> Result<Sim
         calls: Vec::with_capacity(config.steps),
         params: plugin.params().iter().map(|c| c.id.0).collect(),
         messages_seen: 0,
+        loads: Vec::new(),
+        recorder: Recorder::new(),
+        events_seen: 0,
         plugin: Some(plugin),
         audio: AudioThread::spawn(),
     };
+    let fail = |step, call, law, calls| SimFailure {
+        seed,
+        step,
+        call,
+        law,
+        calls,
+    };
+    // The load sequence activated the plugin at the host's setup.
+    let opened = sim.new_events();
+    let prepared = Event::Prepare {
+        sample_rate: 48_000.0,
+        max_block: 512,
+    };
+    if !opened.is_empty() && !opened.contains(&prepared) {
+        let law = format!("the trace opens with {prepared:?}, it has {opened:?}");
+        return Err(fail(0, HostCall::SetActive(true), law, Vec::new()));
+    }
     for step in 0..config.steps {
         let call = sim.choose(config.illegal_per_16);
         if let Err(law) = sim.apply(call.clone()) {
@@ -191,10 +215,22 @@ fn run(entry: EntryPoints, seed: u64, rng: Rng, config: SimConfig) -> Result<Sim
         }
         sim.calls.push(call);
     }
+    // A compliant host's whole run keeps the trace's own laws (no fault,
+    // a gesture begun once and ended once, release after prepare, no
+    // gap) — trace validation of the wrapper's own records.
+    if config.illegal_per_16 == 0 && sim.traced() {
+        let trace = sim.recorder.trace();
+        let broken = check(&trace);
+        if let Some(v) = broken.first() {
+            let call = sim.calls.last().cloned().unwrap_or(HostCall::SaveState);
+            return Err(fail(config.steps, call, format!("the plugin's event trace: {v}"), sim.calls));
+        }
+    }
     Ok(SimReport {
         seed,
         calls: sim.calls,
         digest: sim.digest.0,
+        events: sim.events_seen,
     })
 }
 
@@ -207,6 +243,11 @@ struct Sim {
     calls: Vec<HostCall>,
     params: Vec<u32>,
     messages_seen: u64,
+    /// This step's state loads, accepted or not, in order.
+    loads: Vec<bool>,
+    /// The plugin's event trace (V5), drained after every step.
+    recorder: Recorder,
+    events_seen: usize,
     /// `None` only while the audio thread holds it.
     plugin: Option<LoadedPlugin>,
     audio: AudioThread,
@@ -291,6 +332,87 @@ impl Sim {
 
     fn apply(&mut self, call: HostCall) -> Result<(), String> {
         let expect = self.model.expect(&call);
+        let before = self.model;
+        self.loads.clear();
+        self.step(&call, &expect)?;
+        self.check_events(&call, &before, &expect)
+    }
+
+    /// Whether the plugin keeps an event trace (stave plugins do).
+    fn traced(&mut self) -> bool {
+        !self.plugin().telemetry_raw().is_null()
+    }
+
+    /// The plugin's trace records since the last call.
+    fn new_events(&mut self) -> Vec<Event> {
+        let telemetry = self.plugin().telemetry_raw();
+        // SAFETY: the instance's own telemetry, alive while the plugin is.
+        let Some(telemetry) = (unsafe { telemetry.as_ref() }) else {
+            return Vec::new();
+        };
+        self.recorder.drain(telemetry.events());
+        let records = self.recorder.records();
+        let new = records[self.events_seen..].iter().map(|r| r.event).collect();
+        self.events_seen = records.len();
+        new
+    }
+
+    /// Trace validation, per call: what the plugin recorded is what the
+    /// lifecycle model says the call does — a Prepare at the last setup's
+    /// rate and block size for each activation and nowhere else, a
+    /// Release for each deactivation, a Restore for each state load
+    /// (accepted or refused, as it was), the fault a refused or
+    /// unprepared block is, and no record lost.
+    fn check_events(&mut self, call: &HostCall, before: &Lifecycle, expect: &lifecycle::Expect) -> Result<(), String> {
+        if !self.traced() {
+            return Ok(());
+        }
+        let events = self.new_events();
+        if self.recorder.lost() > 0 {
+            return Err(format!("{} trace records lost", self.recorder.lost()));
+        }
+        let prepares: Vec<_> = events.iter().filter(|e| matches!(e, Event::Prepare { .. })).collect();
+        let releases = events.iter().filter(|e| matches!(e, Event::Release)).count();
+        let (want_prepare, want_release) = match call {
+            HostCall::SetActive(true) => (1, 0),
+            HostCall::SetActive(false) => (0, 1),
+            _ => (0, 0),
+        };
+        if prepares.len() != want_prepare || releases != want_release {
+            return Err(format!("the plugin traced {events:?} for {call:?}"));
+        }
+        if let Some(&&Event::Prepare { sample_rate, max_block }) = prepares.first() {
+            let want = (before.sample_rate as f32, before.max_block as u32);
+            if (sample_rate, max_block) != want {
+                return Err(format!("prepared at {sample_rate} Hz / {max_block}, the last setup was {want:?}"));
+            }
+        }
+        let restores: Vec<bool> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Restore(ok) => Some(*ok),
+                _ => None,
+            })
+            .collect();
+        if restores != self.loads {
+            return Err(format!("loads {:?} traced as restores {restores:?}", self.loads));
+        }
+        let fault = match expect.block {
+            BlockExpect::Refused => Some(Fault::BlockTooLong),
+            BlockExpect::Silent => Some(Fault::Unprepared),
+            _ => None,
+        };
+        if let Some(fault) = fault {
+            if !events.contains(&Event::Fault(fault)) {
+                return Err(format!("a {fault:?} block traced only {events:?}"));
+            }
+        }
+        Ok(())
+    }
+
+    fn step(&mut self, call: &HostCall, expect: &lifecycle::Expect) -> Result<(), String> {
+        let call = call.clone();
+        let expect = *expect;
         match call {
             HostCall::Setup {
                 sample_rate,
@@ -376,6 +498,7 @@ impl Sim {
         self.check_messages()
     }
 
+
     fn setup(&mut self, sample_rate: f64, max_block: usize) -> i32 {
         let p = &self.plugin().processor;
         let mut setup = ProcessSetup {
@@ -432,6 +555,7 @@ impl Sim {
 
     fn load(&mut self, bytes: &[u8], must_accept: bool) -> Result<bool, String> {
         let ok = self.plugin().load_state(bytes).is_ok();
+        self.loads.push(ok);
         self.digest.mix(&[u8::from(ok)]);
         if must_accept && !ok {
             return Err(format!("setState refused a state the plugin saved ({} bytes)", bytes.len()));
