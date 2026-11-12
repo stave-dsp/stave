@@ -295,7 +295,7 @@ mod tests {
     fn unknown_interface_is_refused() {
         let h = StreamHandle::new(Vec::new());
         let (v, p) = vt(&h);
-        let mut obj: *mut c_void = 1 as *mut c_void;
+        let mut obj: *mut c_void = ptr::dangling_mut::<c_void>();
         let r = unsafe { (v.query_interface)(p, &[7; 16], &mut obj) };
         assert_eq!((r, obj), (K_NO_INTERFACE, ptr::null_mut()));
     }

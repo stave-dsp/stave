@@ -496,6 +496,21 @@ pub struct ClapPluginLatency {
 
 pub const CLAP_EXT_LOG: &core::ffi::CStr = c"clap.log";
 
+/// `clap_param_rescan_flags`: the parameter values changed (e.g. after a
+/// state load); the host re-reads them.
+pub const CLAP_PARAM_RESCAN_VALUES: u32 = 1 << 0;
+
+/// The host's `clap.params` (ext/params.h).
+#[repr(C)]
+pub struct ClapHostParams {
+    /// [main-thread]
+    pub rescan: Option<unsafe extern "C" fn(host: *const ClapHost, flags: u32)>,
+    /// [main-thread]
+    pub clear: Option<unsafe extern "C" fn(host: *const ClapHost, param_id: ClapId, flags: u32)>,
+    /// [thread-safe, !audio-thread]
+    pub request_flush: Option<unsafe extern "C" fn(host: *const ClapHost)>,
+}
+
 /// `clap_log_severity`: stave_core's `Severity` discriminants.
 pub type ClapLogSeverity = i32;
 
@@ -549,5 +564,6 @@ const _: () = {
         ClapPluginTail => 8, 8;
         ClapPluginLatency => 8, 8;
         ClapHostLog => 8, 8;
+        ClapHostParams => 24, 8;
     }
 };

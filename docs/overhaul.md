@@ -291,6 +291,7 @@ Status: `[ ]` open · `[x]` done (with the commit).
 - [ ] **S17** (the 30 Hz editor timer went with L7 in e2f5294) Leaks: FaceMount view alloc, NSTrackingArea, CFRunLoopTimer never released; the 30 Hz editor timer keeps running with a face attached.
 - [ ] **S18** `text.rs` `CFRetain(NULL)` if NSFont returns nil; font cache unbounded.
 - [x] **S19** (01ee9bf) `stave-host` `RTLD_LOCAL = 0x4` is `RTLD_NOLOAD` on Linux (`plugin/module.rs:104`). Use `libc::RTLD_*`.
+- [x] **S21** (this commit) CLAP state load never asked the host to re-read parameter values (`clap_host_params.rescan(VALUES)`), so a DAW kept showing stale values after loading a session or preset; found by clap-validator 0.4.1's state-reproducibility tests, which the validation script also hid (it died silently under `pipefail` and mis-read the coloured summary).
 - [x] **S20** (a614e52) `EditorBox` `unsafe impl Send/Sync` is unneeded; stale SAFETY/comments (`capture.rs:24`, `sys.rs:5`).
 
 ### L — Layering

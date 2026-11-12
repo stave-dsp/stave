@@ -233,7 +233,7 @@ impl Runtime {
     /// Paint the whole face at `scale` px/pt into `out`.
     pub fn render(&mut self, host: &dyn Host, scale: f64, time: f64, out: &mut Canvas, text: &mut dyn TextPainter) {
         let key = scale.to_bits() ^ self.page_key().rotate_left(17);
-        if !self.baked.as_ref().is_some_and(|(k, _)| *k == key) {
+        if self.baked.as_ref().is_none_or(|(k, _)| *k != key) {
             let c = self.bake(host, scale, text);
             self.baked = Some((key, c));
         }

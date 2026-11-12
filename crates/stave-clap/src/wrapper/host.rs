@@ -44,6 +44,24 @@ impl Host {
         }
     }
 
+    /// Tell the host every parameter value may have changed (after a
+    /// state load), so it re-reads them. [main-thread] (clap ext/params.h)
+    pub(super) fn rescan_param_values(self) {
+        let Some(get_extension) = self.get().get_extension else {
+            return;
+        };
+        // SAFETY: the host's own function, called with the host.
+        let ext = unsafe { get_extension(self.0, sys::CLAP_EXT_PARAMS.as_ptr()) };
+        // SAFETY: for `clap.params` a host returns null or a
+        // `clap_host_params` that lives as long as the host.
+        let Some(rescan) = unsafe { ext.cast::<sys::ClapHostParams>().as_ref() }.and_then(|p| p.rescan) else {
+            return;
+        };
+        // SAFETY: the host's own function, on the main thread (state.load
+        // is [main-thread]).
+        unsafe { rescan(self.0, sys::CLAP_PARAM_RESCAN_VALUES) };
+    }
+
     /// The host's `clap.log`. Only from `init` on (clap.h).
     pub(super) fn log(self) -> Option<HostLog> {
         let get_extension = self.get().get_extension?;
