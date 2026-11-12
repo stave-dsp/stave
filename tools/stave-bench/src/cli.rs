@@ -15,10 +15,10 @@ pub const USAGE: &str = "\
 usage: stave-bench <bundle.vst3 | stage:NAME> [options]
 
 stage:NAME runs a stave-dsp stage from the catalog (e.g. stage:coupler);
-its settings are controls, so --set, --list and --validate work unchanged.
+its params are a plugin's, so --set, --list and --validate work unchanged.
 
 modes (default: bench):
-  --describe            identity, load trace, controls, presets (JSON)
+  --describe            identity, load trace, params, presets (JSON)
   --list                the same, as text
   --validate            run the validation suite (JSON; exit 1 on failure)
   --response            frequency response at several input levels
@@ -30,10 +30,10 @@ options:
   --seconds S           timed-run length (3)
   --signal SPEC         sine[:FREQ[:DBFS]] | impulse | silence | noise[:DBFS]
                         | sweep[:F0:F1[:DBFS]] | wav:PATH   (sine:1000:-12)
-  --notes P@ON:OFF[:V],...
+  --notes KEY@ON:OFF[:V],...
                         notes, seconds; velocity 0..1, default MIDI 100
                         (e.g. 60@0:1.5,64@0.5:1.5:0.4)
-  --set NAME=VALUE      set a control (plain units; repeatable)
+  --set NAME=VALUE      set a param (in its own units; repeatable)
   --preset NAME         apply a factory preset first
   --measure LIST        level measures, comma-separated
                         (peak,true-peak,rms,lufs-m,lufs-s,lufs-i;
@@ -245,7 +245,7 @@ fn parse_set(s: &str) -> Result<(String, f64), CliError> {
     Ok((name.trim().to_string(), value))
 }
 
-/// `PITCH@ON:OFF[:VELOCITY][,…]`, seconds; velocity 0..=1, default MIDI 100.
+/// `KEY@ON:OFF[:VELOCITY][,…]`, seconds; velocity 0..=1, default MIDI 100.
 fn parse_notes(s: &str) -> Result<Vec<Note>, CliError> {
     s.split(',').map(parse_note).collect()
 }
@@ -255,7 +255,7 @@ fn parse_note(part: &str) -> Result<Note, CliError> {
         note: part.to_string(),
         problem,
     };
-    let shape = || malformed("is not PITCH@ON:OFF[:VELOCITY]");
+    let shape = || malformed("is not KEY@ON:OFF[:VELOCITY]");
     let (key, times) = part.split_once('@').ok_or_else(shape)?;
     let mut fields = times.split(':').map(str::trim);
     let (Some(on), Some(off)) = (fields.next(), fields.next()) else {
