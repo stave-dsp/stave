@@ -46,6 +46,13 @@ pub(super) unsafe extern "C" fn state_load<P: ClapExport>(
                 &inst.state_store,
             )
         });
+        // The values just changed under the host: it must re-read them
+        // (clap ext/state.h, ext/params.h).
+        if result.is_ok() {
+            if let Some(host) = inst.host {
+                host.rescan_param_values();
+            }
+        }
         result
     })
 }
