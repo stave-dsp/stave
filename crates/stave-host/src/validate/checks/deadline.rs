@@ -51,8 +51,20 @@ pub fn deadline_headroom(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let budget = d.block() as f64 / rate * 1e9;
     let p99 = Summary::of(&ns).map_or(0.0, |s| s.p99);
     let frac = p99 / budget;
-    let status = config.classify(frac);
-    let details = json!({ "p99_ns_per_block": p99, "budget_ns": budget, "p99_of_budget": frac });
+    // A debug build's timing says nothing about the shipped plugin's, and
+    // on a shared CI runner it is mostly the neighbours': there a miss is
+    // reported, not failed. Release builds (stave-bench, the perf cases)
+    // are held to the budget.
+    let status = match config.classify(frac) {
+        Status::Fail if cfg!(debug_assertions) => Status::Info,
+        status => status,
+    };
+    let details = json!({
+        "p99_ns_per_block": p99,
+        "budget_ns": budget,
+        "p99_of_budget": frac,
+        "debug_build": cfg!(debug_assertions),
+    });
     Ok(Outcome { status, details })
 }
 
