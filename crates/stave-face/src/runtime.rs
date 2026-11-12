@@ -7,6 +7,7 @@
 extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use std::collections::HashMap;
 
 use stave_raster::{Canvas, TextPainter};
 use stave_ui::layout::Rect;
@@ -54,6 +55,9 @@ pub enum Cursor {
 struct Item {
     part: Arc<dyn Part>,
     rect: Rect,
+    /// Page conditions inherited from the tree: shown only while every
+    /// (page set, page) holds.
+    when: Vec<(u32, u16)>,
 }
 
 struct Ctl {
@@ -81,17 +85,23 @@ pub struct Runtime {
     drag: Option<Drag>,
     hover: Option<usize>,
     memo: Vec<u64>,
+    pages: HashMap<u32, u32>,
 }
 
-fn flatten(node: &FaceNode, layout: &Layout, out: &mut Vec<Item>) {
+fn flatten(node: &FaceNode, layout: &Layout, when: &[(u32, u16)], out: &mut Vec<Item>) {
+    let mut when = when.to_vec();
+    if let Some(w) = node.when {
+        when.push(w);
+    }
     if let Kind::Widget(part) = &node.kind {
         out.push(Item {
             part: part.clone(),
             rect: layout.rect,
+            when: when.clone(),
         });
     }
     for (child, cl) in node.children.iter().zip(&layout.children) {
-        flatten(child, cl, out);
+        flatten(child, cl, &when, out);
     }
 }
 
@@ -105,7 +115,7 @@ impl Runtime {
         let size = (natural.w.ceil(), natural.h.ceil());
         let layout = stave_ui::solve(&face.root, size, &m);
         let mut items = Vec::new();
-        flatten(&face.root, &layout, &mut items);
+        flatten(&face.root, &layout, &[], &mut items);
         let mut ctls = Vec::new();
         for (i, it) in items.iter().enumerate() {
             for control in it.part.controls(it.rect) {
@@ -122,6 +132,7 @@ impl Runtime {
             drag: None,
             hover: None,
             memo: Vec::new(),
+            pages: HashMap::new(),
         }
     }
 
@@ -161,6 +172,24 @@ impl Runtime {
         v
     }
 
+    fn shown(&self, item: usize) -> bool {
+        self.items[item]
+            .when
+            .iter()
+            .all(|&(k, p)| self.pages.get(&k).copied().unwrap_or(0) == u32::from(p))
+    }
+
+    /// The page shown for page set `key`.
+    pub fn page(&self, key: u32) -> u32 {
+        self.pages.get(&key).copied().unwrap_or(0)
+    }
+
+    fn page_key(&self) -> u64 {
+        let mut v: Vec<(u32, u32)> = self.pages.iter().map(|(k, p)| (*k, *p)).collect();
+        v.sort_unstable();
+        crate::part::sprite_key(v)
+    }
+
     fn focus(&self, item: usize) -> Focus {
         let owns = |c: Option<usize>| c.is_some_and(|c| self.ctls[c].item == item);
         Focus {
@@ -171,12 +200,14 @@ impl Runtime {
 
     fn bake(&self, host: &dyn Host, scale: f64, text: &mut dyn TextPainter) -> Canvas {
         let mut occ = Vec::new();
-        for it in &self.items {
-            it.part.occluders(it.rect, &self.face.theme, &mut occ);
+        for (i, it) in self.items.iter().enumerate() {
+            if self.shown(i) {
+                it.part.occluders(it.rect, &self.face.theme, &mut occ);
+            }
         }
         let shadows = Shadows::new(self.size.0, self.size.1, &occ);
         let mut scene = Scene::new();
-        for it in &self.items {
+        for (_, it) in self.items.iter().enumerate().filter(|(i, _)| self.shown(*i)) {
             it.part.bake(
                 it.rect,
                 &mut Bake {
@@ -196,7 +227,7 @@ impl Runtime {
 
     /// Paint the whole face at `scale` px/pt into `out`.
     pub fn render(&mut self, host: &dyn Host, scale: f64, time: f64, out: &mut Canvas, text: &mut dyn TextPainter) {
-        let key = scale.to_bits();
+        let key = scale.to_bits() ^ self.page_key().rotate_left(17);
         if !self.baked.as_ref().is_some_and(|(k, _)| *k == key) {
             let c = self.bake(host, scale, text);
             self.baked = Some((key, c));
@@ -208,6 +239,9 @@ impl Runtime {
         out.px.extend_from_slice(&base.px);
         let mut scene = Scene::new();
         for (i, it) in self.items.iter().enumerate() {
+            if !self.shown(i) {
+                continue;
+            }
             let f = Frame {
                 theme: &self.face.theme,
                 host,
@@ -215,6 +249,7 @@ impl Runtime {
                 time,
                 focus: self.focus(i),
                 sprites: &self.sprites,
+                pages: &self.pages,
             };
             it.part.paint(it.rect, &f, &mut scene);
         }
@@ -226,6 +261,8 @@ impl Runtime {
         let mut v: Vec<u64> = self.binds().iter().map(|b| host.normalized(b.id).to_bits()).collect();
         v.extend(self.probes().iter().map(|p| host.probe(p).to_bits()));
         v.push(self.hover.map_or(u64::MAX, |h| h as u64));
+        v.push(self.page_key());
+        v.push(host.preset().map_or(u64::MAX, |p| p as u64));
         v.push(self.drag.as_ref().map_or(u64::MAX, |d| d.ctl as u64));
         let animating = self.items.iter().enumerate().any(|(i, it)| {
             it.part.animating(&Frame {
@@ -235,6 +272,7 @@ impl Runtime {
                 time,
                 focus: self.focus(i),
                 sprites: &self.sprites,
+                pages: &self.pages,
             })
         });
         if animating {
@@ -251,7 +289,9 @@ impl Runtime {
 
     fn hit(&self, p: Pt) -> Option<usize> {
         // Topmost first: later parts paint over earlier ones.
-        (0..self.ctls.len()).rev().find(|&i| self.ctls[i].control.hit.contains(p))
+        (0..self.ctls.len())
+            .rev()
+            .find(|&i| self.shown(self.ctls[i].item) && self.ctls[i].control.hit.contains(p))
     }
 
     /// The pointer moved with no button down. Returns true if the hover
@@ -327,6 +367,23 @@ impl Runtime {
                     fine: false,
                     moved: false,
                 });
+            }
+            Gesture::Nudge { bind, delta } => {
+                let n = host.steps(bind.id).max(2);
+                let s = i64::from(step_of(host.normalized(bind.id), n)) + i64::from(delta);
+                host.begin(bind.id);
+                host.set(bind.id, step_value(s.clamp(0, i64::from(n) - 1) as u32, n));
+                host.end(bind.id);
+            }
+            Gesture::Preset { delta } => {
+                let n = host.presets().len() as i64;
+                if n > 0 {
+                    let at = host.preset().map_or(if delta > 0 { -1 } else { 0 }, |p| p as i64);
+                    host.apply_preset((at + i64::from(delta)).rem_euclid(n) as usize);
+                }
+            }
+            Gesture::Page { key, page } => {
+                self.pages.insert(key, page);
             }
             Gesture::Pad { x, y, area } => {
                 host.begin(x.id);

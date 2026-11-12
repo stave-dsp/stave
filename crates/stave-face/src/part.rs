@@ -56,6 +56,27 @@ pub trait Host {
     fn begin(&mut self, id: u32);
     fn set(&mut self, id: u32, normalized: f64);
     fn end(&mut self, id: u32);
+
+    /// The latest captured audio of `channel` into `out`; returns how
+    /// many frames were written (0 when nothing is captured).
+    fn capture(&self, _channel: usize, _out: &mut [f32]) -> usize {
+        0
+    }
+    /// The plugin's published transfer curve (output values over the
+    /// input span), empty when it publishes none.
+    fn curve(&self) -> Vec<f32> {
+        Vec::new()
+    }
+    /// Factory preset names.
+    fn presets(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// The preset last applied, if any.
+    fn preset(&self) -> Option<usize> {
+        None
+    }
+    /// Apply factory preset `index` (every value through the gesture path).
+    fn apply_preset(&mut self, _index: usize) {}
 }
 
 /// The step a normalized value sits on, for an `n`-step parameter.
@@ -122,9 +143,15 @@ pub struct Frame<'a> {
     pub time: f64,
     pub focus: Focus,
     pub sprites: &'a Sprites,
+    /// Editor-local page state (see `Pager`).
+    pub pages: &'a HashMap<u32, u32>,
 }
 
 impl Frame<'_> {
+    /// The page shown for page set `key`.
+    pub fn page(&self, key: u32) -> u32 {
+        self.pages.get(&key).copied().unwrap_or(0)
+    }
     pub fn value(&self, b: Bind) -> f64 {
         self.host.normalized(b.id)
     }
@@ -203,6 +230,12 @@ pub enum Gesture {
     Momentary { bind: Bind },
     /// Two parameters on a plane: x left→right, y bottom→top, over `area`.
     Pad { x: Bind, y: Bind, area: Rect },
+    /// Step a discrete parameter by `delta`, clamped (◀ ▶ buttons).
+    Nudge { bind: Bind, delta: i32 },
+    /// Step through the factory presets by `delta`, wrapping.
+    Preset { delta: i32 },
+    /// Show page `page` of the editor-local page set `key`.
+    Page { key: u32, page: u32 },
 }
 
 impl Gesture {
@@ -214,6 +247,8 @@ impl Gesture {
             | Gesture::Latch { bind }
             | Gesture::Momentary { bind } => alloc::vec![*bind],
             Gesture::Pad { x, y, .. } => alloc::vec![*x, *y],
+            Gesture::Nudge { bind, .. } => alloc::vec![*bind],
+            Gesture::Preset { .. } | Gesture::Page { .. } => Vec::new(),
         }
     }
 }
@@ -257,4 +292,9 @@ pub type FaceNode = stave_ui::Node<Arc<dyn Part>>;
 /// Wrap a part as a fixed-size leaf.
 pub fn leaf(part: impl Part, w: f64, h: f64) -> FaceNode {
     stave_ui::widget(Arc::new(part) as Arc<dyn Part>).size(w, h)
+}
+
+/// Show `node` only while page set `key` shows `page` (see `Pager`).
+pub fn on_page(node: FaceNode, key: u32, page: u32) -> FaceNode {
+    node.when_key(key, page as u16)
 }

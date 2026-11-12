@@ -31,6 +31,9 @@ use crate::*;
 pub(crate) struct Slots {
     ids: HashMap<u32, usize>,
     probes: HashMap<&'static str, usize>,
+    /// Factory presets: name and (param id, plain value) pairs.
+    presets: Vec<(String, Vec<(u32, f64)>)>,
+    current: core::cell::Cell<Option<usize>>,
 }
 
 /// A face being shown: its runtime, the canvas it paints into, and the
@@ -142,6 +145,42 @@ impl Host for Bridge<'_> {
             self.binding.host.end_edit(id);
         }
     }
+    fn capture(&self, channel: usize, out: &mut [f32]) -> usize {
+        let mut buf = [0f32; stave_core::debug::CAPTURE_LEN];
+        let (n, _) = self.bus.read_capture_channel(channel, &mut buf);
+        let n = (n as usize).min(out.len());
+        out[..n].copy_from_slice(&buf[..n]);
+        n
+    }
+    fn curve(&self) -> Vec<f32> {
+        let n = self.bus.curve_used.load(Ordering::Acquire) as usize;
+        self.bus.curve[..n.min(self.bus.curve.len())]
+            .iter()
+            .map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
+            .collect()
+    }
+    fn presets(&self) -> Vec<String> {
+        self.slots.presets.iter().map(|(n, _)| n.clone()).collect()
+    }
+    fn preset(&self) -> Option<usize> {
+        self.slots.current.get()
+    }
+    fn apply_preset(&mut self, index: usize) {
+        let Some((_, values)) = self.slots.presets.get(index) else {
+            return;
+        };
+        for &(id, plain) in values {
+            if let Some(ci) = self.ci(id) {
+                let p = self.binding.param(ci);
+                let (lo, hi) = (p.normalized_to_plain(0.0), p.normalized_to_plain(1.0));
+                let v = plain.clamp(lo.min(hi), lo.max(hi));
+                self.binding.host.begin_edit(id);
+                self.binding.host.perform_edit(id, v);
+                self.binding.host.end_edit(id);
+            }
+        }
+        self.slots.current.set(Some(index));
+    }
 }
 
 /// Split borrows: the runtime mutably, everything the bridge reads
@@ -184,10 +223,30 @@ impl PluginEditorView {
                     canvas: Canvas::new(0, 0),
                     opened: Instant::now(),
                 },
-                slots: Slots { ids, probes },
+                slots: Slots {
+                    ids,
+                    probes,
+                    presets: Vec::new(),
+                    current: core::cell::Cell::new(None),
+                },
                 mount: None,
             })
         });
+    }
+
+    /// The plugin's factory presets, for the face's preset readout.
+    pub fn set_face_presets(&mut self, presets: &[stave_core::Preset]) {
+        let table: Vec<(u32, usize)> = (0..self.param_count()).map(|i| (self.param(i).meta().id.0, i)).collect();
+        let Some(face) = self.face.as_deref_mut() else {
+            return;
+        };
+        for (id, ci) in table {
+            face.slots.ids.entry(id).or_insert(ci);
+        }
+        face.slots.presets = presets
+            .iter()
+            .map(|p| (p.name.to_string(), p.values.iter().map(|(id, v)| (id.0, *v)).collect()))
+            .collect();
     }
 
     pub(crate) fn face_size(&self) -> Option<(f64, f64)> {

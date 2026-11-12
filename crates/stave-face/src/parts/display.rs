@@ -79,31 +79,13 @@ impl Part for Display {
     }
 
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
-        let scale = cx.scale;
-        let sc = Self::screen(r);
-        let win = RRect::new(sc.x, sc.y, sc.w, sc.h, RADIUS);
-        let img = material::bake_rgba(r.w, r.h, scale, |lx, ly| {
-            material::bezel(lx + r.x, ly + r.y, &win, LIP, scale).unwrap_or(([0.0; 3], 0.0))
-        });
-        cx.image(r.x, r.y, r.w, r.h, img);
-        cx.scene.solid(rrect_path(sc, RADIUS), cx.theme.screen);
+        bake_window(cx, Self::screen(r), RADIUS, LIP);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let sc = Self::screen(r);
         (self.draw)(f, sc, s);
-        let key = sprite_key(("glass", sc.w.to_bits(), sc.h.to_bits()));
-        let scale = f.scale;
-        let img = f.sprites.get(key, scale, || {
-            let win = RRect::new(0.0, 0.0, sc.w, sc.h, RADIUS);
-            material::bake_rgba(sc.w, sc.h, scale, |x, y| material::glass(x, y, &win, scale).unwrap_or(([0.0; 3], 0.0)))
-        });
-        s.ops.push(stave_ui::scene::Op::Image {
-            at: stave_ui::scene::pt(sc.x, sc.y),
-            w: sc.w,
-            h: sc.h,
-            image: img,
-        });
+        glass_over(f, s, sc, RADIUS);
     }
 
     fn probes(&self) -> Vec<&'static str> {
@@ -117,6 +99,41 @@ impl Part for Display {
     fn animating(&self, _f: &Frame<'_>) -> bool {
         self.animated
     }
+}
+
+/// Bake a recessed screen: a `lip`-wide bezel around `screen`, and the
+/// screen's dark ground.
+pub fn bake_window(cx: &mut Bake<'_>, screen: Rect, radius: f64, lip: f64) {
+    let scale = cx.scale;
+    let r = Rect {
+        x: screen.x - lip,
+        y: screen.y - lip,
+        w: screen.w + 2.0 * lip,
+        h: screen.h + 2.0 * lip,
+    };
+    let win = RRect::new(screen.x, screen.y, screen.w, screen.h, radius);
+    let img = material::bake_rgba(r.w, r.h, scale, |lx, ly| {
+        material::bezel(lx + r.x, ly + r.y, &win, lip, scale).unwrap_or(([0.0; 3], 0.0))
+    });
+    cx.image(r.x, r.y, r.w, r.h, img);
+    cx.scene.solid(rrect_path(screen, radius), cx.theme.screen);
+}
+
+/// Lay the glass over a screen (after its live content).
+pub fn glass_over(f: &Frame<'_>, s: &mut Scene, screen: Rect, radius: f64) {
+    let key = sprite_key(("glass", screen.w.to_bits(), screen.h.to_bits(), radius.to_bits()));
+    let scale = f.scale;
+    let (w, h) = (screen.w, screen.h);
+    let img = f.sprites.get(key, scale, || {
+        let win = RRect::new(0.0, 0.0, w, h, radius);
+        material::bake_rgba(w, h, scale, |x, y| material::glass(x, y, &win, scale).unwrap_or(([0.0; 3], 0.0)))
+    });
+    s.ops.push(stave_ui::scene::Op::Image {
+        at: stave_ui::scene::pt(screen.x, screen.y),
+        w,
+        h,
+        image: img,
+    });
 }
 
 /// A rounded-rectangle path (cubic corners).

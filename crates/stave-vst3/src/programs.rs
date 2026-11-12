@@ -40,6 +40,10 @@ impl Programs {
         self.exposed().then_some(PROGRAM_LIST_ID)
     }
 
+    pub fn presets(&self) -> &[Preset] {
+        &self.presets
+    }
+
     pub fn count(&self) -> usize {
         self.presets.len()
     }

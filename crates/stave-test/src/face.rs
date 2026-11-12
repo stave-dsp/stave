@@ -39,7 +39,7 @@ pub fn binds_resolve<P: Plugin>(project: &str) {
                     assert_eq!(lookup(b.id).step_count(), 0, "{project}: pad axis `{}` is stepped", b.name);
                 }
             }
-            Gesture::Stepped { bind, .. } | Gesture::Latch { bind } | Gesture::Momentary { bind } => {
+            Gesture::Stepped { bind, .. } | Gesture::Latch { bind } | Gesture::Momentary { bind } | Gesture::Nudge { bind, .. } => {
                 assert!(lookup(bind.id).step_count() >= 2, "{project}: `{}` needs a stepped param", bind.name);
             }
             Gesture::Choose { bind, step } => {
@@ -49,6 +49,7 @@ pub fn binds_resolve<P: Plugin>(project: &str) {
                 // row is clamped to its last step.
                 assert!(step < 3, "{project}: `{}` choice {step} out of range", bind.name);
             }
+            Gesture::Preset { .. } | Gesture::Page { .. } => {}
         }
     }
 }
