@@ -43,7 +43,10 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libasound2-dev xvfb
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}" }
+        with:
+          save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}"
+          # A failing test still leaves a warm build for the next run.
+          cache-on-failure: true
       - uses: taiki-e/install-action@v2.90.3
         with: { tool: nextest@0.9.148 }
       - run: cargo build --workspace --all-targets --locked
@@ -76,7 +79,10 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libasound2-dev
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}" }
+        with:
+          save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}"
+          # A failing test still leaves a warm build for the next run.
+          cache-on-failure: true
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
 
   validators:
@@ -93,7 +99,10 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}" }
+        with:
+          save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}"
+          # A failing test still leaves a warm build for the next run.
+          cache-on-failure: true
       - name: Cache the validators
         id: tools-cache
         uses: actions/cache@v4

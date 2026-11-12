@@ -189,7 +189,6 @@ fn a_panicking_constructor_fails_create_instance() {
     }
 }
 
-#[cfg(target_os = "macos")]
 /// S8: a panic while making a view (the face's part code) is a null view,
 /// not an unwind; the instance is disabled, every later view call fails
 /// safe, and the views and instance still release cleanly.

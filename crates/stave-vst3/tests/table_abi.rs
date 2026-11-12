@@ -810,13 +810,19 @@ fn scheduled_point_lands_within_one_sample() {
 
 // ===========================================================================
 // Mock IComponentHandler — records the gesture conversation (the face
-// tests: faces show on macOS)
+// tests)
 // ===========================================================================
 
-#[cfg(target_os = "macos")]
 use mock::{MockHandler, MH_VTBL};
 
+/// The platform type a view attaches to here.
 #[cfg(target_os = "macos")]
+const PLATFORM: &std::ffi::CStr = c"NSView";
+#[cfg(windows)]
+const PLATFORM: &std::ffi::CStr = c"HWND";
+#[cfg(all(unix, not(target_os = "macos")))]
+const PLATFORM: &std::ffi::CStr = c"X11EmbedWindowID";
+
 mod mock {
     use super::*;
 
@@ -1151,8 +1157,7 @@ fn block_size_guards_hold() {
     }
 }
 
-#[cfg(target_os = "macos")]
-/// Headless (a `FaceView` touches no Cocoa until attached): a face edit
+/// Headless (a `FaceView` touches no window system until attached): a face edit
 /// goes through the view's controller, reaches the host as
 /// beginEdit → performEdit(normalized) → endEdit through the REAL
 /// IComponentHandler, and lands in the table — the DAW can record AND
@@ -1213,7 +1218,6 @@ fn editor_writes_reach_the_host_and_the_table() {
     }
 }
 
-#[cfg(target_os = "macos")]
 /// S7: the view holds a reference on its instance (SDK `CPluginView`
 /// pattern). A host that releases every controller/component reference
 /// first can still call the view, and the view's last release frees the
@@ -1244,12 +1248,17 @@ fn a_view_outliving_the_controller_keeps_the_instance_alive() {
         assert!(rect.right > 0 && rect.bottom > 0, "{rect:?}");
         assert_eq!((vt.get_size)(view, ptr::null_mut()), K_INVALID_ARGUMENT);
         assert_eq!(
-            (vt.is_platform_type_supported)(view, c"NSView".as_ptr()),
+            (vt.is_platform_type_supported)(view, PLATFORM.as_ptr()),
             K_RESULT_OK
         );
-        // Null parent: attach declines before touching Cocoa.
+        for other in [c"NSView", c"HWND", c"X11EmbedWindowID", c"UIView"] {
+            if other != PLATFORM {
+                assert_eq!((vt.is_platform_type_supported)(view, other.as_ptr()), K_RESULT_FALSE, "{other:?}");
+            }
+        }
+        // Null parent: attach declines before touching the window system.
         assert_eq!(
-            (vt.attached)(view, ptr::null_mut(), c"NSView".as_ptr()),
+            (vt.attached)(view, ptr::null_mut(), PLATFORM.as_ptr()),
             K_RESULT_OK
         );
         assert_eq!((vt.removed)(view), K_RESULT_OK);
