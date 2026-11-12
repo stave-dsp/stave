@@ -34,6 +34,6 @@ bash scripts/gates.sh
 git commit -qam "Release ${TAG}"
 git tag -a "$TAG" -m "stave ${VERSION}"
 for remote in $(git remote); do
-  git push "$remote" main "$TAG"
+  git push "$remote" main "$TAG" || echo "push to $remote failed"
 done
 echo "released ${TAG}; next, in stave-plugins: scripts/bump-framework.sh ${TAG}"
