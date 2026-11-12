@@ -65,11 +65,10 @@ fn a_detached_tap_drops_writes() {
 #[test]
 fn a_full_block_detaches_further_taps() {
     let t = Telemetry::new();
-    let names: alloc::vec::Vec<alloc::string::String> =
-        (0..MAX_TAPS).map(|i| alloc::format!("t{i}")).collect();
-    for n in &names {
-        let leaked: &'static str = alloc::boxed::Box::leak(n.clone().into_boxed_str());
-        Tap::register(&t, TapId::new(leaked)).set(1.0);
+    // MAX_TAPS distinct one-character names, sliced from a 'static pool.
+    const POOL: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-";
+    for i in 0..MAX_TAPS {
+        Tap::register(&t, TapId::new(&POOL[i..i + 1])).set(1.0);
     }
     let late = Tap::register(&t, TapId::new("late"));
     assert!(!late.is_attached());
