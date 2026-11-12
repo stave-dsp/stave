@@ -10,7 +10,7 @@ mod panic_log;
 pub use call_error::CallError;
 pub use faults::{FaultCounts, ProcessFault};
 pub use log::{log_dir, FileSink, Log, LogSink, Severity, TelemetrySink};
-pub use panic_log::log_panics;
+pub use panic_log::{drain_panics, log_panics, realtime};
 
 use crate::Info;
 

@@ -6,11 +6,12 @@
 //! observed, which is what makes catching it sound.
 //!
 //! The panic is logged from a non-realtime call: a realtime panic only
-//! records the call's name in a preallocated slot, and the next
+//! records the call's name in a preallocated slot (and the panic hook its
+//! message, see [`crate::diagnostics::realtime`]), and the next
 //! [`run`](PanicGuard::run) (every main-thread entry point, disabled or
 //! not) writes the log message.
 
-use crate::diagnostics::{Diagnostics, Severity};
+use crate::diagnostics::{drain_panics, realtime, Diagnostics, Severity};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -91,7 +92,9 @@ impl PanicGuard {
         }
         // AssertUnwindSafe: after a panic the instance is disabled, so no
         // state `call` touched is read again.
-        match catch_unwind(AssertUnwindSafe(call)) {
+        // `realtime`: the panic hook records the message in place of
+        // writing it (no file, lock or allocation on this thread).
+        match catch_unwind(AssertUnwindSafe(|| realtime(call))) {
             Ok(value) => value,
             Err(_) => {
                 self.disabled.store(true, Ordering::Release);
@@ -125,7 +128,10 @@ impl PanicGuard {
 
     /// Log a recorded panic, once. Non-realtime: for main-thread calls
     /// that do not go through [`run`](Self::run) (CLAP `on_main_thread`).
+    /// Also writes the messages the panic hook recorded on the audio
+    /// thread ([`drain_panics`]).
     pub fn report(&self, diagnostics: &Diagnostics) {
+        drain_panics(&diagnostics.log);
         if self
             .state
             .compare_exchange(RECORDED, REPORTED, Ordering::Acquire, Ordering::Relaxed)
