@@ -30,6 +30,9 @@ pub enum Unit {
     Percent,
     /// Compression-style ratio ("4.0:1").
     Ratio,
+    /// A unit the list above does not name: the number, `decimals`
+    /// places, then `label` ("2.20 kΩ", "22.0 µF").
+    Custom { label: &'static str, decimals: u8 },
 }
 
 /// Fixed-capacity text: fits every format this module emits.
@@ -70,14 +73,22 @@ impl core::ops::Deref for ValueText {
 }
 
 impl core::fmt::Write for ValueText {
+    /// Bounded: past capacity the text is cut (at a char boundary) and
+    /// the write reports an error — `Unit::format` then falls back to
+    /// scientific notation, so a unit is never cut off its number.
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let take = s.len().min(VALUE_TEXT_BYTES - self.len as usize);
-        // Truncation at capacity is silent-but-bounded; capacity is
-        // sized so no format in this module can hit it.
+        let mut take = s.len().min(VALUE_TEXT_BYTES - self.len as usize);
+        while !s.is_char_boundary(take) {
+            take -= 1;
+        }
         self.buf[self.len as usize..self.len as usize + take]
             .copy_from_slice(&s.as_bytes()[..take]);
         self.len += take as u8;
-        Ok(())
+        if take < s.len() {
+            Err(core::fmt::Error)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -100,6 +111,7 @@ impl Unit {
             Unit::Ms => "ms",
             Unit::Percent => "%",
             Unit::Ratio => ":1",
+            Unit::Custom { label, .. } => label,
         }
     }
 
@@ -112,7 +124,7 @@ impl Unit {
             let _ = out.write_str("?");
             return out;
         }
-        let _ = match self {
+        let written = match self {
             Unit::Plain { decimals } => {
                 write!(out, "{:.*}", *decimals as usize, plain)
             }
@@ -142,7 +154,22 @@ impl Unit {
             }
             Unit::Percent => write!(out, "{:.0}%", plain * 100.0),
             Unit::Ratio => write!(out, "{plain:.1}:1"),
+            Unit::Custom { label, decimals } => {
+                write!(out, "{:.*} {label}", *decimals as usize, plain)
+            }
         };
+        if written.is_err() {
+            // Too long for the fixed text (a value far outside any sane
+            // range): scientific notation, unit kept, still parseable.
+            // Found by the `param_text` fuzz target.
+            out = ValueText::new();
+            let (value, sep) = match self {
+                Unit::Percent => (plain * 100.0, ""),
+                Unit::Ratio => (plain, ""),
+                _ => (plain, if self.label().is_empty() { "" } else { " " }),
+            };
+            let _ = write!(out, "{value:.3e}{sep}{}", self.label());
+        }
         out
     }
 
@@ -195,7 +222,9 @@ impl Unit {
                 let (v, _) = strip_number(t)?;
                 Some(v / 100.0)
             }
-            Unit::Plain { .. } | Unit::Ratio => strip_number(t).map(|(v, _)| v),
+            Unit::Plain { .. } | Unit::Ratio | Unit::Custom { .. } => {
+                strip_number(t).map(|(v, _)| v)
+            }
         }
     }
 }
@@ -228,6 +257,20 @@ fn strip_number(t: &str) -> Option<(f64, &str)> {
     if end == 0 {
         return None;
     }
+    // An exponent ("9.112e31", what `format` falls back to): `e`, an
+    // optional sign, then digits — never a unit, none starts with `e`.
+    if bytes.get(end) == Some(&b'e') {
+        let mut k = end + 1;
+        if matches!(bytes.get(k), Some(b'-' | b'+')) {
+            k += 1;
+        }
+        if bytes.get(k).is_some_and(u8::is_ascii_digit) {
+            while bytes.get(k).is_some_and(u8::is_ascii_digit) {
+                k += 1;
+            }
+            end = k;
+        }
+    }
     t[..end].parse::<f64>().ok().map(|v| (v, &t[end..]))
 }
 
@@ -235,19 +278,26 @@ fn strip_number(t: &str) -> Option<(f64, &str)> {
 mod tests {
     use super::*;
 
+    /// Found by the `param_text` fuzz target: a value too long for the
+    /// fixed text lost its unit ("…344.00" for 9.1e31 ms), so it parsed
+    /// back as milliseconds a thousand times off.
+    #[test]
+    fn an_overlong_value_keeps_its_unit_in_scientific_notation() {
+        for unit in [Unit::Ms, Unit::Hz, Unit::Db, Unit::Percent, Unit::Ratio, Unit::Plain { decimals: 6 }] {
+            for v in [9.111_888_119_111_9e31, -3.0e300, 1.0e40] {
+                let shown = unit.format(v);
+                let back = unit.parse(&shown).unwrap_or_else(|| panic!("{unit:?} {shown:?}"));
+                assert_eq!(&*unit.format(back), &*shown, "{unit:?}");
+                assert!((back - v).abs() <= v.abs() * 1e-3, "{unit:?}: {v} → {shown:?} → {back}");
+            }
+        }
+    }
+
     #[test]
     #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
     fn format_matrix() {
-        assert_eq!(
-            &*Unit::DbFloor(-60)
-            .format(-6.0),
-            "-6.0 dB"
-        );
-        assert_eq!(
-            &*Unit::DbFloor(-60)
-            .format(-60.0),
-            "-inf dB"
-        );
+        assert_eq!(&*Unit::DbFloor(-60).format(-6.0), "-6.0 dB");
+        assert_eq!(&*Unit::DbFloor(-60).format(-60.0), "-inf dB");
         assert_eq!(&*Unit::Db.format(-60.0), "-60.0 dB");
         assert_eq!(&*Unit::Hz.format(440.0), "440.0 Hz");
         assert_eq!(&*Unit::Hz.format(2400.0), "2.40 kHz");
@@ -255,6 +305,9 @@ mod tests {
         assert_eq!(&*Unit::Ms.format(1250.0), "1.25 s");
         assert_eq!(&*Unit::Percent.format(0.35), "35%");
         assert_eq!(&*Unit::Ratio.format(4.0), "4.0:1");
+        let kohm = Unit::Custom { label: "kΩ", decimals: 2 };
+        assert_eq!(&*kohm.format(2.2), "2.20 kΩ");
+        assert_eq!(kohm.label(), "kΩ");
         // 0.125 would hit round-half-to-even ("0.12"); use a non-tie.
         assert_eq!(&*Unit::Plain { decimals: 2 }.format(0.126), "0.13");
         assert_eq!(&*Unit::Hz.format(f64::NAN), "?");
@@ -280,6 +333,8 @@ mod tests {
         assert_eq!(Unit::Percent.parse(" 35 % "), Some(0.35));
 
         assert_eq!(Unit::Ratio.parse("4.0:1"), Some(4.0));
+        let farads = Unit::Custom { label: "µF", decimals: 1 };
+        assert_eq!(farads.parse("22.0 µF"), Some(22.0));
         assert_eq!(Unit::Hz.parse("fast"), None);
         assert_eq!(Unit::Hz.parse(""), None);
     }
@@ -290,15 +345,13 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn format_parse_fixpoint() {
         let cases: &[(Unit, f64)] = &[
-            (
-                Unit::DbFloor(-60),
-                -6.0,
-            ),
+            (Unit::DbFloor(-60), -6.0),
             (Unit::Hz, 440.0),
             (Unit::Hz, 2400.0),
             (Unit::Ms, 15.0),
             (Unit::Percent, 0.35),
             (Unit::Ratio, 4.0),
+            (Unit::Custom { label: "kΩ", decimals: 2 }, 2.2),
         ];
         for (unit, v) in cases {
             let shown = unit.format(*v);
@@ -335,14 +388,17 @@ mod tests {
             Unit::Ms,
             Unit::Percent,
             Unit::Ratio,
+            Unit::Custom { label: "kΩ", decimals: 2 },
         ];
         // Sweep: a dense linear run around zero plus a geometric run out
         // to 1e6 on both signs.
         // Miri interprets every format and parse, so it walks a sparse
         // sweep; the switch points below stay exhaustive.
         let (stride, growth) = if cfg!(miri) { (500, 1.05) } else { (1, 1.0007) };
-        let mut values: Vec<f64> =
-            (-20_000..=20_000).step_by(stride).map(|i| i as f64 * 0.0137).collect();
+        let mut values: Vec<f64> = (-20_000..=20_000)
+            .step_by(stride)
+            .map(|i| i as f64 * 0.0137)
+            .collect();
         let mut v = 1e-4;
         while v < 1e6 {
             values.push(v);

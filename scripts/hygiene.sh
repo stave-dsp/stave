@@ -3,6 +3,7 @@
 #
 #   scripts/hygiene.sh             # licences, duplicate versions, sources,
 #                                  # unused dependencies, rustdoc links
+#   scripts/hygiene.sh deps        # the first two only (no compiling)
 #   scripts/hygiene.sh advisories  # the RustSec database (CI: nightly —
 #                                  # it changes without our commits)
 #
@@ -20,6 +21,8 @@ cargo deny --locked check bans licenses sources
 # Every crate but stave-test, whose unused `stave-telemetry` dependency
 # waits on its owner (docs/overhaul.md C9).
 cargo machete $(ls -d crates/*/ tools/*/ examples/*/ fuzz/ | grep -v '^crates/stave-test/$')
-# Every intra-doc link resolves, private items' docs included (the
-# public pass runs in CI's `warnings` job).
+# `deps`: no compiling (CI's Linux `rules` job; the macOS `lint` job
+# documents the private items).
+[[ "${1:-}" == deps ]] && exit 0
+# Every intra-doc link resolves, private items' docs included.
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked

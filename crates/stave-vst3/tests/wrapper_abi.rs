@@ -239,7 +239,7 @@ fn test_signal(len: usize, seed: u32) -> Vec<f32> {
 
 // Under Miri every frame is interpreted: three short blocks still
 // cross every block boundary and every unsafe path.
-const FRAMES: usize = if cfg!(miri) { 16 } else { 64 };
+const FRAMES: usize = if cfg!(miri) { 24 } else { 64 };
 const BLOCKS: usize = if cfg!(miri) { 3 } else { 8 };
 
 #[test]

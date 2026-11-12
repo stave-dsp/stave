@@ -65,7 +65,8 @@ jobs:
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
-      - run: cargo doc --workspace --no-deps --locked
+      # Every intra-doc link, private items' docs included.
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
         env:
           RUSTDOCFLAGS: -D warnings
       # The declared rust-version is a promise: hold it.
@@ -121,7 +122,7 @@ jobs:
       - run: scripts/check-vocabulary.sh
       - run: scripts/check-purity.sh
       - run: scripts/check-golden-sizes.sh
-      - run: scripts/hygiene.sh
+      - run: scripts/hygiene.sh deps
 
   portable:
     # The portable crates never grow platform assumptions: check them on
