@@ -1,5 +1,5 @@
 //! Write-once, atomically-published inline strings — the slot-name
-//! primitive behind every DebugBus registry.
+//! primitive behind every telemetry registry (tap and breakpoint names).
 
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -20,7 +20,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// the single init thread). Enforced by a debug assertion, relied on by
 /// the SAFETY argument in `as_str`.
 #[repr(C)]
-pub struct InlineStr<const N: usize> {
+pub(crate) struct InlineStr<const N: usize> {
     ready: AtomicBool,
     bytes: UnsafeCell<[u8; N]>,
 }

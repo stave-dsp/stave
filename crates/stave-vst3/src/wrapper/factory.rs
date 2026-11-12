@@ -204,30 +204,19 @@ pub(super) unsafe extern "C" fn factory_create_instance<P: Vst3Export>(
 /// # Safety
 /// `iid` is a 16-byte TUID; `obj` is writable.
 unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) -> Tresult {
-    // Allocate the debug bus *before* the plugin so we can hand it to
-    // `debug_attach` after construction.
-    let debug_bus = DebugBus::new();
-    // Pre-register the generic I/O level probes so the editor's meter rails
-    // can bind to them before audio (and thus the first probe write) runs.
-    {
-        let io_in = AtomicU16::new(u16::MAX);
-        let io_out = AtomicU16::new(u16::MAX);
-        let io_in_left = AtomicU16::new(u16::MAX);
-        let io_in_right = AtomicU16::new(u16::MAX);
-        let io_out_left = AtomicU16::new(u16::MAX);
-        let io_out_right = AtomicU16::new(u16::MAX);
-        debug_bus.probe_f64(&io_in, "io_in", -120.0);
-        debug_bus.probe_f64(&io_out, "io_out", -120.0);
-        debug_bus.probe_f64(&io_in_left, "io_in_l", -120.0);
-        debug_bus.probe_f64(&io_in_right, "io_in_r", -120.0);
-        debug_bus.probe_f64(&io_out_left, "io_out_l", -120.0);
-        debug_bus.probe_f64(&io_out_right, "io_out_r", -120.0);
-    }
+    // Telemetry exists before the plugin so it can be attached right
+    // after construction. The wrapper's I/O taps are registered (and
+    // read the floor) before audio runs, so the editor's meter rails
+    // draw from the first frame.
+    let telemetry = Telemetry::new();
+    let taps = WrapperTaps::new(&telemetry);
+    let floor = [WrapperTaps::FLOOR_DB; 3];
+    taps.publish_peaks(floor, floor);
 
     let mut plugin_obj = P::new();
-    plugin_obj.debug_attach(debug_bus.clone());
+    plugin_obj.attach_telemetry(telemetry.clone());
     let diagnostics = Diagnostics::new(&P::DESCRIPTOR);
-    diagnostics.log.add(Box::new(BusSink(debug_bus.clone())));
+    diagnostics.log.add(Box::new(TelemetrySink(telemetry.clone())));
     let (param_table, editor_face) = (plugin_obj.param_table(), plugin_obj.editor_face());
     if let Err(e) = param_table.validate() {
         // Author bug (duplicate or reserved ids): refuse the instance
@@ -284,14 +273,8 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
         guard: PanicGuard::default(),
         handler: ComponentHandler::none(),
         tail: AtomicU32::new(0),
-        debug_bus,
-        io_in_probe: AtomicU16::new(u16::MAX),
-        io_out_probe: AtomicU16::new(u16::MAX),
-        io_in_left_probe: AtomicU16::new(u16::MAX),
-        io_in_right_probe: AtomicU16::new(u16::MAX),
-        io_out_left_probe: AtomicU16::new(u16::MAX),
-        io_out_right_probe: AtomicU16::new(u16::MAX),
-        cpu_probe: AtomicU16::new(u16::MAX),
+        telemetry,
+        taps,
         config: core::sync::atomic::AtomicUsize::new(0),
     }));
 

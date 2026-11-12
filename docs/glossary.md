@@ -127,13 +127,17 @@ detectors) and observation both read this one surface.
 
 ## Observation
 
-**Tap** — a declared, typed handle the engine writes measurements
-through (gain reduction, peaks, CPU). Zero-cost until a bus
-attaches. (≈ a metrics endpoint / structured logging: named
-channels, sampled by the UI, never strings.)
+**Telemetry** — the plugin → editor/tool channel (crate
+`stave-telemetry`; formerly the debug bus): taps, capture, the
+transfer curve, log messages. The wrapper allocates one per instance
+and hands it over through `attach_telemetry`.
 
-**Telemetry** — the engine component that owns taps + capture +
-publish. The other end of the framework's `attach_telemetry` seam.
+**Tap / TapId** — one published value / its id. Declared as a struct
+field under `#[derive(Taps)]`, which makes the id a constant
+(`HeirloomTaps::SPIN`); the engine writes `taps.spin.set(v)`, a face or
+tool reads by that id. Never strings, never "probe" (that word is the
+tooling macro `probe!`). (≈ a metrics endpoint / structured logging:
+named channels, sampled by the UI.)
 
 **Scope** — the framework's capture scratch for a face's
 oscilloscope-style displays, plus the CPU load meter.

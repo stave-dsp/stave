@@ -1,18 +1,19 @@
-//! Loom models of the DebugBus registration protocol.
+//! Loom models of the telemetry registration protocol.
 //!
 //! These model the PROTOCOL (the atomic choreography), not the production
-//! structs — constructing a full `DebugBus` under loom would register
+//! structs — constructing a full `Telemetry` under loom would register
 //! thousands of tracked atomics. The invariants proven here are exactly
-//! the ones `resolve_probe` and `InlineStr` rely on;
-//! keep the shapes in sync with `stave-debug/src/lib.rs`. Miri runs the
-//! REAL types under concurrency (`concurrent_scan_during_registration`);
-//! loom exhausts the interleavings of the protocol itself.
+//! the ones tap registration (`slot.rs`: `reserve`, `find_tap`) and
+//! `InlineStr` rely on; keep the shapes in sync with
+//! `stave-telemetry/src/slot.rs`. Miri runs the REAL types under
+//! concurrency (`concurrent_scan_during_registration`); loom exhausts the
+//! interleavings of the protocol itself.
 //!
-//! Run with: RUSTFLAGS="--cfg loom" cargo test -p stave-debug --test loom --release
+//! Run with: RUSTFLAGS="--cfg loom" cargo test -p stave-telemetry --test loom --release
 #![cfg(loom)]
 
 use loom::cell::UnsafeCell;
-use loom::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use loom::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
@@ -175,5 +176,90 @@ fn a_message_slot_is_never_read_torn() {
             }
         }
         writer.join().unwrap();
+    });
+}
+
+/// Model of a `TapSlot` being reserved for a `TapId`: the id is stored
+/// (Relaxed) before the name is published (Release); a reader matching by
+/// id (`find_tap`) first observes the name (Acquire).
+struct IdSlot {
+    id: AtomicU64,
+    name: SlotName,
+    latest: AtomicU64,
+}
+
+impl IdSlot {
+    fn reserve(&self, id: u64, name: [u8; 4]) {
+        self.latest.store(0, Ordering::Relaxed);
+        self.id.store(id, Ordering::Relaxed);
+        self.name.set(name);
+    }
+
+    /// `find_tap`'s match: published, and holding `id`.
+    fn holds(&self, id: u64) -> bool {
+        self.name.get().is_some() && self.id.load(Ordering::Relaxed) == id
+    }
+}
+
+/// Check: a reader that sees a slot's name published also sees its id —
+/// a face resolving a `TapId` while the engine registers never matches a
+/// half-reserved slot, and once the name is visible the id matches.
+#[test]
+fn a_published_tap_slot_carries_its_id() {
+    loom::model(|| {
+        let slot = Arc::new(IdSlot {
+            id: AtomicU64::new(0),
+            name: SlotName::new(),
+            latest: AtomicU64::new(0),
+        });
+        let engine = {
+            let slot = Arc::clone(&slot);
+            thread::spawn(move || {
+                slot.reserve(0xfeed, *b"spin");
+                // `Tap::set` after registration: a relaxed store.
+                slot.latest.store(42, Ordering::Relaxed);
+            })
+        };
+        if slot.name.get().is_some() {
+            assert!(slot.holds(0xfeed), "name visible but id not");
+        }
+        engine.join().unwrap();
+        assert!(slot.holds(0xfeed));
+        assert_eq!(slot.latest.load(Ordering::Relaxed), 42);
+    });
+}
+
+/// Check: two threads registering different taps (the engine's `Taps::new`
+/// and a face reserving a slot to draw before audio) get distinct slots,
+/// each found by its own id.
+#[test]
+fn concurrent_tap_registration_finds_each_id() {
+    loom::model(|| {
+        let used = Arc::new(AtomicU16::new(0));
+        let slots = Arc::new([0, 1].map(|_| IdSlot {
+            id: AtomicU64::new(0),
+            name: SlotName::new(),
+            latest: AtomicU64::new(0),
+        }));
+        let reserve = |used: &AtomicU16| loop {
+            let cur = used.load(Ordering::Relaxed);
+            if used
+                .compare_exchange(cur, cur + 1, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                return cur as usize;
+            }
+        };
+        let t = {
+            let (used, slots) = (Arc::clone(&used), Arc::clone(&slots));
+            thread::spawn(move || slots[reserve(&used)].reserve(1, *b"spin"))
+        };
+        slots[reserve(&used)].reserve(2, *b"levl");
+        t.join().unwrap();
+        let n = used.load(Ordering::Acquire) as usize;
+        assert_eq!(n, 2);
+        for id in [1, 2] {
+            assert_eq!(slots[..n].iter().filter(|s| s.holds(id)).count(), 1);
+        }
     });
 }

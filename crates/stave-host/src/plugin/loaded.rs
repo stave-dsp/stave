@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use stave_debug::DebugBus;
+use stave_telemetry::Telemetry;
 use stave_vst3_sys::{
     AudioBusBuffers, IAudioProcessorVtbl, IComponentVtbl, ProcessData, K_RESULT_OK,
     PROCESS_MODE_REALTIME, SAMPLE_SIZE_32,
@@ -20,7 +20,7 @@ use super::com::{Com, Initialized};
 use super::controller::{Controller, ControllerHandle};
 use super::factory::{ClassInfo, Factory};
 use super::module::Module;
-use super::stave_bus::BusRef;
+use super::telemetry::TelemetryRef;
 use super::trace::LoadTrace;
 use super::transport::Transport;
 use crate::control::{Control, ControlError};
@@ -48,7 +48,8 @@ pub struct PluginInfo {
     /// Component and controller wired via IConnectionPoint.
     pub connected: bool,
     pub event_inputs: bool,
-    pub stave_debug_bus: bool,
+    /// A stave plugin: its telemetry is readable.
+    pub stave_telemetry: bool,
     pub load: LoadTrace,
 }
 
@@ -94,7 +95,7 @@ pub struct LoadedPlugin {
     pub(super) transport: Transport,
     pub(super) chunk_notes: Vec<NoteEvent>,
     pub(super) stats: HostStats,
-    pub(super) debug_bus: *const DebugBus,
+    pub(super) telemetry: *const Telemetry,
     pub(super) active: bool,
     pub(super) processing: bool,
     // ---- COM objects: dropped in declaration order (= teardown order).
@@ -138,16 +139,16 @@ impl LoadedPlugin {
             .map_or(self.component.as_ptr(), |c| c.com().as_ptr())
     }
 
-    /// The plugin's debug bus, for callers that must keep its address
+    /// The plugin's telemetry, for callers that must keep its address
     /// after this value moves (the audio callback). Valid while the
     /// instance lives; null for non-stave plugins.
-    pub fn debug_bus_raw(&self) -> *const DebugBus {
-        self.debug_bus
+    pub fn telemetry_raw(&self) -> *const Telemetry {
+        self.telemetry
     }
 
-    fn bus(&self) -> Option<BusRef<'_>> {
+    fn telemetry(&self) -> Option<TelemetryRef<'_>> {
         // SAFETY: owned by the instance, which `self` keeps alive.
-        unsafe { self.debug_bus.as_ref() }.map(BusRef)
+        unsafe { self.telemetry.as_ref() }.map(TelemetryRef)
     }
 
     pub(super) fn activate(&mut self) -> Result<(), super::HostError> {
@@ -334,11 +335,11 @@ impl Instance for LoadedPlugin {
     }
 
     fn probes(&self) -> Vec<Probe> {
-        self.bus().map(BusRef::probes).unwrap_or_default()
+        self.telemetry().map(TelemetryRef::probes).unwrap_or_default()
     }
 
     fn messages(&self, from: u64) -> Vec<PluginMessage> {
-        self.bus().map(|bus| bus.messages(from)).unwrap_or_default()
+        self.telemetry().map(|t| t.messages(from)).unwrap_or_default()
     }
 }
 

@@ -10,7 +10,7 @@ description = "Core audio plugin abstractions for the stave framework"
 
 [dependencies]
 stave-macros.workspace = true
-stave-debug.workspace = true
+stave-telemetry.workspace = true
 stave-face.workspace = true
 stave-dsp.workspace = true
 

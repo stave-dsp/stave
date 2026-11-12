@@ -2,20 +2,20 @@
 
 use core::sync::atomic::{AtomicI32, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
-use crate::{DebugBus, CAPTURE_CHANNELS, CAPTURE_LEN};
+use crate::{Telemetry, CAPTURE_CHANNELS, CAPTURE_LEN};
 
 /// Snapshot of plugin output. Written by the wrapper each block. The GUI reads
 /// it with tearing accepted (last writer wins; not strictly atomic across
 /// channels — fine for a visualiser).
 #[repr(C)]
-pub struct CaptureFrame {
-    pub channels: AtomicU16,
-    pub frames: AtomicU32,
-    pub block: AtomicU64,
+pub(crate) struct CaptureFrame {
+    channels: AtomicU16,
+    frames: AtomicU32,
+    block: AtomicU64,
     /// Sample storage: planar by channel, padded to CAPTURE_LEN per channel.
     /// f32 bit-patterns stored as AtomicI32 so we can update from the audio
     /// thread without UB; tearing across samples is acceptable.
-    pub samples: [AtomicI32; CAPTURE_CHANNELS * CAPTURE_LEN],
+    samples: [AtomicI32; CAPTURE_CHANNELS * CAPTURE_LEN],
 }
 
 impl CaptureFrame {
@@ -34,7 +34,25 @@ impl CaptureFrame {
     }
 }
 
-impl DebugBus {
+/// What the capture frame holds right now.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Capture {
+    pub channels: usize,
+    pub frames: usize,
+    /// The block it was captured in.
+    pub block: u64,
+}
+
+impl Telemetry {
+    /// The capture frame's shape and block.
+    pub fn capture(&self) -> Capture {
+        Capture {
+            channels: self.capture.channels.load(Ordering::Acquire) as usize,
+            frames: self.capture.frames.load(Ordering::Acquire) as usize,
+            block: self.capture.block.load(Ordering::Acquire),
+        }
+    }
+
     /// Wrapper entry: copy a block of per-channel samples into the capture
     /// frame. Called once per `process()` from the format wrapper, after the
     /// plugin has filled its output.

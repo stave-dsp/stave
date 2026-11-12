@@ -14,7 +14,7 @@
 //! when touching DSP, and update the baselines recorded in each
 //! project's test header when they legitimately move.
 
-use stave_core::{DebugBus, Event, EventKind, NoteEvent, NoteKind, Plugin};
+use stave_core::{Event, EventKind, NoteEvent, NoteKind, Plugin, Telemetry};
 use stave_measure::signal::{Noise, Signal};
 
 use crate::PluginHarness;
@@ -98,7 +98,7 @@ pub fn perf_report<P: Plugin>(project: &str, cases: &[PerfCase], config: &PerfCo
     );
     for case in cases {
         let mut h = PluginHarness::<P>::new(config.sample_rate, block);
-        h.plugin_mut().debug_attach(DebugBus::new());
+        h.plugin_mut().attach_telemetry(Telemetry::new());
         let table = h.plugin().param_table();
         for (name, value) in case.set {
             table

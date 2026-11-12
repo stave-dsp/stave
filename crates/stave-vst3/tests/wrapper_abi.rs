@@ -410,13 +410,16 @@ fn two_instances_are_isolated() {
     }
 }
 
-/// VST3 has no host log: refusals reach the plugin's log (file and debug
-/// bus), and an audio-thread fault is reported by the next lifecycle call.
+/// VST3 has no host log: refusals reach the plugin's log (file and
+/// telemetry), and an audio-thread fault is reported by the next lifecycle
+/// call. The wrapper's taps are registered (at the floor) before audio.
 #[test]
 fn refusals_and_process_faults_are_logged() {
     unsafe {
         let host = create_instance();
-        let bus = &*stave_debug_bus_for(host.component.cast());
+        let telemetry = &*stave_telemetry_for(host.component.cast());
+        assert_eq!(telemetry.value(stave_core::wrapper::WrapperTaps::IO_IN), Some(-120.0));
+        assert_eq!(telemetry.value(stave_core::wrapper::WrapperTaps::CPU), None);
         assert_eq!(
             (host.proc_vtbl().process)(host.processor, ptr::null_mut()),
             K_INVALID_ARGUMENT
@@ -426,7 +429,7 @@ fn refusals_and_process_faults_are_logged() {
             K_INVALID_ARGUMENT
         );
         host.setup(48_000.0, 64);
-        let messages: Vec<String> = bus.messages.read_from(0).map(|(_, _, text)| text).collect();
+        let messages: Vec<String> = telemetry.messages().read_from(0).map(|(_, _, text)| text).collect();
         host.release();
         assert_eq!(
             messages,

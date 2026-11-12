@@ -34,7 +34,7 @@ fn loads_the_audio_module_and_traces_every_step() {
     assert_eq!(info.class.name, "Stave Tilt");
     assert_eq!(info.class.category, stave_host::plugin::AUDIO_MODULE_CLASS);
     assert_ne!(info.controller, ControllerKind::None);
-    assert!(info.stave_debug_bus);
+    assert!(info.stave_telemetry);
     let steps: Vec<&str> = info.load.steps().iter().map(|s| s.step).collect();
     for want in [
         "module",

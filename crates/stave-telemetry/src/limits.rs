@@ -1,8 +1,8 @@
-//! Capacities and layout constants of the bus (its ABI).
+//! Capacities and layout constants of the telemetry block (its ABI).
 
-/// Maximum number of probe slots a single bus can hold. Plugins exceeding
-/// this silently no-op extra probes.
-pub const MAX_PROBES: usize = 64;
+/// Tap slots one telemetry block holds (taps and tooling probes share
+/// them). A tap registered past this is detached: its `set` does nothing.
+pub const MAX_TAPS: usize = 64;
 
 /// Maximum number of breakpoint slots.
 pub const MAX_BREAKPOINTS: usize = 16;
@@ -13,7 +13,8 @@ pub const CAPTURE_CHANNELS: usize = 2;
 /// Per-channel frame capacity of the capture buffer.
 pub const CAPTURE_LEN: usize = 1024;
 
-/// Max length of a probe/breakpoint name in bytes (incl. nul).
+/// Bytes of a tap/breakpoint name slot, including the nul: a name holds
+/// at most `NAME_BYTES - 1` bytes, and a longer literal is a compile error.
 pub const NAME_BYTES: usize = 32;
 
 /// ABI version. Bump if any field layout changes.
@@ -22,16 +23,16 @@ pub const NAME_BYTES: usize = 32;
 /// 11: preset slots removed (presets are the wrappers' program
 /// parameter).
 /// 12: control slots removed (parameters are the plugin's typed table).
-/// 13: the message ring (`DebugBus::messages`).
-pub const ABI_VERSION: u32 = 13;
+/// 13: the message ring (`Telemetry::messages`).
+/// 14: tap slots carry their `TapId`; fields are private (`Telemetry`).
+pub const ABI_VERSION: u32 = 14;
 
-// f64::INFINITY.to_bits() isn't const on our MSRV (1.80); these are the
-// IEEE-754 bit patterns we'd otherwise compute.
+// The IEEE-754 bit patterns of ±infinity (the empty min/max).
 pub(crate) const F64_INFINITY_BITS: u64 = 0x7ff0_0000_0000_0000;
 
 pub(crate) const F64_NEG_INFINITY_BITS: u64 = 0xfff0_0000_0000_0000;
 
-/// Log messages the bus keeps, newest last.
+/// Log messages the block keeps, newest last.
 pub const MESSAGE_SLOTS: usize = 32;
 
 /// Text bytes per message (a multiple of 8: stored as `AtomicU64` words).

@@ -5,12 +5,12 @@
 extern crate alloc;
 use alloc::{boxed::Box, sync::Arc};
 
-use stave_core::DebugBus;
+use stave_core::Telemetry;
 
 use crate::Id;
 
 pub struct PluginEditorView {
-    pub(crate) bus: Arc<DebugBus>,
+    pub(crate) telemetry: Arc<Telemetry>,
     pub(crate) binding: crate::binding::EditorBinding,
     /// The plugin's face, when it declares one.
     pub(crate) face: Option<Box<crate::face::FaceEditor>>,
@@ -18,12 +18,12 @@ pub struct PluginEditorView {
 
 impl PluginEditorView {
     pub fn new(
-        bus: Arc<DebugBus>,
+        telemetry: Arc<Telemetry>,
         table: Arc<dyn stave_core::params::Params>,
         host: Box<dyn crate::binding::EditorHost>,
     ) -> Box<Self> {
         Box::new(Self {
-            bus,
+            telemetry,
             binding: crate::binding::EditorBinding { table, host },
             face: None,
         })

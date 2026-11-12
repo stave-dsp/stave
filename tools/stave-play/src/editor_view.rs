@@ -2,7 +2,7 @@
 //! component (the one the audio thread is processing) is queried for
 //! `IEditController` — stave plugins are single-object, so the
 //! editor binds to the playing instance and its meters/waves/tails
-//! draw from the real bus. The IPlugView attaches to a container
+//! draw from its real telemetry. The IPlugView attaches to a container
 //! NSView we float over the egui surface and position every frame
 //! to the rect the Plugin tab reserves.
 //!

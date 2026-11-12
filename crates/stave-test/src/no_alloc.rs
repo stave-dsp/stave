@@ -6,7 +6,7 @@
 
 use assert_no_alloc::assert_no_alloc;
 use stave_core::params::AnyParam;
-use stave_core::{DebugBus, Event, EventKind, NoteEvent, NoteKind, Plugin};
+use stave_core::{Event, EventKind, NoteEvent, NoteKind, Plugin, Telemetry};
 use stave_measure::signal::{Noise, Signal, Sine};
 
 use crate::PluginHarness;
@@ -61,7 +61,7 @@ pub fn check_no_alloc<P: Plugin>(name: &str, wiggle: &[&str], config: &NoAllocCo
     let block = config.block_size;
     let total = config.warmup_blocks + config.guarded_blocks;
     let mut h = PluginHarness::<P>::new(config.sample_rate, block);
-    h.plugin_mut().debug_attach(DebugBus::new());
+    h.plugin_mut().attach_telemetry(Telemetry::new());
     let is_instrument = h.input_channels() == 0;
 
     let note = |kind, b: usize| Event {

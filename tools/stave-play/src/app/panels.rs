@@ -207,8 +207,8 @@ impl HostApp {
         }
     }
 
-    /// Live controls: stave's grouped panel when the plugin has a debug
-    /// bus, the controller's generic sliders otherwise (third-party).
+    /// Live controls: stave's grouped panel when the plugin has
+    /// telemetry, the controller's generic sliders otherwise (third-party).
     pub(super) fn draw_controls(&mut self, ui: &mut egui::Ui) {
         ui.heading(&self.project.name);
         ui.label(RichText::new(library::display_name(&self.project.plugin_path)).weak());

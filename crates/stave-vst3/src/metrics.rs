@@ -1,6 +1,6 @@
 //! Block metrics for the editor's rails and load meter: peak dBFS
-//! scanning (read-only). Audio-thread safe throughout — no allocation,
-//! no locks.
+//! scanning (read-only), published through `WrapperTaps`.
+//! Audio-thread safe throughout — no allocation, no locks.
 
 /// Peak levels in dBFS (−120 floor for silence): all channels, the
 /// first, and the second (the first again for mono).
@@ -8,6 +8,12 @@ pub(crate) struct Peaks {
     pub all: f64,
     pub left: f64,
     pub right: f64,
+}
+
+impl Peaks {
+    pub(crate) fn as_array(&self) -> [f64; 3] {
+        [self.all, self.left, self.right]
+    }
 }
 
 /// # Safety

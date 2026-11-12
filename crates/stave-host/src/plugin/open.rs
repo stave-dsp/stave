@@ -143,27 +143,27 @@ fn build(
         },
     )?;
 
-    let debug_bus = module.entry().debug_bus_for.map_or(std::ptr::null(), |f| {
+    let telemetry = module.entry().telemetry_for.map_or(std::ptr::null(), |f| {
         // SAFETY: stave's exported lookup takes any interface pointer
         // of a live instance; `component` is one.
         unsafe { f(component.as_ptr().cast()) }
     });
-    // SAFETY: `abi_version` is the bus's first field in every layout; a
-    // bus from another layout is not read past it.
-    let debug_bus = match unsafe { debug_bus.as_ref() } {
-        Some(b) if b.abi_version != stave_debug::ABI_VERSION => {
+    // SAFETY: `abi_version` is the block's first field in every layout;
+    // a block from another layout is not read past it.
+    let telemetry = match unsafe { telemetry.as_ref() } {
+        Some(t) if t.abi_version() != stave_telemetry::ABI_VERSION => {
             trace.note(
-                "debug bus",
+                "telemetry",
                 false,
                 format!(
                     "ABI {} (host speaks {})",
-                    b.abi_version,
-                    stave_debug::ABI_VERSION
+                    t.abi_version(),
+                    stave_telemetry::ABI_VERSION
                 ),
             );
             std::ptr::null()
         }
-        _ => debug_bus,
+        _ => telemetry,
     };
     let param_count = controller
         .as_ref()
@@ -184,7 +184,7 @@ fn build(
             controller: controller_kind,
             connected: connection.is_some(),
             event_inputs,
-            stave_debug_bus: !debug_bus.is_null(),
+            stave_telemetry: !telemetry.is_null(),
             load: LoadTrace::default(),
         },
         events: EventList::new(),
@@ -192,7 +192,7 @@ fn build(
         transport: Transport::new(config.transport, config.sample_rate.hz()),
         chunk_notes: Vec::with_capacity(super::com::event_list::CAPACITY),
         stats: HostStats::default(),
-        debug_bus,
+        telemetry,
         active: false,
         processing: false,
         _connection: connection,

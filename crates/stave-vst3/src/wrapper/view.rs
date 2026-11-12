@@ -36,7 +36,7 @@ pub(super) fn new_view<P: Vst3Export>(
     inst_ptr: *mut Instance<P>,
 ) -> *mut FUnknown {
     let mut view = crate::cocoa_view::PluginEditorView::new(
-        inst.debug_bus.clone(),
+        inst.telemetry.clone(),
         inst.param_table.clone(),
         Box::new(Vst3EditorHost::<P> { inst: inst_ptr }),
     );

@@ -2,7 +2,7 @@
 //! log (CLAP `clap.log`), a file, a test. Non-realtime only — the audio
 //! thread records [`super::ProcessFault`]s instead.
 
-use stave_debug::DebugBus;
+use stave_telemetry::Telemetry;
 use std::fmt::Display;
 use std::io::Write;
 use std::path::PathBuf;
@@ -84,12 +84,12 @@ impl Log {
     }
 }
 
-/// Into the debug bus's message ring, where a stave host reads it live.
-pub struct BusSink(pub Arc<DebugBus>);
+/// Into the telemetry message ring, where a stave host reads it live.
+pub struct TelemetrySink(pub Arc<Telemetry>);
 
-impl LogSink for BusSink {
+impl LogSink for TelemetrySink {
     fn write(&self, severity: Severity, message: &dyn Display) {
-        self.0.messages.push(severity as u8, &message.to_string());
+        self.0.messages().push(severity as u8, &message.to_string());
     }
 }
 

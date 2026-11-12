@@ -121,8 +121,8 @@ what's over threshold; you decide on concept seams.
   noise on a desktop — warm up, repeat, take the median, report the
   spread. Never conclude from one run (a phantom 20% regression has
   already cost an investigation).
-- **The `cpu` probe**: the VST3 wrapper times `process` every block
-  and publishes duration/budget as the `cpu` probe — any editor can
+- **The `cpu` tap**: the VST3 wrapper times `process` every block
+  and publishes duration/budget as `WrapperTaps::CPU` — any editor can
   mount a `Meter{probe:"cpu"}`, and a glance answers "is something
   suddenly expensive."
 - **Profiling**: attach Instruments (or `samply record`) to the

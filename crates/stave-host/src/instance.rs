@@ -33,7 +33,7 @@ pub enum Tail {
     Infinite,
 }
 
-/// A message the plugin logged (stave's debug bus), with its position in
+/// A message the plugin logged (a stave plugin's telemetry), with its position in
 /// the plugin's message stream.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct PluginMessage {
@@ -47,7 +47,7 @@ fn severity_name<S: serde::Serializer>(severity: &Severity, s: S) -> Result<S::O
     s.serialize_str(severity.as_str())
 }
 
-/// A plugin-side measurement (stave's debug-bus probes).
+/// A plugin-side measurement (a stave plugin's taps).
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Probe {
     pub name: String,

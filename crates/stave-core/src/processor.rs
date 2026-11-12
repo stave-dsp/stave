@@ -22,7 +22,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use stave_debug::DebugBus;
+use stave_telemetry::Telemetry;
 
 use crate::environment::Environment;
 use crate::params::{IndexedParams, Params};
@@ -69,9 +69,9 @@ pub trait Processor: Send + 'static {
     }
     fn load_extra(&mut self, _bytes: &[u8], _from_version: u32) {}
 
-    /// Optional telemetry seam: the host-owned bus arrives after
-    /// construction; engines that publish probes/captures stash it.
-    fn attach_telemetry(&mut self, _bus: Arc<DebugBus>) {}
+    /// The instance's telemetry, after construction: engines register
+    /// their taps (`MyTaps::new(&telemetry)`) or keep it for captures.
+    fn attach_telemetry(&mut self, _telemetry: Arc<Telemetry>) {}
 }
 
 /// The declarations half — associated data, no instance state.
@@ -178,7 +178,7 @@ impl<E: Spec> Plugin for StavePlugin<E> {
         E::migrations()
     }
 
-    fn debug_attach(&mut self, bus: Arc<DebugBus>) {
-        self.engine.attach_telemetry(bus);
+    fn attach_telemetry(&mut self, telemetry: Arc<Telemetry>) {
+        self.engine.attach_telemetry(telemetry);
     }
 }

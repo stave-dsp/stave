@@ -8,10 +8,10 @@ History lives in git; product design lives with each plugin (`plugins/<name>/doc
 ## Crates
 
 ```
-stave-macros ─┐
-stave-debug ──┼─ stave-core ─┬─ stave-vst3 ─┐
-stave-face ───┘              ├─ stave-clap ─┼─ examples/tilt, stave-plugins
-                             └─ stave-dsp ──┘
+stave-macros ────┐
+stave-telemetry ─┼─ stave-core ─┬─ stave-vst3 ─┐
+stave-face ──────┘              ├─ stave-clap ─┼─ examples/tilt, stave-plugins
+                                └─ stave-dsp ──┘
 stave-vst3-sys ── stave-vst3, stave-host     (raw ABI only)
 stave-clap-sys ── stave-clap
 stave-ui ── stave-raster ── stave-face
@@ -36,9 +36,11 @@ stave-measure ── stave-host ── stave-test, tools/*
   one macro each; the macro implements `Vst3Ids` / `ClapEntry` on the
   engine and the blanket `Vst3Export` / `ClapExport` impls lift it onto
   `StavePlugin<E>`.
-- **stave-debug** — the `DebugBus`: declared `Tap`s, probes, the scope
-  and capture buffers, breakpoints, the plugin's recent log messages.
-  Lock-free; zero cost unattached.
+- **stave-telemetry** — `Telemetry`, the plugin → editor/tool channel:
+  typed `Tap`s declared with `#[derive(Taps)]` and read by `TapId`, the
+  capture frame and `Scope`, the transfer curve, the plugin's recent log
+  messages; string-keyed `probe!`/`brk_if!` for tooling only. Lock-free,
+  private fields; zero cost unattached.
 - **stave-ui** — the layout tree (`Node`, layout only) with its flexbox
   solver, and the `Scene` vector IR. **stave-raster** renders a Scene to
   pixels, identically on every OS.
@@ -204,7 +206,7 @@ exaggeration owns it in its own engine.
   calls.
 - Sinks: the plugin's log file (`log_dir()/<plugin id>.log`;
   `$STAVE_LOG_DIR`, which cargo points at `target/logs`), the CLAP host's
-  `clap.log`, and the debug bus's message ring, which stave-host reads
+  `clap.log`, and the telemetry message ring, which stave-host reads
   (`Instance::messages`).
 - A panic never reaches the host: every entry point that runs plugin code
   goes through `PanicGuard` (`catch_unwind`). The panic is logged as
@@ -214,12 +216,24 @@ exaggeration owns it in its own engine.
   destructor also runs under `catch_unwind`.
   Release builds unwind for this.
 
-## Observation (`stave-debug`)
+## Observation (`stave-telemetry`)
 
-Engines declare `Tap`s and publish through the handles; wire names are
-data on the declaration, never strings at publish sites
-(`check-view-bindings.sh`, G6). Publishing needs a `&DebugBus`, so an
-unattached engine cannot reach the path.
+Engines declare their taps as a struct (`#[derive(Taps)] struct MyTaps {
+spin: Tap }`); the derive gives each field a `TapId` constant
+(`MyTaps::SPIN`) and `MyTaps::new(&telemetry)`, which registers them all
+once, off the audio thread. `Tap::set` is then a relaxed atomic store
+into a resolved slot — lock-free, no lookup. Readers (faces, hosts,
+tools) resolve by `TapId`, so the engine and its face name the same
+constant and a typo does not compile; a name longer than a slot holds is
+a compile error. String-keyed `probe!`/`brk_if!` remain for tooling and
+are barred from engines (`check-view-bindings.sh`, G6). A detached tap
+(no telemetry, or a full block) drops its writes, so engines never
+branch on attachment.
+
+The wrapper publishes `WrapperTaps` (I/O peaks, CPU) for every plugin.
+`Telemetry` is `#[repr(C)]` over atomics with its `ABI_VERSION` first;
+stave-host reads it across dlopen through the exported
+`stave_telemetry_for` and refuses another layout.
 
 ## Verification
 

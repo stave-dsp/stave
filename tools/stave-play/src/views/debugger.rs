@@ -1,21 +1,20 @@
-//! Debugger view. Renders live probe values, breakpoint controls, the
-//! plugin's last captured output block, and a pause/resume control that
-//! flips the bus's `paused` flag (the wrapper mutes audio while paused, but
-//! the plugin keeps running so its internal state stays inspectable).
-
-use std::sync::atomic::Ordering;
+//! Debugger view. Renders live taps (and tooling probes), breakpoint
+//! controls, the plugin's last captured output block, and a pause/resume
+//! control that flips telemetry's `paused` flag (the wrapper mutes audio
+//! while paused, but the plugin keeps running so its internal state stays
+//! inspectable).
 
 use eframe::egui::{
     self, Align2, Color32, FontId, Pos2, Rect, RichText, ScrollArea, Sense, Stroke, Vec2,
 };
-use stave_debug::DebugBus;
+use stave_telemetry::Telemetry;
 
-pub fn ui(ui: &mut egui::Ui, bus: Option<&DebugBus>) {
-    let Some(bus) = bus else {
+pub fn ui(ui: &mut egui::Ui, telemetry: Option<&Telemetry>) {
+    let Some(bus) = telemetry else {
         ui.label(
             RichText::new(
-                "(this plugin doesn't export stave_debug_bus_for — it wasn't built with the \
-                 stave framework, or was built before debug support was added)",
+                "(this plugin doesn't export stave_telemetry_for — it wasn't built with the \
+                 stave framework, or with an older telemetry layout)",
             )
             .italics()
             .color(Color32::from_gray(160)),
@@ -42,28 +41,13 @@ pub fn ui(ui: &mut egui::Ui, bus: Option<&DebugBus>) {
             bus.set_paused(!paused);
         }
         ui.separator();
-        ui.label(format!(
-            "block #{}",
-            bus.block_counter.load(Ordering::Relaxed)
-        ));
+        ui.label(format!("block #{}", bus.block()));
         ui.separator();
-        if ui.button("reset probe min/max").clicked() {
-            let used = bus.probes_used.load(Ordering::Relaxed) as usize;
-            for i in 0..used.min(stave_debug::MAX_PROBES) {
-                bus.probes[i]
-                    .min
-                    .store(0x7ff0_0000_0000_0000, Ordering::Relaxed);
-                bus.probes[i]
-                    .max
-                    .store(0xfff0_0000_0000_0000, Ordering::Relaxed);
-                bus.probes[i].hits.store(0, Ordering::Relaxed);
-            }
+        if ui.button("reset tap min/max").clicked() {
+            bus.reset_taps();
         }
         if ui.button("reset breakpoint hits").clicked() {
-            let used = bus.breakpoints_used.load(Ordering::Relaxed) as usize;
-            for i in 0..used.min(stave_debug::MAX_BREAKPOINTS) {
-                bus.breakpoints[i].hit_count.store(0, Ordering::Relaxed);
-            }
+            bus.reset_breakpoint_hits();
         }
     });
 
@@ -73,7 +57,7 @@ pub fn ui(ui: &mut egui::Ui, bus: Option<&DebugBus>) {
         .resizable(true)
         .default_width(380.0)
         .show_inside(ui, |ui| {
-            ui.heading("probes");
+            ui.heading("taps");
             ui.add_space(2.0);
             draw_probes(ui, bus);
             ui.add_space(8.0);
@@ -90,10 +74,10 @@ pub fn ui(ui: &mut egui::Ui, bus: Option<&DebugBus>) {
     });
 }
 
-fn draw_probes(ui: &mut egui::Ui, bus: &DebugBus) {
-    let used = bus.probes_used.load(Ordering::Acquire) as usize;
-    if used == 0 {
-        ui.label(RichText::new("(plugin emits no probes)").italics().weak());
+fn draw_probes(ui: &mut egui::Ui, bus: &Telemetry) {
+    let taps = bus.taps();
+    if taps.is_empty() {
+        ui.label(RichText::new("(plugin publishes no taps)").italics().weak());
         return;
     }
     ScrollArea::vertical()
@@ -112,14 +96,9 @@ fn draw_probes(ui: &mut egui::Ui, bus: &DebugBus) {
                     ui.label(RichText::new("hits").strong());
                     ui.end_row();
 
-                    for i in 0..used.min(stave_debug::MAX_PROBES) {
-                        let p = &bus.probes[i];
-                        let name = p.name_str();
-                        let v = f64::from_bits(p.latest.load(Ordering::Relaxed));
-                        let lo = f64::from_bits(p.min.load(Ordering::Relaxed));
-                        let hi = f64::from_bits(p.max.load(Ordering::Relaxed));
-                        let hits = p.hits.load(Ordering::Relaxed);
-                        ui.label(RichText::new(name).monospace());
+                    for p in &taps {
+                        let (v, lo, hi, hits) = (p.latest, p.min, p.max, p.hits);
+                        ui.label(RichText::new(&p.name).monospace());
                         ui.monospace(format_value(v));
                         ui.monospace(if lo.is_finite() {
                             format_value(lo)
@@ -138,9 +117,8 @@ fn draw_probes(ui: &mut egui::Ui, bus: &DebugBus) {
         });
 }
 
-fn draw_breakpoints(ui: &mut egui::Ui, bus: &DebugBus) {
-    let used = bus.breakpoints_used.load(Ordering::Acquire) as usize;
-    if used == 0 {
+fn draw_breakpoints(ui: &mut egui::Ui, bus: &Telemetry) {
+    if bus.breakpoints().next().is_none() {
         ui.label(
             RichText::new("(plugin defines no breakpoints — call brk_if! to add)")
                 .italics()
@@ -148,21 +126,20 @@ fn draw_breakpoints(ui: &mut egui::Ui, bus: &DebugBus) {
         );
         return;
     }
-    for i in 0..used.min(stave_debug::MAX_BREAKPOINTS) {
-        let bp = &bus.breakpoints[i];
-        let name = bp.name_str();
-        let mut armed = bp.armed.load(Ordering::Acquire);
-        let mut mute = bp.mute_on_hit.load(Ordering::Acquire);
-        let hits = bp.hit_count.load(Ordering::Relaxed);
-        let last_hit = bp.last_hit_block.load(Ordering::Relaxed);
-        let last_cond = bp.last_condition_block.load(Ordering::Relaxed);
+    for bp in bus.breakpoints() {
+        let name = bp.name();
+        let mut armed = bp.armed();
+        let mut mute = bp.mute_on_hit();
+        let hits = bp.hits();
+        let last_hit = bp.last_hit_block();
+        let last_cond = bp.last_condition_block();
         ui.group(|ui| {
             ui.horizontal(|ui| {
                 if ui.checkbox(&mut armed, "armed").changed() {
-                    bp.armed.store(armed, Ordering::Release);
+                    bp.set_armed(armed);
                 }
                 if ui.checkbox(&mut mute, "mute on hit").changed() {
-                    bp.mute_on_hit.store(mute, Ordering::Release);
+                    bp.set_mute_on_hit(mute);
                 }
                 ui.label(RichText::new(name).strong().monospace());
             });
@@ -178,10 +155,12 @@ fn draw_breakpoints(ui: &mut egui::Ui, bus: &DebugBus) {
     }
 }
 
-fn draw_capture(ui: &mut egui::Ui, bus: &DebugBus) {
-    let channels = bus.capture.channels.load(Ordering::Acquire) as usize;
-    let frames = bus.capture.frames.load(Ordering::Acquire) as usize;
-    let block = bus.capture.block.load(Ordering::Acquire);
+fn draw_capture(ui: &mut egui::Ui, bus: &Telemetry) {
+    let stave_telemetry::Capture {
+        channels,
+        frames,
+        block,
+    } = bus.capture();
     ui.horizontal(|ui| {
         ui.monospace(format!(
             "block {} · {} channels · {} samples",
@@ -200,12 +179,12 @@ fn draw_capture(ui: &mut egui::Ui, bus: &DebugBus) {
 
     // Split into rows per channel.
     let row_h = rect.height() / channels.max(1) as f32;
-    let mut buf = vec![0.0_f32; frames.min(stave_debug::CAPTURE_LEN)];
+    let mut buf = vec![0.0_f32; frames.min(stave_telemetry::CAPTURE_LEN)];
     let colors = [
         Color32::from_rgb(120, 210, 255),
         Color32::from_rgb(255, 170, 110),
     ];
-    for ch in 0..channels.min(stave_debug::CAPTURE_CHANNELS) {
+    for ch in 0..channels.min(stave_telemetry::CAPTURE_CHANNELS) {
         let (got, _) = bus.read_capture_channel(ch, &mut buf);
         let row_rect = Rect::from_min_size(
             Pos2::new(rect.min.x, rect.min.y + row_h * ch as f32),

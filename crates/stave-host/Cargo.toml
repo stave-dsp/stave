@@ -14,7 +14,7 @@ libc.workspace = true
 stave-measure.workspace = true
 stave-dsp.workspace = true
 stave-vst3-sys.workspace = true
-stave-debug.workspace = true
+stave-telemetry.workspace = true
 stave-core.workspace = true
 crossbeam-queue = "0.3"
 serde = { version = "1", features = ["derive"] }

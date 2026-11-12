@@ -7,20 +7,20 @@ use std::ffi::{c_void, CStr};
 use std::path::Path;
 use std::ptr::NonNull;
 
-use stave_debug::DebugBus;
+use stave_telemetry::Telemetry;
 use stave_vst3_sys::FUnknown;
 
 use super::bundle::Bundle;
 use super::HostError;
 
-/// The exports of a VST3 binary (plus stave's optional debug hook).
+/// The exports of a VST3 binary (plus stave's optional telemetry hook).
 #[derive(Copy, Clone)]
 pub struct EntryPoints {
     pub bundle_entry: unsafe extern "C" fn(*mut c_void) -> bool,
     pub bundle_exit: unsafe extern "C" fn() -> bool,
     pub get_factory: unsafe extern "C" fn() -> *mut FUnknown,
-    /// `stave_debug_bus_for` — present only in stave-built plugins.
-    pub debug_bus_for: Option<unsafe extern "C" fn(*mut c_void) -> *const DebugBus>,
+    /// `stave_telemetry_for` — present only in stave-built plugins.
+    pub telemetry_for: Option<unsafe extern "C" fn(*mut c_void) -> *const Telemetry>,
 }
 
 /// The [`EntryPoints`] of a stave plugin crate linked into this binary
@@ -33,7 +33,7 @@ macro_rules! entry_points {
             bundle_entry: plugin::bundleEntry,
             bundle_exit: plugin::bundleExit,
             get_factory: plugin::GetPluginFactory,
-            debug_bus_for: Some(plugin::stave_debug_bus_for),
+            telemetry_for: Some(plugin::stave_telemetry_for),
         }
     }};
 }
@@ -57,7 +57,7 @@ impl Module {
                 bundle_entry: library.require(c"bundleEntry")?,
                 bundle_exit: library.require(c"bundleExit")?,
                 get_factory: library.require(c"GetPluginFactory")?,
-                debug_bus_for: library.symbol(c"stave_debug_bus_for"),
+                telemetry_for: library.symbol(c"stave_telemetry_for"),
             }
         };
         Self::enter(entry, Some(library), Some(bundle))
@@ -212,7 +212,7 @@ mod tests {
             bundle_entry: refuse,
             bundle_exit: exit,
             get_factory: factory,
-            debug_bus_for: None,
+            telemetry_for: None,
         };
         assert!(matches!(
             Module::from_entry_points(entry),

@@ -97,18 +97,18 @@ macro_rules! stave_vst3_export {
             &_STAVE_VST3_FACTORY as *const $crate::wrapper::FactoryObj as *mut $crate::sys::FUnknown
         }
 
-        /// stave-specific export. A debug-aware host (stave-play) can dlsym
-        /// this and pass a component pointer it got back from
-        /// `createInstance` (any of IComponent / IAudioProcessor /
+        /// stave-specific export. A telemetry-aware host (stave-play,
+        /// stave-host) can dlsym this and pass a component pointer it got
+        /// back from `createInstance` (any of IComponent / IAudioProcessor /
         /// IEditController, since they all share the same parent layout) to
-        /// get a `*const DebugBus`. Returns null if the pointer is null.
+        /// get a `*const Telemetry`. Returns null if the pointer is null.
         ///
         /// The returned pointer is owned by the plugin instance — do not
         /// free, only read. Valid until the instance is released.
         #[no_mangle]
-        pub unsafe extern "C" fn stave_debug_bus_for(
+        pub unsafe extern "C" fn stave_telemetry_for(
             component: *mut ::core::ffi::c_void,
-        ) -> *const $crate::stave_core::DebugBus {
+        ) -> *const $crate::stave_core::Telemetry {
             if component.is_null() {
                 return ::core::ptr::null();
             }
@@ -123,7 +123,7 @@ macro_rules! stave_vst3_export {
             if parent.is_null() {
                 return ::core::ptr::null();
             }
-            $crate::wrapper::debug_bus_ptr::<$crate::stave_core::StavePlugin<$engine_ty>>(unsafe {
+            $crate::wrapper::telemetry_ptr::<$crate::stave_core::StavePlugin<$engine_ty>>(unsafe {
                 &*parent
             })
         }
@@ -180,18 +180,18 @@ macro_rules! stave_vst3_export {
             &_STAVE_VST3_FACTORY as *const $crate::wrapper::FactoryObj as *mut $crate::sys::FUnknown
         }
 
-        /// stave-specific export. A debug-aware host (stave-play) can dlsym
-        /// this and pass a component pointer it got back from
-        /// `createInstance` (any of IComponent / IAudioProcessor /
+        /// stave-specific export. A telemetry-aware host (stave-play,
+        /// stave-host) can dlsym this and pass a component pointer it got
+        /// back from `createInstance` (any of IComponent / IAudioProcessor /
         /// IEditController, since they all share the same parent layout) to
-        /// get a `*const DebugBus`. Returns null if the pointer is null.
+        /// get a `*const Telemetry`. Returns null if the pointer is null.
         ///
         /// The returned pointer is owned by the plugin instance — do not
         /// free, only read. Valid until the instance is released.
         #[no_mangle]
-        pub unsafe extern "C" fn stave_debug_bus_for(
+        pub unsafe extern "C" fn stave_telemetry_for(
             component: *mut ::core::ffi::c_void,
-        ) -> *const $crate::stave_core::DebugBus {
+        ) -> *const $crate::stave_core::Telemetry {
             if component.is_null() {
                 return ::core::ptr::null();
             }
@@ -203,7 +203,7 @@ macro_rules! stave_vst3_export {
             if parent.is_null() {
                 return ::core::ptr::null();
             }
-            $crate::wrapper::debug_bus_ptr::<$plugin_ty>(unsafe { &*parent })
+            $crate::wrapper::telemetry_ptr::<$plugin_ty>(unsafe { &*parent })
         }
     };
 }

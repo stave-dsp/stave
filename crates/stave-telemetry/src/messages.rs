@@ -4,6 +4,7 @@
 //! the message's index; a reader keeps what it read only if the sequence
 //! was that index's, unchanged across the read.
 
+use alloc::string::String;
 use core::sync::atomic::{fence, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 use crate::{MESSAGE_BYTES, MESSAGE_SLOTS};
@@ -11,7 +12,7 @@ use crate::{MESSAGE_BYTES, MESSAGE_SLOTS};
 const WORDS: usize = MESSAGE_BYTES / 8;
 
 #[repr(C)]
-pub struct Message {
+pub(crate) struct Message {
     sequence: AtomicU64,
     severity: AtomicU8,
     len: AtomicU16,
@@ -118,6 +119,8 @@ fn published(index: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
+    use alloc::vec::Vec;
 
     fn texts(messages: &Messages, from: u64) -> Vec<(u64, u8, String)> {
         messages.read_from(from).collect()

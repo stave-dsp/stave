@@ -40,7 +40,7 @@ impl Bind {
 }
 
 /// What a face reads and writes, supplied by the platform host over the
-/// plugin's parameter table and debug bus. Values are NORMALIZED (0–1,
+/// plugin's parameter table and telemetry. Values are NORMALIZED (0–1,
 /// the parameter's own taper); stepped parameters land on `i / (n−1)`.
 pub trait Host {
     fn normalized(&self, id: u32) -> f64;

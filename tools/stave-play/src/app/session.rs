@@ -1,14 +1,14 @@
 //! One live plugin or module: loaded, playing, with its editor and
 //! handles. The fields are in teardown order — the editor (which binds
 //! the live instance) detaches first, then the stream drops the
-//! instance it owns — so "zero the bus pointer before dropping the
+//! instance it owns — so "zero the telemetry pointer before dropping the
 //! stream" is a property of the type, not a comment every caller must
 //! honor.
 
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
-use stave_debug::DebugBus;
+use stave_telemetry::Telemetry;
 use stave_host::config::HostConfig;
 use stave_host::control::{Control, ControlError};
 use stave_host::instance::Instance;
@@ -36,7 +36,7 @@ pub struct Session {
     editor: Option<EditorView>,
     controls: Controls,
     /// Owned by the plugin inside `stream`; valid while `stream` lives.
-    bus: *const DebugBus,
+    telemetry: *const Telemetry,
     _stream: AudioStream,
     pub name: String,
     pub outputs: usize,
@@ -63,7 +63,7 @@ impl Session {
                 Ok(Self {
                     editor: None,
                     controls,
-                    bus: std::ptr::null(),
+                    telemetry: std::ptr::null(),
                     _stream: stream,
                     name,
                     outputs,
@@ -91,7 +91,7 @@ impl Session {
         }
         let outputs = plugin.layout().outputs;
         let controls = Controls::Plugin(plugin.controller_handle());
-        let bus = plugin.debug_bus_raw();
+        let telemetry = plugin.telemetry_raw();
         let editor_owner = plugin.editor_owner_raw();
         let stream = audio::start(plugin, shared)?;
         // SAFETY: the controller lives inside `stream`, which outlives
@@ -103,17 +103,17 @@ impl Session {
         Ok(Self {
             editor,
             controls,
-            bus,
+            telemetry,
             _stream: stream,
             name,
             outputs,
         })
     }
 
-    /// The plugin's debug bus (stave plugins only).
-    pub fn bus(&self) -> Option<&DebugBus> {
+    /// The plugin's telemetry (stave plugins only).
+    pub fn telemetry(&self) -> Option<&Telemetry> {
         // SAFETY: owned by the plugin `self._stream` keeps alive.
-        unsafe { self.bus.as_ref() }
+        unsafe { self.telemetry.as_ref() }
     }
 
     pub fn editor(&self) -> Option<&EditorView> {
@@ -164,6 +164,6 @@ impl Drop for Session {
             // yet dropped — it is the next field).
             unsafe { ed.detach() };
         }
-        self.bus = std::ptr::null();
+        self.telemetry = std::ptr::null();
     }
 }

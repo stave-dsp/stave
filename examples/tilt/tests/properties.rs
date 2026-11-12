@@ -7,15 +7,15 @@
 
 use std::sync::Arc;
 
-use stave_core::{AudioBuffer, DebugBus, Plugin, ProcessCtx};
+use stave_core::{AudioBuffer, Plugin, ProcessCtx, Telemetry};
 
 const FS: f32 = 48_000.0;
 const BLOCK: usize = 256;
 
 fn render(set: &[(&str, f64)], input: &[f32]) -> Vec<f32> {
     let mut plugin = stave_tilt_vst3::Tilt::new();
-    let bus = DebugBus::new();
-    plugin.debug_attach(bus.clone());
+    let telemetry = Telemetry::new();
+    plugin.attach_telemetry(telemetry.clone());
     let table = plugin.param_table();
     for (n, v) in set {
         table
@@ -50,7 +50,7 @@ fn render(set: &[(&str, f64)], input: &[f32]) -> Vec<f32> {
         plugin.process(&mut ctx);
         out.extend_from_slice(&out_l);
     }
-    let _ = Arc::strong_count(&bus);
+    let _ = Arc::strong_count(&telemetry);
     out
 }
 

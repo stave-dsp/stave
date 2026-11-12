@@ -73,7 +73,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
 
   miri:
-    name: miri (stave-core, stave-debug)
+    name: miri (stave-core, stave-telemetry)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +nightly miri test -p stave-core -p stave-debug
+      - run: cargo +nightly miri test -p stave-core -p stave-telemetry
 
   miri-abi:
     # The strongest bar in this file: the FULL wrapper path (factory →
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p stave-core -p stave-debug --test loom --release
+      - run: cargo test -p stave-core -p stave-telemetry --test loom --release
         env:
           RUSTFLAGS: --cfg loom
 
@@ -166,5 +166,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: >-
           cargo check --all-targets --locked
-          -p stave-core -p stave-dsp -p stave-debug -p stave-measure -p stave-macros
+          -p stave-core -p stave-dsp -p stave-telemetry -p stave-measure -p stave-macros
           -p stave-ui -p stave-raster -p stave-clap -p stave-clap-sys -p stave-vst3-sys

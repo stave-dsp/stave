@@ -1,6 +1,6 @@
 //! Controls — one model for a hosted plugin's parameters, whatever
-//! told us about them (a VST3 controller's inventory, a stave debug
-//! bus, a test double). Values are PLAIN (in the parameter's own
+//! told us about them (a VST3 controller's inventory, a stave plugin's
+//! telemetry, a test double). Values are PLAIN (in the parameter's own
 //! units), never normalized.
 
 /// What a control is allowed to be used for.

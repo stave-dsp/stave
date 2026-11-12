@@ -210,8 +210,8 @@ pub fn description(d: &Description) -> String {
         );
         let _ = writeln!(
             w,
-            "   controller: {:?}, debug bus: {}",
-            p.controller, p.stave_debug_bus
+            "   controller: {:?}, telemetry: {}",
+            p.controller, p.stave_telemetry
         );
     }
     let l = &d.layout;

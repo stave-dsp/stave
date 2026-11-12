@@ -44,8 +44,9 @@ The contracts they keep are in **docs/architecture.md**.
   `circuit` (device models, solvers and schematic-derived topologies)
   and `structures`. `tests/datasheet.rs` prints the measured
   ns/sample price of every primitive.
-- **`stave-debug`** — the `DebugBus`: lock-free probes, controls,
-  presets, and typed `Tap` handles that feed every meter and scope.
+- **`stave-telemetry`** — `Telemetry`, the plugin → editor/tool
+  channel: typed `Tap`s (`#[derive(Taps)]`, read by `TapId`) that feed
+  every meter and scope, capture, log messages; lock-free.
 - **`stave-face`** — the design system: a plugin's editor is a `Face`
   — `Part`s (knobs, switches, lamps, displays, `Plate`s) laid out in
   rows and columns inside a `Panel`, on a `Theme` that holds the whole

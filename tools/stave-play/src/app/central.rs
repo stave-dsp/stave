@@ -25,7 +25,7 @@ impl HostApp {
         let rate = self.project.sample_rate.hz() as f32;
         let config = self.host_config();
         let (input, output) = (&self.shared.input_tap, &self.shared.output_tap);
-        let bus = self.session.as_ref().and_then(|s| s.bus());
+        let telemetry = self.session.as_ref().and_then(|s| s.telemetry());
         let v = &mut self.views;
         match self.project.active_view {
             ViewId::Plugin => {
@@ -72,7 +72,7 @@ impl HostApp {
             ViewId::Spectrum => views::spectrum::ui(ui, output, rate, &mut v.spectrum),
             ViewId::Meters => views::meters::ui(ui, output, &mut v.meters, dt),
             ViewId::Phase => views::phase::ui(ui, output, rate, &mut v.phase),
-            ViewId::Debugger => views::debugger::ui(ui, bus),
+            ViewId::Debugger => views::debugger::ui(ui, telemetry),
             ViewId::Validate => {
                 views::validate::ui(ui, &self.project.plugin_path, config, &mut v.validate)
             }
@@ -81,7 +81,7 @@ impl HostApp {
                 views::perf::PerfInfo {
                     log: &self.shared.log,
                     sample_rate: rate,
-                    bus,
+                    telemetry,
                     state: &mut v.perf,
                 },
             ),

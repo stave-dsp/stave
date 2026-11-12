@@ -71,7 +71,7 @@ cargo run --release -p stave-play -- <bundle.vst3>
 - **Validate**: the validation suite below against fresh instances, one check
   per frame (the window stays live; results land as they finish).
 - **Perf**: load track with the budget line and dropout ticks,
-  deadline-miss counter, plugin-inner (`cpu` probe) vs host-outer
+  deadline-miss counter, plugin-inner (`cpu` tap) vs host-outer
   time, duration histogram, one-click 5 s pprof flamegraph.
 - Other tabs: scope, spectrum, spectrogram, meters, phase, response
   (live H from the taps), debugger (raw bus), debug log.

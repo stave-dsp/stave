@@ -3,7 +3,7 @@ use core::ffi::CStr;
 extern crate alloc;
 use alloc::sync::Arc;
 
-use stave_debug::DebugBus;
+use stave_telemetry::Telemetry;
 
 use crate::params::Params;
 use crate::process::ProcessCtx;
@@ -263,11 +263,10 @@ pub trait Plugin: Send + 'static {
         crate::state::Migrations::default()
     }
 
-    /// Called once per instance, immediately after `new()`, with a freshly
-    /// allocated debug bus. Plugins that want debugging stash the Arc and
-    /// emit `stave_debug::probe!` / `brk_if!` calls from `process()`.
+    /// Called once per instance, immediately after `new()`, with the
+    /// instance's telemetry. Plugins register their taps here
+    /// (`MyTaps::new(&telemetry)`) and publish from `process()`.
     ///
-    /// Default no-op so plugins not interested in debugging pay no cost
-    /// beyond constructing one tiny Arc.
-    fn debug_attach(&mut self, _bus: Arc<DebugBus>) {}
+    /// Default no-op: a plugin without taps pays nothing.
+    fn attach_telemetry(&mut self, _telemetry: Arc<Telemetry>) {}
 }

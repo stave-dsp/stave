@@ -6,10 +6,9 @@
 //!
 //! Parameters flow through [`Bridge`]: reads from the plugin's typed
 //! table, edits through the host's gesture path (so the DAW records and
-//! undoes them), telemetry from the debug bus.
+//! undoes them), taps from the plugin's telemetry.
 
 use core::ffi::c_void;
-use core::sync::atomic::Ordering;
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -18,7 +17,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 
 use stave_core::params::ParamId;
-use stave_core::DebugBus;
+use stave_core::telemetry::{Tap, TapId, Telemetry, CAPTURE_LEN};
 use stave_face::{Cursor, Face, Host, Mods, Runtime};
 use stave_raster::Canvas;
 use stave_ui::scene::{pt, Pt};
@@ -27,10 +26,15 @@ use crate::binding::EditorBinding;
 use crate::view::PluginEditorView;
 use crate::*;
 
-/// Param ids and probe names resolved to table and bus slots.
+/// Param ids resolved to table slots, and the face's taps registered on
+/// the plugin's telemetry.
 pub(crate) struct Slots {
     ids: HashMap<u32, usize>,
-    probes: HashMap<&'static str, usize>,
+    /// Keyed by name: the face API still names taps by string (parts
+    /// declare `probes(&["spin"])`), so this shim turns each name into its
+    /// `TapId` once and reads through the registered handle. Goes when
+    /// faces read `TapId`s directly (the Controller contract).
+    taps: HashMap<&'static str, Tap>,
     /// Factory presets: name and (param id, plain value) pairs.
     presets: Vec<(String, Vec<(u32, f64)>)>,
     current: core::cell::Cell<Option<usize>>,
@@ -90,10 +94,10 @@ impl FaceTarget for EditorTarget {
     }
 }
 
-/// `stave_face::Host` over one editor's table, gesture path and bus.
+/// `stave_face::Host` over one editor's table, gesture path and telemetry.
 struct Bridge<'a> {
     binding: &'a EditorBinding,
-    bus: &'a Arc<DebugBus>,
+    telemetry: &'a Arc<Telemetry>,
     slots: &'a Slots,
 }
 
@@ -124,10 +128,7 @@ impl Host for Bridge<'_> {
         })
     }
     fn probe(&self, name: &str) -> f64 {
-        self.slots
-            .probes
-            .get(name)
-            .map_or(0.0, |&pi| f64::from_bits(self.bus.probes[pi].latest.load(Ordering::Relaxed)))
+        self.slots.taps.get(name).map_or(0.0, Tap::get)
     }
     fn begin(&mut self, id: u32) {
         if self.ci(id).is_some() {
@@ -146,18 +147,14 @@ impl Host for Bridge<'_> {
         }
     }
     fn capture(&self, channel: usize, out: &mut [f32]) -> usize {
-        let mut buf = [0f32; stave_core::debug::CAPTURE_LEN];
-        let (n, _) = self.bus.read_capture_channel(channel, &mut buf);
+        let mut buf = [0f32; CAPTURE_LEN];
+        let (n, _) = self.telemetry.read_capture_channel(channel, &mut buf);
         let n = (n as usize).min(out.len());
         out[..n].copy_from_slice(&buf[..n]);
         n
     }
     fn curve(&self) -> Vec<f32> {
-        let n = self.bus.curve_used.load(Ordering::Acquire) as usize;
-        self.bus.curve[..n.min(self.bus.curve.len())]
-            .iter()
-            .map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
-            .collect()
+        self.telemetry.curve()
     }
     fn presets(&self) -> Vec<String> {
         self.slots.presets.iter().map(|(n, _)| n.clone()).collect()
@@ -186,7 +183,7 @@ impl Host for Bridge<'_> {
 /// Split borrows: the runtime mutably, everything the bridge reads
 /// immutably.
 fn parts(editor: &mut PluginEditorView) -> Option<(&mut FaceEditor, Bridge<'_>)> {
-    let PluginEditorView { face, binding, bus, .. } = editor;
+    let PluginEditorView { face, binding, telemetry, .. } = editor;
     let face = face.as_deref_mut()?;
     let FaceEditor { slots, .. } = face;
     let slots: *const Slots = slots;
@@ -194,7 +191,7 @@ fn parts(editor: &mut PluginEditorView) -> Option<(&mut FaceEditor, Bridge<'_>)>
     // the bridge only reads it; the runtime borrow touches other fields.
     let bridge = Bridge {
         binding,
-        bus,
+        telemetry,
         slots: unsafe { &*slots },
     };
     Some((face, bridge))
@@ -211,12 +208,14 @@ impl PluginEditorView {
                     ids.insert(b.id, ci);
                 }
             }
-            let mut probes = HashMap::new();
-            for name in runtime.probes() {
-                if let Some(pi) = find_or_reserve_probe(&self.bus, name) {
-                    probes.insert(name, pi);
-                }
-            }
+            // Registering reserves a slot (reading 0) for a tap the
+            // engine has not published yet, so displays draw before the
+            // first audio block (a face opened on a stopped transport).
+            let taps = runtime
+                .probes()
+                .into_iter()
+                .filter_map(|name| Some((name, Tap::register(&self.telemetry, TapId::try_new(name)?))))
+                .collect();
             Box::new(FaceEditor {
                 state: FaceState {
                     runtime,
@@ -225,7 +224,7 @@ impl PluginEditorView {
                 },
                 slots: Slots {
                     ids,
-                    probes,
+                    taps,
                     presets: Vec::new(),
                     current: core::cell::Cell::new(None),
                 },
@@ -270,25 +269,6 @@ impl PluginEditorView {
             face.mount = None;
         }
     }
-}
-
-/// Find a probe by name, RESERVING its slot (at 0.0) if the engine has
-/// not published it yet — for displays that must draw before the first
-/// audio block (a face opened on a stopped transport). The engine later
-/// writes the same slot by name. None only if the bus is full.
-fn find_or_reserve_probe(bus: &Arc<DebugBus>, name: &'static str) -> Option<usize> {
-    if let Some(i) = find_probe(bus, name) {
-        return Some(i);
-    }
-    bus.probe_f64(&core::sync::atomic::AtomicU16::new(u16::MAX), name, 0.0);
-    find_probe(bus, name)
-}
-
-fn find_probe(bus: &Arc<DebugBus>, name: &str) -> Option<usize> {
-    let used = bus.probes_used.load(Ordering::Acquire) as usize;
-    bus.probes[..used.min(stave_core::debug::MAX_PROBES)]
-        .iter()
-        .position(|p| p.name_str() == name)
 }
 
 /// A face view mounted in a parent NSView, repainting itself at up to

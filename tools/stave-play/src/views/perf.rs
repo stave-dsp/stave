@@ -2,7 +2,7 @@
 //! load track with the realtime budget drawn ON it and dropout
 //! ticks where callbacks overran; the stats row (median/p95/p99/
 //! max, session deadline misses); the plugin's own inner time (the
-//! wrapper's `cpu` probe) beside the host's outer time so wrapper +
+//! wrapper's `cpu` tap) beside the host's outer time so wrapper +
 //! host overhead is visible as the gap between them; a duration
 //! histogram; and the pprof flamegraph capture for drilling into
 //! WHERE the time goes.
@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use eframe::egui::{self, Color32, Stroke};
-use stave_debug::DebugBus;
+use stave_core::wrapper::WrapperTaps;
+use stave_telemetry::Telemetry;
 
 use crate::debug_log::DebugLog;
 
@@ -30,7 +31,7 @@ pub struct PerfState {
 pub struct PerfInfo<'a> {
     pub log: &'a Arc<DebugLog>,
     pub sample_rate: f32,
-    pub bus: Option<&'a DebugBus>,
+    pub telemetry: Option<&'a Telemetry>,
     pub state: &'a mut PerfState,
 }
 
@@ -41,12 +42,7 @@ pub fn ui(ui: &mut egui::Ui, info: PerfInfo<'_>) {
 
     // The plugin's INNER time, when the wrapper publishes it: the
     // gap to the host's outer numbers is wrapper + host overhead.
-    let inner = info.bus.and_then(|bus| {
-        let used = bus.probes_used.load(Ordering::Relaxed) as usize;
-        (0..used)
-            .find(|&i| bus.probes[i].name_str() == "cpu")
-            .map(|i| f64::from_bits(bus.probes[i].latest.load(Ordering::Relaxed)))
-    });
+    let inner = info.telemetry.and_then(|t| t.value(WrapperTaps::CPU));
     if let Some(v) = inner {
         if v > info.state.probe_peak {
             info.state.probe_peak = v;

@@ -139,7 +139,7 @@ fn run(cli: &Cli, out: &mut File) -> Result<ExitCode, Box<dyn Error>> {
 }
 
 /// A few silent blocks: stave plugins register their surface on the
-/// debug bus during their first process calls.
+/// telemetry during their first process calls.
 fn warm_up(plugin: &mut dyn Instance) {
     let mut d = Driver::new(plugin);
     let n = 4 * d.block() as u64;

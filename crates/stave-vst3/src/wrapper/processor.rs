@@ -246,12 +246,12 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     };
 
     // Generic I/O level metering (read-only) for the editor's frame
-    // rails, published as probes below: input pre-process, output
+    // rails, published as taps below: input pre-process, output
     // post-process.
     // SAFETY: `split_for_block` lists are valid for `run` frames.
     let input_peaks = unsafe { crate::metrics::peaks(input_ptrs, run) };
 
-    let block_id = inst.debug_bus.tick_block();
+    let block_id = inst.telemetry.tick_block();
     // Time strictly the plugin's own work (Instant is a wait-free
     // syscall pair — no alloc, no lock; audio-thread safe).
     let t_process = std::time::Instant::now();
@@ -269,16 +269,10 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
 
     // SAFETY: valid for `frames` (SDK).
     let output_peaks = unsafe { crate::metrics::peaks(output_ptrs, frames) };
-    let bus = &inst.debug_bus;
-    bus.probe_f64(&inst.io_in_probe, "io_in", input_peaks.all);
-    bus.probe_f64(&inst.io_out_probe, "io_out", output_peaks.all);
-    bus.probe_f64(&inst.io_in_left_probe, "io_in_l", input_peaks.left);
-    bus.probe_f64(&inst.io_in_right_probe, "io_in_r", input_peaks.right);
-    bus.probe_f64(&inst.io_out_left_probe, "io_out_l", output_peaks.left);
-    bus.probe_f64(&inst.io_out_right_probe, "io_out_r", output_peaks.right);
-    inst.debug_bus.probe_f64(&inst.cpu_probe, "cpu", cpu_frac);
+    inst.taps.publish_peaks(input_peaks.as_array(), output_peaks.as_array());
+    inst.taps.cpu.set(cpu_frac);
 
-    // If a breakpoint or the host has flipped the bus into paused mode,
+    // If a breakpoint or the host has paused telemetry,
     // zero out the audio buffers so the next stage hears silence. The plugin
     // already ran, so its internal state advanced — that's what the inspector
     // wants. Mute is applied *after* the capture write below so the user sees
@@ -287,19 +281,19 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
         // Capture-frame write (before mute, so the inspector sees the
         // plugin's true output even while audio is muted). Skipped when
         // the plugin owns the capture and writes its own pairs (e.g. Forge captures shaper input vs chain output for the scope).
-        let plugin_owns_capture = inst.debug_bus.plugin_owns_capture();
-        let chans = output_ptrs.len().min(stave_core::debug::CAPTURE_CHANNELS);
+        let plugin_owns_capture = inst.telemetry.plugin_owns_capture();
+        let chans = output_ptrs.len().min(stave_core::telemetry::CAPTURE_CHANNELS);
         if chans > 0 && !plugin_owns_capture {
-            let mut tap_buf: [&[f32]; stave_core::debug::CAPTURE_CHANNELS] = [&[], &[]];
+            let mut tap_buf: [&[f32]; stave_core::telemetry::CAPTURE_CHANNELS] = [&[], &[]];
             for (tap, &ptr) in tap_buf.iter_mut().zip(output_ptrs).take(chans) {
                 if !ptr.is_null() {
                     // SAFETY: valid for `frames` (SDK).
                     *tap = unsafe { core::slice::from_raw_parts(ptr, frames) };
                 }
             }
-            inst.debug_bus.write_capture(&tap_buf[..chans], block_id);
+            inst.telemetry.write_capture(&tap_buf[..chans], block_id);
         }
-        if inst.debug_bus.is_paused() {
+        if inst.telemetry.is_paused() {
             for &ptr in output_ptrs.iter().filter(|p| !p.is_null()) {
                 // SAFETY: writable for `frames` (SDK); the plugin's
                 // borrows of it ended with `process`.

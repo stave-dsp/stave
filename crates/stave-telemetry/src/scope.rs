@@ -1,15 +1,13 @@
-//! `Scope` — framework-owned capture scratch + load meter
-//! engines stop hand-rolling capture
-//! buffers and CPU smoothing. Two channels because the capture wire
-//! is transfer PAIRS (probe-domain input vs output); allocation
-//! happens in `prepare` (message thread), never on the audio path.
+//! `Scope` — framework-owned capture scratch and load meter, so engines
+//! do not hand-roll capture buffers and CPU smoothing. Two channels
+//! because the capture wire is transfer pairs (input vs output);
+//! allocation happens in `prepare` (message thread), never on the audio
+//! path.
 
-extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::sync::atomic::Ordering;
 
-use crate::DebugBus;
+use crate::Telemetry;
 
 pub struct Scope {
     ch0: Vec<f32>,
@@ -49,12 +47,11 @@ impl Scope {
         }
     }
 
-    /// Ship this block's pair to the bus capture wire.
-    pub fn publish(&self, bus: &DebugBus, frames: usize) {
+    /// Ship this block's pair to the capture wire.
+    pub fn publish(&self, telemetry: &Telemetry, frames: usize) {
         let n = frames.min(self.ch0.len()).min(self.ch1.len());
         if n > 0 {
-            let blk = bus.block_counter.load(Ordering::Relaxed);
-            bus.write_capture(&[&self.ch0[..n], &self.ch1[..n]], blk);
+            telemetry.write_capture(&[&self.ch0[..n], &self.ch1[..n]], telemetry.block());
         }
     }
 
@@ -67,11 +64,10 @@ impl Scope {
         self.load * 100.0
     }
 
-    /// Convenience: attach-agnostic bus handle check reads better at
-    /// call sites than threading Options through.
-    pub fn publish_to(&self, bus: &Option<Arc<DebugBus>>, frames: usize) {
-        if let Some(bus) = bus {
-            self.publish(bus, frames);
+    /// [`publish`](Self::publish) when telemetry is attached.
+    pub fn publish_to(&self, telemetry: &Option<Arc<Telemetry>>, frames: usize) {
+        if let Some(telemetry) = telemetry {
+            self.publish(telemetry, frames);
         }
     }
 }

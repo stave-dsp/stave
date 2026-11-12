@@ -10,7 +10,7 @@
 //! open.rs        the load sequence (traced, guard per step)
 //! loaded.rs      the live instance: process, state, teardown
 //! controller.rs  parameters: inventory, writes, edits to the processor
-//! stave_bus.rs   stave's debug bus: probes
+//! telemetry.rs   a stave plugin's telemetry: taps, messages
 //! transport.rs   the ProcessContext plugins see
 //! trace.rs       the load trace (STAVE_HOST_TRACE=1 streams it)
 //! com/           host-implemented COM objects + the Com<T> pointer
@@ -24,7 +24,7 @@ mod factory;
 mod loaded;
 mod module;
 mod open;
-mod stave_bus;
+mod telemetry;
 mod trace;
 mod transport;
 

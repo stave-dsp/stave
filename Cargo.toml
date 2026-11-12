@@ -4,13 +4,13 @@ members = [
     "crates/stave-clap",
     "crates/stave-clap-sys",
     "crates/stave-core",
-    "crates/stave-debug",
     "crates/stave-dsp",
     "crates/stave-face",
     "crates/stave-host",
     "crates/stave-macros",
     "crates/stave-measure",
     "crates/stave-raster",
+    "crates/stave-telemetry",
     "crates/stave-test",
     "crates/stave-ui",
     "crates/stave-ui-cocoa",
@@ -59,7 +59,7 @@ stave-clap = { path = "crates/stave-clap" }
 stave-vst3 = { path = "crates/stave-vst3" }
 stave-vst3-sys = { path = "crates/stave-vst3-sys" }
 stave-clap-sys = { path = "crates/stave-clap-sys" }
-stave-debug = { path = "crates/stave-debug" }
+stave-telemetry = { path = "crates/stave-telemetry" }
 stave-dsp = { path = "crates/stave-dsp" }
 stave-test = { path = "crates/stave-test" }
 stave-host = { path = "crates/stave-host" }

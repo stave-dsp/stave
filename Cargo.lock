@@ -2992,17 +2992,10 @@ name = "stave-core"
 version = "0.2.0"
 dependencies = [
  "loom",
- "stave-debug",
  "stave-dsp",
  "stave-face",
  "stave-macros",
-]
-
-[[package]]
-name = "stave-debug"
-version = "0.2.0"
-dependencies = [
- "loom",
+ "stave-telemetry",
 ]
 
 [[package]]
@@ -3027,9 +3020,9 @@ dependencies = [
  "serde",
  "serde_json",
  "stave-core",
- "stave-debug",
  "stave-dsp",
  "stave-measure",
+ "stave-telemetry",
  "stave-tilt-vst3",
  "stave-vst3-sys",
  "thiserror 2.0.18",
@@ -3068,9 +3061,10 @@ dependencies = [
  "rustfft",
  "serde",
  "serde_json",
- "stave-debug",
+ "stave-core",
  "stave-host",
  "stave-measure",
+ "stave-telemetry",
  "stave-vst3-sys",
  "thiserror 2.0.18",
 ]
@@ -3093,15 +3087,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "stave-telemetry"
+version = "0.2.0"
+dependencies = [
+ "loom",
+]
+
+[[package]]
 name = "stave-test"
 version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
  "stave-core",
- "stave-debug",
  "stave-dsp",
  "stave-host",
  "stave-measure",
+ "stave-telemetry",
 ]
 
 [[package]]

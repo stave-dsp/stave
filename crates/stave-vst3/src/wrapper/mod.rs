@@ -7,19 +7,19 @@
 use core::ffi::c_void;
 use core::mem;
 use core::ptr;
-use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 extern crate alloc;
 use alloc::sync::Arc;
 
-use stave_core::diagnostics::{BusSink, CallError, Diagnostics, ProcessFault, Severity};
+use stave_core::diagnostics::{CallError, Diagnostics, ProcessFault, Severity, TelemetrySink};
 use stave_core::params::Params;
 use stave_core::state::StateStore;
 use stave_core::wrapper::state::{self as wrapper_state, MAX_STATE_BYTES};
-use stave_core::wrapper::PanicGuard;
+use stave_core::wrapper::{PanicGuard, WrapperTaps};
 use stave_core::{
-    AudioBuffer, DebugBus, Event as StaveEvent, EventKind, Plugin, PluginCell, ProcessCtx,
-    SharedState,
+    AudioBuffer, Event as StaveEvent, EventKind, Plugin, PluginCell, ProcessCtx, SharedState,
+    Telemetry,
 };
 
 use crate::buses;
@@ -157,22 +157,11 @@ pub struct Instance<P: Vst3Export> {
     pub bypass_id: Option<u32>,
     /// Tail mirror (like latency): hosts query from any thread.
     pub tail: AtomicU32,
-    /// In-process debugger bus. Always allocated; plugins that don't use it
-    /// just never call probe/breakpoint macros. The wrapper writes capture
-    /// frames here unconditionally so the host can inspect output.
-    pub debug_bus: Arc<DebugBus>,
-    /// Probe-slot caches for the generic I/O level meters published by the
-    /// wrapper (peak in/out per block) so the editor's frame rails are live.
-    pub io_in_probe: AtomicU16,
-    pub io_out_probe: AtomicU16,
-    pub io_in_left_probe: AtomicU16,
-    pub io_in_right_probe: AtomicU16,
-    pub io_out_left_probe: AtomicU16,
-    pub io_out_right_probe: AtomicU16,
-    /// CPU probe slot: process-block duration over the block's
-    /// realtime budget (0..1+), published every block — the editor's
-    /// load meter and the "is something O(n²) in here" glance.
-    pub cpu_probe: AtomicU16,
+    /// The instance's telemetry. Always allocated; the wrapper publishes
+    /// its taps and capture frames here so a host can inspect output.
+    pub telemetry: Arc<Telemetry>,
+    /// The wrapper's own taps (I/O peaks for the editor's rails, CPU).
+    pub taps: WrapperTaps,
     /// Index into CONFIGS of the host-accepted port configuration
     /// setBusArrangements selects a declared member; every bus
     /// query and the process aux path serve THAT member. Default 0 =
@@ -262,12 +251,12 @@ pub struct EditorBox<P: Vst3Export> {
     pub view: Box<crate::cocoa_view::PluginEditorView>,
 }
 
-/// Stable C ABI helper: return a raw pointer to the instance's DebugBus.
+/// Stable C ABI helper: return a raw pointer to the instance's telemetry.
 /// Used by the per-type exported lookup symbol the `stave_vst3_export!`
 /// macro emits. The pointer is owned by the Instance — the host must not
 /// free it. Lifetime: valid until the plugin instance is released.
-pub fn debug_bus_ptr<P: Vst3Export>(inst: &Instance<P>) -> *const DebugBus {
-    Arc::as_ptr(&inst.debug_bus)
+pub fn telemetry_ptr<P: Vst3Export>(inst: &Instance<P>) -> *const Telemetry {
+    Arc::as_ptr(&inst.telemetry)
 }
 
 // ===========================================================================

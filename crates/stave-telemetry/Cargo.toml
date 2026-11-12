@@ -1,12 +1,12 @@
 [package]
-name = "stave-debug"
+name = "stave-telemetry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "In-process debugger primitives (probes, breakpoints, capture) for the stave framework"
+description = "Telemetry for stave plugins: typed taps, capture, curve, messages; probes and breakpoints for tooling"
 
 [target.'cfg(loom)'.dependencies]
 loom = "0.7"
