@@ -2967,7 +2967,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stave-bench"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2977,14 +2977,14 @@ dependencies = [
 
 [[package]]
 name = "stave-clap"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "stave-core",
 ]
 
 [[package]]
 name = "stave-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "loom",
  "stave-debug",
@@ -2995,18 +2995,18 @@ dependencies = [
 
 [[package]]
 name = "stave-debug"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "loom",
 ]
 
 [[package]]
 name = "stave-dsp"
-version = "0.0.1"
+version = "0.1.0"
 
 [[package]]
 name = "stave-host"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "crossbeam-queue",
@@ -3024,7 +3024,7 @@ dependencies = [
 
 [[package]]
 name = "stave-macros"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3033,7 +3033,7 @@ dependencies = [
 
 [[package]]
 name = "stave-measure"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "hound",
  "rustfft",
@@ -3043,7 +3043,7 @@ dependencies = [
 
 [[package]]
 name = "stave-play"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "cpal",
  "crossbeam-queue",
@@ -3064,14 +3064,14 @@ dependencies = [
 
 [[package]]
 name = "stave-raster"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "stave-ui",
 ]
 
 [[package]]
 name = "stave-storybook"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "stave-core",
  "stave-ui",
@@ -3080,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "stave-test"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "stave-core",
@@ -3095,7 +3095,7 @@ dependencies = [
 
 [[package]]
 name = "stave-tilt-vst3"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "stave-clap",
@@ -3109,14 +3109,14 @@ dependencies = [
 
 [[package]]
 name = "stave-ui"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "stave-macros",
 ]
 
 [[package]]
 name = "stave-ui-cocoa"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "stave-core",
  "stave-raster",
@@ -3125,7 +3125,7 @@ dependencies = [
 
 [[package]]
 name = "stave-vst3"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "stave-core",
  "stave-measure",
