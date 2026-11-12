@@ -321,17 +321,17 @@ Status: `[ ]` open · `[x]` done (with the commit).
 
 ### D — DSP vocabulary
 
-- [ ] **D1** Most leaves aren't `Stage`s (Svf, Biquad, Allpass1, LinkwitzRiley4, Triode, PushPull, SmoothSat, PassiveToneStack, control primitives): five verbs for one step. Every leaf implements `Stage`; multi-output filters keep their extra methods.
-- [ ] **D2** The tail contract stops at the kernel: no leaf overrides it, `StageKind` forwards neither latency nor tail, `Chain` reports `Some(0)` with feedback on, `Par2` omits its pads. Forward everywhere; filters estimate a −120 dB tail; feedback chains report unbounded.
-- [ ] **D3** `prepare` means three things (`DelayLine::prepare(max_samples)`, `f64` rates in PowerSupply/WDF). `prepare(sample_rate: f32)` everywhere; `DelayLine::allocate(max_samples)`.
-- [ ] **D4** Two setter styles (rate passed per call vs cached at prepare). Always cache the rate; setters take musical units only.
-- [ ] **D5** The one-pole smoothing coefficient is written five times in the crate (and ~18 in plugins). `primitives::filters::OnePole` with `tau_coeff`, plus `DcBlocker`.
-- [ ] **D6** Missing primitives plugins re-implement: `DelayAllpass` (Schroeder), `Comb`, `DcBlocker`, `soft_clip`, `Crossover3`.
-- [ ] **D7** Two 2× oversamplers (legacy IIR `Oversampler2x` still root-exported beside the FIR internals). `Oversampled2x` is the one public form.
-- [ ] **D8** Two `Route` types (`kernel::control::Route`, `modmatrix::Route`); ModMatrix is not built on `Router` as documented. Rebuild it on `Router`.
-- [ ] **D9** Silent clamping hides bugs: `Svf::process` clamps the channel index; `Chain::push` returns a sentinel id. Svf mono under `PerChannel`; `Option`/`Result` for capacity.
-- [ ] **D10** Units and names: `rate`/`sample_rate`/`sr`/`fs`; `set_hz`/`set_rate`/`set_frequency`/`set_corner`; `_ms`/`tc_secs`/seconds/samples; phase 0–1 f64 vs radians f32; `q` vs `resonance`; three overlapping shape enums; three "Filter" types at the root. One name per concept (glossary), one shape enum.
-- [ ] **D11** Docs out of step: the kernel names forge and multiband; Chain says "inside ONE oversampler"; lib.rs describes 3 layers of 5; `tan32` is `x.tan()`; `hz_of_key` in the kernel.
+- [x] **D1** (91ce414) Most leaves aren't `Stage`s (Svf, Biquad, Allpass1, LinkwitzRiley4, Triode, PushPull, SmoothSat, PassiveToneStack, control primitives): five verbs for one step. Every leaf implements `Stage`; multi-output filters keep their extra methods.
+- [x] **D2** (91ce414) The tail contract stops at the kernel: no leaf overrides it, `StageKind` forwards neither latency nor tail, `Chain` reports `Some(0)` with feedback on, `Par2` omits its pads. Forward everywhere; filters estimate a −120 dB tail; feedback chains report unbounded.
+- [x] **D3** (91ce414) `prepare` means three things (`DelayLine::prepare(max_samples)`, `f64` rates in PowerSupply/WDF). `prepare(sample_rate: f32)` everywhere; `DelayLine::allocate(max_samples)`.
+- [x] **D4** (91ce414) Two setter styles (rate passed per call vs cached at prepare). Always cache the rate; setters take musical units only.
+- [x] **D5** (91ce414) The one-pole smoothing coefficient is written five times in the crate (and ~18 in plugins). `primitives::filters::OnePole` with `tau_coeff`, plus `DcBlocker`.
+- [x] **D6** (91ce414) Missing primitives plugins re-implement: `DelayAllpass` (Schroeder), `Comb`, `DcBlocker`, `soft_clip`, `Crossover3`.
+- [x] **D7** (91ce414) Two 2× oversamplers (legacy IIR `Oversampler2x` still root-exported beside the FIR internals). `Oversampled2x` is the one public form.
+- [x] **D8** (91ce414) Two `Route` types (`kernel::control::Route`, `modmatrix::Route`); ModMatrix is not built on `Router` as documented. Rebuild it on `Router`.
+- [x] **D9** (91ce414) Silent clamping hides bugs: `Svf::process` clamps the channel index; `Chain::push` returns a sentinel id. Svf mono under `PerChannel`; `Option`/`Result` for capacity.
+- [x] **D10** (380bc12) Units and names: `rate`/`sample_rate`/`sr`/`fs`; `set_hz`/`set_rate`/`set_frequency`/`set_corner`; `_ms`/`tc_secs`/seconds/samples; phase 0–1 f64 vs radians f32; `q` vs `resonance`; three overlapping shape enums; three "Filter" types at the root. One name per concept (glossary), one shape enum.
+- [x] **D11** (380bc12) Docs out of step: the kernel names forge and multiband; Chain says "inside ONE oversampler"; lib.rs describes 3 layers of 5; `tan32` is `x.tan()`; `hz_of_key` in the kernel.
 
 ### F — The face layer
 
