@@ -63,6 +63,8 @@ struct Ui {
     /// Where every event is recorded, when `STAVE_FACE_TRACE` names a
     /// file (a session that replays as a test: `stave_face::Trace`).
     trace: Option<std::fs::File>,
+    /// `STAVE_FACE_SNAPSHOT` has been written for this face.
+    snapshot_taken: bool,
     canvas: Canvas,
     /// The clock animations read: seconds since the face was shown.
     opened: Instant,
@@ -86,6 +88,35 @@ impl Ui {
     }
 }
 
+/// Seconds a face runs before `STAVE_FACE_SNAPSHOT` takes its picture
+/// (meters and animations under way).
+const SNAPSHOT_AFTER: f64 = 1.0;
+
+impl Ui {
+    /// Once the face has run [`SNAPSHOT_AFTER`], write its picture to the
+    /// PNG `STAVE_FACE_SNAPSHOT` names (once per face): the editor exactly
+    /// as the face draws it, offscreen — never a capture of the screen,
+    /// so nothing over or under the window can appear in it.
+    fn snapshot_when_settled(&mut self, controller: &dyn Controller, scale: f64) {
+        if self.snapshot_taken || self.time() < SNAPSHOT_AFTER {
+            return;
+        }
+        self.snapshot_taken = true;
+        if let Some(path) = std::env::var_os("STAVE_FACE_SNAPSHOT") {
+            // Best effort: a tool waiting on the file reports its absence.
+            let t = self.time();
+            let _ = std::fs::write(path, snapshot(&mut self.runtime, controller, scale, t));
+        }
+    }
+}
+
+/// The face drawn offscreen at `scale`, as PNG bytes.
+pub(crate) fn snapshot(runtime: &mut Runtime, controller: &dyn Controller, scale: f64, time: f64) -> Vec<u8> {
+    let mut canvas = Canvas::new(0, 0);
+    runtime.render(controller, scale, time, &mut canvas, &mut crate::offscreen::CoreText::new(scale));
+    stave_raster::png::encode(&canvas)
+}
+
 /// The trace file `STAVE_FACE_TRACE` names, appended to (a header line
 /// marks each face opened).
 fn trace_file(size: (f64, f64)) -> Option<std::fs::File> {
@@ -107,6 +138,7 @@ impl FaceView {
                 ui: RefCell::new(Ui {
                     runtime,
                     trace,
+                    snapshot_taken: false,
                     canvas: Canvas::new(0, 0),
                     opened: Instant::now(),
                     on_key: None,
@@ -122,6 +154,13 @@ impl FaceView {
     /// the next responder).
     pub fn on_key(&mut self, on_key: impl FnMut(u16) -> Option<Face> + 'static) {
         self.shared.ui.borrow_mut().on_key = Some(Box::new(on_key));
+    }
+
+    /// The face as it draws now, offscreen at `scale` px/pt, as PNG bytes.
+    pub fn snapshot(&self, scale: f64) -> Vec<u8> {
+        let mut ui = self.shared.ui.borrow_mut();
+        let t = ui.time();
+        snapshot(&mut ui.runtime, &*self.shared.controller, scale, t)
     }
 
     /// The face's size in points.
@@ -286,7 +325,11 @@ extern "C" fn tick(_timer: *mut c_void, info: *mut c_void) {
         let Some(view) = Obj::from_ptr(info).map(|v| unsafe { View::new(v) }) else {
             return;
         };
-        let dirty = view.with_ui(|shared, ui| ui.runtime.needs_paint(&*shared.controller, ui.time()));
+        let scale = view.backing_scale();
+        let dirty = view.with_ui(|shared, ui| {
+            ui.snapshot_when_settled(&*shared.controller, scale);
+            ui.runtime.needs_paint(&*shared.controller, ui.time())
+        });
         if dirty == Some(true) {
             view.redraw();
         }

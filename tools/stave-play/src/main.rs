@@ -34,6 +34,13 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     };
+    if let (Some(path), app::CaptureRegion::Editor) = (&launch.screenshot, launch.screenshot_region) {
+        // A stave plugin's face writes its own picture there, offscreen,
+        // once it has run a second (no screen capture, so no other
+        // window can show in it); other editors fall back to the screen.
+        let _ = std::fs::remove_file(path);
+        std::env::set_var("STAVE_FACE_SNAPSHOT", path);
+    }
     let viewport = eframe::egui::ViewportBuilder::default()
         .with_title("stave-play")
         .with_inner_size([1560.0, 920.0])

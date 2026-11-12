@@ -1,8 +1,10 @@
 //! Headless `--screenshot PATH [--note N] [--editor-only]`: let the
 //! editor settle ~90 frames (holding a note from frame 20 so meters and
-//! tails are alive), capture OUR window — or just the plugin editor's
-//! rectangle — with `screencapture`, then close. The agent's eyes on the
-//! editor without a human at the keyboard.
+//! tails are alive), then capture OUR window with `screencapture`, or —
+//! `--editor-only` — the editor alone: a stave face draws itself
+//! offscreen into PATH (`STAVE_FACE_SNAPSHOT`, set at launch), and only
+//! another vendor's editor falls back to capturing its screen rectangle.
+//! The agent's eyes on the editor without a human at the keyboard.
 
 use std::path::PathBuf;
 
@@ -74,6 +76,11 @@ impl HostApp {
             Step::Capture(path) => {
                 let region = shot.region;
                 self.screenshot = None;
+                if region == CaptureRegion::Editor && path.exists() {
+                    println!("screenshot: {} (the face, drawn offscreen)", path.display());
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    return;
+                }
                 let target = match region {
                     CaptureRegion::Window => window_number(self.ns_view).map(Target::Window),
                     CaptureRegion::Editor => self

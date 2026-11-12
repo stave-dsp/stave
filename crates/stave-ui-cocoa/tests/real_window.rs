@@ -168,7 +168,20 @@ mod real {
         assert_eq!((table.knob.normalized(), table.foot.normalized()), (knob, foot), "replayed:\n{text}");
     }
 
+    /// The view's snapshot is the face drawn offscreen at the asked
+    /// scale (what `STAVE_FACE_SNAPSHOT` and stave-play's editor
+    /// screenshots write), not a capture of the screen.
+    pub fn a_snapshot_is_the_face_at_its_scale() {
+        let r = Rig::new();
+        let png = r.window.view().snapshot(2.0);
+        assert_eq!(&png[1..4], b"PNG");
+        let (w, h) = r.window.view().size();
+        let size = |at: usize| u32::from_be_bytes(png[at..at + 4].try_into().unwrap()) as f64;
+        assert_eq!((size(16), size(20)), ((w * 2.0).round(), (h * 2.0).round()));
+    }
+
     pub const TESTS: &[(&str, fn())] = &[
+        ("a_snapshot_is_the_face_at_its_scale", a_snapshot_is_the_face_at_its_scale),
         ("a_recorded_session_replays_to_the_same_values", a_recorded_session_replays_to_the_same_values),
         ("a_click_lands_on_the_part_under_it", a_click_lands_on_the_part_under_it),
         ("dragging_up_on_screen_raises_the_knob", dragging_up_on_screen_raises_the_knob),
