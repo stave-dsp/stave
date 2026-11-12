@@ -8,7 +8,7 @@ name: platforms
 
 on:
   push:
-    branches: [main, "release/**", "xplat/**"]
+    branches: [main, "release/**"]
   pull_request:
   workflow_dispatch:
 
@@ -44,7 +44,7 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}"
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
       - uses: taiki-e/install-action@v2.90.3
@@ -67,7 +67,7 @@ jobs:
           if-no-files-found: ignore
 
   clippy:
-    name: clippy (${{ matrix.os }})
+    name: clippy + rustdoc (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -80,10 +80,14 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}"
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+      # Docs of code that only compiles here (the shells, the loaders).
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   validators:
     # The plugin binaries as a DAW meets them: each platform's entry
@@ -100,7 +104,7 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}"
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
       - name: Cache the validators

@@ -5,12 +5,12 @@
 //! window id, not memory.
 //!
 //! X11 has no main loop a plugin can join, so the view does nothing on
-//! its own: the host's run loop calls [`FaceView::pump`] when the
-//! connection's file descriptor ([`FaceView::fd`]) is readable and on a
+//! its own: the host's run loop calls `FaceView::pump` when the
+//! connection's file descriptor (`FaceView::fd`) is readable and on a
 //! repaint timer (CLAP `posix-fd-support` + `timer-support`, VST3
-//! `IRunLoop`). [`run_app`] is that loop for a stand-alone window.
+//! `IRunLoop`). `run_app` is that loop for a stand-alone window.
 //!
-//! Layout: `view.rs` = [`FaceView`] (window, pointer, keys, blit);
+//! Layout: `view.rs` = `FaceView` (window, pointer, keys, blit);
 //! `pixels.rs` = the visual's pixel format; `app.rs` = a stand-alone
 //! window around a view.
 //!
