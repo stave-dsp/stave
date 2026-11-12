@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "The design system's native storybook — see and use every component."
+description = "The design system's storybook: every part on every theme, live and draggable."
 publish = false
 
 [[bin]]
@@ -13,7 +13,8 @@ name = "stave-storybook"
 path = "src/main.rs"
 
 [dependencies]
-stave-core.workspace = true
+stave-face.workspace = true
+stave-raster.workspace = true
 stave-ui.workspace = true
 stave-ui-cocoa.workspace = true
 

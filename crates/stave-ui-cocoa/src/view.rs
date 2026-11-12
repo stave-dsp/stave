@@ -138,6 +138,9 @@ pub struct PluginEditorView {
     /// Target instance pointer used by the timer (Self ptr, leaked into ObjC).
     pub(crate) self_ptr: *mut PluginEditorView,
     pub(crate) binding: super::binding::EditorBinding,
+    /// A design-system face, when the plugin declares one (it replaces
+    /// the `ui` tree).
+    pub(crate) face: Option<Box<crate::face::FaceEditor>>,
 }
 
 impl PluginEditorView {
@@ -204,6 +207,7 @@ impl PluginEditorView {
             binding: super::binding::EditorBinding { table, host },
             ui: None,
             spectrum_strip_w: 0.0,
+            face: None,
         });
         me.self_ptr = &mut *me as *mut Self;
         me
@@ -228,6 +232,10 @@ impl PluginEditorView {
             return;
         }
         if self.param_count() == 0 {
+            return;
+        }
+        if unsafe { self.attach_face(parent_ns_view) } {
+            unsafe { self.start_timer() };
             return;
         }
         // Dark background on the host's NSView + create a flipped

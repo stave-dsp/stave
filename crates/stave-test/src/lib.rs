@@ -14,6 +14,7 @@
 #![deny(rust_2018_idioms)]
 
 pub mod editor;
+pub mod face;
 pub mod harness;
 pub mod no_alloc;
 pub mod perf;

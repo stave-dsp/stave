@@ -197,6 +197,12 @@ pub trait Plugin: Send + 'static {
         None
     }
 
+    /// The editor as a design-system face, if the plugin declares one;
+    /// hosts prefer it over `editor_ui`.
+    fn editor_face(&self) -> Option<stave_face::Face> {
+        None
+    }
+
     /// Factory presets, declared against typed params in the
     /// project's `presets.rs` (see `editor_kit::preset`). The
     /// framework publishes them wherever presets surface (editor

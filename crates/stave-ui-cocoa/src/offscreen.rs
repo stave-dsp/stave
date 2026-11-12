@@ -125,7 +125,7 @@ impl Drop for CoreText {
 }
 
 impl TextPainter for CoreText {
-    fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color) {
+    fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color, font: &stave_ui::scene::Font) {
         let (w, h) = (canvas.w, canvas.h);
         let k = self.scale;
         unsafe {
@@ -141,7 +141,7 @@ impl TextPainter for CoreText {
                 CGContextScaleCTM(self.ctx, k, k);
             }
             // The context is y-up in points; the canvas is y-down px.
-            crate::widgets::scene_render::draw_text(self.ctx, at.x / k, (h as f64 - at.y) / k, text, size / k, &color);
+            crate::text::draw(self.ctx, at.x / k, (h as f64 - at.y) / k, text, size / k, &color, font);
         }
     }
 }

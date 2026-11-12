@@ -5,7 +5,7 @@
 //! lib.rs      ← you are here: identity, ports, params, editor —
 //!               the DECLARATIONS half, no behavior
 //! params.rs   every knob, with its forever-stable id
-//! editor.rs   the UI tree, a pure function of params
+//! editor.rs   the face, a pure function of params
 //! engine.rs   the ENGINE half: a shelving pair per lane, tilted
 //!               around a pivot — one concept, one file
 //! tests/      the shared checks: validation, editor bindings, no-alloc,
@@ -54,8 +54,8 @@ impl Spec for TiltEngine {
     fn params() -> Arc<TiltParams> {
         TiltParams::new()
     }
-    fn editor(params: &TiltParams) -> Option<stave_core::UiNode> {
-        Some(editor::editor(params))
+    fn face(params: &TiltParams) -> Option<stave_core::face::Face> {
+        Some(editor::face(params))
     }
 }
 

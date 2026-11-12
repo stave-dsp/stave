@@ -336,6 +336,7 @@ pub(super) unsafe extern "C" fn ec_create_view<P: Vst3Export>(
             }),
         );
         view.set_ui(inst.editor_ui.clone());
+        view.set_face(inst.editor_face.clone());
         *editor = Some(Box::new(EditorBox {
             vtbl: &STUB_VIEW_VTBL,
             view,

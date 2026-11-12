@@ -131,6 +131,10 @@ impl PluginEditorView {
     }
 
     pub fn tick(&mut self) {
+        if self.face.is_some() {
+            self.face_tick();
+            return;
+        }
         // Bypass-reactive brand mark: dim the wordmark + retitle the
         // tagline when the host has bypassed the plug-in. Only rebuild
         // the attributed string on edge changes to keep the tick cheap.

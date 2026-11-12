@@ -1,0 +1,16 @@
+[package]
+name = "stave-face"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Stave's design system: themed, physically lit instrument faces composed from parts, with framework-owned layout, rendering and interaction."
+
+[dependencies]
+stave-ui.workspace = true
+stave-raster.workspace = true
+
+[lints]
+workspace = true

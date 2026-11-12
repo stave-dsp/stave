@@ -84,7 +84,9 @@ fn outer_size<W>(
         match d {
             Dim::Px(v) => v,
             Dim::Pct(f) => f * avail_axis,
-            Dim::Fill(_) => avail_axis, // parent overrides in flow; root fills
+            // At least the content (min-content), else the space given;
+            // flow parents override with basis + share.
+            Dim::Fill(_) => avail_axis.max(intrinsic()),
             Dim::Auto => intrinsic(),
         }
     };
@@ -149,10 +151,16 @@ fn content_size<W>(
         Dir::Stack => {
             let mut w = 0.0f64;
             let mut h = 0.0f64;
+            // A stack sizes to its content: a Fill child stretches to
+            // the stack, it does not size it.
             for c in &node.children {
                 let (cw, ch) = outer_size(c, avail, text, m);
-                w = w.max(cw + c.style.margin.h());
-                h = h.max(ch + c.style.margin.v());
+                if !matches!(c.style.width, Dim::Fill(_)) {
+                    w = w.max(cw + c.style.margin.h());
+                }
+                if !matches!(c.style.height, Dim::Fill(_)) {
+                    h = h.max(ch + c.style.margin.v());
+                }
             }
             (w, h)
         }
@@ -235,10 +243,18 @@ fn flow_lines<W>(
             if let Dim::Fill(wt) = main_dim {
                 cur.fill += wt.max(0.0);
             }
-            // Fill children contribute no intrinsic main extent.
-            cur.main -= cmain;
+            // Fill children contribute their min-content as a basis;
+            // the line's slack is shared out on top of it.
+            let (mw, mh) = outer_size(c, (0.0, 0.0), text, m);
+            let basis = if row { mw + c.style.margin.h() } else { mh + c.style.margin.v() };
+            cur.main += basis - cmain;
         }
-        cur.cross = cur.cross.max(ccross);
+        // A Fill on the cross axis stretches to the line; it never
+        // sizes it (a spacer in a row must not make the row tall).
+        let cross_dim = if row { c.style.height } else { c.style.width };
+        if !matches!(cross_dim, Dim::Fill(_)) {
+            cur.cross = cur.cross.max(ccross);
+        }
         cur.idx.push(i);
     }
     if !cur.idx.is_empty() || lines.is_empty() {
@@ -411,12 +427,13 @@ fn child_final_size<W>(
 ) -> (f64, f64) {
     let (mut cw, mut ch) = outer_size(c, avail, text, m);
     if let Some((row, unit)) = fill_ctx {
+        let (mw, mh) = outer_size(c, (0.0, 0.0), text, m);
         if row {
             if let Dim::Fill(wt) = c.style.width {
-                cw = (unit * wt.max(0.0) - c.style.margin.h()).max(0.0);
+                cw = (mw + unit * wt.max(0.0)).max(0.0);
             }
         } else if let Dim::Fill(wt) = c.style.height {
-            ch = (unit * wt.max(0.0) - c.style.margin.v()).max(0.0);
+            ch = (mh + unit * wt.max(0.0)).max(0.0);
         }
     } else {
         // Stack: Fill means the whole content box.

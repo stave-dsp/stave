@@ -23,9 +23,10 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use stave_ui::scene::{Brush, Image, Op, Pt, Scene};
+use stave_ui::scene::{Brush, Font, Image, Op, Pt, Scene};
 use stave_ui::style::Color;
 
+pub mod png;
 mod coverage;
 mod path;
 mod stroke;
@@ -59,13 +60,14 @@ impl Canvas {
 /// `color`. A painter draws straight into the buffer, so text keeps its
 /// place in the paint order.
 pub trait TextPainter {
-    fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color);
+    /// One line at `at` (px, baseline anchor), `size` in px.
+    fn text(&mut self, canvas: &mut Canvas, at: Pt, text: &str, size: f64, color: Color, font: &Font);
 }
 
 /// No text (headless tests of everything else).
 pub struct NoText;
 impl TextPainter for NoText {
-    fn text(&mut self, _: &mut Canvas, _: Pt, _: &str, _: f64, _: Color) {}
+    fn text(&mut self, _: &mut Canvas, _: Pt, _: &str, _: f64, _: Color, _: &Font) {}
 }
 
 /// Draw `scene` (points, y-down) into `canvas` at `scale` px per point.
@@ -80,8 +82,8 @@ pub fn render(scene: &Scene, scale: f64, canvas: &mut Canvas, text: &mut dyn Tex
                 let polys = stroke::stroke(&path::flatten(path, scale), stroke.width * scale, stroke.cap);
                 fill(canvas, &polys, &Brush::Solid(stroke.color), scale);
             }
-            Op::Text { at, text: s, size, color } => {
-                text.text(canvas, Pt { x: at.x * scale, y: at.y * scale }, s, size * scale, *color);
+            Op::Text { at, text: s, size, color, font } => {
+                text.text(canvas, Pt { x: at.x * scale, y: at.y * scale }, s, size * scale, *color, font);
             }
             Op::Image { at, w, h, image } => draw_image(canvas, image, at.x * scale, at.y * scale, w * scale, h * scale),
         }

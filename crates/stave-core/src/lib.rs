@@ -36,6 +36,7 @@ pub use processor::{Processor, Spec, StavePlugin};
 pub use stave_debug as debug;
 pub use stave_debug::{DebugBus, Scope, Tap};
 pub use stave_ui as ui;
+pub use stave_face as face;
 pub use wrapper::{
     ranges_alias, GestureEvent, GestureQueue, PluginCell, ProcessorGuard, ProcessorState,
     ScopedFtz, SharedState,

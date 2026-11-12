@@ -727,6 +727,9 @@ pub(crate) unsafe fn try_attach_owned(v: &mut PluginEditorView, parent_ns_view: 
 impl PluginEditorView {
     /// Window size for owned trees: the solved root IS the window.
     pub fn ui_root_dims(&self) -> Option<(f64, f64)> {
+        if let Some(size) = self.face_size() {
+            return Some(size);
+        }
         let tree = self.ui.as_ref()?;
         let solved = stave_core::ui::solve(tree, (4_000.0, 4_000.0), &crate::mount::CocoaMetrics);
         Some((solved.rect.w, solved.rect.h))

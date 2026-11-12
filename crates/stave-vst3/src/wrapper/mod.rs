@@ -144,6 +144,8 @@ pub struct Instance<P: Vst3Export> {
     pub(crate) units: crate::units::Units,
     /// The project-OWNED editor tree; None = bare dev container.
     pub editor_ui: Option<stave_core::UiNode>,
+    /// The project's design-system face, preferred over `editor_ui`.
+    pub editor_face: Option<stave_core::face::Face>,
     /// Unknown-content retention across state load→save cycles
     /// Mutex: state calls are non-realtime
     /// host threads; the audio path never touches this.

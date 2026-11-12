@@ -145,6 +145,7 @@ impl PluginEditorView {
             unsafe { msg_id(self.timer, sel(c"invalidate")) };
             self.timer = ptr::null_mut();
         }
+        unsafe { self.detach_face() };
         // Slider/label memory is owned by the parent view via addSubview; the
         // parent's removal handles it.
         self.sliders.clear();

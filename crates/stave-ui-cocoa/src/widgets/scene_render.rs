@@ -14,7 +14,6 @@
 use core::ffi::c_void;
 
 use stave_ui::scene::{Brush, Cap, Image, Op, Path, Scene, Seg};
-use stave_ui::style::Color;
 
 use super::knob::{
     CGColorSpaceCreateDeviceRGB, CGColorSpaceRelease, CGContextAddArc, CGContextAddLineToPoint,
@@ -126,8 +125,9 @@ pub(crate) unsafe fn render(ctx: *mut c_void, scene: &Scene) {
                 text,
                 size,
                 color,
+                font,
             } => unsafe {
-                draw_text(ctx, at.x, at.y, text, *size, color);
+                crate::text::draw(ctx, at.x, at.y, text, *size, color, font);
             },
             Op::Image { at, w, h, image } => unsafe {
                 draw_image(ctx, at.x, at.y, *w, *h, image);
@@ -200,122 +200,5 @@ unsafe fn draw_image(ctx: *mut c_void, x: f64, y: f64, w: f64, h: f64, image: &I
         CGImageRelease(img);
         CGDataProviderRelease(provider);
         CGColorSpaceRelease(cs);
-    }
-}
-
-// -------------------------------------------------------------- text
-#[repr(C)]
-struct CGAffineTransform {
-    a: f64,
-    b: f64,
-    c: f64,
-    d: f64,
-    tx: f64,
-    ty: f64,
-}
-
-#[link(name = "CoreText", kind = "framework")]
-extern "C" {
-    fn CTFontCreateUIFontForLanguage(
-        ui_type: u32,
-        size: f64,
-        language: *const c_void,
-    ) -> *const c_void;
-    fn CTLineCreateWithAttributedString(s: *const c_void) -> *const c_void;
-    fn CTLineDraw(line: *const c_void, ctx: *mut c_void);
-    fn CTLineGetTypographicBounds(
-        line: *const c_void,
-        ascent: *mut f64,
-        descent: *mut f64,
-        leading: *mut f64,
-    ) -> f64;
-    static kCTFontAttributeName: *const c_void;
-    static kCTForegroundColorAttributeName: *const c_void;
-}
-
-extern "C" {
-    fn CFStringCreateWithBytes(
-        alloc: *const c_void,
-        bytes: *const u8,
-        len: isize,
-        encoding: u32,
-        external: bool,
-    ) -> *const c_void;
-    fn CFDictionaryCreate(
-        alloc: *const c_void,
-        keys: *const *const c_void,
-        values: *const *const c_void,
-        count: isize,
-        key_cb: *const c_void,
-        value_cb: *const c_void,
-    ) -> *const c_void;
-    fn CFAttributedStringCreate(
-        alloc: *const c_void,
-        s: *const c_void,
-        attributes: *const c_void,
-    ) -> *const c_void;
-    fn CFRelease(v: *const c_void);
-    fn CGColorCreateGenericRGB(r: f64, g: f64, b: f64, a: f64) -> *const c_void;
-    fn CGContextSetTextMatrix(ctx: *mut c_void, t: CGAffineTransform);
-    fn CGContextSetTextPosition(ctx: *mut c_void, x: f64, y: f64);
-    static kCFTypeDictionaryKeyCallBacks: c_void;
-    static kCFTypeDictionaryValueCallBacks: c_void;
-}
-
-const UTF8: u32 = 0x0800_0100;
-const UI_FONT_EMPHASIZED_SYSTEM: u32 = 3;
-
-/// One line of text, centered horizontally on `x`, baseline at `y`.
-pub(crate) unsafe fn draw_text(ctx: *mut c_void, x: f64, y: f64, text: &str, size: f64, color: &Color) {
-    unsafe {
-        let cf = CFStringCreateWithBytes(
-            core::ptr::null(),
-            text.as_ptr(),
-            text.len() as isize,
-            UTF8,
-            false,
-        );
-        if cf.is_null() {
-            return;
-        }
-        let font =
-            CTFontCreateUIFontForLanguage(UI_FONT_EMPHASIZED_SYSTEM, size, core::ptr::null());
-        let cg_color = CGColorCreateGenericRGB(color.r, color.g, color.b, color.a);
-        let keys = [kCTFontAttributeName, kCTForegroundColorAttributeName];
-        let values = [font, cg_color];
-        let attrs = CFDictionaryCreate(
-            core::ptr::null(),
-            keys.as_ptr(),
-            values.as_ptr(),
-            2,
-            &kCFTypeDictionaryKeyCallBacks as *const c_void,
-            &kCFTypeDictionaryValueCallBacks as *const c_void,
-        );
-        let styled = CFAttributedStringCreate(core::ptr::null(), cf, attrs);
-        let line = CTLineCreateWithAttributedString(styled);
-        let width = CTLineGetTypographicBounds(
-            line,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-        );
-        CGContextSetTextMatrix(
-            ctx,
-            CGAffineTransform {
-                a: 1.0,
-                b: 0.0,
-                c: 0.0,
-                d: 1.0,
-                tx: 0.0,
-                ty: 0.0,
-            },
-        );
-        CGContextSetTextPosition(ctx, x - width * 0.5, y);
-        CTLineDraw(line, ctx);
-        for v in [line, styled, attrs, cg_color, font, cf] {
-            if !v.is_null() {
-                CFRelease(v);
-            }
-        }
     }
 }

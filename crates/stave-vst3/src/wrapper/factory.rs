@@ -195,7 +195,8 @@ pub(super) unsafe extern "C" fn factory_create_instance<P: Vst3Export>(
     plugin_obj.debug_attach(debug_bus.clone());
     let diagnostics = Diagnostics::new(&P::DESCRIPTOR);
     diagnostics.log.add(Box::new(BusSink(debug_bus.clone())));
-    let (param_table, editor_ui) = (plugin_obj.param_table(), plugin_obj.editor_ui());
+    let (param_table, editor_ui, editor_face) =
+        (plugin_obj.param_table(), plugin_obj.editor_ui(), plugin_obj.editor_face());
     if let Err(e) = param_table.validate() {
         // Author bug (duplicate or reserved ids): refuse the instance
         // loudly rather than corrupt automation.
@@ -246,6 +247,7 @@ pub(super) unsafe extern "C" fn factory_create_instance<P: Vst3Export>(
         param_table,
         programs,
         editor_ui,
+        editor_face,
         state_store: std::sync::Mutex::new(StateStore::default()),
         diagnostics,
         guard: PanicGuard::default(),

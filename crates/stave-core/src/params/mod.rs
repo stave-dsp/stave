@@ -45,3 +45,15 @@ pub use control::{
     ContinuousBlock, ContinuousControl, DiscreteBlock, DiscreteChange, DiscreteControl,
     ReconfigureControl,
 };
+
+/// A parameter as a face binds it: `p.drive.bind()`.
+pub trait BindParam {
+    fn bind(&self) -> stave_face::Bind;
+}
+
+impl<T: AnyParam + ?Sized> BindParam for T {
+    fn bind(&self) -> stave_face::Bind {
+        let m = self.meta();
+        stave_face::Bind::new(m.id.0, m.name)
+    }
+}

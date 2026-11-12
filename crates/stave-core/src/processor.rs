@@ -86,6 +86,11 @@ pub trait Spec: Processor {
     fn editor(_params: &Self::Params) -> Option<UiNode> {
         None
     }
+    /// The editor as a design-system face (preferred over `editor`
+    /// when both are given) — a pure function of params.
+    fn face(_params: &Self::Params) -> Option<stave_face::Face> {
+        None
+    }
     /// Factory presets — pure function of params (presets.rs).
     fn presets(_params: &Self::Params) -> Vec<Preset> {
         Vec::new()
@@ -132,6 +137,9 @@ impl<E: Spec> Plugin for StavePlugin<E> {
     }
     fn editor_ui(&self) -> Option<UiNode> {
         E::editor(&self.params)
+    }
+    fn editor_face(&self) -> Option<stave_face::Face> {
+        E::face(&self.params)
     }
     fn presets(&self) -> Vec<Preset> {
         E::presets(&self.params)

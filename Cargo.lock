@@ -2989,6 +2989,7 @@ dependencies = [
  "loom",
  "stave-debug",
  "stave-dsp",
+ "stave-face",
  "stave-macros",
  "stave-ui",
 ]
@@ -3003,6 +3004,14 @@ dependencies = [
 [[package]]
 name = "stave-dsp"
 version = "0.1.0"
+
+[[package]]
+name = "stave-face"
+version = "0.1.0"
+dependencies = [
+ "stave-raster",
+ "stave-ui",
+]
 
 [[package]]
 name = "stave-host"
@@ -3073,7 +3082,8 @@ dependencies = [
 name = "stave-storybook"
 version = "0.1.0"
 dependencies = [
- "stave-core",
+ "stave-face",
+ "stave-raster",
  "stave-ui",
  "stave-ui-cocoa",
 ]
@@ -3119,6 +3129,7 @@ name = "stave-ui-cocoa"
 version = "0.1.0"
 dependencies = [
  "stave-core",
+ "stave-face",
  "stave-raster",
  "stave-ui",
 ]

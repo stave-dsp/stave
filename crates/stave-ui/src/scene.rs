@@ -177,11 +177,14 @@ pub enum Op {
         path: Path,
         stroke: Stroke,
     },
+    /// One line of text. `at` is the anchor on the BASELINE; `font.align`
+    /// says whether the line starts, centers or ends there.
     Text {
         at: Pt,
         text: String,
         size: f64,
         color: Color,
+        font: Font,
     },
     /// A raster picture drawn into the rect at `at` (its top-left,
     /// y-down) sized `w × h` — for pictures vectors cannot carry
@@ -203,6 +206,68 @@ pub struct Image {
     pub px_w: u32,
     pub px_h: u32,
     pub rgba: alloc::sync::Arc<[u8]>,
+}
+
+/// A typeface family. Renderers map these onto the platform's system
+/// faces (SF Pro, SF Mono, SF Pro Rounded, New York on macOS).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Family {
+    #[default]
+    Sans,
+    Mono,
+    Rounded,
+    Serif,
+}
+
+/// Where a text line sits relative to its anchor.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum TextAlign {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+/// How a text run is set: family, weight (CSS scale, 100–900), letter
+/// tracking in em (0.12 = a tenth-and-a-bit of the size between
+/// letters), and alignment on the anchor.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Font {
+    pub family: Family,
+    pub weight: u16,
+    pub tracking: f64,
+    pub align: TextAlign,
+}
+
+impl Font {
+    pub const DEFAULT: Font = Font {
+        family: Family::Sans,
+        weight: 600,
+        tracking: 0.0,
+        align: TextAlign::Center,
+    };
+    pub const fn new(family: Family, weight: u16) -> Self {
+        Font {
+            family,
+            weight,
+            tracking: 0.0,
+            align: TextAlign::Center,
+        }
+    }
+    pub const fn tracking(mut self, em: f64) -> Self {
+        self.tracking = em;
+        self
+    }
+    pub const fn align(mut self, a: TextAlign) -> Self {
+        self.align = a;
+        self
+    }
+}
+
+impl Default for Font {
+    fn default() -> Self {
+        Font::DEFAULT
+    }
 }
 
 /// A widget's whole picture: ops in paint order, in the widget's
@@ -227,6 +292,20 @@ impl Scene {
     }
     pub fn stroke(&mut self, path: Path, stroke: Stroke) {
         self.ops.push(Op::Stroke { path, stroke });
+    }
+    /// One line of text in the default font (centered on `at`).
+    pub fn text(&mut self, at: Pt, text: impl Into<String>, size: f64, color: Color) {
+        self.text_in(at, text, size, color, Font::DEFAULT);
+    }
+    /// One line of text, set in `font`.
+    pub fn text_in(&mut self, at: Pt, text: impl Into<String>, size: f64, color: Color, font: Font) {
+        self.ops.push(Op::Text {
+            at,
+            text: text.into(),
+            size,
+            color,
+            font,
+        });
     }
 }
 

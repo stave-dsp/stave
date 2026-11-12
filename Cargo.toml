@@ -5,6 +5,7 @@ members = [
     "crates/stave-core",
     "crates/stave-debug",
     "crates/stave-dsp",
+    "crates/stave-face",
     "crates/stave-host",
     "crates/stave-macros",
     "crates/stave-measure",
@@ -47,6 +48,7 @@ libc = "0.2"
 stave-ui = { path = "crates/stave-ui" }
 stave-ui-cocoa = { path = "crates/stave-ui-cocoa" }
 stave-raster = { path = "crates/stave-raster" }
+stave-face = { path = "crates/stave-face" }
 stave-macros = { path = "crates/stave-macros" }
 stave-core = { path = "crates/stave-core" }
 stave-clap = { path = "crates/stave-clap" }

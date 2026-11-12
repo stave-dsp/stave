@@ -11,6 +11,7 @@ description = "macOS (Cocoa/CoreGraphics) host for the stave-ui view layer — A
 stave-core.workspace = true
 stave-ui.workspace = true
 stave-raster.workspace = true
+stave-face.workspace = true
 
 [lints]
 workspace = true
