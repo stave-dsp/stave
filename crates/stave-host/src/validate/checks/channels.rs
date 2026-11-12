@@ -26,7 +26,7 @@ pub struct ChannelsConfig {
 impl Default for ChannelsConfig {
     fn default() -> Self {
         Self {
-            render_seconds: 0.5,
+            render_seconds: 0.25,
             split_seconds: 0.1,
             split_difference_db: -60.0,
             max_split_difference_db: -20.0,

@@ -1,7 +1,9 @@
 use serde_json::json;
 
 use crate::drive::Driver;
-use crate::validate::{CheckError, Ctx, Outcome};
+use crate::instance::Instance;
+use crate::param::Param;
+use crate::validate::{CheckError, Ctx, Excitation, Outcome};
 use stave_measure::level::{db, peak, rms};
 use stave_measure::signal::db_to_amp;
 
@@ -9,13 +11,17 @@ use stave_measure::signal::db_to_amp;
 /// identical runs differ only by one move of the param between
 /// blocks; their difference is the param's own effect. A glide starts
 /// that effect near zero, a step starts it at full size (a click).
+///
+/// Every run starts at the defaults, so the run that holds still is the
+/// same for every param: it runs once, and each param costs one more
+/// instance (not two).
 #[derive(Copy, Clone, Debug)]
 pub struct GlideConfig {
     pub settle_seconds: f64,
     pub window_seconds: f64,
-    /// The move, as positions across the param's range.
-    pub from: f64,
-    pub to: f64,
+    /// The move, as a fraction of the param's range: from its default
+    /// toward the middle of the range.
+    pub move_by: f64,
     /// The effect has appeared once it reaches this, relative to its
     /// settled peak.
     pub appear_db: f64,
@@ -32,10 +38,9 @@ pub struct GlideConfig {
 impl Default for GlideConfig {
     fn default() -> Self {
         Self {
-            settle_seconds: 0.2,
-            window_seconds: 0.1,
-            from: 0.4,
-            to: 0.6,
+            settle_seconds: 0.1,
+            window_seconds: 0.05,
+            move_by: 0.2,
             appear_db: -60.0,
             onset_samples: 2,
             max_onset_db: -20.0,
@@ -44,9 +49,37 @@ impl Default for GlideConfig {
     }
 }
 
+impl GlideConfig {
+    /// Where `c` moves to: `move_by` of its range from its default,
+    /// toward the middle.
+    pub fn target(&self, c: &Param) -> f64 {
+        let span = c.max - c.min;
+        let at = if span > 0.0 { (c.default - c.min) / span } else { 0.0 };
+        c.lerp(if at <= 0.5 { at + self.move_by } else { at - self.move_by })
+    }
+}
+
+/// Settle, then (if `to` is given) move one param, then capture the
+/// window: channel 0.
+fn run(
+    inst: &mut dyn Instance,
+    excitation: &Excitation,
+    config: &GlideConfig,
+    to: Option<(&str, f64)>,
+) -> Result<Vec<f32>, CheckError> {
+    let (signal, notes) = excitation.for_instance(inst);
+    let mut d = Driver::new(inst);
+    d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
+    if let Some((name, value)) = to {
+        d.instance().set_param(name, value)?;
+    }
+    let n = d.frames_for(config.window_seconds);
+    Ok(d.capture(n, signal.as_ref(), &notes).channel(0).to_vec())
+}
+
 pub fn params_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let (excitation, config) = (&ctx.config.excitation, ctx.config.glide);
-    let instance = ctx.fresh()?;
+    let mut instance = ctx.fresh()?;
     let params: Vec<_> = instance
         .params()
         .into_iter()
@@ -57,26 +90,15 @@ pub fn params_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
             "no automatable continuous params",
         ));
     }
+    let held = run(instance.as_mut(), excitation, &config, None)?;
     let mut steps = vec![];
     let mut measured = 0;
     for c in &params {
-        let mut runs = vec![];
-        for moved in [false, true] {
-            let mut inst = ctx.fresh()?;
-            let (signal, notes) = excitation.for_instance(inst.as_ref());
-            inst.set_param(&c.name, c.lerp(config.from))?;
-            let mut d = Driver::new(inst.as_mut());
-            d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
-            if moved {
-                d.instance().set_param(&c.name, c.lerp(config.to))?;
-            }
-            let n = d.frames_for(config.window_seconds);
-            runs.push(d.capture(n, signal.as_ref(), &notes).channel(0).to_vec());
-        }
-        let (held, moved) = (&runs[0], &runs[1]);
-        let effect: Vec<f32> = moved.iter().zip(held).map(|(m, h)| m - h).collect();
+        let mut inst = ctx.fresh()?;
+        let moved = run(inst.as_mut(), excitation, &config, Some((&c.name, config.target(c))))?;
+        let effect: Vec<f32> = moved.iter().zip(&held).map(|(m, h)| m - h).collect();
         let settled = peak(&effect[effect.len() / 2..]);
-        if db(settled) - db(rms(held)) < config.min_effect_db {
+        if db(settled) - db(rms(&held)) < config.min_effect_db {
             continue;
         }
         measured += 1;

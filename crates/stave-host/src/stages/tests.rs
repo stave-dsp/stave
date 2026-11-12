@@ -102,17 +102,31 @@ fn the_diode_clipper_reports_its_solver() {
         .unwrap());
 }
 
+/// Every module through the whole suite, a thread each (the modules are
+/// independent, and the slowest alone sets the time).
 #[test]
 fn every_module_passes_validation() {
-    for stage in CATALOG {
-        let mut fresh =
-            || Ok(Box::new(CatalogInstance::new(stage, &config())) as Box<dyn Instance>);
-        let report = Suite::default().run(&mut fresh, |_| {});
-        let failed: Vec<_> = report
-            .checks
+    std::thread::scope(|s| {
+        let runs: Vec<_> = CATALOG
             .iter()
-            .filter(|c| c.status == Status::Fail)
+            .map(|stage| {
+                s.spawn(move || {
+                    let mut fresh =
+                        || Ok(Box::new(CatalogInstance::new(stage, &config())) as Box<dyn Instance>);
+                    let report = Suite::default().run(&mut fresh, |_| {});
+                    let failed: Vec<String> = report
+                        .checks
+                        .iter()
+                        .filter(|c| c.status == Status::Fail)
+                        .map(|c| format!("{c:#?}"))
+                        .collect();
+                    (stage.name, failed)
+                })
+            })
             .collect();
-        assert!(failed.is_empty(), "{}: {failed:#?}", stage.name);
-    }
+        for run in runs {
+            let (name, failed) = run.join().expect("a validation run panicked");
+            assert!(failed.is_empty(), "{name}: {}", failed.join("\n"));
+        }
+    });
 }

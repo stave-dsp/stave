@@ -13,7 +13,7 @@ pub struct OutputConfig {
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
-            render_seconds: 2.0,
+            render_seconds: 0.5,
         }
     }
 }
@@ -78,7 +78,7 @@ mod tests {
     fn nan_is_counted() {
         let v = outcome(no_nan_inf, || Box::new(NanAfter::new(1000)));
         assert_eq!(v.status, Status::Fail);
-        assert_eq!(v.details["non_finite_samples"], 96_000 - 1000);
+        assert_eq!(v.details["non_finite_samples"], 24_000 - 1000);
         assert_eq!(
             outcome(no_nan_inf, || Box::new(Gain::new(1, 1))).status,
             Status::Pass

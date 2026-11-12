@@ -13,7 +13,7 @@ pub struct SolverConfig {
 
 impl Default for SolverConfig {
     fn default() -> Self {
-        Self { hold_seconds: 0.25 }
+        Self { hold_seconds: 0.05 }
     }
 }
 

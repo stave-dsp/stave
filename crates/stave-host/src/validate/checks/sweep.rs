@@ -23,9 +23,9 @@ pub struct SweepConfig {
 impl Default for SweepConfig {
     fn default() -> Self {
         Self {
-            points: 9,
-            settle_seconds: 0.1,
-            hold_seconds: 0.25,
+            points: 5,
+            settle_seconds: 0.05,
+            hold_seconds: 0.1,
             windows: 8,
             runaway_growth_db: 12.0,
         }

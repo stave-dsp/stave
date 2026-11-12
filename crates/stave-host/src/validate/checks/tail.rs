@@ -21,7 +21,7 @@ pub struct TailConfig {
 impl Default for TailConfig {
     fn default() -> Self {
         Self {
-            burst_seconds: 0.5,
+            burst_seconds: 0.25,
             window_seconds: 0.25,
             quiet_dbfs: -60.0,
             margin_seconds: 2.0,

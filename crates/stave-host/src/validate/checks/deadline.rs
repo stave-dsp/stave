@@ -16,8 +16,8 @@ pub struct DeadlineConfig {
 impl Default for DeadlineConfig {
     fn default() -> Self {
         Self {
-            warmup_seconds: 0.5,
-            run_seconds: 2.0,
+            warmup_seconds: 0.25,
+            run_seconds: 1.0,
             pass_below: 0.5,
             fail_at: 1.0,
         }

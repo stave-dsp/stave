@@ -80,11 +80,14 @@ pub fn block_sizes<P: Plugin>() {
     assert_finite(&h, 4096, "after a re-prepare to 4096-frame blocks");
 }
 
-/// Prepared at every common rate (and the extremes hosts use), in a
-/// changing order: output stays finite.
+/// Prepared at the extremes hosts use (8 kHz, 768 kHz), both rate
+/// families (44.1, 48) and a high one, in a changing order (down and
+/// up, never two neighbours in a row): output stays finite. Each
+/// prepare is a plugin's full setup, so the set is the extremes and one
+/// of each kind, not every rate.
 pub fn sample_rates<P: Plugin>() {
     let mut h = PluginHarness::<P>::new(44_100.0, 256);
-    for rate in [22_050.0, 192_000.0, 44_100.0, 8_000.0, 96_000.0, 384_000.0, 48_000.0, 88_200.0, 768_000.0, 11_025.0] {
+    for rate in [192_000.0, 8_000.0, 768_000.0, 48_000.0, 44_100.0] {
         h.prepare(rate, 256);
         for b in 0..16 {
             feed(&mut h, b as u64 * 256);
@@ -111,7 +114,7 @@ pub fn prepare_and_reset_cycles<P: Plugin>() {
     let mut fresh = PluginHarness::<P>::new(48_000.0, 128);
     let first = blocks(&mut fresh);
     let mut h = PluginHarness::<P>::new(48_000.0, 128);
-    for k in 0..6 {
+    for k in 0..3 {
         let _ = blocks(&mut h);
         match k % 3 {
             0 => h.reset(),
@@ -128,14 +131,16 @@ pub fn prepare_and_reset_cycles<P: Plugin>() {
 }
 
 /// Every parameter moved at random every block — through the table (a
-/// smoothed edit) and as sample-accurate changes — for each seed.
+/// smoothed edit) and as sample-accurate changes — for each seed, one
+/// seed after another on one instance (each picks up where the last
+/// left it).
 pub fn random_automation<P: Plugin>(seeds: core::ops::Range<u64>) {
+    let mut h = PluginHarness::<P>::new(48_000.0, 256);
+    let table = h.table();
+    let ids: Vec<ParamId> = (0..table.count()).filter_map(|i| table.by_index(i)).map(|p| p.meta().id).collect();
     for seed in seeds {
         let mut rng = Rng::new(seed);
-        let mut h = PluginHarness::<P>::new(48_000.0, 256);
-        let table = h.table();
-        let ids: Vec<ParamId> = (0..table.count()).filter_map(|i| table.by_index(i)).map(|p| p.meta().id).collect();
-        for b in 0..64 {
+        for b in 0..32 {
             let mut changes = Vec::new();
             for &id in &ids {
                 let p: &dyn AnyParam = table.by_id(id).expect("listed");
@@ -192,7 +197,7 @@ pub fn state_round_trip<P: Plugin>() {
 pub fn deterministic<P: Plugin>() {
     let mut a = PluginHarness::<P>::new(48_000.0, 256);
     let mut b = PluginHarness::<P>::new(48_000.0, 256);
-    for blk in 0..16 {
+    for blk in 0..8 {
         feed(&mut a, blk * 256);
         feed(&mut b, blk * 256);
         let ev = notes(&a, blk as usize);

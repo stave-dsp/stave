@@ -65,7 +65,8 @@ fn close(a: f64, b: f64) -> bool {
 /// The gesture laws (U3), on every state.
 pub fn gestures(project: &str, make: &impl Fn() -> FaceDriver) {
     for state in make().states() {
-        let grabs = fresh(make, &state).runtime().all_grabs(fresh(make, &state).controller());
+        let shown = fresh(make, &state);
+        let grabs = shown.runtime().all_grabs(shown.controller());
         for (part, _, grab) in grabs {
             let mut ui = fresh(make, &state);
             let here = format!("{project}: {part:?} {:?} in {state:?}", grab.gesture);

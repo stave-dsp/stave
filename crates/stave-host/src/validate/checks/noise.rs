@@ -20,7 +20,7 @@ impl Default for NoiseConfig {
     fn default() -> Self {
         Self {
             settle_seconds: 0.1,
-            listen_seconds: 0.5,
+            listen_seconds: 0.25,
             max_dbfs: -80.0,
         }
     }

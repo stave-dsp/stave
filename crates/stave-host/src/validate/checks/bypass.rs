@@ -15,7 +15,7 @@ impl Default for BypassConfig {
     fn default() -> Self {
         Self {
             crossfade_settle_seconds: 0.3,
-            capture_seconds: 0.25,
+            capture_seconds: 0.1,
         }
     }
 }
