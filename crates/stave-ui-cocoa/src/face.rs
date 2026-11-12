@@ -4,7 +4,7 @@
 //! count, sets the cursor the runtime asks for, and repaints from the
 //! view's own timer only when the runtime says something changed.
 //!
-//! Parameters flow through [`Bridge`]: reads from the plugin's typed
+//! Parameters flow through `Bridge`: reads from the plugin's typed
 //! table, edits through the host's gesture path (so the DAW records and
 //! undoes them), taps from the plugin's telemetry.
 

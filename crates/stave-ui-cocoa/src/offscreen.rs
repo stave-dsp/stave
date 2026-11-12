@@ -1,7 +1,7 @@
 //! Rendering a Scene into RGBA pixels with the portable `stave-raster`
 //! software renderer, CoreText painting the text straight into the same
 //! buffer ([`CoreText`], the macOS `TextPainter`), and showing the
-//! result in a view ([`draw_canvas`]). Pixels are premultiplied RGBA8,
+//! result in a view (`draw_canvas`). Pixels are premultiplied RGBA8,
 //! row 0 at the top.
 
 use core::ffi::c_void;

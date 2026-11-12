@@ -937,8 +937,11 @@ mod tests {
         state.prepare_scratch(2, 8);
         let mut buf = [1.0f32, 2.0, 3.0, 4.0];
         let mut out_r = [9.0f32; 4];
-        let ins = [buf.as_mut_ptr(), core::ptr::null_mut()];
-        let outs = [buf.as_mut_ptr(), out_r.as_mut_ptr()];
+        // One raw pointer to `buf`, shared by the input and the output, the
+        // way a host passes an in-place buffer.
+        let shared = buf.as_mut_ptr();
+        let ins = [shared, core::ptr::null_mut()];
+        let outs = [shared, out_r.as_mut_ptr()];
         // SAFETY: `buf` and `out_r` hold the 4 frames.
         let block = unsafe { state.split_for_block(&ins, &outs, &[], 4) };
         let io = block.io;
