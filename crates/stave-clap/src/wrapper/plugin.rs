@@ -66,7 +66,7 @@ pub(super) unsafe extern "C" fn plugin_activate<P: ClapExport>(
                 max_in_channels::<P>(),
                 latency as usize,
                 (max_frames as usize).max(1),
-                sample_rate,
+                sample_rate as f32,
             );
             inst.shared.set_latency(latency);
             inst.tail.store(

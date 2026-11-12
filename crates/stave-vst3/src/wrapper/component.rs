@@ -63,7 +63,7 @@ pub(super) unsafe extern "C" fn comp_set_active<P: Vst3Export>(
                     max_in_channels::<P>(),
                     new_latency as usize,
                     max_frames.max(1),
-                    f64::from(inst.shared.sample_rate()),
+                    inst.shared.sample_rate(),
                 );
                 // Latency changed across activations: tell the host to re-query.
                 if new_latency != inst.shared.latency() {

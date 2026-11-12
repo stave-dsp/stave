@@ -513,7 +513,7 @@ impl BypassGate {
         channels: usize,
         latency: usize,
         max_frames: usize,
-        sample_rate: f64,
+        sample_rate: f32,
     ) {
         self.latency = latency;
         self.ring_len = (latency + max_frames).max(1);
