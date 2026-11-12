@@ -173,7 +173,7 @@ fn run(entry: EntryPoints, seed: u64, rng: Rng, config: SimConfig) -> Result<Sim
         digest: Fnv(0xCBF2_9CE4_8422_2325),
         saved: Vec::new(),
         calls: Vec::with_capacity(config.steps),
-        params: plugin.controls().iter().map(|c| c.id).collect(),
+        params: plugin.params().iter().map(|c| c.id.0).collect(),
         messages_seen: 0,
         plugin: Some(plugin),
         audio: AudioThread::spawn(),
@@ -410,10 +410,10 @@ impl Sim {
         }
         let steps = self
             .plugin()
-            .controls()
+            .params()
             .into_iter()
-            .find(|c| c.id == id)
-            .map_or(0, |c| c.steps);
+            .find(|c| c.id.0 == id)
+            .map_or(0, |c| c.step_count.saturating_sub(1));
         let tolerance = if steps == 0 { 1e-9 } else { 0.5 / f64::from(steps) + 1e-9 };
         if (back - normalized).abs() > tolerance {
             return Err(format!("param {id} set to {normalized} reads back {back}"));
@@ -585,7 +585,7 @@ fn process(
         _ => {}
     }
     p.changes.clear();
-    let ids: Vec<u32> = p.controls().iter().map(|c| c.id).collect();
+    let ids: Vec<u32> = p.params().iter().map(|c| c.id.0).collect();
     for _ in 0..changes {
         if ids.is_empty() {
             break;

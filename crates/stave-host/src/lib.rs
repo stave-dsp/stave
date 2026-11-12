@@ -6,9 +6,9 @@
 //! plugin/    VST3 hosting → LoadedPlugin
 //! instance   the Instance trait: the seam everything measures through
 //! adapt      Instance ↔ System, and any stave-dsp Stage as an Instance
-//! control    one parameter model (Control), lookup by name
+//! param      one parameter model (Param, core's words), lookup by name
 //! stages     stave-dsp stages by name, loadable like plugins
-//! note       note events and schedules
+//! note       note schedules (of core's events)
 //! drive      Driver: run an Instance from a Signal + notes
 //! opened     what a tool opens: a bundle or stage:<name>
 //! response   frequency response by log sweep (H1)
@@ -20,9 +20,9 @@
 pub mod adapt;
 pub mod bench;
 pub mod config;
-pub mod control;
 pub mod instance;
 pub mod opened;
+pub mod param;
 pub mod stages;
 pub mod note;
 pub mod plugin;

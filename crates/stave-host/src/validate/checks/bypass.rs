@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::control::Control;
+use crate::param::Param;
 use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::compare::null_test;
@@ -23,11 +23,11 @@ impl Default for BypassConfig {
 pub fn bypass_honest(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let (excitation, config) = (&ctx.config.excitation, ctx.config.bypass);
     let mut inst = ctx.fresh()?;
-    let controls = inst.controls();
-    let Some(bypass) = find_bypass(&controls) else {
-        return Ok(Outcome::not_applicable("no bypass control"));
+    let params = inst.params();
+    let Some(bypass) = find_bypass(&params) else {
+        return Ok(Outcome::not_applicable("no bypass param"));
     };
-    inst.set_control(&bypass.name, bypass.max)?;
+    inst.set_param(&bypass.name, bypass.max)?;
     let (signal, notes) = excitation.for_instance(inst.as_ref());
     let layout = inst.layout();
     let latency = inst.latency() as u64;
@@ -46,7 +46,7 @@ pub fn bypass_honest(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     if layout.is_instrument() {
         let leak = cap.channels.iter().flatten().find(|v| **v != 0.0);
         return Ok(match leak {
-            None => Outcome::pass(json!({ "control": bypass.name })),
+            None => Outcome::pass(json!({ "param": bypass.name })),
             Some(v) => Outcome::fail(json!({ "error": format!("bypassed instrument leaks {v}") })),
         });
     }
@@ -69,13 +69,13 @@ pub fn bypass_honest(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         }
     }
     Ok(Outcome::pass(
-        json!({ "control": bypass.name, "latency_compensated": latency }),
+        json!({ "param": bypass.name, "latency_compensated": latency }),
     ))
 }
 
-fn find_bypass(controls: &[Control]) -> Option<&Control> {
-    controls.iter().find(|c| c.flags.bypass).or_else(|| {
-        controls
+fn find_bypass(params: &[Param]) -> Option<&Param> {
+    params.iter().find(|c| c.flags.bypass).or_else(|| {
+        params
             .iter()
             .find(|c| c.leaf().eq_ignore_ascii_case("bypass"))
     })
@@ -84,7 +84,7 @@ fn find_bypass(controls: &[Control]) -> Option<&Control> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control::test_control;
+    use crate::param::{test_param, ParamId};
     use crate::instance::Instance;
     use crate::testing::{Delay, Gain, Synth};
     use crate::validate::checks::outcome;
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn honest_effect_and_instrument_pass() {
         let mut g = Gain::new(2, 2);
-        g.set_control("gain", 3.0).unwrap();
+        g.set_param("gain", 3.0).unwrap();
         let v = outcome(bypass_honest, move || Box::new(g.clone()));
         assert_eq!(v.status, Status::Pass, "{:?}", v.details);
         assert_eq!(
@@ -107,7 +107,7 @@ mod tests {
         let v = outcome(bypass_honest, || {
             let mut g = Gain::new(1, 1);
             g.leaky_bypass = true;
-            g.set_control("gain", 2.0).unwrap();
+            g.set_param("gain", 2.0).unwrap();
             Box::new(g)
         });
         assert_eq!(v.status, Status::Fail);
@@ -125,9 +125,9 @@ mod tests {
 
     #[test]
     fn flag_beats_name() {
-        let mut named = test_control("Global · bypass", 0.0, 1.0);
-        named.id = 1;
-        let mut flagged = test_control("Power", 0.0, 1.0);
+        let mut named = test_param("Global · bypass", 0.0, 1.0);
+        named.id = ParamId(1);
+        let mut flagged = test_param("Power", 0.0, 1.0);
         flagged.flags.bypass = true;
         assert_eq!(
             find_bypass(&[named.clone(), flagged]).unwrap().name,

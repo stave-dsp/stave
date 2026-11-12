@@ -1,7 +1,7 @@
 //! The VST3 host end to end, on a real stave plugin (Tilt) linked
-//! in-process: load sequence, layout, controls, processing, state.
+//! in-process: load sequence, layout, params, processing, state.
 
-use stave_host::control::find;
+use stave_host::param::find;
 use stave_host::instance::Instance;
 use stave_host::note::NoteSchedule;
 use std::num::NonZeroUsize;
@@ -63,18 +63,18 @@ fn stereo_effect_layout() {
 }
 
 #[test]
-fn controls_carry_ranges_and_flags() {
-    let controls = tilt().controls();
-    let t = find(&controls, "tilt").expect("tilt control");
+fn params_carry_ranges_and_flags() {
+    let params = tilt().params();
+    let t = find(&params, "tilt").expect("tilt param");
     assert_eq!((t.min, t.max, t.default), (-6.0, 6.0, 0.0));
-    let b = find(&controls, "bypass").expect("bypass control");
+    let b = find(&params, "bypass").expect("bypass param");
     assert!(b.flags.bypass, "{b:?}");
 }
 
 #[test]
 fn output_trim_is_heard_by_the_processor() {
     let mut p = tilt();
-    p.set_control("output", -6.0).unwrap();
+    p.set_param("output", -6.0).unwrap();
     let mut d = Driver::new(&mut p);
     let n = 16_384;
     let s = Sine {
@@ -100,8 +100,8 @@ fn output_trim_is_heard_by_the_processor() {
 }
 
 #[test]
-fn unknown_control_is_an_error() {
-    assert!(tilt().set_control("no such knob", 1.0).is_err());
+fn unknown_param_is_an_error() {
+    assert!(tilt().set_param("no such knob", 1.0).is_err());
 }
 
 #[test]
@@ -123,14 +123,14 @@ fn blocks_larger_than_max_block_are_chunked() {
 #[test]
 fn state_round_trips_into_a_fresh_instance() {
     let mut a = tilt();
-    a.set_control("tilt", 3.5).unwrap();
-    a.set_control("output", -2.0).unwrap();
+    a.set_param("tilt", 3.5).unwrap();
+    a.set_param("output", -2.0).unwrap();
     Driver::new(&mut a).skip(BLOCK as u64, &Silence, &NoteSchedule::default());
     let blob = a.save_state().unwrap();
     let mut b = tilt();
     b.load_state(&blob).unwrap();
     assert_eq!(b.save_state().unwrap(), blob);
-    let tilt_b = find(&b.controls(), "tilt").unwrap().value;
+    let tilt_b = find(&b.params(), "tilt").unwrap().value;
     assert!(
         (tilt_b - 3.5).abs() < 1e-9,
         "controller follows the restored state: {tilt_b}"

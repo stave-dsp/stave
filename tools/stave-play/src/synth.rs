@@ -59,15 +59,15 @@ impl SineBank {
 
     /// Start or release a voice for a note event.
     pub fn handle(&mut self, ev: &NoteEvent) {
-        if ev.kind == NoteKind::Off {
+        if ev.kind != NoteKind::On {
             for v in self.voices.iter_mut() {
-                if v.stage == Stage::Held && v.pitch == ev.pitch {
+                if v.stage == Stage::Held && v.pitch == ev.key {
                     v.stage = Stage::Released;
                 }
             }
             return;
         }
-        let hz = 440.0 * 2f32.powf((f32::from(ev.pitch) - 69.0) / 12.0);
+        let hz = 440.0 * 2f32.powf((f32::from(ev.key) - 69.0) / 12.0);
         // Free slot first; else steal the quietest voice.
         let idx = self
             .voices
@@ -80,11 +80,11 @@ impl SineBank {
             });
         self.voices[idx] = Voice {
             stage: Stage::Held,
-            pitch: ev.pitch,
+            pitch: ev.key,
             phase: 0.0,
             step: core::f32::consts::TAU * hz / self.sr,
             env: 0.0,
-            amp: LEVEL * ev.velocity.clamp(0.0, 1.0),
+            amp: LEVEL * ev.velocity.clamp(0.0, 1.0) as f32,
         };
     }
 
@@ -121,10 +121,11 @@ mod tests {
     use super::*;
 
     const A4: NoteEvent = NoteEvent {
-        offset: 0,
-        pitch: 69,
-        velocity: 1.0,
         kind: NoteKind::On,
+        key: 69,
+        channel: 0,
+        velocity: 1.0,
+        note_id: -1,
     };
 
     fn run(bank: &mut SineBank, frames: usize) -> Vec<f32> {
@@ -154,13 +155,10 @@ mod tests {
     fn steals_the_quietest_voice_when_full() {
         let mut b = SineBank::new(48_000.0);
         for p in 0..VOICES as i16 {
-            b.handle(&NoteEvent {
-                pitch: 60 + p,
-                ..A4
-            });
+            b.handle(&NoteEvent { key: 60 + p, ..A4 });
             run(&mut b, 100); // later notes have less envelope
         }
-        b.handle(&NoteEvent { pitch: 100, ..A4 });
+        b.handle(&NoteEvent { key: 100, ..A4 });
         let pitches: Vec<i16> = b.voices.iter().map(|v| v.pitch).collect();
         assert!(
             pitches.contains(&100) && !pitches.contains(&67),

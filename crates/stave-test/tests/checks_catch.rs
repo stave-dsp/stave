@@ -129,7 +129,7 @@ fn sound_plugins_pass() {
 #[test]
 fn the_harness_is_an_instance_the_host_driver_drives() {
     let mut h = PluginHarness::<HighRateNan>::builder().block_size(64).set("level", 0.5).build();
-    assert_eq!(h.controls().iter().find(|c| c.name == "Level").map(|c| c.value), Some(0.5));
+    assert_eq!(Instance::params(&h).iter().find(|c| c.name == "Level").map(|c| c.value), Some(0.5));
     let mut d = Driver::new(&mut h);
     let cap = d.capture(200, &Impulse { frame: 130 }, &NoteSchedule::default());
     assert_eq!(cap.channel(0)[130], 0.5);

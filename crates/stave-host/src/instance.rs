@@ -4,8 +4,8 @@
 //! loaded VST3 ([`LoadedPlugin`](crate::plugin::LoadedPlugin)) and on a
 //! pure-Rust test double.
 
-use crate::control::{Control, ControlError};
-use crate::note::NoteEvent;
+use crate::param::{Param, ParamError};
+use stave_core::Event;
 use stave_core::diagnostics::Severity;
 
 /// The fixed shape an instance was set up with.
@@ -83,7 +83,7 @@ pub enum PresetError {
         available: Vec<String>,
     },
     #[error(transparent)]
-    Control(#[from] ControlError),
+    Param(#[from] ParamError),
 }
 
 pub trait Instance {
@@ -100,19 +100,19 @@ pub trait Instance {
 
     /// Process one block. `outputs` holds `layout().outputs` channels
     /// of equal length `n` (≤ `max_block`); `inputs` holds
-    /// `layout().inputs` channels of length `n`. Note offsets are
+    /// `layout().inputs` channels of length `n`. Event frames are
     /// relative to the block start.
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], notes: &[NoteEvent]);
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[Event]);
 
-    /// The current control surface (values read live).
-    fn controls(&self) -> Vec<Control> {
+    /// Every parameter (values read live).
+    fn params(&self) -> Vec<Param> {
         Vec::new()
     }
 
-    /// Set a control by name (see [`control::find`](crate::control::find)),
-    /// PLAIN value. Takes effect from the next `process` call.
-    fn set_control(&mut self, name: &str, _plain: f64) -> Result<(), ControlError> {
-        Err(ControlError::NotFound(name.to_string()))
+    /// Set a param by name (see [`param::find`](crate::param::find)),
+    /// in its own units. Takes effect from the next `process` call.
+    fn set_param(&mut self, name: &str, _value: f64) -> Result<(), ParamError> {
+        Err(ParamError::NotFound(name.to_string()))
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, StateError> {
@@ -133,24 +133,24 @@ pub trait Instance {
     }
 }
 
-/// The program-change control (VST3 `kIsProgramChange`): its positions
-/// are the instance's presets.
-fn program(controls: Vec<Control>) -> Option<Control> {
-    controls.into_iter().find(|c| c.flags.program_change)
+/// The program param (VST3 `kIsProgramChange`): its positions are the
+/// instance's presets.
+fn program(params: Vec<Param>) -> Option<Param> {
+    params.into_iter().find(|p| p.program)
 }
 
 /// Preset names, in program order.
 pub fn presets(inst: &dyn Instance) -> Vec<String> {
-    program(inst.controls()).map_or_else(Vec::new, |c| c.step_names)
+    program(inst.params()).map_or_else(Vec::new, |c| c.step_names)
 }
 
-/// Select a preset by name through the program-change control.
+/// Select a preset by name through the program param.
 pub fn apply_preset(inst: &mut dyn Instance, name: &str) -> Result<(), PresetError> {
     let not_found = |available| PresetError::NotFound {
         name: name.to_string(),
         available,
     };
-    let Some(c) = program(inst.controls()) else {
+    let Some(c) = program(inst.params()) else {
         return Err(not_found(Vec::new()));
     };
     let Some(index) = c
@@ -160,7 +160,7 @@ pub fn apply_preset(inst: &mut dyn Instance, name: &str) -> Result<(), PresetErr
     else {
         return Err(not_found(c.step_names));
     };
-    Ok(inst.set_control(&c.name, index as f64)?)
+    Ok(inst.set_param(&c.name, index as f64)?)
 }
 
 impl<T: Instance + ?Sized> Instance for Box<T> {
@@ -173,14 +173,14 @@ impl<T: Instance + ?Sized> Instance for Box<T> {
     fn tail(&self) -> Tail {
         (**self).tail()
     }
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], notes: &[NoteEvent]) {
-        (**self).process(inputs, outputs, notes)
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[Event]) {
+        (**self).process(inputs, outputs, events)
     }
-    fn controls(&self) -> Vec<Control> {
-        (**self).controls()
+    fn params(&self) -> Vec<Param> {
+        (**self).params()
     }
-    fn set_control(&mut self, name: &str, plain: f64) -> Result<(), ControlError> {
-        (**self).set_control(name, plain)
+    fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {
+        (**self).set_param(name, value)
     }
     fn save_state(&mut self) -> Result<Vec<u8>, StateError> {
         (**self).save_state()
@@ -202,14 +202,14 @@ mod tests {
     use crate::testing::Gain;
 
     #[test]
-    fn presets_are_the_program_controls_positions() {
+    fn presets_are_the_program_params_positions() {
         let mut g = Gain::new(1, 1)
             .with_preset("quiet", &[("gain", 0.5)])
             .with_preset("loud", &[("gain", 2.0)]);
         assert_eq!(presets(&g), ["quiet", "loud"]);
         assert_eq!(apply_preset(&mut g, "LOUD"), Ok(()));
         assert_eq!(
-            crate::control::find(&g.controls(), "gain").unwrap().value,
+            crate::param::find(&g.params(), "gain").unwrap().value,
             2.0
         );
     }

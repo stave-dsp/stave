@@ -1,6 +1,6 @@
 //! Profile gallery: frequency-response curves of the loaded plugin AS
 //! CURRENTLY SET, side by side. Run loads a fresh instance of the
-//! bundle, copies the live controls onto it, and measures it offline
+//! bundle, copies the live params onto it, and measures it offline
 //! (`stave_host::response`: log sweep + H1) — deterministic, independent
 //! of the audio device and the frame rate, and the live instance is
 //! never disturbed.
@@ -11,7 +11,7 @@ use std::path::Path;
 
 use eframe::egui::{self, Color32, RichText, ScrollArea, Vec2};
 use stave_host::config::HostConfig;
-use stave_host::control::{Control, ControlError};
+use stave_host::param::{Param, ParamError};
 use stave_host::instance::Instance;
 use stave_host::opened::{OpenError, Opened};
 use stave_host::response::{self, ResponseConfig};
@@ -54,11 +54,11 @@ impl Default for ProfilesState {
     }
 }
 
-/// What a run needs: the bundle, how to host it, the live controls.
+/// What a run needs: the bundle, how to host it, the live params.
 pub struct Source<'a> {
     pub bundle: &'a Path,
     pub config: HostConfig,
-    pub controls: Vec<Control>,
+    pub params: Vec<Param>,
 }
 
 pub fn ui(ui: &mut egui::Ui, source: Source<'_>, state: &mut ProfilesState) {
@@ -84,7 +84,7 @@ pub fn ui(ui: &mut egui::Ui, source: Source<'_>, state: &mut ProfilesState) {
     state.expanded = None;
     if state.profiles.is_empty() {
         ui.label(
-            RichText::new("(no profiles yet — set the controls, then Run profile)")
+            RichText::new("(no profiles yet — set the params, then Run profile)")
                 .italics()
                 .weak(),
         );
@@ -98,7 +98,7 @@ fn toolbar(ui: &mut egui::Ui, source: &Source<'_>, state: &mut ProfilesState) {
         let run = egui::Button::new(RichText::new("⏺  Run profile").strong())
             .min_size(Vec2::new(160.0, 28.0))
             .fill(Color32::from_rgb(50, 110, 80));
-        let hint = "measures a fresh instance with the current control values (2 s log sweep)";
+        let hint = "measures a fresh instance with the current param values (2 s log sweep)";
         if ui.add(run).on_hover_text(hint).clicked() {
             match render_profile(source) {
                 Ok(p) => {
@@ -161,8 +161,8 @@ fn gallery(ui: &mut egui::Ui, state: &mut ProfilesState) {
 enum ProfileError {
     #[error(transparent)]
     Load(#[from] OpenError),
-    #[error("could not copy a control onto the fresh instance")]
-    Control(#[from] ControlError),
+    #[error("could not copy a param onto the fresh instance")]
+    Param(#[from] ParamError),
     #[error("plugin has no outputs")]
     NoOutputs,
 }
@@ -170,11 +170,11 @@ enum ProfileError {
 fn render_profile(source: &Source<'_>) -> Result<Profile, ProfileError> {
     let mut inst = Opened::open(source.bundle, source.config)?.into_instance();
     let writable = source
-        .controls
+        .params
         .iter()
-        .filter(|c| !c.flags.read_only && !c.flags.bypass);
+        .filter(|c| !c.read_only && !c.flags.bypass);
     for c in writable {
-        inst.set_control(&c.name, c.value)?;
+        inst.set_param(&c.name, c.value)?;
     }
     let tf = response::measure(&mut inst, &ResponseConfig::default())
         .into_iter()
@@ -186,15 +186,15 @@ fn render_profile(source: &Source<'_>) -> Result<Profile, ProfileError> {
         .map(|b| (b.hz as f32, b.gain_db as f32))
         .collect();
     Ok(Profile {
-        label: label(&source.controls),
+        label: label(&source.params),
         points,
     })
 }
 
-/// The settings that make this profile different: up to four controls
+/// The settings that make this profile different: up to four params
 /// away from their defaults.
-fn label(controls: &[Control]) -> String {
-    let changed: Vec<String> = controls
+fn label(params: &[Param]) -> String {
+    let changed: Vec<String> = params
         .iter()
         .filter(|c| !c.flags.hidden && (c.value - c.default).abs() > 1e-9)
         .take(4)
@@ -218,11 +218,11 @@ fn fmt_value(v: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stave_host::control::ControlFlags;
+    use stave_host::param::{ParamFlags, ParamId};
 
-    fn control(name: &str, value: f64, default: f64) -> Control {
-        Control {
-            id: 0,
+    fn param(name: &str, value: f64, default: f64) -> Param {
+        Param {
+            id: ParamId(0),
             name: name.into(),
             group: String::new(),
             unit: String::new(),
@@ -231,17 +231,19 @@ mod tests {
             default,
             value,
             normalized: 0.0,
-            steps: 0,
+            step_count: 0,
             step_names: vec![],
-            flags: ControlFlags::default(),
+            flags: ParamFlags::default(),
+            read_only: false,
+            program: false,
         }
     }
 
     #[test]
-    fn label_names_only_changed_controls() {
+    fn label_names_only_changed_params() {
         let cs = [
-            control("Tone · tilt", 3.0, 0.0),
-            control("output", 0.0, 0.0),
+            param("Tone · tilt", 3.0, 0.0),
+            param("output", 0.0, 0.0),
         ];
         assert_eq!(label(&cs), "tilt=3.00");
         assert_eq!(label(&cs[1..]), "defaults");

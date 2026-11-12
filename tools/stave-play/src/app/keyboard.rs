@@ -6,13 +6,13 @@ use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
 use eframe::egui::{self, Color32, RichText};
-use stave_host::note::{NoteEvent, NoteKind};
+use stave_host::note::NoteEvent;
 
 use super::HostApp;
 use crate::samples::{self, Sample};
 use crate::views;
 
-const VELOCITY: f32 = 0.85;
+const VELOCITY: f64 = 0.85;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Tab {
@@ -50,17 +50,9 @@ pub(super) fn transitions(held: &HashSet<i16>, now: &HashSet<i16>) -> Vec<NoteEv
     let mut ons: Vec<i16> = now.difference(held).copied().collect();
     offs.sort_unstable();
     ons.sort_unstable();
-    let event = |kind, velocity| {
-        move |pitch| NoteEvent {
-            offset: 0,
-            pitch,
-            velocity,
-            kind,
-        }
-    };
     offs.into_iter()
-        .map(event(NoteKind::Off, 0.0))
-        .chain(ons.into_iter().map(event(NoteKind::On, VELOCITY)))
+        .map(|key| NoteEvent::off(key, 0.0))
+        .chain(ons.into_iter().map(|key| NoteEvent::on(key, VELOCITY)))
         .collect()
 }
 
@@ -183,6 +175,7 @@ impl HostApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use stave_host::note::NoteKind;
 
     fn set(xs: &[i16]) -> HashSet<i16> {
         xs.iter().copied().collect()
@@ -191,7 +184,7 @@ mod tests {
     #[test]
     fn offs_before_ons_in_pitch_order() {
         let evs = transitions(&set(&[60, 64]), &set(&[64, 67, 62]));
-        let got: Vec<(i16, NoteKind)> = evs.iter().map(|e| (e.pitch, e.kind)).collect();
+        let got: Vec<(i16, NoteKind)> = evs.iter().map(|e| (e.key, e.kind)).collect();
         assert_eq!(
             got,
             [(60, NoteKind::Off), (62, NoteKind::On), (67, NoteKind::On)]

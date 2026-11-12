@@ -4,7 +4,7 @@ use crate::instance::StateError;
 use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 
-/// Controls are parked at `nudge` through their range, far from any
+/// Params are parked at `nudge` through their range, far from any
 /// default, so a state that ignores them shows.
 #[derive(Copy, Clone, Debug)]
 pub struct StateConfig {
@@ -26,10 +26,10 @@ pub fn state_roundtrip(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let (mut a, mut b) = (ctx.fresh()?, ctx.fresh()?);
     let (signal, notes) = excitation.for_instance(a.as_ref());
     let nudged: Vec<_> = a
-        .controls()
+        .params()
         .into_iter()
         .filter(|c| c.sweepable() && !c.flags.bypass)
-        .filter(|c| a.set_control(&c.name, c.lerp(config.nudge)).is_ok())
+        .filter(|c| a.set_param(&c.name, c.lerp(config.nudge)).is_ok())
         .map(|c| c.name)
         .collect();
     let mut d = Driver::new(a.as_mut());
@@ -48,7 +48,7 @@ pub fn state_roundtrip(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     }
     let again = b.save_state()?;
     Ok(if again == blob {
-        Outcome::pass(json!({ "bytes": blob.len(), "controls_nudged": nudged.len() }))
+        Outcome::pass(json!({ "bytes": blob.len(), "params_nudged": nudged.len() }))
     } else {
         let at = blob.iter().zip(&again).position(|(x, y)| x != y);
         Outcome::fail(json!({
@@ -63,16 +63,16 @@ pub fn state_roundtrip(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
 mod tests {
     use super::*;
     use crate::instance::{Instance, Layout};
-    use crate::note::NoteEvent;
+    use stave_core::Event;
     use crate::testing::{Delay, Gain};
     use crate::validate::checks::outcome;
     use crate::validate::Status;
 
     #[test]
-    fn honest_state_passes_with_controls_nudged() {
+    fn honest_state_passes_with_params_nudged() {
         let v = outcome(state_roundtrip, || Box::new(Gain::new(1, 1)));
         assert_eq!(v.status, Status::Pass, "{:?}", v.details);
-        assert_eq!(v.details["controls_nudged"], 1, "bypass is left alone");
+        assert_eq!(v.details["params_nudged"], 1, "bypass is left alone");
     }
 
     #[test]
@@ -88,7 +88,7 @@ mod tests {
         fn layout(&self) -> Layout {
             self.1
         }
-        fn process(&mut self, _: &[&[f32]], o: &mut [&mut [f32]], _: &[NoteEvent]) {
+        fn process(&mut self, _: &[&[f32]], o: &mut [&mut [f32]], _: &[Event]) {
             o.iter_mut().for_each(|c| c.fill(0.0));
         }
         fn save_state(&mut self) -> Result<Vec<u8>, StateError> {

@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use eframe::egui;
-use stave_host::note::{Note, NoteEvent, NoteKind};
+use stave_host::note::{Note, NoteEvent};
 
 use super::HostApp;
 
@@ -67,12 +67,7 @@ impl HostApp {
         };
         match shot.tick() {
             Step::Wait => ctx.request_repaint(),
-            Step::Play(pitch) => self.push_note(NoteEvent {
-                offset: 0,
-                pitch,
-                velocity: Note::DEFAULT_VELOCITY,
-                kind: NoteKind::On,
-            }),
+            Step::Play(key) => self.push_note(NoteEvent::on(key, Note::DEFAULT_VELOCITY)),
             Step::Capture(path) => {
                 let region = shot.region;
                 self.screenshot = None;

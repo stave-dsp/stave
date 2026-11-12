@@ -54,15 +54,15 @@ impl HostApp {
                 }
             }
             ViewId::Profiles => {
-                let controls = self
+                let params = self
                     .session
                     .as_ref()
-                    .map(|s| s.controls())
+                    .map(|s| s.params())
                     .unwrap_or_default();
                 let source = views::profiles::Source {
                     bundle: &self.project.plugin_path,
                     config,
-                    controls,
+                    params,
                 };
                 views::profiles::ui(ui, source, &mut v.profiles)
             }

@@ -4,7 +4,7 @@ use crate::instance::{Instance, TapReading};
 use crate::drive::Driver;
 use crate::validate::{CheckError, Ctx, Outcome};
 
-/// Every sweepable control is held at each end of its range while the
+/// Every sweepable param is held at each end of its range while the
 /// stimulus plays, since solvers fail at the extremes, not the defaults.
 #[derive(Copy, Clone, Debug)]
 pub struct SolverConfig {
@@ -24,17 +24,17 @@ pub fn solver_converges(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         return Ok(Outcome::not_applicable("no solver telemetry"));
     }
     let (signal, notes) = excitation.for_instance(inst.as_ref());
-    let controls: Vec<_> = inst
-        .controls()
+    let params: Vec<_> = inst
+        .params()
         .into_iter()
         .filter(|c| c.sweepable())
         .collect();
     let mut d = Driver::new(inst.as_mut());
     let hold = d.frames_for(config.hold_seconds);
     d.skip(hold, signal.as_ref(), &notes);
-    for c in &controls {
+    for c in &params {
         for v in [c.min, c.max, c.default] {
-            d.instance().set_control(&c.name, v)?;
+            d.instance().set_param(&c.name, v)?;
             d.skip(hold, signal.as_ref(), &notes);
         }
     }
@@ -46,7 +46,7 @@ pub fn solver_converges(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         "capped": capped,
         "mean_iterations": read(inst, TapReading::NEWTON_MEAN_ITERATIONS),
         "max_final_step": read(inst, TapReading::NEWTON_MAX_FINAL_STEP),
-        "controls_swept": controls.len(),
+        "params_swept": params.len(),
     });
     Ok(if capped == 0.0 {
         Outcome::pass(details)
@@ -66,7 +66,7 @@ fn read(inst: &dyn Instance, name: &str) -> Option<f64> {
 mod tests {
     use super::*;
     use crate::instance::Layout;
-    use crate::note::NoteEvent;
+    use stave_core::Event;
     use crate::testing::Gain;
     use crate::validate::checks::outcome;
     use crate::validate::Status;
@@ -81,7 +81,7 @@ mod tests {
         fn layout(&self) -> Layout {
             crate::testing::layout(1, 1)
         }
-        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[NoteEvent]) {
+        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[Event]) {
             o[0].copy_from_slice(i[0]);
             self.solves += i[0].len() as u64;
         }

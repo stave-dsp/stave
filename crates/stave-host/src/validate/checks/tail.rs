@@ -46,8 +46,8 @@ pub fn silence_tail(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         let chord: Vec<Note> = excitation
             .instrument_chord
             .iter()
-            .map(|&pitch| Note {
-                pitch,
+            .map(|&key| Note {
+                key,
                 velocity: excitation.velocity,
                 on_s: 0.0,
                 off_s: config.burst_seconds,

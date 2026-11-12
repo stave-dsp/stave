@@ -129,7 +129,7 @@ pub fn channels_split(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
 mod tests {
     use super::*;
     use crate::instance::{Instance, Layout};
-    use crate::note::NoteEvent;
+    use stave_core::Event;
     use crate::testing::{Gain, Synth};
     use crate::validate::checks::outcome;
     use crate::validate::Status;
@@ -141,7 +141,7 @@ mod tests {
         fn layout(&self) -> Layout {
             crate::testing::layout(2, 2)
         }
-        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[NoteEvent]) {
+        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[Event]) {
             o[0].copy_from_slice(i[0]);
             for (y, x) in o[1].iter_mut().zip(i[1]) {
                 *y = -x;
@@ -161,7 +161,7 @@ mod tests {
         fn layout(&self) -> Layout {
             crate::testing::layout(2, 2)
         }
-        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[NoteEvent]) {
+        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[Event]) {
             for n in 0..i[0].len() {
                 self.split |= i[0][n] != i[1][n];
                 let lanes = if self.split { 2 } else { 1 };

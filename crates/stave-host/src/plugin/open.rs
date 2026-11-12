@@ -167,7 +167,7 @@ fn build(
     };
     let param_count = controller
         .as_ref()
-        .map_or(0, |c| c.handle().controls().len());
+        .map_or(0, |c| c.handle().params().len());
     let layout = Layout {
         inputs,
         outputs,
@@ -190,7 +190,7 @@ fn build(
         events: EventList::new(),
         changes: ParamChanges::with_capacity(param_count.max(16)),
         transport: Transport::new(config.transport, config.sample_rate.hz()),
-        chunk_notes: Vec::with_capacity(super::com::event_list::CAPACITY),
+        chunk_events: Vec::with_capacity(super::com::event_list::CAPACITY),
         stats: HostStats::default(),
         telemetry,
         active: false,

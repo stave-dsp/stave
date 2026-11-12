@@ -256,7 +256,7 @@ fn parse_note(part: &str) -> Result<Note, CliError> {
         problem,
     };
     let shape = || malformed("is not PITCH@ON:OFF[:VELOCITY]");
-    let (pitch, times) = part.split_once('@').ok_or_else(shape)?;
+    let (key, times) = part.split_once('@').ok_or_else(shape)?;
     let mut fields = times.split(':').map(str::trim);
     let (Some(on), Some(off)) = (fields.next(), fields.next()) else {
         return Err(shape());
@@ -264,7 +264,7 @@ fn parse_note(part: &str) -> Result<Note, CliError> {
     let velocity = match fields.next() {
         None => Note::DEFAULT_VELOCITY,
         Some(v) => v
-            .parse::<f32>()
+            .parse::<f64>()
             .ok()
             .filter(|v| (0.0..=1.0).contains(v))
             .ok_or_else(|| malformed("has a velocity outside 0..=1"))?,
@@ -273,7 +273,7 @@ fn parse_note(part: &str) -> Result<Note, CliError> {
         return Err(shape());
     }
     let note = Note {
-        pitch: pitch.trim().parse().map_err(|_| shape())?,
+        key: key.trim().parse().map_err(|_| shape())?,
         velocity,
         on_s: on.parse().map_err(|_| shape())?,
         off_s: off.parse().map_err(|_| shape())?,
@@ -321,7 +321,7 @@ mod tests {
         assert_eq!(
             c.bench.notes[1],
             Note {
-                pitch: 64,
+                key: 64,
                 velocity: Note::DEFAULT_VELOCITY,
                 on_s: 0.5,
                 off_s: 1.0

@@ -26,6 +26,9 @@ use stave::process::{ParamBlock, ParamChange, ParamChangeKind};
 use stave::{Block, Environment, Event, InputBuffer, Layout, OutputBuffer, Plugin, Telemetry, Transport};
 use stave_core::runtime::Erased;
 use stave_core::state::{self, StateStore};
+use stave_host::drive::Driver;
+use stave_host::note::NoteSchedule;
+use stave_measure::signal::Recording;
 
 /// Aux buses a harness feeds at most (a block's aux list lives on the
 /// stack, so processing never allocates).
@@ -53,9 +56,6 @@ pub struct PluginHarness<P: Plugin> {
     aux_ptrs: Box<[*mut f32]>,
     /// Retained unknown state, as a wrapper keeps it.
     store: Mutex<StateStore>,
-    /// Reused for converted events (the `Instance` path never allocates
-    /// once warm).
-    events: Vec<Event>,
 }
 
 /// How to build a [`PluginHarness`]: rate, block size, layout and the
@@ -112,7 +112,6 @@ impl<P: Plugin> HarnessBuilder<P> {
             out_ptrs: Box::new([]),
             aux_ptrs: Box::new([]),
             store: Mutex::new(StateStore::default()),
-            events: Vec::with_capacity(256),
         };
         for (name, value) in &self.values {
             h.param(name.as_str()).restore(*value);
@@ -315,24 +314,22 @@ impl<P: Plugin> PluginHarness<P> {
     }
 
     /// Process `frames` frames in successive blocks, returning every
-    /// output channel. `events` arrive in the first block; later blocks
-    /// see none. Inputs keep what they hold. For sample-accurate timing
-    /// use [`process_with`](Self::process_with).
+    /// output channel. Each event lands at its frame from the start of
+    /// the run, in whichever block that falls. Inputs keep what they
+    /// hold: every block reads the input buffers from their start. For
+    /// sample-accurate parameter changes use
+    /// [`process_with`](Self::process_with).
+    ///
+    /// The blocks are stave-host's [`Driver`]'s, the one block loop every
+    /// tool and measurement runs.
     pub fn run(&mut self, frames: usize, events: &[Event]) -> Vec<Vec<f32>> {
-        let mut acc: Vec<Vec<f32>> = vec![Vec::with_capacity(frames); self.output_channels()];
-        let mut written = 0;
-        let mut first = true;
-        while written < frames {
-            let take = (frames - written).min(self.block_size);
-            let block_events: &[Event] = if first { events } else { &[] };
-            first = false;
-            self.process_frames(take, &[], block_events);
-            for (ch, out) in self.output_buffers.iter().enumerate() {
-                acc[ch].extend_from_slice(&out[..take]);
-            }
-            written += take;
-        }
-        acc
+        let held = Recording {
+            channels: Arc::new(self.input_buffers.iter().map(|c| c.to_vec()).collect()),
+        };
+        let block = self.block_size;
+        Driver::with_block(self, block)
+            .capture(frames as u64, &held, &NoteSchedule::of_events(events))
+            .channels
     }
 
     /// The plugin's state as a host saves it: parameters and the
@@ -354,15 +351,6 @@ impl<P: Plugin> PluginHarness<P> {
         )?;
         self.shell.load(&extra, report.plugin_version);
         Ok(())
-    }
-}
-
-impl<P: Plugin> PluginHarness<P> {
-    pub(crate) fn take_events(&mut self) -> Vec<Event> {
-        core::mem::take(&mut self.events)
-    }
-    pub(crate) fn put_events(&mut self, events: Vec<Event>) {
-        self.events = events;
     }
 }
 
@@ -436,5 +424,41 @@ mod tests {
             assert!(h.outputs()[0].iter().all(|&y| y == 1.0));
             assert!(h.outputs()[1].iter().all(|&y| y == -2.0));
         }
+    }
+
+    /// A click at each note on's frame.
+    struct Click;
+    impl Plugin for Click {
+        const INFO: Info = Info {
+            id: "com.stave.test.harness-click",
+            name: "Click",
+            vendor: "stave tests",
+            ..Info::INSTRUMENT
+        };
+        const LAYOUTS: &'static [Layout] = &[Layout::INSTRUMENT];
+        type Params = NoKnobs;
+        fn new(_: &Arc<NoKnobs>, _: &Telemetry) -> Self {
+            Click
+        }
+        fn process(&mut self, block: &mut Block<'_>) {
+            let events = block.events();
+            for e in events {
+                let EventKind::Note(n) = e.kind;
+                if n.kind == NoteKind::On {
+                    block.output().channel_mut(0)[e.frame] = 1.0;
+                }
+            }
+        }
+    }
+
+    /// T1: `run` is the Driver's block loop, so an event lands at its
+    /// frame from the run's start, in whichever block that is.
+    #[test]
+    fn run_delivers_each_event_in_its_own_block() {
+        let mut h = PluginHarness::<Click>::new(48_000.0, 16);
+        let on = |frame| Event::note(frame, NoteEvent::on(60, 1.0));
+        let out = h.run(50, &[on(3), on(37)]);
+        let clicks: Vec<usize> = (0..50).filter(|&f| out[0][f] == 1.0).collect();
+        assert_eq!(clicks, [3, 37]);
     }
 }

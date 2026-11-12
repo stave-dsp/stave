@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 
 use stave_telemetry::Telemetry;
 use stave_host::config::HostConfig;
-use stave_host::control::{Control, ControlError};
+use stave_host::param::{Param, ParamError};
 use stave_host::instance::Instance;
 use stave_host::opened::{OpenError, Opened};
 use stave_host::stages::CatalogHandle;
@@ -27,14 +27,14 @@ pub enum SessionError {
     Audio(#[from] AudioError),
 }
 
-enum Controls {
+enum ParamSource {
     Plugin(Option<ControllerHandle>),
     Stage(CatalogHandle),
 }
 
 pub struct Session {
     editor: Option<EditorView>,
-    controls: Controls,
+    params: ParamSource,
     /// Owned by the plugin inside `stream`; valid while `stream` lives.
     telemetry: *const Telemetry,
     _stream: AudioStream,
@@ -57,12 +57,12 @@ impl Session {
         match loaded {
             Opened::Plugin(plugin) => Self::start_plugin(*plugin, name, shared, ns_view),
             Opened::Stage(stage) => {
-                let controls = Controls::Stage(stage.handle());
+                let params = ParamSource::Stage(stage.handle());
                 let outputs = stage.layout().outputs;
                 let stream = audio::start(stage, shared)?;
                 Ok(Self {
                     editor: None,
-                    controls,
+                    params,
                     telemetry: std::ptr::null(),
                     _stream: stream,
                     name,
@@ -90,7 +90,7 @@ impl Session {
             }
         }
         let outputs = plugin.layout().outputs;
-        let controls = Controls::Plugin(plugin.controller_handle());
+        let params = ParamSource::Plugin(plugin.controller_handle());
         let telemetry = plugin.telemetry_raw();
         let editor_owner = plugin.editor_owner_raw();
         let stream = audio::start(plugin, shared)?;
@@ -102,7 +102,7 @@ impl Session {
         }
         Ok(Self {
             editor,
-            controls,
+            params,
             telemetry,
             _stream: stream,
             name,
@@ -120,38 +120,38 @@ impl Session {
         self.editor.as_ref()
     }
 
-    pub fn controls(&self) -> Vec<Control> {
-        match &self.controls {
-            Controls::Plugin(c) => c.as_ref().map(|c| c.controls()).unwrap_or_default(),
-            Controls::Stage(m) => m.controls(),
+    pub fn params(&self) -> Vec<Param> {
+        match &self.params {
+            ParamSource::Plugin(c) => c.as_ref().map(|c| c.params()).unwrap_or_default(),
+            ParamSource::Stage(m) => m.params(),
         }
     }
 
-    /// Write a control: through the controller for a plugin (the real
+    /// Write a param: through the controller for a plugin (the real
     /// ABI path), through the stage's handle for a catalog stage.
-    pub fn set(&self, name: &str, plain: f64) -> Result<(), ControlError> {
-        match &self.controls {
-            Controls::Plugin(Some(c)) => c.set(name, plain),
-            Controls::Plugin(None) => Err(ControlError::NotFound(name.into())),
-            Controls::Stage(m) => m.set(name, plain),
+    pub fn set(&self, name: &str, plain: f64) -> Result<(), ParamError> {
+        match &self.params {
+            ParamSource::Plugin(Some(c)) => c.set(name, plain),
+            ParamSource::Plugin(None) => Err(ParamError::NotFound(name.into())),
+            ParamSource::Stage(m) => m.set(name, plain),
         }
     }
 
-    /// Write a control at a normalized position: its own taper.
-    pub fn set_normalized(&self, name: &str, normalized: f64) -> Result<(), ControlError> {
-        match &self.controls {
-            Controls::Plugin(Some(c)) => c.set_normalized(name, normalized),
-            Controls::Plugin(None) => Err(ControlError::NotFound(name.into())),
-            Controls::Stage(m) => m.set_normalized(name, normalized),
+    /// Write a param at a normalized position: its own taper.
+    pub fn set_normalized(&self, name: &str, normalized: f64) -> Result<(), ParamError> {
+        match &self.params {
+            ParamSource::Plugin(Some(c)) => c.set_normalized(name, normalized),
+            ParamSource::Plugin(None) => Err(ParamError::NotFound(name.into())),
+            ParamSource::Stage(m) => m.set_normalized(name, normalized),
         }
     }
 
-    /// A control's value at a normalized position, as its owner prints it.
+    /// A param's value at a normalized position, as its owner prints it.
     pub fn display(&self, name: &str, normalized: f64) -> String {
-        match &self.controls {
-            Controls::Plugin(Some(c)) => c.display(name, normalized),
-            Controls::Plugin(None) => None,
-            Controls::Stage(m) => m.display(name, normalized),
+        match &self.params {
+            ParamSource::Plugin(Some(c)) => c.display(name, normalized),
+            ParamSource::Plugin(None) => None,
+            ParamSource::Stage(m) => m.display(name, normalized),
         }
         .unwrap_or_default()
     }

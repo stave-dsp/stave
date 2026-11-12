@@ -5,15 +5,15 @@ use crate::validate::{CheckError, Ctx, Outcome};
 use stave_measure::level::{db, peak, rms};
 use stave_measure::signal::db_to_amp;
 
-/// A host move of a continuous control should glide, not step. Two
-/// identical runs differ only by one move of the control between
-/// blocks; their difference is the control's own effect. A glide starts
+/// A host move of a continuous param should glide, not step. Two
+/// identical runs differ only by one move of the param between
+/// blocks; their difference is the param's own effect. A glide starts
 /// that effect near zero, a step starts it at full size (a click).
 #[derive(Copy, Clone, Debug)]
 pub struct GlideConfig {
     pub settle_seconds: f64,
     pub window_seconds: f64,
-    /// The move, as positions across the control's range.
+    /// The move, as positions across the param's range.
     pub from: f64,
     pub to: f64,
     /// The effect has appeared once it reaches this, relative to its
@@ -44,31 +44,31 @@ impl Default for GlideConfig {
     }
 }
 
-pub fn controls_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
+pub fn params_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let (excitation, config) = (&ctx.config.excitation, ctx.config.glide);
     let instance = ctx.fresh()?;
-    let controls: Vec<_> = instance
-        .controls()
+    let params: Vec<_> = instance
+        .params()
         .into_iter()
-        .filter(|c| c.flags.automatable && c.sweepable() && c.steps == 0 && !c.flags.bypass)
+        .filter(|c| c.automatable() && c.sweepable() && c.step_count == 0 && !c.flags.bypass)
         .collect();
-    if controls.is_empty() {
+    if params.is_empty() {
         return Ok(Outcome::not_applicable(
-            "no automatable continuous controls",
+            "no automatable continuous params",
         ));
     }
     let mut steps = vec![];
     let mut measured = 0;
-    for c in &controls {
+    for c in &params {
         let mut runs = vec![];
         for moved in [false, true] {
             let mut inst = ctx.fresh()?;
             let (signal, notes) = excitation.for_instance(inst.as_ref());
-            inst.set_control(&c.name, c.lerp(config.from))?;
+            inst.set_param(&c.name, c.lerp(config.from))?;
             let mut d = Driver::new(inst.as_mut());
             d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
             if moved {
-                d.instance().set_control(&c.name, c.lerp(config.to))?;
+                d.instance().set_param(&c.name, c.lerp(config.to))?;
             }
             let n = d.frames_for(config.window_seconds);
             runs.push(d.capture(n, signal.as_ref(), &notes).channel(0).to_vec());
@@ -85,7 +85,7 @@ pub fn controls_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
         let onset = &effect[appears..(appears + config.onset_samples).min(effect.len())];
         let onset_db = db(peak(onset)) - db(settled);
         if onset_db > config.max_onset_db {
-            steps.push(json!({ "control": c.name, "onset_db": onset_db }));
+            steps.push(json!({ "param": c.name, "onset_db": onset_db }));
         }
     }
     let details = json!({ "measured": measured, "steps": steps });
@@ -100,7 +100,7 @@ pub fn controls_glide(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
 mod tests {
     use super::*;
     use crate::instance::{Instance, Layout};
-    use crate::note::NoteEvent;
+    use stave_core::Event;
     use crate::testing::Gain;
     use crate::validate::checks::outcome;
     use crate::validate::Status;
@@ -114,27 +114,27 @@ mod tests {
         fn layout(&self) -> Layout {
             crate::testing::layout(2, 2)
         }
-        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[NoteEvent]) {
+        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[Event]) {
             for (out, inp) in o.iter_mut().zip(i) {
                 for (y, x) in out.iter_mut().zip(*inp) {
                     *y = x * self.gain as f32;
                 }
             }
         }
-        fn controls(&self) -> Vec<crate::control::Control> {
-            Gain::new(2, 2).controls()
+        fn params(&self) -> Vec<crate::param::Param> {
+            Gain::new(2, 2).params()
         }
-        fn set_control(&mut self, _: &str, plain: f64) -> Result<(), crate::control::ControlError> {
+        fn set_param(&mut self, _: &str, plain: f64) -> Result<(), crate::param::ParamError> {
             self.gain = plain;
             Ok(())
         }
     }
 
     #[test]
-    fn a_stepped_control_fails_and_a_gliding_one_passes() {
-        let step = outcome(controls_glide, || Box::new(Stepped { gain: 1.0 }));
+    fn a_stepped_param_fails_and_a_gliding_one_passes() {
+        let step = outcome(params_glide, || Box::new(Stepped { gain: 1.0 }));
         assert_eq!(step.status, Status::Fail, "{:?}", step.details);
-        let glide = outcome(controls_glide, || Box::new(Gain::new(2, 2)));
+        let glide = outcome(params_glide, || Box::new(Gain::new(2, 2)));
         assert_eq!(glide.status, Status::Pass, "{:?}", glide.details);
     }
 }

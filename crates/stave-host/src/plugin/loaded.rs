@@ -23,9 +23,9 @@ use super::module::Module;
 use super::telemetry::TelemetryRef;
 use super::trace::LoadTrace;
 use super::transport::Transport;
-use crate::control::{Control, ControlError};
+use crate::param::{Param, ParamError};
 use crate::instance::{Instance, Layout, PluginMessage, TapReading, StateError, Tail};
-use crate::note::NoteEvent;
+use stave_core::Event;
 
 /// How the plugin's parameters are reached.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -93,7 +93,7 @@ pub struct LoadedPlugin {
     pub(super) events: Box<EventList>,
     pub(super) changes: Box<ParamChanges>,
     pub(super) transport: Transport,
-    pub(super) chunk_notes: Vec<NoteEvent>,
+    pub(super) chunk_events: Vec<Event>,
     pub(super) stats: HostStats,
     pub(super) telemetry: *const Telemetry,
     pub(super) active: bool,
@@ -181,7 +181,7 @@ impl LoadedPlugin {
                 }
             }
         }
-        self.stats.dropped_events += self.events.set(&self.chunk_notes) as u64;
+        self.stats.dropped_events += self.events.set(&self.chunk_events) as u64;
         let mut in_bus = AudioBusBuffers {
             num_channels: self.layout.inputs as i32,
             silence_flags: 0,
@@ -245,8 +245,8 @@ impl Instance for LoadedPlugin {
         }
     }
 
-    /// Any length: split into `max_block` chunks, notes re-based per chunk.
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], notes: &[NoteEvent]) {
+    /// Any length: split into `max_block` chunks, events re-based per chunk.
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[Event]) {
         let total = outputs
             .first()
             .map(|o| o.len())
@@ -268,14 +268,13 @@ impl Instance for LoadedPlugin {
                     None => self.io.spare_outputs[c].as_mut_ptr(),
                 };
             }
-            self.chunk_notes.clear();
-            let end = (start + n) as u32;
-            self.chunk_notes.extend(
-                notes
+            self.chunk_events.clear();
+            self.chunk_events.extend(
+                events
                     .iter()
-                    .filter(|e| (start as u32..end).contains(&e.offset))
-                    .map(|e| NoteEvent {
-                        offset: e.offset - start as u32,
+                    .filter(|e| (start..start + n).contains(&e.frame))
+                    .map(|e| Event {
+                        frame: e.frame - start,
                         ..*e
                     }),
             );
@@ -284,18 +283,18 @@ impl Instance for LoadedPlugin {
         }
     }
 
-    fn controls(&self) -> Vec<Control> {
+    fn params(&self) -> Vec<Param> {
         self.controller
             .as_ref()
-            .map_or_else(Vec::new, |c| c.handle().controls())
+            .map_or_else(Vec::new, |c| c.handle().params())
     }
 
-    fn set_control(&mut self, name: &str, plain: f64) -> Result<(), ControlError> {
+    fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {
         self.controller
             .as_ref()
-            .ok_or_else(|| ControlError::NotFound(name.into()))?
+            .ok_or_else(|| ParamError::NotFound(name.into()))?
             .handle()
-            .set(name, plain)
+            .set(name, value)
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, StateError> {

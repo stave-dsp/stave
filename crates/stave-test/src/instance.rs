@@ -2,59 +2,14 @@
 //! measures, drives and validates — `drive::Driver`, the frequency
 //! response, the bench phases, the validation checks — runs on a linked
 //! plugin in-process, through its Rust interface, with no bundle.
-//! Notes and parameters convert here, at the edge.
+//! Events and params are stave-core's on both sides: nothing converts.
 
-use stave::params::AnyParam;
-use stave::{Event, EventKind, NoteEvent, NoteKind, Plugin};
-use stave_host::control::{Control, ControlError, ControlFlags};
+use stave::Plugin;
 use stave_host::instance::{Instance, Layout, StateError, Tail};
-use stave_host::note;
+use stave_host::param::{Param, ParamError};
 
 use crate::harness::ParamName;
 use crate::PluginHarness;
-
-/// A param as stave-host's [`Control`] (plain values, steps minus one).
-pub fn control_of(p: &dyn AnyParam) -> Control {
-    let m = p.meta();
-    let steps = p.step_count();
-    Control {
-        id: m.id.0,
-        name: m.name.to_string(),
-        group: m.group.to_string(),
-        unit: m.unit.label().to_string(),
-        min: p.denormalize(0.0),
-        max: p.denormalize(1.0),
-        default: p.denormalize(p.default_normalized()),
-        value: p.value(),
-        normalized: p.normalized(),
-        steps: steps.saturating_sub(1),
-        step_names: (0..steps).filter_map(|i| p.step_name(i)).map(str::to_string).collect(),
-        flags: ControlFlags {
-            automatable: !m.flags.non_automatable,
-            read_only: false,
-            hidden: m.flags.hidden,
-            bypass: m.flags.bypass,
-            program_change: false,
-        },
-    }
-}
-
-/// A stave-host note as the plugin's [`Event`].
-pub fn event_of(n: &note::NoteEvent, id: i32) -> Event {
-    Event {
-        frame: n.offset as usize,
-        kind: EventKind::Note(NoteEvent {
-            kind: match n.kind {
-                note::NoteKind::On => NoteKind::On,
-                note::NoteKind::Off => NoteKind::Off,
-            },
-            key: n.pitch,
-            channel: 0,
-            velocity: f64::from(n.velocity),
-            note_id: id,
-        }),
-    }
-}
 
 impl<P: Plugin> Instance for PluginHarness<P> {
     fn layout(&self) -> Layout {
@@ -78,31 +33,27 @@ impl<P: Plugin> Instance for PluginHarness<P> {
         }
     }
 
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], notes: &[note::NoteEvent]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[stave::Event]) {
         let frames = outputs.first().map_or(0, |o| o.len()).min(self.block_size());
         for (dst, src) in self.inputs_mut().zip(inputs) {
             dst[..frames].copy_from_slice(&src[..frames]);
         }
-        let mut events = self.take_events();
-        events.clear();
-        events.extend(notes.iter().map(|n| event_of(n, -1)));
-        self.process_frames(frames, &[], &events);
-        self.put_events(events);
+        self.process_frames(frames, &[], events);
         for (dst, src) in outputs.iter_mut().zip(self.outputs()) {
             dst[..frames].copy_from_slice(&src[..frames]);
         }
     }
 
-    fn controls(&self) -> Vec<Control> {
+    fn params(&self) -> Vec<Param> {
         let table = self.table();
-        (0..table.count()).filter_map(|i| table.by_index(i)).map(control_of).collect()
+        (0..table.count()).filter_map(|i| table.by_index(i)).map(Param::of).collect()
     }
 
-    fn set_control(&mut self, name: &str, plain: f64) -> Result<(), ControlError> {
+    fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {
         let table = self.table();
-        let p = ParamName::lookup(&name, &*table).ok_or_else(|| ControlError::NotFound(name.to_string()))?;
+        let p = ParamName::lookup(&name, &*table).ok_or_else(|| ParamError::NotFound(name.to_string()))?;
         let (lo, hi) = (p.denormalize(0.0), p.denormalize(1.0));
-        p.set_value(plain.clamp(lo.min(hi), lo.max(hi)));
+        p.set_value(value.clamp(lo.min(hi), lo.max(hi)));
         Ok(())
     }
 
