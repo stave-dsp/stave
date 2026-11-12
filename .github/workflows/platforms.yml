@@ -1,0 +1,41 @@
+# Linux and Windows: the whole workspace builds, lints and tests there
+# too (docs/overhaul.md, ledger X). macOS is ci.yml's. Every job fits in
+# five minutes warm.
+name: platforms
+
+on:
+  push:
+    branches: [main, "release/**", "xplat/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  workspace:
+    name: build + clippy + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with: { save-if: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/xplat/') }}" }
+      - uses: taiki-e/install-action@v2.90.3
+        with: { tool: nextest@0.9.148 }
+      - run: cargo build --workspace --all-targets --locked --keep-going
+      - if: always()
+        run: cargo clippy --workspace --all-targets --no-deps --locked --keep-going -- -D warnings
+      - if: always()
+        run: cargo nextest run --workspace --locked --profile ci --no-fail-fast
