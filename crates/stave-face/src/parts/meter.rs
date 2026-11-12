@@ -138,7 +138,16 @@ pub struct Trace {
     /// The tap values at the bottom and top of the screen.
     pub range: (f64, f64),
     pub label: Option<&'static str>,
-    history: Mutex<VecDeque<f64>>,
+    history: Mutex<History>,
+}
+
+/// A trace's samples, one per frame time: painting the same frame twice
+/// (a hit test, a second layer pass) draws the same picture.
+#[derive(Default)]
+struct History {
+    /// The frame time of the newest sample.
+    at: Option<f64>,
+    values: VecDeque<f64>,
 }
 
 impl Trace {
@@ -149,7 +158,7 @@ impl Trace {
             h,
             range,
             label: None,
-            history: Mutex::new(VecDeque::new()),
+            history: Mutex::new(History::default()),
         }
     }
     pub fn label(mut self, l: &'static str) -> Self {
@@ -175,8 +184,12 @@ impl Part for Trace {
         let sc = self.screen(r);
         screens::grid(f, sc, s, 8, 4);
         let n = (sc.w / 2.0) as usize;
-        let mut h = self.history.lock().unwrap_or_else(|e| e.into_inner());
-        h.push_back(f.tap(self.tap));
+        let mut history = self.history.lock().unwrap_or_else(|e| e.into_inner());
+        if history.at != Some(f.time) {
+            history.at = Some(f.time);
+            history.values.push_back(f.tap(self.tap));
+        }
+        let h = &mut history.values;
         while h.len() > n {
             h.pop_front();
         }
