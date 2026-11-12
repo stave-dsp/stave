@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use stave_vst3::sys::{
+use stave_vst3_sys::{
     Event, EventData, IEventList, IEventListVtbl, NoteOffEvent, NoteOnEvent, Tresult, Tuid,
     EVENT_NOTE_OFF, EVENT_NOTE_ON, IID_FUNKNOWN, IID_IEVENT_LIST, K_INVALID_ARGUMENT,
     K_NOT_IMPLEMENTED, K_NO_INTERFACE, K_RESULT_OK,

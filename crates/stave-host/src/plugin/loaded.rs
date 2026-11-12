@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use stave_debug::DebugBus;
-use stave_vst3::sys::{
+use stave_vst3_sys::{
     AudioBusBuffers, IAudioProcessorVtbl, IComponentVtbl, ProcessData, K_RESULT_OK,
     PROCESS_MODE_REALTIME, SAMPLE_SIZE_32,
 };
@@ -132,7 +132,7 @@ impl LoadedPlugin {
     /// The object that creates the plugin's editor view: the controller
     /// (the separate one for split plugins — the live instance's, never
     /// a ghost), else the component. Borrowed: valid while this lives.
-    pub fn editor_owner_raw(&self) -> *mut stave_vst3::sys::FUnknown {
+    pub fn editor_owner_raw(&self) -> *mut stave_vst3_sys::FUnknown {
         self.controller
             .as_ref()
             .map_or(self.component.as_ptr(), |c| c.com().as_ptr())
@@ -163,7 +163,7 @@ impl LoadedPlugin {
         // SAFETY: the object's own method, called on the live object `Com` holds.
         let r = unsafe { (p.vtbl().set_processing)(p.as_ptr(), 1) };
         // Some plugins return kNotImplemented: processing is implied.
-        if r != K_RESULT_OK && r != stave_vst3::sys::K_NOT_IMPLEMENTED {
+        if r != K_RESULT_OK && r != stave_vst3_sys::K_NOT_IMPLEMENTED {
             return Err(HostError::call("setProcessing")(r));
         }
         self.processing = true;

@@ -16,7 +16,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use stave_vst3::sys::{
+use stave_vst3_sys::{
     FUnknown, IEditControllerVtbl, IPlugViewVtbl, Tresult, Tuid, ViewRect, IID_IEDIT_CONTROLLER,
     K_RESULT_OK,
 };

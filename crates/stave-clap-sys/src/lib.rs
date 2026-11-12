@@ -1,11 +1,19 @@
-//! Raw CLAP 1.x C ABI declarations. Hand-written against the upstream
-//! `clap.h` (<https://github.com/free-audio/clap>). No external bindings crate.
+//! The raw CLAP 1.x C ABI: types, constants, extension vtables and their
+//! layout assertions, hand-written against the upstream `clap.h`
+//! (<https://github.com/free-audio/clap>) — no external bindings crate,
+//! and no logic. `stave-clap` builds the plugin side on it; a host reads
+//! the ABI from here without linking the wrapper.
+//!
+//! `unsafe` appears only where the ABI requires it: the `unsafe extern "C"`
+//! function pointers, and `Sync` for the read-only statics a plugin hands
+//! the host (descriptor, factory, entry).
 //!
 //! Every struct here is `#[repr(C)]` and laid out to match the C header
 //! byte-for-byte. Function pointer signatures use `extern "C"` and use the
 //! same nullable convention as the C side: a `None` `Option<fn>` is the
 //! NULL function pointer.
 
+#![cfg_attr(not(test), no_std)]
 #![allow(non_camel_case_types)]
 
 use core::ffi::{c_char, c_void};

@@ -1,6 +1,6 @@
 //! Why a plugin failed to load.
 
-use stave_vst3::sys::{tresult_name, Tresult};
+use stave_vst3_sys::{tresult_name, Tresult};
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum HostError {
@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn call_errors_name_the_call_and_hex_result() {
-        let e = HostError::call("setActive")(stave_vst3::sys::K_NOT_IMPLEMENTED);
+        let e = HostError::call("setActive")(stave_vst3_sys::K_NOT_IMPLEMENTED);
         #[cfg(not(windows))]
         let expected = "setActive failed: kNotImplemented (tresult=0x00000003)";
         #[cfg(windows)]

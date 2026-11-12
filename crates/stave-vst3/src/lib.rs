@@ -16,7 +16,8 @@ pub(crate) mod host_context;
 pub mod ids;
 mod metrics;
 mod programs;
-pub mod sys;
+/// The raw VST3 ABI (`stave-vst3-sys`), re-exported for the export macros.
+pub use stave_vst3_sys as sys;
 mod units;
 pub(crate) mod wire_strings;
 pub mod wrapper;

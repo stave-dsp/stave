@@ -13,7 +13,7 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-use stave_vst3::sys::{FUnknown, Tresult, Tuid, K_RESULT_OK};
+use stave_vst3_sys::{FUnknown, Tresult, Tuid, K_RESULT_OK};
 
 /// The `FUnknown` prefix every VST3 vtable starts with.
 #[repr(C)]

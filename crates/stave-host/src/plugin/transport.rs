@@ -3,7 +3,7 @@
 //! (LFOs, delays) read it; a null context makes some of them fall back
 //! to defaults or misbehave.
 
-use stave_vst3::sys::ProcessContext;
+use stave_vst3_sys::ProcessContext;
 
 // ProcessContext::state bits (VST3 ivstprocesscontext.h).
 const PLAYING: u32 = 1 << 1;

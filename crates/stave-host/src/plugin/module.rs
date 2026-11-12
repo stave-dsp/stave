@@ -8,7 +8,7 @@ use std::path::Path;
 use std::ptr::NonNull;
 
 use stave_debug::DebugBus;
-use stave_vst3::sys::FUnknown;
+use stave_vst3_sys::FUnknown;
 
 use super::bundle::Bundle;
 use super::HostError;

@@ -1,5 +1,12 @@
-//! Raw VST3 SDK type and interface declarations. Hand-written against the
-//! Steinberg `vst3_pluginterfaces` headers — no external bindings crate.
+//! The raw VST3 ABI: SDK types, constants, interface vtables, IIDs and
+//! `tresult` codes, hand-written against the Steinberg
+//! `vst3_pluginterfaces` headers — no external bindings crate, and no
+//! logic. `stave-vst3` (the plugin side) and `stave-host` (the host side)
+//! both speak VST3 through this crate, so a host need not link the plugin
+//! wrapper (or its editor platform crate) to read the ABI.
+//!
+//! `unsafe` appears only where the ABI requires it: the `unsafe extern "C"`
+//! function pointers of the vtables.
 //!
 //! All structs are `#[repr(C)]` with field order matching the C++ headers.
 //! Interface vtables are `#[repr(C)]` structs of plain (non-null)
@@ -13,6 +20,7 @@
 //! `cfg(windows)` here, so a CID declared once means the same class on
 //! every platform.
 
+#![cfg_attr(not(test), no_std)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
@@ -190,6 +198,8 @@ pub const IID_IEDIT_CONTROLLER: Tuid = make_tuid(0xDCD7BBE3, 0x7742448D, 0xA874A
 pub const IID_ICOMPONENT_HANDLER: Tuid = make_tuid(0x93A0BEA3, 0x0BD045DB, 0x8E890B0C, 0xC1E46AC6);
 pub const IID_IEVENT_LIST: Tuid = make_tuid(0x3A2C4214, 0x346349FE, 0xB2C4F397, 0xB9695A44);
 pub const IID_IPLUG_VIEW: Tuid = make_tuid(0x5BC32507, 0xD06049EA, 0xA6151B52, 0x2B755B29);
+pub const IID_IHOST_APPLICATION: Tuid = make_tuid(0x58E595CC, 0xDB2D4969, 0x8B6AAF8C, 0x36A664E5);
+pub const IID_ICONNECTION_POINT: Tuid = make_tuid(0x70A4156F, 0x6E6E4026, 0x989148BF, 0xAA60D8D1);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -869,6 +879,36 @@ pub struct IUnitInfoVtbl {
         program_index: i32,
         data: *mut IBStream,
     ) -> Tresult,
+}
+
+/// `IHostApplication` (ivsthostapplication.h): the host context a host
+/// hands to `initialize`.
+#[repr(C)]
+pub struct IHostApplicationVtbl {
+    pub query_interface:
+        unsafe extern "C" fn(this: *mut FUnknown, iid: *const Tuid, obj: *mut *mut c_void) -> Tresult,
+    pub add_ref: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub release: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub get_name: unsafe extern "C" fn(this: *mut FUnknown, name: *mut TChar) -> Tresult,
+    pub create_instance: unsafe extern "C" fn(
+        this: *mut FUnknown,
+        cid: *mut Tuid,
+        iid: *mut Tuid,
+        obj: *mut *mut c_void,
+    ) -> Tresult,
+}
+
+/// `IConnectionPoint` (ivstmessage.h): the component <-> controller
+/// wiring a host makes for split-architecture plugins.
+#[repr(C)]
+pub struct IConnectionPointVtbl {
+    pub query_interface:
+        unsafe extern "C" fn(this: *mut FUnknown, iid: *const Tuid, obj: *mut *mut c_void) -> Tresult,
+    pub add_ref: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub release: unsafe extern "C" fn(this: *mut FUnknown) -> u32,
+    pub connect: unsafe extern "C" fn(this: *mut FUnknown, other: *mut FUnknown) -> Tresult,
+    pub disconnect: unsafe extern "C" fn(this: *mut FUnknown, other: *mut FUnknown) -> Tresult,
+    pub notify: unsafe extern "C" fn(this: *mut FUnknown, message: *mut FUnknown) -> Tresult,
 }
 
 // The C++ layouts, measured from the VST3 SDK headers (sizeof/alignof on

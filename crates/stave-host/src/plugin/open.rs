@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use stave_vst3::sys::{
+use stave_vst3_sys::{
     BusInfo, IComponentVtbl, IEditControllerVtbl, ProcessSetup, Tuid, BUS_DIR_INPUT,
     BUS_DIR_OUTPUT, IID_IAUDIO_PROCESSOR, IID_ICOMPONENT, IID_IEDIT_CONTROLLER, K_RESULT_OK,
     MEDIA_TYPE_AUDIO, MEDIA_TYPE_EVENT, PROCESS_MODE_REALTIME, SAMPLE_SIZE_32,
@@ -96,7 +96,7 @@ fn build(
             unsafe { component.query(&IID_IAUDIO_PROCESSOR) }.ok_or(HostError::call(
                 "queryInterface(IAudioProcessor)",
             )(
-                stave_vst3::sys::K_NO_INTERFACE,
+                stave_vst3_sys::K_NO_INTERFACE,
             ))
         },
         |_| String::new(),
@@ -269,7 +269,7 @@ fn separate_controller(
 }
 
 fn setup(
-    processor: &Com<stave_vst3::sys::IAudioProcessorVtbl>,
+    processor: &Com<stave_vst3_sys::IAudioProcessorVtbl>,
     config: HostConfig,
 ) -> Result<(), HostError> {
     let mut setup = ProcessSetup {

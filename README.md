@@ -31,8 +31,11 @@ The contracts they keep are in **docs/architecture.md**.
   `StavePlugin<E>`; typed params (`FloatParam`/`BoolParam`/
   `EnumParam`, `#[derive(Params)]`, declaration-owned smoothing and
   ranges), presets, state chunks, events.
-- **`stave-vst3`** / **`stave-clap`** — the hand-written ABIs; one
-  export macro each.
+- **`stave-vst3`** / **`stave-clap`** — the plugin side of each
+  hand-written ABI; one export macro each.
+- **`stave-vst3-sys`** / **`stave-clap-sys`** — the raw ABIs alone
+  (types, constants, vtables, IIDs, layout assertions; `no_std`), shared
+  by the wrappers and by `stave-host`.
 - **`stave-dsp`** — the DSP vocabulary: layered downward-only
   (docs/architecture.md): `kernel` forms (`Chain`, `Loop`,
   `Oversampled2x`, `Router`, `SwapPoint`, `PerChannel`), `primitives`

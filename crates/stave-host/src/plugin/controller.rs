@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crossbeam_queue::ArrayQueue;
-use stave_vst3::sys::{IEditControllerVtbl, ParamId, ParamValue, ParameterInfo, K_RESULT_OK};
+use stave_vst3_sys::{IEditControllerVtbl, ParamId, ParamValue, ParameterInfo, K_RESULT_OK};
 
 use super::com::{utf16_z, Com, Initialized};
 use crate::control::{find, Control, ControlError, ControlFlags};
@@ -123,7 +123,7 @@ impl Controller {
 /// plugin down (the UI thread) — liveness is checked, not locked.
 #[derive(Clone)]
 pub struct ControllerHandle {
-    obj: *mut stave_vst3::sys::FUnknown,
+    obj: *mut stave_vst3_sys::FUnknown,
     separate: bool,
     edits: Arc<Edits>,
     /// Cleared when the plugin is torn down: every call goes inert.

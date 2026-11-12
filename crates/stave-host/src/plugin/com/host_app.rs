@@ -5,33 +5,20 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use stave_vst3::sys::{
-    FUnknown, Tresult, Tuid, IID_FUNKNOWN, K_INVALID_ARGUMENT, K_NO_INTERFACE, K_RESULT_FALSE,
+use stave_vst3_sys::{
+    FUnknown, IHostApplicationVtbl, Tresult, Tuid, IID_FUNKNOWN, IID_IHOST_APPLICATION, K_INVALID_ARGUMENT, K_NO_INTERFACE, K_RESULT_FALSE,
     K_RESULT_OK,
 };
-
-pub(crate) const IID_IHOST_APPLICATION: Tuid =
-    stave_vst3::sys::make_tuid(0x58E595CC, 0xDB2D4969, 0x8B6AAF8C, 0x36A664E5);
 
 /// The name plugins see for their host.
 pub(crate) const HOST_NAME: &str = "stave-host";
 
 #[repr(C)]
 struct HostApp {
-    vtbl: *const HostAppVtbl,
+    vtbl: *const IHostApplicationVtbl,
 }
 
-#[repr(C)]
-struct HostAppVtbl {
-    query_interface: unsafe extern "C" fn(*mut FUnknown, *const Tuid, *mut *mut c_void) -> Tresult,
-    add_ref: unsafe extern "C" fn(*mut FUnknown) -> u32,
-    release: unsafe extern "C" fn(*mut FUnknown) -> u32,
-    get_name: unsafe extern "C" fn(*mut FUnknown, *mut u16) -> Tresult,
-    create_instance:
-        unsafe extern "C" fn(*mut FUnknown, *mut Tuid, *mut Tuid, *mut *mut c_void) -> Tresult,
-}
-
-static VTBL: HostAppVtbl = HostAppVtbl {
+static VTBL: IHostApplicationVtbl = IHostApplicationVtbl {
     query_interface,
     add_ref,
     release,
@@ -108,7 +95,7 @@ mod tests {
     #[test]
     fn answers_its_name_and_interfaces() {
         let ctx = host_context();
-        let vt = unsafe { &**(ctx as *const *const HostAppVtbl) };
+        let vt = unsafe { &**(ctx as *const *const IHostApplicationVtbl) };
         let mut buf = [0xFFFFu16; 128];
         assert_eq!(unsafe { (vt.get_name)(ctx, buf.as_mut_ptr()) }, K_RESULT_OK);
         assert_eq!(crate::plugin::com::utf16_z(&buf), HOST_NAME);

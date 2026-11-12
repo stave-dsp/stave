@@ -12,7 +12,7 @@ publish = false
 [dependencies]
 stave-measure.workspace = true
 stave-host.workspace = true
-stave-vst3.workspace = true
+stave-vst3-sys.workspace = true
 stave-debug.workspace = true
 thiserror.workspace = true
 cpal = "0.15"

@@ -7,7 +7,7 @@ use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use stave_vst3::sys::{
+use stave_vst3_sys::{
     FUnknown, IBStream, IBStreamVtbl, Tresult, Tuid, IID_FUNKNOWN, IID_IBSTREAM,
     K_INVALID_ARGUMENT, K_NO_INTERFACE, K_RESULT_OK, SEEK_CUR, SEEK_END, SEEK_SET,
 };

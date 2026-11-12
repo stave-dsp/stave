@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Print sizeof/alignof of every VST3 and CLAP struct stave mirrors, measured
 # from the official headers — the numbers pinned by the `const` layout
-# assertions in crates/stave-vst3/src/sys.rs and crates/stave-clap/src/sys.rs.
+# assertions in crates/stave-vst3-sys/src/lib.rs and crates/stave-clap-sys/src/lib.rs.
 # Headers: target/vst3sdk (scripts/validate-formats.sh builds it) and
 # target/clap (git clone https://github.com/free-audio/clap target/clap).
 set -euo pipefail

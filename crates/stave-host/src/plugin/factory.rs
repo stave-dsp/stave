@@ -4,7 +4,7 @@
 
 use std::ffi::c_void;
 
-use stave_vst3::sys::{
+use stave_vst3_sys::{
     IPluginFactoryVtbl, PClassInfo, PClassInfo2, Tresult, Tuid, IID_IPLUGIN_FACTORY2, K_RESULT_OK,
 };
 
@@ -52,7 +52,7 @@ impl Factory {
     pub fn vendor(&self) -> Option<String> {
         // SAFETY: all-zero is a valid `PFactoryInfo` (char arrays, an
         // integer).
-        let mut info = unsafe { std::mem::zeroed::<stave_vst3::sys::PFactoryInfo>() };
+        let mut info = unsafe { std::mem::zeroed::<stave_vst3_sys::PFactoryInfo>() };
         // SAFETY: the factory's own method on the live factory.
         let r = unsafe { (self.com.vtbl().get_factory_info)(self.com.as_ptr(), &mut info) };
         (r == K_RESULT_OK)
@@ -122,7 +122,7 @@ impl Factory {
         }
         // SAFETY: success hands over one reference to an object
         // implementing `iid`, laid out as `V` (this function's contract).
-        unsafe { Com::adopt(obj) }.ok_or(stave_vst3::sys::K_NO_INTERFACE)
+        unsafe { Com::adopt(obj) }.ok_or(stave_vst3_sys::K_NO_INTERFACE)
     }
 }
 

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/stave-clap",
+    "crates/stave-clap-sys",
     "crates/stave-core",
     "crates/stave-debug",
     "crates/stave-dsp",
@@ -14,6 +15,7 @@ members = [
     "crates/stave-ui",
     "crates/stave-ui-cocoa",
     "crates/stave-vst3",
+    "crates/stave-vst3-sys",
 
     "tools/stave-bench",
     "tools/stave-play",
@@ -55,6 +57,8 @@ stave-macros = { path = "crates/stave-macros" }
 stave-core = { path = "crates/stave-core" }
 stave-clap = { path = "crates/stave-clap" }
 stave-vst3 = { path = "crates/stave-vst3" }
+stave-vst3-sys = { path = "crates/stave-vst3-sys" }
+stave-clap-sys = { path = "crates/stave-clap-sys" }
 stave-debug = { path = "crates/stave-debug" }
 stave-dsp = { path = "crates/stave-dsp" }
 stave-test = { path = "crates/stave-test" }

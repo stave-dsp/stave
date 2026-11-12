@@ -12,6 +12,8 @@ stave-macros ─┐
 stave-debug ──┼─ stave-core ─┬─ stave-vst3 ─┐
 stave-face ───┘              ├─ stave-clap ─┼─ examples/tilt, stave-plugins
                              └─ stave-dsp ──┘
+stave-vst3-sys ── stave-vst3, stave-host     (raw ABI only)
+stave-clap-sys ── stave-clap
 stave-ui ── stave-raster ── stave-face
 stave-ui-cocoa ── stave-vst3 (editor view)
 stave-measure ── stave-host ── stave-test, tools/*
@@ -23,7 +25,14 @@ stave-measure ── stave-host ── stave-test, tools/*
   share.
 - **stave-dsp** — the DSP vocabulary (below). Depends on nothing in the
   plugin model: it never sees hosts, params or events.
-- **stave-vst3 / stave-clap** — hand-written ABIs. A plugin exports with
+- **stave-vst3-sys / stave-clap-sys** — the raw ABIs and nothing else:
+  types, constants, vtables, IIDs, `tresult`s and the layout assertions
+  that pin them to the SDK headers. `no_std`; `unsafe` only where the
+  ABI requires it. A host (stave-host) reads VST3 through
+  `stave-vst3-sys` without linking the plugin wrapper or its platform
+  crate.
+- **stave-vst3 / stave-clap** — the plugin side of each ABI (re-exported
+  as `stave_vst3::sys` / `stave_clap::sys`). A plugin exports with
   one macro each; the macro implements `Vst3Ids` / `ClapEntry` on the
   engine and the blanket `Vst3Export` / `ClapExport` impls lift it onto
   `StavePlugin<E>`.
@@ -220,7 +229,7 @@ unattached engine cannot reach the path.
 | kernel and voice properties | `stave-dsp/tests/` |
 | circuits match ngspice or an independent ODE solve | `stave-test/tests/matches_{ngspice,reference}.rs` |
 | every solver converges at 48 kHz | `stave-test/tests/solver_conformance.rs` |
-| VST3/CLAP struct layouts match the SDK headers | `const` asserts in each `sys.rs`; `scripts/abi-layouts.sh` re-measures |
+| VST3/CLAP struct layouts match the SDK headers | `const` asserts in `stave-vst3-sys` and `stave-clap-sys`; `scripts/abi-layouts.sh` re-measures |
 | every plugin passes Steinberg's validator and clap-validator | `scripts/validate-formats.sh` (CI) |
 | rate, block-size and bit-exactness invariants | `stave-test/tests/*_conformance.rs` |
 | every plugin: validation suite, face bindings, no-alloc, perf, stability | each plugin's `tests/` via `stave_test` (`examples/tilt/tests/` here) |

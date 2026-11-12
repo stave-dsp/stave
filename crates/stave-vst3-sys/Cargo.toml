@@ -1,0 +1,12 @@
+[package]
+name = "stave-vst3-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Raw VST3 ABI for the stave framework: types, constants, vtables, IIDs, tresults (no logic)"
+
+[lints]
+workspace = true

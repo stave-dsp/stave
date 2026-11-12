@@ -7,7 +7,8 @@
 #![deny(rust_2018_idioms)]
 
 pub(crate) mod ports;
-pub mod sys;
+/// The raw CLAP ABI (`stave-clap-sys`), re-exported for the export macros.
+pub use stave_clap_sys as sys;
 pub mod wrapper;
 
 pub use stave_core;

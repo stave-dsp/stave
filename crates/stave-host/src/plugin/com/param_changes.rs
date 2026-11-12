@@ -10,7 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use stave_vst3::sys::{
+use stave_vst3_sys::{
     IParamValueQueue, IParamValueQueueVtbl, IParameterChanges, IParameterChangesVtbl, ParamId,
     ParamValue, Tresult, Tuid, K_NO_INTERFACE, K_RESULT_FALSE, K_RESULT_OK,
 };
