@@ -11,6 +11,11 @@ description = "CLAP audio plugin backend for the stave framework"
 [dependencies]
 stave-core.workspace = true
 stave-clap-sys.workspace = true
+stave-face.workspace = true
+
+# Faces show in an NSView; elsewhere a plugin has no GUI (yet).
+[target.'cfg(target_os = "macos")'.dependencies]
+stave-ui-cocoa.workspace = true
 
 [lints]
 workspace = true

@@ -256,6 +256,7 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
             parent: ptr::null_mut(),
         },
         unit_info_vtbl: build_unit_info_vtbl::<P>(),
+        #[cfg(target_os = "macos")]
         view_vtbl: build_view_vtbl::<P>(),
         ref_count: AtomicU32::new(0),
         shared,

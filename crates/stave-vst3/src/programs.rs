@@ -40,6 +40,7 @@ impl Programs {
         self.exposed().then_some(PROGRAM_LIST_ID)
     }
 
+    #[cfg(target_os = "macos")]
     pub fn presets(&self) -> &[Preset] {
         &self.presets
     }

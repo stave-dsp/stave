@@ -209,3 +209,106 @@ pub(crate) unsafe extern "C" fn config_select<P: ClapExport>(
         },
     )
 }
+
+// ---------------------------------------------------------------------------
+// note-ports: one CLAP-dialect input for a plugin that takes notes
+// ---------------------------------------------------------------------------
+
+/// Whether `P` takes notes: an instrument (no main audio input, or
+/// declared one) or a note effect. Only then does it offer note ports —
+/// without one, a CLAP host sends it no notes.
+pub(crate) fn takes_notes<P: Plugin>() -> bool {
+    use stave_core::PluginFeature as F;
+    let declared = <P as Plugin>::DESCRIPTOR
+        .features
+        .iter()
+        .any(|f| matches!(f, F::Instrument | F::Synthesizer | F::Sampler | F::Drum | F::NoteEffect));
+    declared || <P as Plugin>::CONFIGS.iter().any(|c| c.main_in.is_none())
+}
+
+pub(crate) unsafe extern "C" fn note_ports_count<P: ClapExport>(_plugin: *const sys::ClapPlugin, is_input: bool) -> u32 {
+    u32::from(is_input && takes_notes::<P>())
+}
+
+pub(crate) unsafe extern "C" fn note_ports_get<P: ClapExport>(
+    plugin: *const sys::ClapPlugin,
+    index: u32,
+    is_input: bool,
+    info: *mut sys::ClapNotePortInfo,
+) -> bool {
+    // SAFETY: host contract (see `wrapper::host`); `info` is null or
+    // writable (clap.h).
+    let (inst, info) = unsafe { (Instance::<P>::from_plugin_ptr(plugin), out_param(info, "info")) };
+    ffi_entry::<P, _>(
+        || false,
+        || {
+            let result = info.and_then(|info| {
+                if !is_input || index != 0 || !takes_notes::<P>() {
+                    return Err(CallError::IndexOutOfRange(index.into()));
+                }
+                // The wrapper reads CLAP note events (on, off, choke);
+                // hosts translate MIDI into them.
+                info.id = 0;
+                info.supported_dialects = sys::CLAP_NOTE_DIALECT_CLAP;
+                info.preferred_dialect = sys::CLAP_NOTE_DIALECT_CLAP;
+                write_c_str(&mut info.name, "notes");
+                Ok(())
+            });
+            inst.answer("note_ports.get", result)
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use stave_core::{Plugin, PluginDescriptor, PluginFeature, PortConfig, ProcessCtx};
+
+    const fn descriptor(features: &'static [PluginFeature]) -> PluginDescriptor {
+        PluginDescriptor {
+            id: c"com.stave.test.notes",
+            name: c"Notes",
+            vendor: c"stave tests",
+            version: c"0.0.0",
+            url: c"",
+            description: c"",
+            features,
+        }
+    }
+
+    struct Synth;
+    impl Plugin for Synth {
+        const DESCRIPTOR: PluginDescriptor = descriptor(&[]);
+        const CONFIGS: &'static [PortConfig] = &[PortConfig::STEREO_SYNTH];
+        fn new() -> Self {
+            Synth
+        }
+        fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
+    }
+
+    struct Arp;
+    impl Plugin for Arp {
+        const DESCRIPTOR: PluginDescriptor = descriptor(&[PluginFeature::NoteEffect]);
+        fn new() -> Self {
+            Arp
+        }
+        fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
+    }
+
+    struct Fx;
+    impl Plugin for Fx {
+        const DESCRIPTOR: PluginDescriptor = descriptor(&[PluginFeature::AudioEffect]);
+        fn new() -> Self {
+            Fx
+        }
+        fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
+    }
+
+    /// An instrument (no audio in) or a declared note effect gets a note
+    /// port, so CLAP hosts send it notes; an effect does not.
+    #[test]
+    fn instruments_and_note_effects_take_notes() {
+        assert!(super::takes_notes::<Synth>());
+        assert!(super::takes_notes::<Arp>());
+        assert!(!super::takes_notes::<Fx>());
+    }
+}

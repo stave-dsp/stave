@@ -114,6 +114,8 @@ impl Processor for Wide {
     }
 }
 
+impl stave_clap::stave_face::FaceSpec for Wide {}
+
 impl Spec for Wide {
     const DESCRIPTOR: PluginDescriptor = PluginDescriptor {
         id: c"com.stave.test.wide-clap",

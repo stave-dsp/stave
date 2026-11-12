@@ -62,6 +62,24 @@ impl Host {
         unsafe { rescan(self.0, sys::CLAP_PARAM_RESCAN_VALUES) };
     }
 
+    /// Ask the host to flush parameter events (`params.flush`) when it
+    /// is not processing. [thread-safe, !audio-thread] (clap ext/params.h)
+    pub(super) fn request_flush(self) {
+        let Some(get_extension) = self.get().get_extension else {
+            return;
+        };
+        // SAFETY: the host's own function, called with the host.
+        let ext = unsafe { get_extension(self.0, sys::CLAP_EXT_PARAMS.as_ptr()) };
+        // SAFETY: for `clap.params` a host returns null or a
+        // `clap_host_params` that lives as long as the host.
+        let Some(flush) = unsafe { ext.cast::<sys::ClapHostParams>().as_ref() }.and_then(|p| p.request_flush) else {
+            return;
+        };
+        // SAFETY: the host's own function; thread-safe (not called from
+        // the audio thread: the face runs on the main thread).
+        unsafe { flush(self.0) };
+    }
+
     /// The host's `clap.log`. Only from `init` on (clap.h).
     pub(super) fn log(self) -> Option<HostLog> {
         let get_extension = self.get().get_extension?;

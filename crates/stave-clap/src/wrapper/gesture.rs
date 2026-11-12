@@ -1,38 +1,61 @@
-//! The gesture API: the UI thread pushes, `process`/`flush` drain to the host.
+//! A face's edits on their way to the host: the GUI thread queues
+//! them, `process`/`flush` drain them into the host's out-events (so the
+//! DAW records and undoes them).
 
 use super::*;
 
-/// UI-thread entry points the editor's knobs write through.
+/// The controller a face of this instance edits through (what `create`
+/// gives its view): the table, the telemetry and the factory presets,
+/// every edit through the host's event queue.
 ///
 /// # Safety
-/// `plugin` must be a live pointer previously returned by this
-/// wrapper's `create_plugin` for the same `P` (i.e. the start of an
-/// `Instance<P>`), not yet destroyed.
-pub unsafe fn gesture_begin<P: ClapExport>(plugin: *const sys::ClapPlugin, id: u32) {
+/// `plugin` is a live pointer `create_plugin` returned for this `P`.
+pub unsafe fn controller<P: ClapExport>(plugin: *const sys::ClapPlugin) -> PluginController {
     // SAFETY: this function's contract.
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    inst.gestures.push(GestureEvent::Begin { id });
+    controller_of(inst)
 }
 
-/// # Safety
-/// As [`gesture_begin`].
-pub unsafe fn gesture_value<P: ClapExport>(plugin: *const sys::ClapPlugin, id: u32, plain: f64) {
-    // SAFETY: this function's contract.
-    let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    // Table updated immediately (host-visible truth); the out_event
-    // tells the DAW to record it.
-    if let Some(p) = inst.param_table.by_id(ParamId(id)) {
-        p.set_plain(plain);
+pub(super) fn controller_of<P: ClapExport>(inst: &Instance<P>) -> PluginController {
+    let gestures = ClapGestures {
+        queue: inst.gestures.clone(),
+        host: inst.host,
+    };
+    PluginController::new(
+        inst.param_table.clone(),
+        inst.telemetry.clone(),
+        inst.presets.clone(),
+        Box::new(gestures),
+    )
+}
+
+/// The [`GestureSink`] of a CLAP face: the instance's queue, and a flush
+/// request so a stopped transport still hears the edit. The
+/// `PluginController` has already written the table.
+pub(super) struct ClapGestures {
+    pub(super) queue: Arc<GestureQueue>,
+    pub(super) host: Option<Host>,
+}
+
+impl ClapGestures {
+    fn push(&self, event: GestureEvent) {
+        self.queue.push(event);
+        if let Some(host) = self.host {
+            host.request_flush();
+        }
     }
-    inst.gestures.push(GestureEvent::Value { id, plain });
 }
 
-/// # Safety
-/// As [`gesture_begin`].
-pub unsafe fn gesture_end<P: ClapExport>(plugin: *const sys::ClapPlugin, id: u32) {
-    // SAFETY: this function's contract.
-    let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    inst.gestures.push(GestureEvent::End { id });
+impl GestureSink for ClapGestures {
+    fn begin(&self, id: ParamId) {
+        self.push(GestureEvent::Begin { id: id.0 });
+    }
+    fn perform(&self, id: ParamId, plain: f64) {
+        self.push(GestureEvent::Value { id: id.0, plain });
+    }
+    fn end(&self, id: ParamId) {
+        self.push(GestureEvent::End { id: id.0 });
+    }
 }
 
 /// Drain pending gestures into the host's out_events list. Without a

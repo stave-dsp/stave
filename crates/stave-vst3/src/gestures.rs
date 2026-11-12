@@ -3,7 +3,7 @@
 //! records and undoes it. The `PluginController` has already written the
 //! table.
 
-use alloc::sync::Arc;
+use std::sync::Arc;
 
 use stave_core::params::{ParamId, Params};
 use stave_core::GestureSink;

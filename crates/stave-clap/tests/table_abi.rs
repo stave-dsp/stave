@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use stave_clap::sys::*;
 use stave_core::params::{ContinuousControl, FloatParam, Params, Range, Smooth, Taper, Unit};
-use stave_core::{Plugin, PluginDescriptor, ProcessCtx};
+use stave_core::{Controller, ParamId, Plugin, PluginDescriptor, ProcessCtx};
 
 const ID_GAIN: u32 = 42;
 const ID_DRIVE: u32 = 7;
@@ -92,6 +92,14 @@ impl Plugin for TableGain {
                 ctx.output.channel(c)[f] = g * x;
             }
         }
+    }
+}
+
+/// A face, so the instance serves `clap.gui`.
+impl stave_clap::stave_face::HasFace for TableGain {
+    fn face(&self) -> Option<stave_clap::stave_face::Face> {
+        use stave_clap::stave_face::prelude::*;
+        Some(Face::new(Theme::graphite(), Knob::new(self.params.drive.bind()).node()))
     }
 }
 
@@ -332,15 +340,21 @@ unsafe extern "C" fn oc_push(list: *const ClapOutputEvents, event: *const ClapEv
     true
 }
 
+/// A face edit (through the controller `gui.create` gives the view)
+/// reaches the host as gesture-begin, values, gesture-end on the next
+/// flush, and the table holds the value at once.
 #[test]
 fn gestures_flow_to_the_host_through_out_events() {
     unsafe {
         let plugin = create();
         // GUI thread: a knob drag on drive.
-        stave_clap::wrapper::gesture_begin::<TableGain>(plugin, ID_DRIVE);
-        stave_clap::wrapper::gesture_value::<TableGain>(plugin, ID_DRIVE, 12.0);
-        stave_clap::wrapper::gesture_value::<TableGain>(plugin, ID_DRIVE, -6.0);
-        stave_clap::wrapper::gesture_end::<TableGain>(plugin, ID_DRIVE);
+        let controller = stave_clap::wrapper::controller::<TableGain>(plugin);
+        let c: &dyn Controller = &controller;
+        let drive = ParamId(ID_DRIVE);
+        c.begin(drive);
+        c.set(drive, 0.5); // 12 dB on −12..36
+        c.set(drive, 0.125); // −6 dB
+        c.end(drive);
 
         // Host flushes (transport stopped): events arrive in order.
         let mut events: Vec<(u16, u32, f64)> = Vec::new();
@@ -368,6 +382,44 @@ fn gestures_flow_to_the_host_through_out_events() {
         let mut v = f64::NAN;
         assert!((params.get_value.unwrap())(plugin, ID_DRIVE, &mut v));
         assert_eq!(v, -6.0);
+
+        ((*plugin).destroy.expect("destroy"))(plugin);
+    }
+}
+
+#[cfg(target_os = "macos")]
+/// `clap.gui`: an embedded Cocoa view of the face's own size (headless:
+/// nothing touches Cocoa until `set_parent`); an effect offers no note
+/// ports.
+#[test]
+fn the_face_is_served_as_an_embedded_cocoa_gui() {
+    unsafe {
+        let plugin = create();
+        let get_ext = (*plugin).get_extension.expect("get_extension");
+        assert!(get_ext(plugin, CLAP_EXT_NOTE_PORTS.as_ptr()).is_null(), "an effect takes no notes");
+        let gui = get_ext(plugin, CLAP_EXT_GUI.as_ptr()).cast::<ClapPluginGui>();
+        assert!(!gui.is_null(), "a plugin with a face serves clap.gui");
+        let gui = &*gui;
+        let cocoa = CLAP_WINDOW_API_COCOA.as_ptr();
+        assert!((gui.is_api_supported.unwrap())(plugin, cocoa, false));
+        assert!(!(gui.is_api_supported.unwrap())(plugin, cocoa, true), "never floating");
+        assert!(!(gui.is_api_supported.unwrap())(plugin, c"x11".as_ptr(), false));
+        let (mut api, mut floating) = (ptr::null(), true);
+        assert!((gui.get_preferred_api.unwrap())(plugin, &mut api, &mut floating));
+        assert_eq!((CStr::from_ptr(api), floating), (CLAP_WINDOW_API_COCOA, false));
+
+        let (mut w, mut h) = (0u32, 0u32);
+        assert!(!(gui.get_size.unwrap())(plugin, &mut w, &mut h), "no size before create");
+        assert!((gui.create.unwrap())(plugin, cocoa, false));
+        assert!((gui.get_size.unwrap())(plugin, &mut w, &mut h));
+        assert!(w > 0 && h > 0, "{w}×{h}");
+        assert!(!(gui.get_size.unwrap())(plugin, ptr::null_mut(), &mut h));
+        assert!(!(gui.can_resize.unwrap())(plugin));
+        assert!((gui.set_size.unwrap())(plugin, w, h), "its own size");
+        assert!(!(gui.set_size.unwrap())(plugin, w + 1, h));
+        assert!(!(gui.set_parent.unwrap())(plugin, ptr::null()));
+        (gui.destroy.unwrap())(plugin);
+        assert!(!(gui.get_size.unwrap())(plugin, &mut w, &mut h), "destroyed");
 
         ((*plugin).destroy.expect("destroy"))(plugin);
     }

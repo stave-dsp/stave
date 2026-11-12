@@ -337,5 +337,12 @@ pub(super) unsafe extern "C" fn ec_create_view<P: Vst3Export>(
     let (inst, inst_ptr) = unsafe { (parent_ref::<P>(this), parent_of::<P>(this)) };
     // A fresh view per call, returned with one reference the host owns
     // (SDK `createView` contract); it holds its own instance reference.
-    inst.guarded("createView", ptr::null_mut, || new_view(inst, inst_ptr))
+    #[cfg(target_os = "macos")]
+    return inst.guarded("createView", ptr::null_mut, || new_view(inst, inst_ptr));
+    // Faces show in an NSView; elsewhere the host shows its own editor.
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (inst, inst_ptr);
+        ptr::null_mut()
+    }
 }

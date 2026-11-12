@@ -3,22 +3,12 @@
 //! Audio-thread safe throughout — no allocation, no locks.
 
 /// Peak levels in dBFS (−120 floor for silence): all channels, the
-/// first, and the second (the first again for mono).
-pub(crate) struct Peaks {
-    pub all: f64,
-    pub left: f64,
-    pub right: f64,
-}
-
-impl Peaks {
-    pub(crate) fn as_array(&self) -> [f64; 3] {
-        [self.all, self.left, self.right]
-    }
-}
-
+/// first, and the second (the first again for mono) — the order
+/// [`WrapperTaps::publish_peaks`](super::WrapperTaps::publish_peaks) takes.
+///
 /// # Safety
 /// Every non-null pointer is valid for `frames` reads.
-pub(crate) unsafe fn peaks(ptrs: &[*mut f32], frames: usize) -> Peaks {
+pub unsafe fn peaks(ptrs: &[*mut f32], frames: usize) -> [f64; 3] {
     let channel = |p: *mut f32| -> f32 {
         if p.is_null() {
             return 0.0;
@@ -40,9 +30,5 @@ pub(crate) unsafe fn peaks(ptrs: &[*mut f32], frames: usize) -> Peaks {
         .iter()
         .skip(2)
         .fold(0.0f32, |pk, &p| pk.max(channel(p)));
-    Peaks {
-        all: db(left.max(right).max(rest)),
-        left: db(left),
-        right: db(right),
-    }
+    [db(left.max(right).max(rest)), db(left), db(right)]
 }

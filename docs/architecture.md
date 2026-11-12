@@ -14,7 +14,7 @@ stave-dsp ───────┘   (no UI)    ├─ stave-clap ─┼─ exam
                                 └─ stave-face ─┘
 stave-vst3-sys ── stave-vst3, stave-host     (raw ABI only)
 stave-clap-sys ── stave-clap
-stave-ui ── stave-raster ── stave-face ── stave-ui-cocoa ── stave-vst3, stave-clap
+stave-ui ── stave-raster ── stave-face ── stave-ui-cocoa ── stave-vst3, stave-clap (macOS)
 stave-measure ── stave-host ── stave-test, tools/*
 ```
 
@@ -198,6 +198,14 @@ exaggeration owns it in its own engine.
   scratch (`ProcessorState`); `AudioBuffer` never aliases.
 - Bypass, latency and tail are framework-owned: bypass crossfades to
   latency-matched dry.
+- Both wrappers show a plugin's face, embedded in the host's NSView
+  (VST3 `IPlugView`, CLAP `clap.gui`; macOS — elsewhere the host shows
+  its own editor), over a `PluginController` whose `GestureSink` is the
+  host's automation path (VST3 `IComponentHandler`; CLAP's gesture
+  queue, drained into `process`/`flush` out-events). Both publish the
+  wrapper's taps and capture to the instance's telemetry. A plugin that
+  takes notes (an instrument, or a declared note effect) gets one CLAP
+  note port (CLAP dialect).
 - The wrapper ABIs run under Miri (`tests/wrapper_abi.rs`,
   `tests/table_abi.rs`); the core and debug protocols are Loom-modelled.
 

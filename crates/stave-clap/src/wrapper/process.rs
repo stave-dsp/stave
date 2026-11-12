@@ -175,7 +175,14 @@ fn process_block<P: ClapExport>(
         events: &events_buf[..event_count],
     };
 
+    // The editor's rails: input peaks before the plugin, output after.
+    // SAFETY: `split_for_block` lists are valid for `run` frames.
+    let input_peaks = unsafe { stave_core::wrapper::peaks(io.input, run) };
+    let block_id = inst.telemetry.tick_block();
+    // The plugin's own work, timed (Instant: no alloc, no lock).
+    let started = std::time::Instant::now();
     plugin.process(&mut ctx);
+    let cpu = started.elapsed().as_secs_f64() / (frames as f64 / f64::from(inst.shared.sample_rate()));
     if bypass.is_some() {
         // SAFETY: the output channels are writable for `run` (clap.h).
         unsafe { gate.mix(bypassed, output_ptrs, run) };
@@ -183,9 +190,34 @@ fn process_block<P: ClapExport>(
     // SAFETY: the host's output channels are writable for `frames`.
     unsafe { stave_core::wrapper::zero_tail(output_ptrs, run, frames) };
     drop(proc);
+    // SAFETY: the host's output channels are valid for `frames`.
+    let output_peaks = unsafe { stave_core::wrapper::peaks(output_ptrs, frames) };
+    inst.taps.publish_peaks(input_peaks, output_peaks);
+    inst.taps.cpu.set(cpu);
+    publish_capture(&inst.telemetry, output_ptrs, frames, block_id);
     // Outbound: pending GUI gestures go to the host this block.
     emit_gestures(&inst.gestures, process.out_events());
     sys::CLAP_PROCESS_CONTINUE
+}
+
+/// The block's output as the telemetry's capture (for a face's scope),
+/// unless the plugin writes its own.
+fn publish_capture(telemetry: &Telemetry, output: &[*mut f32], frames: usize, block_id: u64) {
+    if telemetry.plugin_owns_capture() {
+        return;
+    }
+    let chans = output.len().min(stave_core::telemetry::CAPTURE_CHANNELS);
+    let mut capture: [&[f32]; stave_core::telemetry::CAPTURE_CHANNELS] = [&[]; stave_core::telemetry::CAPTURE_CHANNELS];
+    for (c, &ptr) in capture.iter_mut().zip(output).take(chans) {
+        if !ptr.is_null() {
+            // SAFETY: the host's output channels are valid for `frames`
+            // (clap.h); the plugin's borrows of them ended with `process`.
+            *c = unsafe { core::slice::from_raw_parts(ptr, frames) };
+        }
+    }
+    if chans > 0 {
+        telemetry.write_capture(&capture[..chans], block_id);
+    }
 }
 
 /// Note events into `dst`; returns (written, dropped for want of room).

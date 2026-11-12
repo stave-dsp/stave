@@ -824,58 +824,67 @@ fn scheduled_point_lands_within_one_sample() {
 }
 
 // ===========================================================================
-// Mock IComponentHandler — records the gesture conversation
+// Mock IComponentHandler — records the gesture conversation (the face
+// tests: faces show on macOS)
 // ===========================================================================
 
-#[repr(C)]
-struct MockHandler {
-    vtbl: *const IComponentHandlerVtbl,
-    log: Vec<String>,
-}
+#[cfg(target_os = "macos")]
+use mock::{MockHandler, MH_VTBL};
 
-unsafe extern "C" fn mh_qi(
-    _t: *mut IComponentHandler,
-    _i: *const Tuid,
-    _o: *mut *mut c_void,
-) -> Tresult {
-    K_NO_INTERFACE
-}
-unsafe extern "C" fn mh_ref(_t: *mut IComponentHandler) -> u32 {
-    1
-}
-unsafe extern "C" fn mh_begin(t: *mut IComponentHandler, id: ParamId) -> Tresult {
-    unsafe { (*(t as *mut MockHandler)).log.push(format!("begin {id}")) };
-    K_RESULT_OK
-}
-unsafe extern "C" fn mh_perform(
-    t: *mut IComponentHandler,
-    id: ParamId,
-    value: ParamValue,
-) -> Tresult {
-    unsafe {
-        (*(t as *mut MockHandler))
-            .log
-            .push(format!("perform {id} {value}"))
+#[cfg(target_os = "macos")]
+mod mock {
+    use super::*;
+
+    #[repr(C)]
+    pub(super) struct MockHandler {
+        pub(super) vtbl: *const IComponentHandlerVtbl,
+        pub(super) log: Vec<String>,
+    }
+
+    unsafe extern "C" fn mh_qi(
+        _t: *mut IComponentHandler,
+        _i: *const Tuid,
+        _o: *mut *mut c_void,
+    ) -> Tresult {
+        K_NO_INTERFACE
+    }
+    unsafe extern "C" fn mh_ref(_t: *mut IComponentHandler) -> u32 {
+        1
+    }
+    unsafe extern "C" fn mh_begin(t: *mut IComponentHandler, id: ParamId) -> Tresult {
+        unsafe { (*(t as *mut MockHandler)).log.push(format!("begin {id}")) };
+        K_RESULT_OK
+    }
+    unsafe extern "C" fn mh_perform(
+        t: *mut IComponentHandler,
+        id: ParamId,
+        value: ParamValue,
+    ) -> Tresult {
+        unsafe {
+            (*(t as *mut MockHandler))
+                .log
+                .push(format!("perform {id} {value}"))
+        };
+        K_RESULT_OK
+    }
+    unsafe extern "C" fn mh_end(t: *mut IComponentHandler, id: ParamId) -> Tresult {
+        unsafe { (*(t as *mut MockHandler)).log.push(format!("end {id}")) };
+        K_RESULT_OK
+    }
+    unsafe extern "C" fn mh_restart(_t: *mut IComponentHandler, _flags: i32) -> Tresult {
+        K_RESULT_OK
+    }
+
+    pub(super) static MH_VTBL: IComponentHandlerVtbl = IComponentHandlerVtbl {
+        query_interface: mh_qi,
+        add_ref: mh_ref,
+        release: mh_ref,
+        begin_edit: mh_begin,
+        perform_edit: mh_perform,
+        end_edit: mh_end,
+        restart_component: mh_restart,
     };
-    K_RESULT_OK
 }
-unsafe extern "C" fn mh_end(t: *mut IComponentHandler, id: ParamId) -> Tresult {
-    unsafe { (*(t as *mut MockHandler)).log.push(format!("end {id}")) };
-    K_RESULT_OK
-}
-unsafe extern "C" fn mh_restart(_t: *mut IComponentHandler, _flags: i32) -> Tresult {
-    K_RESULT_OK
-}
-
-static MH_VTBL: IComponentHandlerVtbl = IComponentHandlerVtbl {
-    query_interface: mh_qi,
-    add_ref: mh_ref,
-    release: mh_ref,
-    begin_edit: mh_begin,
-    perform_edit: mh_perform,
-    end_edit: mh_end,
-    restart_component: mh_restart,
-};
 
 /// Block-rate host automation through the REAL ABI path
 /// sprays < −60 dBc with default smoothing (the params check,
@@ -1157,6 +1166,7 @@ fn block_size_guards_hold() {
     }
 }
 
+#[cfg(target_os = "macos")]
 /// Headless (a `FaceView` touches no Cocoa until attached): a face edit
 /// goes through the view's controller, reaches the host as
 /// beginEdit → performEdit(normalized) → endEdit through the REAL
@@ -1218,6 +1228,7 @@ fn editor_writes_reach_the_host_and_the_table() {
     }
 }
 
+#[cfg(target_os = "macos")]
 /// S7: the view holds a reference on its instance (SDK `CPluginView`
 /// pattern). A host that releases every controller/component reference
 /// first can still call the view, and the view's last release frees the

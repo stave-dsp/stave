@@ -47,6 +47,8 @@ impl Plugin for Panics {
     }
 }
 
+impl stave_clap::stave_face::HasFace for Panics {}
+
 stave_clap::stave_clap_export!(raw Panics);
 
 #[test]

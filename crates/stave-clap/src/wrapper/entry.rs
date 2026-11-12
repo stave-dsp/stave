@@ -77,7 +77,16 @@ pub unsafe extern "C" fn factory_create_plugin<P: ClapExport>(
 /// # Safety
 /// `host` is null or a `clap_host` that outlives the instance.
 unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys::ClapPlugin {
-    let plugin_obj = P::new();
+    // Telemetry exists before the plugin so it can be attached right
+    // after construction; the wrapper's I/O taps read the floor until
+    // audio runs, so a face's meter rails draw from the first frame.
+    let telemetry = Telemetry::new();
+    let taps = WrapperTaps::new(&telemetry);
+    let floor = [WrapperTaps::FLOOR_DB; 3];
+    taps.publish_peaks(floor, floor);
+
+    let mut plugin_obj = P::new();
+    plugin_obj.attach_telemetry(telemetry.clone());
     let param_table = plugin_obj.param_table();
     if let Err(e) = param_table.validate() {
         Diagnostics::new(&P::DESCRIPTOR).log.write(
@@ -88,6 +97,7 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         return ptr::null();
     }
 
+    let (face, presets) = (plugin_obj.face(), plugin_obj.presets());
     let instance = Box::new(Instance::<P> {
         clap_plugin: sys::ClapPlugin {
             desc: P::clap_descriptor(),
@@ -140,7 +150,19 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         plugin: PluginCell::new(plugin_obj),
         param_table,
         state_store: std::sync::Mutex::new(StateStore::default()),
-        gestures: GestureQueue::new(),
+        gestures: Arc::new(GestureQueue::new()),
+        #[cfg(target_os = "macos")]
+        gui_vtable: gui_vtable::<P>(),
+        note_ports_vtable: sys::ClapPluginNotePorts {
+            count: Some(ports::note_ports_count::<P>),
+            get: Some(ports::note_ports_get::<P>),
+        },
+        face,
+        presets,
+        #[cfg(target_os = "macos")]
+        editor: core::cell::RefCell::new(None),
+        telemetry,
+        taps,
         // SAFETY: clap.h: the host outlives the instances it creates.
         host: unsafe { Host::new(host) },
         diagnostics: Diagnostics::new(&P::DESCRIPTOR),

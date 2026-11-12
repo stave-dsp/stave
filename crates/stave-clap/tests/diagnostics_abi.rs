@@ -33,6 +33,8 @@ impl Plugin for Silent {
     fn process(&mut self, _ctx: &mut ProcessCtx<'_>) {}
 }
 
+impl stave_clap::stave_face::HasFace for Silent {}
+
 stave_clap::stave_clap_export!(raw Silent);
 
 static MESSAGES: Mutex<Vec<(ClapLogSeverity, String)>> = Mutex::new(Vec::new());

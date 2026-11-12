@@ -10,19 +10,17 @@
 
 pub(crate) mod buses;
 pub(crate) mod events;
+#[cfg(target_os = "macos")]
 pub(crate) mod gestures;
 pub(crate) mod host;
 pub(crate) mod host_context;
 pub mod ids;
-mod metrics;
 mod programs;
 /// The raw VST3 ABI (`stave-vst3-sys`), re-exported for the export macros.
 pub use stave_vst3_sys as sys;
 mod units;
 pub(crate) mod wire_strings;
 pub mod wrapper;
-
-extern crate alloc;
 
 pub use stave_core;
 /// The design system, for a plugin's face (`FaceSpec`, `HasFace`).

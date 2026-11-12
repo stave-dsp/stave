@@ -18,12 +18,11 @@ use stave_core::state::StateStore;
 use stave_core::wrapper::state::{self as wrapper_state, MAX_STATE_BYTES};
 use stave_core::wrapper::{PanicGuard, WrapperTaps};
 use stave_core::{
-    AudioBuffer, Event as StaveEvent, EventKind, Plugin, PluginCell, PluginController, ProcessCtx,
-    SharedState, Telemetry,
+    AudioBuffer, Event as StaveEvent, EventKind, Plugin, PluginCell, ProcessCtx, SharedState,
+    Telemetry,
 };
 
 use crate::buses;
-use crate::gestures::Vst3Gestures;
 use crate::events;
 use crate::host::{out_param, string128, tchar_str, ComponentHandler, Process, Stream};
 pub(crate) use crate::host_context::{build_pcr_vtbl, translate_transport};
@@ -37,6 +36,7 @@ mod controller;
 mod factory;
 mod processor;
 mod unit_info;
+#[cfg(target_os = "macos")]
 mod view;
 
 use component::*;
@@ -44,6 +44,9 @@ use controller::*;
 pub use factory::{build_factory_vtbl, FactoryObj};
 use processor::*;
 use unit_info::*;
+#[cfg(target_os = "macos")]
+pub use view::EditorBox;
+#[cfg(target_os = "macos")]
 use view::*;
 
 // ===========================================================================
@@ -128,6 +131,7 @@ pub struct Instance<P: Vst3Export> {
     /// The `IPlugView` vtable every `EditorBox` of this instance points
     /// at; by value for the same reason as `pcr_vtbl`. A view holds an
     /// instance reference, so this outlives every view using it.
+    #[cfg(target_os = "macos")]
     pub view_vtbl: IPlugViewVtbl,
     pub ref_count: AtomicU32,
     pub shared: SharedState,
@@ -230,25 +234,6 @@ pub(crate) fn ffi_entry<P: Plugin, R>(failed: impl FnOnce() -> R, call: impl FnO
     // AssertUnwindSafe: on a panic, whatever `call` built is dropped
     // during the unwind and `failed()` touches none of it.
     std::panic::catch_unwind(core::panic::AssertUnwindSafe(call)).unwrap_or_else(|_| failed())
-}
-
-/// One `IPlugView`, returned by `createView` with one reference (the
-/// SDK's `CPluginView` pattern). While alive it holds a reference on its
-/// `Instance`, so a host that releases the controller first still
-/// reaches a live instance through the view; the last `release` drops
-/// the view (which detaches it from any host window) and then that
-/// instance reference.
-///
-/// No `Send`/`Sync`: the box lives on the heap behind the host's raw
-/// pointer, never inside a value that crosses threads, and view calls
-/// are main-thread only (SDK).
-#[repr(C)]
-pub struct EditorBox<P: Vst3Export> {
-    /// Points at the owning instance's `view_vtbl`.
-    pub vtbl: *const IPlugViewVtbl,
-    pub(crate) ref_count: AtomicU32,
-    pub(crate) inst: *mut Instance<P>,
-    pub view: stave_ui_cocoa::FaceView,
 }
 
 /// Stable C ABI helper: return a raw pointer to the instance's telemetry.

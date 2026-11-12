@@ -2982,6 +2982,8 @@ version = "0.2.0"
 dependencies = [
  "stave-clap-sys",
  "stave-core",
+ "stave-face",
+ "stave-ui-cocoa",
 ]
 
 [[package]]

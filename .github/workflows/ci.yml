@@ -156,8 +156,9 @@ jobs:
 
   cross-compile:
     # The portable crates must never grow platform assumptions: the DSP
-    # and plugin core, the CLAP wrapper, and the UI stack below the
-    # Cocoa backend (stave-ui's view model, stave-raster's renderer) —
+    # and plugin core, both format wrappers (their Cocoa face view is
+    # macOS-only), and the UI stack below the Cocoa platform (stave-ui's
+    # view model, stave-raster's renderer, stave-face's design system) —
     # the path to a non-macOS editor. ubuntu-latest IS
     # x86_64-unknown-linux-gnu.
     name: portable crates check (Linux)
@@ -169,4 +170,5 @@ jobs:
       - run: >-
           cargo check --all-targets --locked
           -p stave-core -p stave-dsp -p stave-telemetry -p stave-measure -p stave-macros
-          -p stave-ui -p stave-raster -p stave-clap -p stave-clap-sys -p stave-vst3-sys
+          -p stave-ui -p stave-raster -p stave-face -p stave-clap -p stave-clap-sys
+          -p stave-vst3 -p stave-vst3-sys

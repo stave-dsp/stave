@@ -249,7 +249,7 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // rails, published as taps below: input pre-process, output
     // post-process.
     // SAFETY: `split_for_block` lists are valid for `run` frames.
-    let input_peaks = unsafe { crate::metrics::peaks(input_ptrs, run) };
+    let input_peaks = unsafe { stave_core::wrapper::peaks(input_ptrs, run) };
 
     let block_id = inst.telemetry.tick_block();
     // Time strictly the plugin's own work (Instant is a wait-free
@@ -268,8 +268,8 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     unsafe { stave_core::wrapper::zero_tail(output_ptrs, run, frames) };
 
     // SAFETY: valid for `frames` (SDK).
-    let output_peaks = unsafe { crate::metrics::peaks(output_ptrs, frames) };
-    inst.taps.publish_peaks(input_peaks.as_array(), output_peaks.as_array());
+    let output_peaks = unsafe { stave_core::wrapper::peaks(output_ptrs, frames) };
+    inst.taps.publish_peaks(input_peaks, output_peaks);
     inst.taps.cpu.set(cpu_frac);
 
     // If a breakpoint or the host has paused telemetry,

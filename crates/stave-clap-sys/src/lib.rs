@@ -534,6 +534,96 @@ pub struct ClapHostLog {
     >,
 }
 
+// ===========================================================================
+// clap.gui extension (ext/gui.h)
+// ===========================================================================
+
+pub const CLAP_EXT_GUI: &core::ffi::CStr = c"clap.gui";
+pub const CLAP_WINDOW_API_COCOA: &core::ffi::CStr = c"cocoa";
+
+/// The platform window a host embeds a plugin's GUI in.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union ClapWindowHandle {
+    /// `clap_nsview`: an NSView.
+    pub cocoa: *mut c_void,
+    /// `clap_xwnd`: an X11 window id (`unsigned long`).
+    pub x11: core::ffi::c_ulong,
+    /// `clap_hwnd`.
+    pub win32: *mut c_void,
+    pub ptr: *mut c_void,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ClapWindow {
+    pub api: *const c_char,
+    pub handle: ClapWindowHandle,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default)]
+pub struct ClapGuiResizeHints {
+    pub can_resize_horizontally: bool,
+    pub can_resize_vertically: bool,
+    pub preserve_aspect_ratio: bool,
+    pub aspect_ratio_width: u32,
+    pub aspect_ratio_height: u32,
+}
+
+/// The plugin's `clap.gui`. Every function is [main-thread].
+#[repr(C)]
+pub struct ClapPluginGui {
+    pub is_api_supported:
+        Option<unsafe extern "C" fn(plugin: *const ClapPlugin, api: *const c_char, is_floating: bool) -> bool>,
+    pub get_preferred_api: Option<
+        unsafe extern "C" fn(plugin: *const ClapPlugin, api: *mut *const c_char, is_floating: *mut bool) -> bool,
+    >,
+    pub create: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, api: *const c_char, is_floating: bool) -> bool>,
+    pub destroy: Option<unsafe extern "C" fn(plugin: *const ClapPlugin)>,
+    pub set_scale: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, scale: f64) -> bool>,
+    pub get_size: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, width: *mut u32, height: *mut u32) -> bool>,
+    pub can_resize: Option<unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool>,
+    pub get_resize_hints:
+        Option<unsafe extern "C" fn(plugin: *const ClapPlugin, hints: *mut ClapGuiResizeHints) -> bool>,
+    pub adjust_size: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, width: *mut u32, height: *mut u32) -> bool>,
+    pub set_size: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, width: u32, height: u32) -> bool>,
+    pub set_parent: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, window: *const ClapWindow) -> bool>,
+    pub set_transient: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, window: *const ClapWindow) -> bool>,
+    pub suggest_title: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, title: *const c_char)>,
+    pub show: Option<unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool>,
+    pub hide: Option<unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool>,
+}
+
+// ===========================================================================
+// clap.note-ports extension (ext/note-ports.h)
+// ===========================================================================
+
+pub const CLAP_EXT_NOTE_PORTS: &core::ffi::CStr = c"clap.note-ports";
+
+/// `clap_note_dialect`: CLAP note events.
+pub const CLAP_NOTE_DIALECT_CLAP: u32 = 1 << 0;
+pub const CLAP_NOTE_DIALECT_MIDI: u32 = 1 << 1;
+pub const CLAP_NOTE_DIALECT_MIDI_MPE: u32 = 1 << 2;
+pub const CLAP_NOTE_DIALECT_MIDI2: u32 = 1 << 3;
+
+#[repr(C)]
+pub struct ClapNotePortInfo {
+    pub id: ClapId,
+    pub supported_dialects: u32,
+    pub preferred_dialect: u32,
+    pub name: [c_char; CLAP_NAME_SIZE],
+}
+
+/// The plugin's `clap.note-ports`. [main-thread]
+#[repr(C)]
+pub struct ClapPluginNotePorts {
+    pub count: Option<unsafe extern "C" fn(plugin: *const ClapPlugin, is_input: bool) -> u32>,
+    pub get: Option<
+        unsafe extern "C" fn(plugin: *const ClapPlugin, index: u32, is_input: bool, info: *mut ClapNotePortInfo) -> bool,
+    >,
+}
+
 // The C layouts, measured from clap.h (sizeof/_Alignof on
 // aarch64-apple-darwin). A mirror that drifts is a memory-safety bug
 // against every host, so it fails the build.
@@ -573,5 +663,10 @@ const _: () = {
         ClapPluginLatency => 8, 8;
         ClapHostLog => 8, 8;
         ClapHostParams => 24, 8;
+        ClapWindow => 16, 8;
+        ClapGuiResizeHints => 12, 4;
+        ClapPluginGui => 120, 8;
+        ClapNotePortInfo => 268, 4;
+        ClapPluginNotePorts => 16, 8;
     }
 };

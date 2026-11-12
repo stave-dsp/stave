@@ -67,6 +67,8 @@ impl Plugin for TestEcho {
     }
 }
 
+impl stave_clap::stave_face::HasFace for TestEcho {}
+
 stave_clap::stave_clap_export!(raw TestEcho);
 
 // ===========================================================================

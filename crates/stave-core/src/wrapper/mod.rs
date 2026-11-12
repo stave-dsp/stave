@@ -20,12 +20,15 @@
 //!   contract forbids passing through directly).
 //! - [`ranges_alias`] — the overlap detector wrappers use to decide when
 //!   the scratch copy is needed.
-//! - [`WrapperTaps`] — the I/O peak and CPU taps every wrapper publishes.
+//! - [`WrapperTaps`] — the I/O peak and CPU taps every wrapper publishes,
+//!   and [`peaks`], the block scan behind them.
 
+mod metrics;
 mod panic_guard;
 pub mod state;
 mod taps;
 
+pub use metrics::peaks;
 pub use panic_guard::PanicGuard;
 pub use taps::WrapperTaps;
 

@@ -15,10 +15,11 @@ use stave_core::event::NoteKind;
 use stave_core::params::Params;
 use stave_core::state::StateStore;
 use stave_core::wrapper::state::{self as wrapper_state, MAX_STATE_BYTES};
-use stave_core::wrapper::PanicGuard;
+use stave_core::wrapper::{PanicGuard, WrapperTaps};
 use stave_core::{
-    AudioBuffer, Event, EventKind, GestureEvent, GestureQueue, NoteEvent, ParamId, Plugin,
-    PluginCell, PluginFeature, ProcessCtx, SharedState, Transport,
+    AudioBuffer, Event, EventKind, GestureEvent, GestureQueue, GestureSink, NoteEvent, ParamId,
+    Plugin, PluginCell, PluginController, PluginFeature, Preset, ProcessCtx, SharedState,
+    Telemetry, Transport,
 };
 
 use crate::ports;
@@ -53,7 +54,7 @@ fn max_in_channels<P: Plugin>() -> usize {
 
 /// Per-plugin-type glue. Implemented by the `stave_clap_export!` macro for
 /// the user's plugin so generic CLAP functions can reach the type's statics.
-pub trait ClapExport: Plugin {
+pub trait ClapExport: Plugin + stave_face::HasFace {
     fn clap_descriptor() -> &'static sys::ClapPluginDescriptor;
     fn clap_factory() -> &'static sys::ClapPluginFactory;
 }
@@ -67,7 +68,7 @@ pub trait ClapEntry {
 
 impl<E> ClapExport for stave_core::StavePlugin<E>
 where
-    E: stave_core::Spec + ClapEntry,
+    E: stave_face::FaceSpec + ClapEntry,
 {
     fn clap_descriptor() -> &'static sys::ClapPluginDescriptor {
         E::clap_descriptor()
@@ -108,6 +109,8 @@ impl<const N: usize> FeaturesArray<N> {
 
 mod entry;
 mod gesture;
+#[cfg(target_os = "macos")]
+mod gui;
 mod host;
 mod params;
 mod plugin;
@@ -115,7 +118,10 @@ mod process;
 mod state_ext;
 
 pub use entry::*;
-pub use gesture::*;
+pub(crate) use gesture::*;
+pub use gesture::controller;
+#[cfg(target_os = "macos")]
+use gui::*;
 pub(crate) use host::{in_text, out_param};
 use host::{
     out_text, CoreEvent, Host, InputEvents, InputStream, OutputEvents, OutputStream, Process,
@@ -155,8 +161,24 @@ pub(crate) struct Instance<P: ClapExport> {
     /// Unknown-content retention across state cycles.
     state_store: std::sync::Mutex<StateStore>,
     /// UI→host gesture events, drained into `out_events`
-    /// during process/flush so the DAW records and undoes GUI edits.
-    gestures: GestureQueue,
+    /// during process/flush so the DAW records and undoes GUI edits;
+    /// shared with every face's gesture sink.
+    gestures: Arc<GestureQueue>,
+    #[cfg(target_os = "macos")]
+    gui_vtable: sys::ClapPluginGui,
+    note_ports_vtable: sys::ClapPluginNotePorts,
+    /// The plugin's face; None = no `clap.gui`.
+    face: Option<stave_face::Face>,
+    /// Factory presets, for the face's preset readout.
+    presets: Vec<Preset>,
+    /// The open face, between `gui.create` and `gui.destroy`. Only the
+    /// [main-thread] gui calls touch it (clap gui.h).
+    #[cfg(target_os = "macos")]
+    editor: core::cell::RefCell<Option<stave_ui_cocoa::FaceView>>,
+    /// The instance's telemetry: the plugin's taps, and the wrapper's
+    /// I/O peaks, CPU load and capture for its face.
+    telemetry: Arc<Telemetry>,
+    taps: WrapperTaps,
     tail_vtable: sys::ClapPluginTail,
     latency_vtable: sys::ClapPluginLatency,
     /// Id of the param flagged `bypass`, if any.

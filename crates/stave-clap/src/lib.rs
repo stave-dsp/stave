@@ -12,6 +12,8 @@ pub use stave_clap_sys as sys;
 pub mod wrapper;
 
 pub use stave_core;
+/// The design system, for a plugin's face (`FaceSpec`, `HasFace`).
+pub use stave_face;
 
 /// Exports a type implementing `stave_core::Plugin` as a CLAP plugin.
 ///

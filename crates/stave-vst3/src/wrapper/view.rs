@@ -6,7 +6,31 @@
 //! method that touches the view or the instance runs inside the
 //! instance's panic guard.
 
+use stave_core::PluginController;
+use stave_ui_cocoa::FaceView;
+
 use super::*;
+use crate::gestures::Vst3Gestures;
+
+/// One `IPlugView`, returned by `createView` with one reference (the
+/// SDK's `CPluginView` pattern). While alive it holds a reference on its
+/// `Instance`, so a host that releases the controller first still
+/// reaches a live instance through the view; the last `release` drops
+/// the view (which detaches it from any host window) and then that
+/// instance reference.
+///
+/// No `Send`/`Sync`: the box lives on the heap behind the host's raw
+/// pointer, never inside a value that crosses threads, and view calls
+/// are main-thread only (SDK).
+#[repr(C)]
+pub struct EditorBox<P: Vst3Export> {
+    /// Points at the owning instance's `view_vtbl`.
+    pub vtbl: *const IPlugViewVtbl,
+    pub(crate) ref_count: AtomicU32,
+    pub(crate) inst: *mut Instance<P>,
+    pub view: FaceView,
+}
+
 
 /// The view box behind a view interface pointer.
 ///
@@ -49,7 +73,7 @@ pub(super) fn new_view<P: Vst3Export>(
         inst.programs.presets().to_vec(),
         Box::new(gestures),
     );
-    let view = stave_ui_cocoa::FaceView::new(face, Box::new(controller));
+    let view = FaceView::new(face, Box::new(controller));
     // Taken only once the view exists, so a panic above leaks nothing.
     inst.ref_count.fetch_add(1, Ordering::SeqCst);
     Box::into_raw(Box::new(EditorBox::<P> {

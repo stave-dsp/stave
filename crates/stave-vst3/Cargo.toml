@@ -12,6 +12,9 @@ description = "VST3 audio plugin backend for the stave framework"
 stave-core.workspace = true
 stave-vst3-sys.workspace = true
 stave-face.workspace = true
+
+# Faces show in an NSView; elsewhere a plugin has no editor view (yet).
+[target.'cfg(target_os = "macos")'.dependencies]
 stave-ui-cocoa.workspace = true
 
 [dev-dependencies]
