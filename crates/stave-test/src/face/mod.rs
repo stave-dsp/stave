@@ -87,9 +87,10 @@ pub fn binds_resolve<P: Plugin>(project: &str) {
             Gesture::Choose { bind, step } => {
                 let n = lookup(bind.id).step_count();
                 assert!(n >= 2, "{project}: `{}` needs a stepped param", bind.name);
-                // Toggles offer up to three rows; a two-way toggle's third
-                // row is clamped to its last step.
-                assert!(step < 3, "{project}: `{}` choice {step} out of range", bind.name);
+                // A choice names one of the param's steps; a toggle offers
+                // up to three rows, and a two-way toggle's third row is
+                // clamped to its last step.
+                assert!(step < n.max(3), "{project}: `{}` choice {step} out of range", bind.name);
             }
             Gesture::Preset { .. } | Gesture::Page { .. } => {}
         }
