@@ -2973,6 +2973,7 @@ dependencies = [
  "serde_json",
  "stave-host",
  "stave-measure",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3016,6 +3017,7 @@ version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
  "crossbeam-queue",
+ "hound",
  "libc",
  "serde",
  "serde_json",
@@ -3041,7 +3043,6 @@ dependencies = [
 name = "stave-measure"
 version = "0.2.0"
 dependencies = [
- "hound",
  "rustfft",
  "serde",
  "thiserror 2.0.18",

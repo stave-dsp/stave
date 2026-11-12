@@ -11,6 +11,7 @@ description = "Host any VST3 plugin, drive it, and measure it: loading, renderin
 [dependencies]
 thiserror.workspace = true
 libc.workspace = true
+hound = "3"
 stave-measure.workspace = true
 stave-dsp.workspace = true
 stave-vst3-sys.workspace = true

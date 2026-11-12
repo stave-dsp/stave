@@ -57,11 +57,12 @@ The contracts they keep are in **docs/architecture.md**.
 - **`stave-raster`** — a portable, pure-Rust software renderer that
   draws a `Scene` into an RGBA pixel buffer identically on every
   platform (text is left to the OS).
-- **`stave-macros`** — `#[derive(Params)]` (re-exported by
-  `stave-core`; proc-macros need a crate of their own).
+- **`stave-macros`** — `#[derive(Params)]` and `#[derive(Taps)]`
+  (re-exported by `stave-core`; proc-macros need a crate of their own).
 - **`stave-measure`** — audio measurement as pure functions: levels,
   spectra, THD, latency, transfer functions, aliasing/IMD, dynamics,
-  modulation, zipper, reverb-tail metrics, WAV I/O.
+  modulation, zipper, reverb-tail metrics (no file I/O: WAV lives in
+  `stave-host`).
 - **`stave-test`** — the shared checks every plugin mounts in ~10
   lines each (validation suite, face-binding proofs, no-alloc
   guard, perf report, stability check) and, under `tests/`, the

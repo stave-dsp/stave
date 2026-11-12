@@ -1,7 +1,6 @@
 //! A waveform from an external simulator (ngspice's `wrdata`: time and
-//! value columns), and how far a render differs from it.
-
-use std::path::{Path, PathBuf};
+//! value columns, parsed from text the caller read), and how far a render
+//! differs from it.
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Waveform {
@@ -11,12 +10,6 @@ pub struct Waveform {
 
 #[derive(Debug, thiserror::Error)]
 pub enum WaveformError {
-    #[error("could not read {}", path.display())]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
     #[error("line {line}: expected 'time value', found {found:?}")]
     MalformedLine { line: usize, found: String },
 }
@@ -30,14 +23,6 @@ pub struct Difference {
 }
 
 impl Waveform {
-    pub fn read(path: &Path) -> Result<Self, WaveformError> {
-        let text = std::fs::read_to_string(path).map_err(|source| WaveformError::Read {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        Self::parse(&text)
-    }
-
     pub fn parse(text: &str) -> Result<Self, WaveformError> {
         let mut waveform = Self {
             time_s: vec![],
@@ -96,12 +81,5 @@ mod tests {
             Waveform::parse("0.0 x"),
             Err(WaveformError::MalformedLine { line: 1, .. })
         ));
-    }
-
-    #[test]
-    fn a_missing_file_names_its_path() {
-        let e = Waveform::read(Path::new("/nope/none.txt")).unwrap_err();
-        assert!(matches!(e, WaveformError::Read { .. }));
-        assert!(e.to_string().contains("/nope/none.txt"));
     }
 }

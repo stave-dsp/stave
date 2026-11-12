@@ -9,7 +9,6 @@ rust-version.workspace = true
 description = "Audio measurement as pure functions: levels, spectra, distortion, latency, transfer functions, dynamics, modulation"
 
 [dependencies]
-hound = "3"
 rustfft = "6"
 thiserror.workspace = true
 serde = { version = "1", features = ["derive"] }

@@ -20,7 +20,6 @@
 //! modulation  sidebands, subharmonics, period multiplication
 //! zipper      parameter-ramp spray
 //! tail        reverb-tail metrics
-//! wav         WAV in/out
 //! window      analysis windows as data (Hann, Blackman-Harris, flat-top…)
 //! ```
 //!
@@ -73,7 +72,6 @@ pub mod tail;
 pub mod tone;
 pub mod tone_test;
 pub mod transfer;
-pub mod wav;
 pub mod waveform;
 pub mod window;
 pub mod zipper;

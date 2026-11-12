@@ -9,7 +9,7 @@ use stave_measure::waveform::Waveform;
 
 fn ngspice(name: &str) -> Waveform {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("spice/{name}.ngspice.txt"));
-    Waveform::read(&path).unwrap()
+    Waveform::parse(&std::fs::read_to_string(&path).unwrap()).unwrap()
 }
 
 #[test]

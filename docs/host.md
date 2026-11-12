@@ -10,17 +10,23 @@ from Rust directly.
 ## The library (`stave_host`)
 
 ```text
-plugin/    VST3 hosting → LoadedPlugin (an Instance)
+plugin/    VST3 hosting → LoadedPlugin (an Instance), over stave-vst3-sys
 instance   the Instance trait — the seam everything measures through
 control    one parameter model (Control), lookup by name
+modules/   stave-dsp modules by name: the model, the static catalog,
+           ModuleInstance
+loaded     what a tool opens: a bundle or module:<name>
 note       note events + schedules
 render     Driver: run an Instance from a Signal + notes, block by block
-measure/   pure analysis over buffers: signals, levels, stats, tone/THD,
-           latency, transfer function (H1), compare/null test
 response   frequency response by log sweep
-bench/     the bench: phases, typed reports, CLI parsing, text output
+bench/     the bench: phases, typed reports, the describe dump, text output
 validate/  the validation suite: one file per check
+wav        WAV files in and out
 ```
+
+Analysis is `stave-measure` (pure functions over buffers: signals,
+levels, stats, tone/THD, latency, transfer function, compare/null
+test); argument parsing and usage text live in `tools/stave-bench`.
 
 Everything that measures is written against `Instance`, so it runs the
 same on a loaded VST3 and on a pure-Rust test double (`testing.rs`).

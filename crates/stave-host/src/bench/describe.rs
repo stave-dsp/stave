@@ -40,6 +40,14 @@ pub fn describe_plugin(p: &crate::plugin::LoadedPlugin) -> Description {
     }
 }
 
+/// Whatever a tool opened: a plugin with its identity, or a module.
+pub fn describe_loaded(loaded: &crate::loaded::Loaded) -> Description {
+    match loaded {
+        crate::loaded::Loaded::Plugin(p) => describe_plugin(p),
+        crate::loaded::Loaded::Module(m) => describe(m),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

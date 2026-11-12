@@ -1,6 +1,6 @@
 //! stave-bench — the headless host: maximal machine-readable data from
 //! any VST3 plugin. All the work lives in `stave_host::{bench, validate}`;
-//! this binary parses arguments, loads, and prints. See `--help` and
+//! this binary parses arguments (`cli`), loads, and prints. See `--help` and
 //! docs/host.md.
 
 use std::error::Error;
@@ -9,7 +9,10 @@ use std::io::Write;
 use std::os::fd::FromRawFd;
 use std::process::ExitCode;
 
-use stave_host::bench::cli::{self, Cli, Mode, USAGE};
+mod cli;
+
+use cli::{Cli, Mode, USAGE};
+
 use stave_host::bench::{self, text};
 use stave_host::config::HostConfig;
 use stave_host::instance::{apply_preset, Instance};
@@ -18,7 +21,7 @@ use stave_host::note::NoteSchedule;
 use stave_host::render::Driver;
 use stave_host::validate;
 use stave_measure::signal::Silence;
-use stave_measure::wav;
+use stave_host::wav;
 
 fn main() -> ExitCode {
     // Plugins print to stdout (JUCE announces its version); stdout is
@@ -90,7 +93,7 @@ fn run(cli: &Cli, out: &mut File) -> Result<ExitCode, Box<dyn Error>> {
         Mode::Describe | Mode::List => {
             let mut loaded = open()?;
             warm_up(loaded.instance());
-            let d = loaded.describe();
+            let d = bench::describe::describe_loaded(&loaded);
             if cli.mode == Mode::Describe {
                 emit(out, &json(&d)?)?;
             } else {

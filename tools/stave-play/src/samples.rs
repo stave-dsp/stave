@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use stave_measure::signal::{LogSweep, Noise, Signal};
-use stave_measure::wav;
+use stave_host::wav;
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
 
 /// The environment variable naming a folder of `.wav` one-shots.

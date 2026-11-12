@@ -6,10 +6,10 @@ use std::path::PathBuf;
 
 use stave_measure::loudness;
 
-use super::{BenchConfig, Stimulus, StimulusError};
-use crate::config::{HostConfig, SampleRate};
-use crate::note::Note;
-use crate::response::LevelResponseConfig;
+use stave_host::bench::{BenchConfig, Stimulus, StimulusError};
+use stave_host::config::{HostConfig, SampleRate};
+use stave_host::note::Note;
+use stave_host::response::LevelResponseConfig;
 
 pub const USAGE: &str = "\
 usage: stave-bench <bundle.vst3 | module:NAME> [options]

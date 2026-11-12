@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::bench::describe::{self, Description};
 use crate::config::HostConfig;
 use crate::instance::Instance;
 use crate::modules::{self, ModuleInstance};
@@ -59,13 +58,6 @@ impl Loaded {
         match self {
             Self::Plugin(p) => p,
             Self::Module(m) => Box::new(m),
-        }
-    }
-
-    pub fn describe(&self) -> Description {
-        match self {
-            Self::Plugin(p) => describe::describe_plugin(p),
-            Self::Module(m) => describe::describe(m),
         }
     }
 

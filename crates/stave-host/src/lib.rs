@@ -12,8 +12,9 @@
 //! render     Driver: run an Instance from a Signal + notes
 //! loaded     what a tool opens: a bundle or module:<name>
 //! response   frequency response by log sweep (H1)
-//! bench/     the bench: phases, reports, CLI parsing
+//! bench/     the bench: phases, reports, the describe dump
 //! validate/  the validation suite: one file per check
+//! wav        WAV files in and out (planar f32)
 //! ```
 
 pub mod adapt;
@@ -28,6 +29,7 @@ pub mod plugin;
 pub mod render;
 pub mod response;
 pub mod validate;
+pub mod wav;
 
 #[cfg(test)]
 pub(crate) mod testing;

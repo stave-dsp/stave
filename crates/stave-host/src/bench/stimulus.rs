@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use stave_measure::signal::{db_to_amp, LogSweep, Noise, Recording, Signal, Silence, Sine};
-use stave_measure::wav::WavError;
+use crate::wav::WavError;
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
 
 #[derive(Debug, thiserror::Error)]
@@ -174,7 +174,7 @@ impl Stimulus {
                 sample_rate: rate,
             }),
             Self::Wav { path } => {
-                let audio = stave_measure::wav::read(path)?;
+                let audio = crate::wav::read(path)?;
                 let warning = (f64::from(audio.sample_rate) != rate).then(|| {
                     format!(
                         "wav is {} Hz, host runs {rate} Hz — played without resampling",

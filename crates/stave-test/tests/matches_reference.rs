@@ -9,7 +9,7 @@ use stave_measure::waveform::Waveform;
 
 fn reference(name: &str) -> Waveform {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("reference/{name}.txt"));
-    Waveform::read(&path).unwrap()
+    Waveform::parse(&std::fs::read_to_string(&path).unwrap()).unwrap()
 }
 
 /// Jiles & Atherton's 1986 steel driven at 5 kA/m, 50 Hz: the core's
