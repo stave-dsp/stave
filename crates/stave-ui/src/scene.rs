@@ -135,8 +135,12 @@ pub enum Brush {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Cap {
+    /// Square, flush with the end.
     Butt,
+    /// A half disc past the end.
     Round,
+    /// Square, half the width past the end.
+    Square,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

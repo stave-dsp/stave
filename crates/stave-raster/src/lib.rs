@@ -7,13 +7,13 @@
 //! * `path.rs` — flattening (lines, curves, CG-convention arcs) to px.
 //! * `coverage.rs` — exact-area anti-aliasing (signed-area accumulation,
 //!   nonzero winding).
-//! * `stroke.rs` — strokes as polygons (quads, mitered joins, butt and
-//!   round caps).
+//! * `stroke.rs` — strokes as outlines (mitered joins; butt, round and
+//!   square caps).
 //! * here — the op loop and compositing: solid and linear-gradient
 //!   fills (gradients interpolate in the encoded colour space and extend
 //!   both ends, as CoreGraphics does), source-over in encoded space, and
-//!   images (bilinear, premultiplied; an image drawn 1:1 is a straight
-//!   copy).
+//!   images (bilinear, box-filtered past 2× minification, premultiplied;
+//!   an image drawn 1:1 is a straight copy).
 //!
 //! Coordinates: scenes are y-DOWN in points; `render` scales by the
 //! backing factor. Pure Rust, no unsafe, no platform code.
@@ -220,7 +220,8 @@ fn fill(canvas: &mut Canvas, polys: &[Vec<Pt>], brush: &Brush, scale: f64) {
 }
 
 /// Draw a premultiplied image into the device rect (x, y, w, h):
-/// bilinear sampling; a pixel-aligned 1:1 draw is a straight blend.
+/// bilinear sampling, box-filtered past 2× minification; a
+/// pixel-aligned 1:1 draw is a straight blend.
 fn draw_image(canvas: &mut Canvas, img: &Image, x: f64, y: f64, w: f64, h: f64) {
     let (iw, ih) = (img.px_w as usize, img.px_h as usize);
     if iw == 0 || ih == 0 || img.rgba.len() < iw * ih * 4 || w <= 0.0 || h <= 0.0 {
@@ -272,6 +273,9 @@ fn draw_image(canvas: &mut Canvas, img: &Image, x: f64, y: f64, w: f64, h: f64) 
         return;
     }
     let (sx, sy) = (iw as f64 / w, ih as f64 / h);
+    // Past 2× minification a pixel's footprint spans more texels than
+    // the two bilinear reads, so fine detail would alias: average it.
+    let box_filter = sx > 2.0 || sy > 2.0;
     for py in y0..y1 {
         for px in x0..x1 {
             // Sample at the pixel centre, in image space.
@@ -280,17 +284,11 @@ fn draw_image(canvas: &mut Canvas, img: &Image, x: f64, y: f64, w: f64, h: f64) 
             if u < -0.5 || v < -0.5 || u > iw as f64 - 0.5 || v > ih as f64 - 0.5 {
                 continue;
             }
-            let (u0, v0) = (u.floor().max(0.0) as usize, v.floor().max(0.0) as usize);
-            let (u1, v1) = ((u0 + 1).min(iw - 1), (v0 + 1).min(ih - 1));
-            let (fu, fv) = ((u - u.floor()).clamp(0.0, 1.0) as f32, (v - v.floor()).clamp(0.0, 1.0) as f32);
-            let at = |xx: usize, yy: usize, c: usize| img.rgba[(yy * iw + xx) * 4 + c] as f32;
-            let mut out = [0.0f32; 4];
-            for (c, o) in out.iter_mut().enumerate() {
-                let top = at(u0, v0, c) + (at(u1, v0, c) - at(u0, v0, c)) * fu;
-                let bot = at(u0, v1, c) + (at(u1, v1, c) - at(u0, v1, c)) * fu;
-                *o = top + (bot - top) * fv;
-            }
-            let [r, g, b, a] = out;
+            let [r, g, b, a] = if box_filter {
+                box_average(img, (u + 0.5, sx), (v + 0.5, sy))
+            } else {
+                bilinear(img, u, v)
+            };
             if a <= 0.0 {
                 continue;
             }
@@ -298,6 +296,49 @@ fn draw_image(canvas: &mut Canvas, img: &Image, x: f64, y: f64, w: f64, h: f64) 
             over(&mut canvas.px[i..i + 4], r, g, b, a);
         }
     }
+}
+
+/// The image at texel-space point (`u`, `v`) (texel centres at
+/// integers), bilinear between the four texels around it.
+fn bilinear(img: &Image, u: f64, v: f64) -> [f32; 4] {
+    let (iw, ih) = (img.px_w as usize, img.px_h as usize);
+    let (u0, v0) = (u.floor().max(0.0) as usize, v.floor().max(0.0) as usize);
+    let (u1, v1) = ((u0 + 1).min(iw - 1), (v0 + 1).min(ih - 1));
+    let (fu, fv) = ((u - u.floor()).clamp(0.0, 1.0) as f32, (v - v.floor()).clamp(0.0, 1.0) as f32);
+    let at = |xx: usize, yy: usize, c: usize| img.rgba[(yy * iw + xx) * 4 + c] as f32;
+    core::array::from_fn(|c| {
+        let top = at(u0, v0, c) + (at(u1, v0, c) - at(u0, v0, c)) * fu;
+        let bot = at(u0, v1, c) + (at(u1, v1, c) - at(u0, v1, c)) * fu;
+        top + (bot - top) * fv
+    })
+}
+
+/// One axis of a box filter: the texels a footprint `scale` texels wide
+/// centred at `c` (texel `j` spans `j..j+1`) covers, each weighted by
+/// its overlap, clamped to the image's `n` texels; the weights sum to 1.
+fn box_taps(c: f64, scale: f64, n: usize) -> impl Iterator<Item = (usize, f32)> {
+    let (lo, hi) = (c - 0.5 * scale, c + 0.5 * scale);
+    (lo.floor() as i64..hi.ceil() as i64).map(move |j| {
+        let overlap = (hi.min(j as f64 + 1.0) - lo.max(j as f64)).max(0.0);
+        (j.clamp(0, n as i64 - 1) as usize, (overlap / scale) as f32)
+    })
+}
+
+/// The average of the texels under a pixel's footprint: `(centre,
+/// texels per pixel)` along each axis, a box filter where it minifies
+/// and one texel's width where it does not.
+fn box_average(img: &Image, (cu, su): (f64, f64), (cv, sv): (f64, f64)) -> [f32; 4] {
+    let (iw, ih) = (img.px_w as usize, img.px_h as usize);
+    let mut out = [0.0f32; 4];
+    for (yy, wy) in box_taps(cv, sv.max(1.0), ih) {
+        for (xx, wx) in box_taps(cu, su.max(1.0), iw) {
+            let t = &img.rgba[(yy * iw + xx) * 4..(yy * iw + xx) * 4 + 4];
+            for (o, &s) in out.iter_mut().zip(t) {
+                *o += f32::from(s) * wy * wx;
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -348,6 +389,22 @@ mod tests {
         let mut c = Canvas::new(4, 4);
         render(&sc, 2.0, &mut c, &mut NoText);
         assert_eq!(c.px, rgba);
+    }
+
+    #[test]
+    fn an_image_minified_past_twice_averages_its_texels() {
+        // One white texel in three, drawn at a third of its size: every
+        // pixel is a third white. (Sampling at pixel centres would land
+        // on the same black texel every time.)
+        let rgba: Vec<u8> = (0..12).flat_map(|i| if i % 3 == 0 { [255; 4] } else { [0, 0, 0, 255] }).collect();
+        let img = Image { px_w: 12, px_h: 1, rgba: std::sync::Arc::from(rgba) };
+        let mut sc = Scene::new();
+        sc.ops.push(Op::Image { at: pt(0.0, 0.0), w: 4.0, h: 1.0, image: img });
+        let mut c = Canvas::new(4, 1);
+        render(&sc, 1.0, &mut c, &mut NoText);
+        for p in c.px.chunks_exact(4) {
+            assert_eq!(p, &[85, 85, 85, 255]);
+        }
     }
 
     #[test]
