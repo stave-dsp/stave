@@ -18,8 +18,11 @@
 //! silence (the rack's kill semantics — a click is the caller's
 //! accepted trade).
 
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::one_pole::tau_coeff;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum Stage {
+enum Segment {
     Idle,
     Attack,
     Decay,
@@ -48,7 +51,9 @@ pub struct AdsrConfig {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Adsr {
-    stage: Stage,
+    segment: Segment,
+    config: AdsrConfig,
+    sample_rate: f32,
     level: f32,
     a_coeff: f32,
     d_coeff: f32,
@@ -56,16 +61,17 @@ pub struct Adsr {
     sustain: f32,
 }
 
-#[inline]
-fn coeff(tau_ms: f32, sr: f32) -> f32 {
-    debug_assert!(tau_ms >= 0.0 && sr > 0.0, "τ {tau_ms} ms at {sr} Hz");
-    1.0 - (-1.0 / (tau_ms * 0.001 * sr)).exp()
-}
-
 impl Adsr {
     pub fn new() -> Self {
         Self {
-            stage: Stage::Idle,
+            segment: Segment::Idle,
+            config: AdsrConfig {
+                attack_ms: 0.0,
+                decay_ms: 0.0,
+                sustain: 1.0,
+                release_ms: 0.0,
+            },
+            sample_rate: 48_000.0,
             level: 0.0,
             a_coeff: 1.0,
             d_coeff: 1.0,
@@ -74,13 +80,18 @@ impl Adsr {
         }
     }
 
-    /// Derive segment coefficients (block rate is fine — the segment
-    /// state itself is untouched, so times move mid-note without
-    /// clicks).
-    pub fn set(&mut self, config: &AdsrConfig, sr: f32) {
-        self.a_coeff = coeff(config.attack_ms / ATTACK_LN, sr);
-        self.d_coeff = coeff(config.decay_ms, sr);
-        self.r_coeff = coeff(config.release_ms, sr);
+    /// New settings (block rate is fine — the segment state itself is
+    /// untouched, so times move mid-note without clicks).
+    pub fn set(&mut self, config: &AdsrConfig) {
+        debug_assert!(
+            config.attack_ms >= 0.0 && config.decay_ms >= 0.0 && config.release_ms >= 0.0,
+            "{config:?}"
+        );
+        self.config = *config;
+        let fs = self.sample_rate;
+        self.a_coeff = tau_coeff(config.attack_ms / ATTACK_LN * 0.001, fs);
+        self.d_coeff = tau_coeff(config.decay_ms * 0.001, fs);
+        self.r_coeff = tau_coeff(config.release_ms * 0.001, fs);
         debug_assert!(
             (0.0..=1.0).contains(&config.sustain),
             "sustain {}",
@@ -91,31 +102,27 @@ impl Adsr {
 
     /// Gate on: Attack from the CURRENT level (retrigger-safe).
     pub fn gate_on(&mut self) {
-        self.stage = Stage::Attack;
+        self.segment = Segment::Attack;
     }
 
     /// Gate off: Release from wherever the envelope is.
     pub fn gate_off(&mut self) {
-        if self.stage != Stage::Idle {
-            self.stage = Stage::Release;
+        if self.segment != Segment::Idle {
+            self.segment = Segment::Release;
         }
     }
 
     /// Immediate silence (choke semantics).
     pub fn choke(&mut self) {
-        self.stage = Stage::Idle;
+        self.segment = Segment::Idle;
         self.level = 0.0;
-    }
-
-    pub fn reset(&mut self) {
-        self.choke();
     }
 
     /// Still sounding? False once Release (or a zero-sustain Decay)
     /// parks below the idle floor.
     #[inline]
     pub fn active(&self) -> bool {
-        self.stage != Stage::Idle
+        self.segment != Segment::Idle
     }
 
     /// The current envelope level — the steal policy's loudness.
@@ -123,19 +130,31 @@ impl Adsr {
     pub fn level(&self) -> f32 {
         self.level
     }
+}
 
+impl Stage for Adsr {
+    fn prepare(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        let config = self.config;
+        self.set(&config);
+        self.choke();
+    }
+    fn reset(&mut self) {
+        self.choke();
+    }
+    /// One envelope sample; the input is ignored (the gate drives it).
     #[inline]
-    pub fn tick(&mut self) -> f32 {
-        match self.stage {
-            Stage::Idle => {}
-            Stage::Attack => {
+    fn tick(&mut self, _: f32) -> f32 {
+        match self.segment {
+            Segment::Idle => {}
+            Segment::Attack => {
                 self.level += self.a_coeff * (ATTACK_AIM - self.level);
                 if self.level >= 1.0 {
                     self.level = 1.0;
-                    self.stage = Stage::Decay;
+                    self.segment = Segment::Decay;
                 }
             }
-            Stage::Decay => {
+            Segment::Decay => {
                 self.level += self.d_coeff * (self.sustain - self.level);
                 // A zero-sustain decay is a release in disguise:
                 // park it, or the voice reads active forever.
@@ -143,7 +162,7 @@ impl Adsr {
                     self.choke();
                 }
             }
-            Stage::Release => {
+            Segment::Release => {
                 self.level += self.r_coeff * (0.0 - self.level);
                 if self.level < IDLE_EPS {
                     self.choke();
@@ -151,6 +170,10 @@ impl Adsr {
             }
         }
         self.level
+    }
+    /// A generator: it sounds for as long as its gate holds.
+    fn tail(&self) -> Tail {
+        Tail::Infinite
     }
 }
 
@@ -169,7 +192,7 @@ mod tests {
     fn run(e: &mut Adsr, n: usize) -> f32 {
         let mut last = 0.0;
         for _ in 0..n {
-            last = e.tick();
+            last = e.tick(0.0);
         }
         last
     }
@@ -177,22 +200,20 @@ mod tests {
     #[test]
     fn attack_ms_is_the_arrival_time() {
         let mut e = Adsr::new();
-        e.set(
-            &AdsrConfig {
-                attack_ms: 10.0,
-                decay_ms: 100.0,
-                sustain: 0.5,
-                release_ms: 50.0,
-            },
-            SR,
-        );
+        e.prepare(SR);
+        e.set(&AdsrConfig {
+            attack_ms: 10.0,
+            decay_ms: 100.0,
+            sustain: 0.5,
+            release_ms: 50.0,
+        });
         e.gate_on();
         // 1.0 must be reached at the stated 10 ms (±5% — one-pole
         // discretization), not the ~3× later a τ-aimed pole gives.
         let n_expected = (0.010 * SR) as usize;
         let mut arrived_at = None;
         for i in 0..(2 * n_expected) {
-            if e.tick() >= 1.0 {
+            if e.tick(0.0) >= 1.0 {
                 arrived_at = Some(i);
                 break;
             }
@@ -208,15 +229,13 @@ mod tests {
     #[test]
     fn decay_settles_at_sustain_and_release_tau_is_honest() {
         let mut e = Adsr::new();
-        e.set(
-            &AdsrConfig {
-                attack_ms: 1.0,
-                decay_ms: 20.0,
-                sustain: 0.6,
-                release_ms: 30.0,
-            },
-            SR,
-        );
+        e.prepare(SR);
+        e.set(&AdsrConfig {
+            attack_ms: 1.0,
+            decay_ms: 20.0,
+            sustain: 0.6,
+            release_ms: 30.0,
+        });
         e.gate_on();
         let settled = run(&mut e, (0.5 * SR) as usize);
         assert!((settled - 0.6).abs() < 1e-3, "sustain: {settled}");
@@ -235,15 +254,13 @@ mod tests {
     #[test]
     fn retrigger_continues_from_current_level() {
         let mut e = Adsr::new();
-        e.set(
-            &AdsrConfig {
-                attack_ms: 5.0,
-                decay_ms: 50.0,
-                sustain: 0.8,
-                release_ms: 100.0,
-            },
-            SR,
-        );
+        e.prepare(SR);
+        e.set(&AdsrConfig {
+            attack_ms: 5.0,
+            decay_ms: 50.0,
+            sustain: 0.8,
+            release_ms: 100.0,
+        });
         e.gate_on();
         run(&mut e, (0.2 * SR) as usize); // at sustain 0.8
         e.gate_off();
@@ -251,7 +268,7 @@ mod tests {
         let before = e.level();
         assert!(before > 0.1, "test premise: mid-release");
         e.gate_on();
-        let first = e.tick();
+        let first = e.tick(0.0);
         assert!(
             first >= before && (first - before) < 0.01,
             "retrigger jumps: {before} → {first}"
@@ -261,15 +278,13 @@ mod tests {
     #[test]
     fn zero_sustain_decay_parks_idle() {
         let mut e = Adsr::new();
-        e.set(
-            &AdsrConfig {
-                attack_ms: 1.0,
-                decay_ms: 10.0,
-                sustain: 0.0,
-                release_ms: 100.0,
-            },
-            SR,
-        );
+        e.prepare(SR);
+        e.set(&AdsrConfig {
+            attack_ms: 1.0,
+            decay_ms: 10.0,
+            sustain: 0.0,
+            release_ms: 100.0,
+        });
         e.gate_on();
         run(&mut e, SR as usize); // 1 s ≫ decay
         assert!(!e.active(), "zero-sustain note must end without a gate_off");
@@ -278,19 +293,17 @@ mod tests {
     #[test]
     fn choke_is_immediate() {
         let mut e = Adsr::new();
-        e.set(
-            &AdsrConfig {
-                attack_ms: 1.0,
-                decay_ms: 50.0,
-                sustain: 0.9,
-                release_ms: 500.0,
-            },
-            SR,
-        );
+        e.prepare(SR);
+        e.set(&AdsrConfig {
+            attack_ms: 1.0,
+            decay_ms: 50.0,
+            sustain: 0.9,
+            release_ms: 500.0,
+        });
         e.gate_on();
         run(&mut e, 4_800);
         e.choke();
-        assert_eq!(e.tick(), 0.0);
+        assert_eq!(e.tick(0.0), 0.0);
         assert!(!e.active());
     }
 }

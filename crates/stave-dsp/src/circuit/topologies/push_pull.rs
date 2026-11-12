@@ -32,6 +32,7 @@ use crate::circuit::methods::newton::{NewtonSettings, NewtonStats, Solved};
 use crate::circuit::topologies::triode_stage::{
     core_transfer_at, grid_amps_at, grid_volts_at, solve_load_line, Bias, TriodeParams,
 };
+use crate::kernel::node::{Stage, Tail};
 
 /// Grid-volt domain of the tabulated halves (absolute): deep cutoff to
 /// well into grid conduction, for any class point and drive.
@@ -135,21 +136,6 @@ impl PushPull {
         };
         pp.rebuild();
         pp
-    }
-
-    pub fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.sample_rate = sample_rate;
-        self.update_cathode_coeff();
-        self.reset();
-    }
-
-    pub fn reset(&mut self) {
-        self.adaa_pos.reset();
-        self.adaa_neg.reset();
-        self.draw_last = 1.0;
-        self.u_prev = 0.0;
-        self.vk = self.vk0;
     }
 
     pub fn set_tube(&mut self, t: Koren) {
@@ -406,9 +392,26 @@ impl PushPull {
     fn s_at(&self, u: f64) -> f64 {
         self.pair_at(self.live_bias(), u * self.grid_drive) * self.out_scale * self.supply_scale
     }
+}
+
+impl Stage for PushPull {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.update_cathode_coeff();
+        self.reset();
+    }
+
+    fn reset(&mut self) {
+        self.adaa_pos.reset();
+        self.adaa_neg.reset();
+        self.draw_last = 1.0;
+        self.u_prev = 0.0;
+        self.vk = self.vk0;
+    }
 
     #[inline]
-    pub fn process_sample(&mut self, input: f32) -> f32 {
+    fn tick(&mut self, input: f32) -> f32 {
         let x0 = f64::from(input);
         let u = if self.nfb_beta > 0.0 {
             let solved = self.solve_feedback(x0, self.u_prev);
@@ -423,12 +426,10 @@ impl PushPull {
         let bias = self.live_bias();
         let scale = self.out_scale * self.supply_scale;
         let drive = self.grid_drive;
-        let pos = self
-            .adaa_pos
-            .process(&self.half.framed(bias, drive, scale), u);
+        let pos = self.adaa_pos.tick(&self.half.framed(bias, drive, scale), u);
         let neg = self
             .adaa_neg
-            .process(&self.half.framed(bias, -drive, scale), u);
+            .tick(&self.half.framed(bias, -drive, scale), u);
         let y = pos - (1.0 + self.imbalance) * neg;
         let x = u * drive;
         let plate = self.plate_amps.f_at(bias + x) + self.plate_amps.f_at(bias - x);
@@ -438,6 +439,17 @@ impl PushPull {
             self.vk += self.cathode_coeff * (cathode * self.rk - self.vk);
         }
         y as f32
+    }
+
+    /// The shared cathode RC under `Bias::Cathode` (an upper bound);
+    /// memoryless under `Bias::Fixed`.
+    fn tail(&self) -> Tail {
+        match self.bias {
+            Bias::Fixed => Tail::None,
+            Bias::Cathode { bypass_farads } => {
+                Tail::from_time_constant(self.rk * bypass_farads, self.sample_rate)
+            }
+        }
     }
 }
 
@@ -450,9 +462,7 @@ mod tests {
         let fs = 48_000.0f64;
         (0..n)
             .map(|i| {
-                pp.process_sample(
-                    (amp * (2.0 * core::f64::consts::PI * 220.0 * i as f64 / fs).sin()) as f32,
-                )
+                pp.tick((amp * (2.0 * core::f64::consts::PI * 220.0 * i as f64 / fs).sin()) as f32)
             })
             .collect()
     }
@@ -516,7 +526,7 @@ mod tests {
             let mut acc = 0.0f64;
             for i in 0..n {
                 let x = amp * (2.0 * core::f64::consts::PI * 220.0 * i as f64 / 48_000.0).sin();
-                pp.process_sample(x as f32);
+                pp.tick(x as f32);
                 acc += f64::from(pp.draw());
             }
             acc / n as f64
@@ -618,7 +628,7 @@ mod tests {
         pp.set_drive_db(12.0);
         self_biased(&mut pp, 40.0);
         for _ in 0..4_800 {
-            pp.process_sample(0.0);
+            pp.tick(0.0);
         }
         assert!(pp.cathode_shift().abs() < 0.01, "moved on silence");
         render(&mut pp, 0.6, 24_000);
@@ -628,7 +638,7 @@ mod tests {
             "half a second of slam moved only {slammed:.3} V"
         );
         for _ in 0..48_000 {
-            pp.process_sample(0.0);
+            pp.tick(0.0);
         }
         assert!(
             pp.cathode_shift() < 0.05,

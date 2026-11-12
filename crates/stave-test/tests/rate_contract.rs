@@ -9,7 +9,7 @@
 //!     spec's Hz at both rates. A stale-coefficient bug would leave the
 //!     normalized cutoff fixed and the Hz cutoff would double.
 
-use stave_dsp::{FilterSpec, FilterStage, Stage};
+use stave_dsp::{Biquad, FilterSpec, Stage};
 use stave_measure::tone_test::ToneTest;
 
 const N: usize = 8192;
@@ -17,7 +17,7 @@ const CUT_HZ: f32 = 1_000.0;
 
 /// Response at the bin nearest `hz`, preparing nothing — the stage
 /// arrives in whatever prepared state the test put it in.
-fn resp_at(stage: &mut FilterStage, fs: f64, hz: f64) -> f64 {
+fn resp_at(stage: &mut Biquad, fs: f64, hz: f64) -> f64 {
     let m = (hz * N as f64 / fs).round() as usize;
     stage.reset();
     ToneTest {
@@ -30,8 +30,8 @@ fn resp_at(stage: &mut FilterStage, fs: f64, hz: f64) -> f64 {
     .gain_db(|x: f32| stage.tick(x))
 }
 
-fn lowpass() -> FilterStage {
-    FilterStage::new(FilterSpec::Lowpass {
+fn lowpass() -> Biquad {
+    Biquad::new(FilterSpec::Lowpass {
         hz: CUT_HZ,
         q: core::f32::consts::FRAC_1_SQRT_2,
     })

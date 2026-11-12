@@ -6,7 +6,7 @@ use crate::circuit::devices::diode::Shockley;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 use crate::circuit::methods::wdf::{Capacitor, OnePort, Parallel, ResistiveSource};
 use crate::circuit::methods::wright_omega::wright_omega;
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DiodeClipperConfig {
@@ -27,6 +27,7 @@ pub enum PairSolver {
 
 pub struct DiodeClipper {
     tree: Parallel<ResistiveSource, Capacitor>,
+    sample_rate: f32,
     diode: Shockley,
     solver: PairSolver,
     volts: f64,
@@ -61,6 +62,7 @@ impl DiodeClipper {
                 },
                 Capacitor::new(config.capacitor_farads),
             ),
+            sample_rate: 48_000.0,
             diode: config.diode,
             solver: config.solver,
             volts: 0.0,
@@ -107,8 +109,9 @@ impl DiodeClipper {
 }
 
 impl Stage for DiodeClipper {
-    fn prepare(&mut self, rate: f32) {
-        self.tree.right.prepare(f64::from(rate));
+    fn prepare(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.tree.right.prepare(sample_rate);
         self.volts = 0.0;
         self.stats = NewtonStats::default();
     }
@@ -135,5 +138,12 @@ impl Stage for DiodeClipper {
         };
         self.tree.incident(reflected);
         self.volts as f32
+    }
+
+    /// With the diodes off, the capacitor discharges through the
+    /// input resistance: τ = R·C.
+    fn tail(&self) -> Tail {
+        let tau = self.tree.left.ohms * self.tree.right.farads();
+        Tail::from_time_constant(tau, self.sample_rate)
     }
 }

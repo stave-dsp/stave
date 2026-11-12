@@ -9,8 +9,7 @@
 
 use stave_dsp::RcClipperConfig;
 use stave_dsp::{
-    shapes, Chain, CurveStage, FilterSpec, FilterStage, Frame, Hysteresis, NonlinearRc, Stage,
-    StageKind,
+    shapes, Biquad, Chain, CurveStage, FilterSpec, Frame, Hysteresis, NonlinearRc, Stage, StageKind,
 };
 use stave_measure::nonlinear::{GainSurface, HysteresisTest};
 
@@ -24,18 +23,19 @@ fn amp_chain() -> Chain<4> {
         drive: 3.0,
         gain: 1.0,
     });
-    ch.push(StageKind::Curve(a));
-    ch.push(StageKind::Filter(FilterStage::new(FilterSpec::HighShelf {
+    ch.push(StageKind::Curve(a)).unwrap();
+    ch.push(StageKind::Filter(Biquad::new(FilterSpec::HighShelf {
         hz: 900.0,
         db: -9.0,
-    })));
+    })))
+    .unwrap();
     let mut b = CurveStage::from_fn(-6.0, 6.0, 0.0, shapes::knee(8.0));
     b.set_pending(Frame {
         bias: 0.0,
         drive: 1.6,
         gain: 1.0,
     });
-    ch.push(StageKind::Curve(b));
+    ch.push(StageKind::Curve(b)).unwrap();
     ch
 }
 

@@ -11,7 +11,7 @@
 //!     /// The amp channel, in signal order.
 //!     pub struct AmpChain {
 //!         primary: Curve = CurveStage::from_fn(-12.0, 12.0, 0.0, shapes::knee(1.0)),
-//!         voicing: Filter = FilterStage::new(FilterSpec::HighShelf { hz: 900.0, db: 0.0 }),
+//!         voicing: Filter = Biquad::new(FilterSpec::HighShelf { hz: 900.0, db: 0.0 }),
 //!     }
 //! }
 //!
@@ -38,7 +38,7 @@ macro_rules! chain_cell {
         $crate::CurveStage
     };
     (Filter) => {
-        $crate::FilterStage
+        $crate::Biquad
     };
     (Slew) => {
         $crate::Slew
@@ -72,7 +72,11 @@ macro_rules! chain {
             /// Build the declared topology, slots in declaration order.
             $vis fn new() -> Self {
                 let mut chain = $crate::Chain::new();
-                $( let $slot = chain.push($crate::StageKind::$Kind($init)); )+
+                $(
+                    let $slot = chain
+                        .push($crate::StageKind::$Kind($init))
+                        .expect("the chain's capacity is its slot count");
+                )+
                 Self { chain, $( $slot, )+ }
             }
 
@@ -113,8 +117,8 @@ macro_rules! chain {
 
         impl $crate::Stage for $Name {
             #[inline]
-            fn prepare(&mut self, rate: f32) {
-                $crate::Stage::prepare(&mut self.chain, rate);
+            fn prepare(&mut self, sample_rate: f32) {
+                $crate::Stage::prepare(&mut self.chain, sample_rate);
             }
             #[inline]
             fn reset(&mut self) {
@@ -125,14 +129,14 @@ macro_rules! chain {
                 $crate::Stage::tick(&mut self.chain, x)
             }
             #[inline]
-            fn process_block(&mut self, io: &mut [f32]) {
-                $crate::Stage::process_block(&mut self.chain, io);
+            fn process(&mut self, block: &mut [f32]) {
+                $crate::Stage::process(&mut self.chain, block);
             }
-            fn latency_samples(&self) -> u32 {
-                $crate::Stage::latency_samples(&self.chain)
+            fn latency(&self) -> u32 {
+                $crate::Stage::latency(&self.chain)
             }
-            fn tail_samples(&self) -> Option<u32> {
-                $crate::Stage::tail_samples(&self.chain)
+            fn tail(&self) -> $crate::Tail {
+                $crate::Stage::tail(&self.chain)
             }
         }
     };
@@ -141,12 +145,12 @@ macro_rules! chain {
 #[cfg(test)]
 mod tests {
     use crate::behavioral::shapes;
-    use crate::{CurveStage, FilterSpec, FilterStage, Stage, StageKind, SwapPoint};
+    use crate::{Biquad, CurveStage, FilterSpec, Stage, StageKind, SwapPoint};
 
     crate::chain! {
         struct TestChain {
             drive: Curve = CurveStage::from_fn(-4.0, 4.0, 0.0, shapes::knee(1.5)),
-            tone: Filter = FilterStage::new(FilterSpec::HighShelf { hz: 1_000.0, db: 0.0 }),
+            tone: Filter = Biquad::new(FilterSpec::HighShelf { hz: 1_000.0, db: 0.0 }),
         }
     }
 
@@ -176,12 +180,10 @@ mod tests {
         ch.prepare(48_000.0);
         let mut bench = SwapPoint::parking(StageKind::Bypass);
         let drive_id = ch.drive;
-        assert!(bench.engage(
-            ch.as_chain_mut(),
-            drive_id,
-            |s| matches!(s, StageKind::Bypass),
-            48_000.0
-        ));
+        assert!(bench.engage(ch.as_chain_mut(), drive_id, |s| matches!(
+            s,
+            StageKind::Bypass
+        )));
         let _ = ch.drive(); // swapped away — must scream, not lie
     }
 }

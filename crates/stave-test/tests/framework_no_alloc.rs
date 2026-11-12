@@ -36,12 +36,14 @@ fn swap_point_engage_never_allocates() {
 
     // Build OUTSIDE the guard (tables allocate at construction).
     let mut ch = Chain::<2>::new();
-    let id = ch.push(StageKind::Curve(CurveStage::from_fn(
-        -12.0,
-        12.0,
-        0.0,
-        |x| x.tanh(),
-    )));
+    let id = ch
+        .push(StageKind::Curve(CurveStage::from_fn(
+            -12.0,
+            12.0,
+            0.0,
+            |x| x.tanh(),
+        )))
+        .unwrap();
     use stave_dsp::Stage as _;
     ch.prepare(192_000.0);
     let mut sp = SwapPoint::parking(StageKind::Rc(NonlinearRc::ts_feedback_clipper(
@@ -59,7 +61,7 @@ fn swap_point_engage_never_allocates() {
             } else {
                 |s| matches!(s, StageKind::Curve(_))
             };
-            assert!(sp.engage(&mut ch, id, want, 192_000.0));
+            assert!(sp.engage(&mut ch, id, want));
             let _ = ch.tick(0.5);
         }
     });

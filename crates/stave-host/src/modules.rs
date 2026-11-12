@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use stave_dsp::{
-    AudioAdapter, AudioAdapterConfig, CommonCathode, CommonCathodeConfig, Coupler, DiodeClipper,
-    DiodeClipperConfig, FilterSpec, FilterStage, Hysteresis, NewtonStats, NonlinearRc, PairSolver,
+    AudioAdapter, AudioAdapterConfig, Biquad, CommonCathode, CommonCathodeConfig, Coupler,
+    DiodeClipper, DiodeClipperConfig, FilterSpec, Hysteresis, NewtonStats, NonlinearRc, PairSolver,
     Shockley, Slew, Stage, Tube,
 };
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
@@ -144,21 +144,19 @@ impl SettingValues<'_> {
     }
 }
 
-/// A stage plus the rate it was prepared at, which its setters need.
+/// A stage plus how its settings apply to it.
 struct ModuleStage<S> {
     stage: S,
-    rate: f32,
-    configure: fn(&mut S, &SettingValues, f32),
+    configure: fn(&mut S, &SettingValues),
     solver: Option<fn(&S) -> NewtonStats>,
 }
 
 fn stage<S: Stage + Send + 'static>(
     stage: S,
-    configure: fn(&mut S, &SettingValues, f32),
+    configure: fn(&mut S, &SettingValues),
 ) -> BoxedModule {
     Box::new(ModuleStage {
         stage,
-        rate: 0.0,
         configure,
         solver: None,
     })
@@ -166,21 +164,19 @@ fn stage<S: Stage + Send + 'static>(
 
 fn stage_with_solver<S: Stage + Send + 'static>(
     stage: S,
-    configure: fn(&mut S, &SettingValues, f32),
+    configure: fn(&mut S, &SettingValues),
     solver: fn(&S) -> NewtonStats,
 ) -> BoxedModule {
     Box::new(ModuleStage {
         stage,
-        rate: 0.0,
         configure,
         solver: Some(solver),
     })
 }
 
 impl<S: Stage + Send> Stage for ModuleStage<S> {
-    fn prepare(&mut self, rate: f32) {
-        self.rate = rate;
-        self.stage.prepare(rate);
+    fn prepare(&mut self, sample_rate: f32) {
+        self.stage.prepare(sample_rate);
     }
     fn reset(&mut self) {
         self.stage.reset();
@@ -188,20 +184,20 @@ impl<S: Stage + Send> Stage for ModuleStage<S> {
     fn tick(&mut self, x: f32) -> f32 {
         self.stage.tick(x)
     }
-    fn process_block(&mut self, io: &mut [f32]) {
-        self.stage.process_block(io);
+    fn process(&mut self, block: &mut [f32]) {
+        self.stage.process(block);
     }
-    fn latency_samples(&self) -> u32 {
-        self.stage.latency_samples()
+    fn latency(&self) -> u32 {
+        self.stage.latency()
     }
-    fn tail_samples(&self) -> Option<u32> {
-        self.stage.tail_samples()
+    fn tail(&self) -> stave_dsp::Tail {
+        self.stage.tail()
     }
 }
 
 impl<S: Stage + Send> Configurable for ModuleStage<S> {
     fn configure(&mut self, values: &SettingValues) {
-        (self.configure)(&mut self.stage, values, self.rate);
+        (self.configure)(&mut self.stage, values);
     }
 
     fn solver(&self) -> Option<NewtonStats> {
@@ -311,7 +307,7 @@ pub const CATALOG: &[Module] = &[
                 },
             },
         ],
-        build: |v| stage(FilterStage::new(peak(v)), |f, v, _| f.set(peak(v))),
+        build: |v| stage(Biquad::new(peak(v)), |f, v| f.set(peak(v))),
     },
     Module {
         name: "filter/lowpass",
@@ -335,7 +331,7 @@ pub const CATALOG: &[Module] = &[
                 },
             },
         ],
-        build: |v| stage(FilterStage::new(lowpass(v)), |f, v, _| f.set(lowpass(v))),
+        build: |v| stage(Biquad::new(lowpass(v)), |f, v| f.set(lowpass(v))),
     },
     Module {
         name: "coupler",
@@ -348,11 +344,7 @@ pub const CATALOG: &[Module] = &[
                 unit: "Hz",
             },
         }],
-        build: |v| {
-            stage(Coupler::new(v.f32("hz")), |c, v, rate| {
-                c.set_corner(v.f32("hz"), rate)
-            })
-        },
+        build: |v| stage(Coupler::new(v.f32("hz")), |c, v| c.set_hz(v.f32("hz"))),
     },
     Module {
         name: "slew",
@@ -377,8 +369,8 @@ pub const CATALOG: &[Module] = &[
             },
         ],
         build: |v| {
-            stage(Slew::new(v.f32("rise"), v.f32("fall")), |s, v, rate| {
-                s.set_rates(v.f32("rise"), v.f32("fall"), rate)
+            stage(Slew::new(v.f32("rise"), v.f32("fall")), |s, v| {
+                s.set_rates(v.f32("rise"), v.f32("fall"))
             })
         },
     },
@@ -420,7 +412,7 @@ pub const CATALOG: &[Module] = &[
                     threshold: v.f32("threshold"),
                     hardness: v.f32("hardness"),
                 }),
-                |c, v, _| {
+                |c, v| {
                     c.set_diode_clipper(&RcClipperConfig {
                         tau_ms: v.f32("tau"),
                         threshold: v.f32("threshold"),
@@ -461,7 +453,7 @@ pub const CATALOG: &[Module] = &[
         build: |v| {
             stage_with_solver(
                 DiodeClipper::new(diode_clipper(v)),
-                |c, v, _| c.configure(&diode_clipper(v)),
+                |c, v| c.configure(&diode_clipper(v)),
                 DiodeClipper::stats,
             )
         },
@@ -480,7 +472,7 @@ pub const CATALOG: &[Module] = &[
         build: |v| {
             stage_with_solver(
                 OpAmpClipper::new(opamp_clipper(v)),
-                |c, v, _| c.configure(&opamp_clipper(v)),
+                |c, v| c.configure(&opamp_clipper(v)),
                 OpAmpClipper::stats,
             )
         },
@@ -499,7 +491,7 @@ pub const CATALOG: &[Module] = &[
         build: |v| {
             stage_with_solver(
                 Transformer::new(transformer(v)),
-                |c, v, _| c.configure(&transformer(v)),
+                |c, v| c.configure(&transformer(v)),
                 Transformer::stats,
             )
         },
@@ -579,8 +571,8 @@ pub const CATALOG: &[Module] = &[
         build: |v| {
             stage_with_solver(
                 AudioAdapter::new(CommonCathode::new(common_cathode(v)), audio_port(v)),
-                |port, v, rate| {
-                    port.circuit.configure(&common_cathode(v), f64::from(rate));
+                |port, v| {
+                    port.circuit.configure(&common_cathode(v));
                     port.configure(audio_port(v));
                 },
                 |port| port.circuit.stats(),
@@ -610,13 +602,10 @@ pub const CATALOG: &[Module] = &[
             },
         ],
         build: |v| {
-            stage(
-                Hysteresis::new(v.f32("drive"), v.f32("depth")),
-                |h, v, _| {
-                    h.set_drive(v.f32("drive"));
-                    h.set_depth(v.f32("depth"));
-                },
-            )
+            stage(Hysteresis::new(v.f32("drive"), v.f32("depth")), |h, v| {
+                h.set_drive(v.f32("drive"));
+                h.set_depth(v.f32("depth"));
+            })
         },
     },
 ];

@@ -7,60 +7,67 @@
 //! earns one. Unlike an envelope follower it does NOT rectify —
 //! bipolar signals pass with their sign.
 
-#[derive(Clone, Copy, Debug, Default)]
+use crate::kernel::control::Source;
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::one_pole::tau_coeff;
+
+#[derive(Clone, Copy, Debug)]
 pub struct Lag {
-    rise: f32,
-    fall: f32,
     rise_ms: f32,
     fall_ms: f32,
+    sample_rate: f32,
+    rise: f32,
+    fall: f32,
     y: f32,
-}
-
-#[inline]
-fn coeff(ms: f32, sr: f32) -> f32 {
-    if ms <= 0.0 {
-        return 1.0; // instantaneous
-    }
-    debug_assert!(sr > 0.0, "sample rate must be positive");
-    1.0 - (-1.0 / (ms * 0.001 * sr)).exp()
 }
 
 impl Lag {
     pub fn new(rise_ms: f32, fall_ms: f32) -> Self {
-        Self {
-            rise: 1.0,
-            fall: 1.0,
+        let mut lag = Self {
             rise_ms,
             fall_ms,
+            sample_rate: 48_000.0,
+            rise: 1.0,
+            fall: 1.0,
             y: 0.0,
-        }
+        };
+        lag.set_times(rise_ms, fall_ms);
+        lag
     }
 
-    pub fn prepare(&mut self, sample_rate: f32) {
-        self.rise = coeff(self.rise_ms, sample_rate);
-        self.fall = coeff(self.fall_ms, sample_rate);
-        self.y = 0.0;
-    }
-
-    pub fn set_times(&mut self, rise_ms: f32, fall_ms: f32, sample_rate: f32) {
+    /// Rise and fall time constants (state kept). Zero is instant.
+    pub fn set_times(&mut self, rise_ms: f32, fall_ms: f32) {
         self.rise_ms = rise_ms;
         self.fall_ms = fall_ms;
-        self.rise = coeff(rise_ms, sample_rate);
-        self.fall = coeff(fall_ms, sample_rate);
+        self.rise = tau_coeff(rise_ms * 0.001, self.sample_rate);
+        self.fall = tau_coeff(fall_ms * 0.001, self.sample_rate);
     }
+}
 
-    pub fn reset(&mut self) {
+impl Stage for Lag {
+    fn prepare(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.set_times(self.rise_ms, self.fall_ms);
         self.y = 0.0;
     }
-
+    fn reset(&mut self) {
+        self.y = 0.0;
+    }
     #[inline]
-    pub fn tick(&mut self, x: f32) -> f32 {
+    fn tick(&mut self, x: f32) -> f32 {
         let c = if x > self.y { self.rise } else { self.fall };
-        self.y = crate::primitives::denormal::flush(self.y + (x - self.y) * c);
+        self.y = crate::kernel::denormal::flush(self.y + (x - self.y) * c);
         self.y
     }
+    /// The slower of the two directions, to −120 dB.
+    fn tail(&self) -> Tail {
+        let slow = self.rise.min(self.fall);
+        Tail::from_pole(f64::from(1.0 - slow))
+    }
+}
 
-    pub fn state(&self) -> f32 {
+impl Source for Lag {
+    fn state(&self) -> f32 {
         self.y
     }
 }

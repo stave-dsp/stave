@@ -1,22 +1,31 @@
-//! The signal kernel — the seven forms. Primitives
-//! only: nothing here may grow product flavor, and this layer
-//! depends on nothing below it — the layering check
-//! (check-view-bindings.sh §4) holds with no allowlist. The
-//! half-band machinery (`resample`) is Oversampled2x's implementation
-//! detail, public only for the conformance instruments.
+//! **Layer 0 — the kernel.** The processing contract ([`Stage`],
+//! [`Tail`]) and the forms every DSP graph is built from: [`Serial`]
+//! composition, parallel [`Par2`] with its latency [`Compensator`],
+//! feedback through an explicit delay ([`Loop`]), a 2× clock domain
+//! ([`Oversampled2x`]), channel lanes ([`PerChannel`]), control routing
+//! ([`Router`]) and event-keyed voices ([`VoiceRack`]), plus the
+//! denormal/non-finite guards every recursion uses. The kernel depends
+//! on nothing above it.
 //!
-//! Present: Node, Sequence, Branch (+ its Compensator pad on the
-//! kernel ring), Loop, Oversampled, Lanes, Control (its param-source half
-//! lives in stave-core::params), and Voices: event-keyed lanes under
-//! a declared steal policy.
+//! [`Stage`]: node::Stage
+//! [`Tail`]: node::Tail
+//! [`Serial`]: sequence::Serial
+//! [`Par2`]: parallel::Par2
+//! [`Compensator`]: parallel::Compensator
+//! [`Loop`]: feedback::Loop
+//! [`Oversampled2x`]: oversampled::Oversampled2x
+//! [`PerChannel`]: lanes::PerChannel
+//! [`Router`]: control::Router
+//! [`VoiceRack`]: voices::VoiceRack
 
 pub mod control;
+pub mod denormal;
 pub mod feedback;
 pub mod lanes;
 pub mod node;
 pub mod oversampled;
 pub mod parallel;
-pub mod resample;
+pub(crate) mod resample;
 pub(crate) mod ring;
 pub mod sequence;
 pub mod voices;

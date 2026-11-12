@@ -1,9 +1,14 @@
 //! Transposed-direct-form-II biquad with Robert Bristow-Johnson cookbook
-//! coefficient setters. Numerically stable, denormal-safe, one allocation
-//! per instance.
+//! coefficients (plus stave's own shelf), denormal-safe. The response is
+//! declared as a [`FilterSpec`] in hertz and decibels and re-derived at
+//! whatever rate the biquad is prepared for.
 
-use crate::primitives::denormal;
+use crate::kernel::denormal;
+use crate::kernel::node::{Stage, Tail};
 
+/// A second-order section: one [`FilterSpec`] at the prepared rate.
+/// Before `prepare` it runs at 48 kHz; `Biquad::default()` is a
+/// passthrough.
 #[derive(Clone, Copy, Debug)]
 pub struct Biquad {
     b0: f32,
@@ -13,16 +18,26 @@ pub struct Biquad {
     a2: f32,
     z1: f32,
     z2: f32,
+    spec: Option<FilterSpec>,
+    sample_rate: f32,
 }
 
 impl Default for Biquad {
     fn default() -> Self {
-        Self::new()
+        Self::passthrough()
     }
 }
 
 impl Biquad {
-    pub const fn new() -> Self {
+    /// A biquad realizing `spec`.
+    pub fn new(spec: FilterSpec) -> Self {
+        let mut b = Self::passthrough();
+        b.set(spec);
+        b
+    }
+
+    /// Unity gain, no state: the identity section.
+    pub const fn passthrough() -> Self {
         Self {
             b0: 1.0,
             b1: 0.0,
@@ -31,17 +46,29 @@ impl Biquad {
             a2: 0.0,
             z1: 0.0,
             z2: 0.0,
+            spec: None,
+            sample_rate: 48_000.0,
         }
     }
 
-    pub fn reset(&mut self) {
-        self.z1 = 0.0;
-        self.z2 = 0.0;
+    /// The response currently realized (`None` for a passthrough).
+    pub const fn spec(&self) -> Option<FilterSpec> {
+        self.spec
     }
 
-    /// Load `spec`'s coefficients at `sample_rate`. Corners are held
-    /// inside (1 Hz, 0.499·fs): the bilinear map is singular at Nyquist.
-    pub fn set(&mut self, spec: FilterSpec, sample_rate: f32) {
+    /// Retune (block rate): coefficients re-derived at the prepared
+    /// rate, state kept. Corners are held inside (1 Hz, 0.499·fs): the
+    /// bilinear map is singular at Nyquist.
+    pub fn set(&mut self, spec: FilterSpec) {
+        self.spec = Some(spec);
+        self.apply();
+    }
+
+    fn apply(&mut self) {
+        let Some(spec) = self.spec else {
+            return;
+        };
+        let sample_rate = self.sample_rate;
         match spec {
             FilterSpec::Lowpass { hz, q } => self.lowpass(hz, q, sample_rate),
             FilterSpec::Highpass { hz, q } => self.highpass(hz, q, sample_rate),
@@ -233,12 +260,11 @@ impl Biquad {
         self.a2 = a2 / a0;
     }
 
-    /// Complex frequency response H(e^{jω}) of the CURRENT
-    /// coefficients — the display/analysis read (first consumer:
-    /// tolex's response scene, which is invariant-pinned against the
-    /// rendered audio). Touches no state.
-    pub fn response_at(&self, hz: f32, rate: f32) -> (f32, f32) {
-        let w = core::f32::consts::TAU * (hz / rate.max(1.0)).clamp(0.0, 0.5);
+    /// Complex frequency response H(e^{jω}) of the current
+    /// coefficients at the prepared rate — the display and analysis
+    /// read. Touches no state.
+    pub fn response_at(&self, hz: f32) -> (f32, f32) {
+        let w = core::f32::consts::TAU * (hz / self.sample_rate.max(1.0)).clamp(0.0, 0.5);
         let (c1, s1) = (w.cos(), w.sin());
         let (c2, s2) = ((2.0 * w).cos(), (2.0 * w).sin());
         let nr = self.b0 + self.b1 * c1 + self.b2 * c2;
@@ -250,28 +276,42 @@ impl Biquad {
     }
 
     /// |H(e^{jω})| — see [`response_at`](Self::response_at).
-    pub fn magnitude_at(&self, hz: f32, rate: f32) -> f32 {
-        let (re, im) = self.response_at(hz, rate);
+    pub fn magnitude_at(&self, hz: f32) -> f32 {
+        let (re, im) = self.response_at(hz);
         (re * re + im * im).sqrt()
     }
+}
 
+impl Stage for Biquad {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.apply();
+        self.reset();
+    }
+    fn reset(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
+    }
     #[inline]
-    pub fn process(&mut self, x: f32) -> f32 {
+    fn tick(&mut self, x: f32) -> f32 {
         let y = self.b0 * x + self.z1;
         self.z1 = denormal::flush(self.b1 * x - self.a1 * y + self.z2);
         self.z2 = denormal::flush(self.b2 * x - self.a2 * y);
         y
     }
+    /// Samples for the slower pole to fall 120 dB.
+    fn tail(&self) -> Tail {
+        match self.spec {
+            None => Tail::None,
+            Some(_) => Tail::from_biquad(f64::from(self.a1), f64::from(self.a2)),
+        }
+    }
 }
 
-// FilterStage — Biquad fitted with the node conventions: the
-// spec stays in Hz/dB and reapplies at whatever rate the stage
-// is prepared for (the rate contract).
-use crate::kernel::node::Stage;
-
-/// Filter spec, reapplied at whatever rate the stage is prepared for —
-/// the knob stays in Hz/dB while the coefficients follow the rate
-/// contract automatically.
+/// A second-order response in musical units, re-derived at whatever rate
+/// the [`Biquad`] is prepared for. `q` is the quality factor (Butterworth
+/// = 1/√2) everywhere in stave-dsp.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FilterSpec {
     Lowpass {
@@ -314,46 +354,4 @@ pub enum FilterSpec {
         hz: f32,
         db: f32,
     },
-}
-
-pub struct FilterStage {
-    spec: FilterSpec,
-    biquad: Biquad,
-    rate: f32,
-}
-
-impl FilterStage {
-    pub fn new(spec: FilterSpec) -> Self {
-        Self {
-            spec,
-            biquad: Biquad::new(),
-            rate: 0.0,
-        }
-    }
-    /// Retune (block rate) — coefficients recomputed at the prepared rate.
-    pub fn set(&mut self, spec: FilterSpec) {
-        self.spec = spec;
-        if self.rate > 0.0 {
-            self.apply();
-        }
-    }
-    fn apply(&mut self) {
-        self.biquad.set(self.spec, self.rate);
-    }
-}
-
-impl Stage for FilterStage {
-    fn prepare(&mut self, rate: f32) {
-        debug_assert!(rate > 0.0, "sample rate must be positive");
-        self.rate = rate;
-        self.apply();
-        self.biquad.reset();
-    }
-    fn reset(&mut self) {
-        self.biquad.reset();
-    }
-    #[inline]
-    fn tick(&mut self, x: f32) -> f32 {
-        self.biquad.process(x)
-    }
 }

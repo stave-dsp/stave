@@ -1,12 +1,10 @@
-//! Variable-length delay line with linear fractional read.
+//! Variable-length delay line with fractional reads.
 //!
-//! Allocates once on `prepare()` for the max delay; never on the audio
-//! path. Read with `read(samples)` where `samples` is a non-integer
-//! number of samples back from the write head — linear interpolation
-//! between adjacent taps gives smooth sweeps without zippering.
-
-extern crate alloc;
-use alloc::vec::Vec;
+//! Storage, not a stage: allocates once in [`DelayLine::allocate`] for
+//! the longest delay, never on the audio path. Write the current sample,
+//! read any number of samples back (linear or cubic interpolation), then
+//! advance. [`Comb`](crate::Comb) and [`DelayAllpass`](crate::DelayAllpass)
+//! are the stages built on it.
 
 #[derive(Debug, Default)]
 pub struct DelayLine {
@@ -25,11 +23,11 @@ impl DelayLine {
     }
 
     /// Allocate space for `max_samples` of delay. Calling again resizes
-    /// (which allocates — don't call from the audio thread).
-    pub fn prepare(&mut self, max_samples: usize) {
+    /// (which allocates — never from the audio thread) and clears.
+    pub fn allocate(&mut self, max_samples: usize) {
         let cap = max_samples.max(2).next_power_of_two();
         if cap != self.capacity {
-            self.buf = alloc::vec![0.0_f32; cap];
+            self.buf = vec![0.0_f32; cap];
             self.capacity = cap;
         } else {
             for s in self.buf.iter_mut() {
@@ -188,7 +186,7 @@ mod tests {
         let f = rel * fs;
         let n = 4096;
         let mut dl = DelayLine::new();
-        dl.prepare(64);
+        dl.allocate(64);
         let mut sum_in = 0.0f64;
         let mut sum_out = 0.0f64;
         for i in 0..n {
@@ -241,7 +239,7 @@ mod tests {
     #[test]
     fn integer_reads_are_transparent() {
         let mut dl = DelayLine::new();
-        dl.prepare(32);
+        dl.allocate(32);
         for i in 0..64 {
             let x = (i as f32 * 0.37).sin();
             dl.write(x);
@@ -265,7 +263,7 @@ mod block_read_properties {
     #[test]
     fn read_block_matches_read() {
         let mut d = DelayLine::new();
-        d.prepare(128);
+        d.allocate(128);
         let mut lcg = 7u32;
         for _ in 0..300 {
             lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -284,7 +282,7 @@ mod block_read_properties {
     #[test]
     fn read_int_matches_read() {
         let mut d = DelayLine::new();
-        d.prepare(64);
+        d.allocate(64);
         for k in 0..200 {
             d.write(k as f32 * 0.01);
             d.advance();
@@ -303,7 +301,7 @@ mod block_fast_path_properties {
     #[test]
     fn fast_path_matches_general() {
         let mut d = DelayLine::new();
-        d.prepare(256);
+        d.allocate(256);
         let mut lcg = 99u32;
         for _ in 0..600 {
             lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);

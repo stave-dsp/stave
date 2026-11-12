@@ -11,8 +11,8 @@
 //! `_rbj` variants are the monotonic cookbook curve. These limits pin
 //! both so neither drifts silently.
 
-use stave_dsp::Biquad;
 use stave_dsp::FilterSpec;
+use stave_dsp::{Biquad, Stage};
 use stave_measure::tone_test::ToneTest;
 
 const FS: f64 = 48_000.0;
@@ -27,13 +27,13 @@ fn resp(bq: &mut Biquad, m: usize) -> f64 {
         amplitude: 0.01,
         warmup_windows: 4,
     }
-    .gain_db(|x: f32| b.process(x))
+    .gain_db(|x: f32| b.tick(x))
 }
 
 #[test]
 fn stave_shelf_lip_and_dip_are_pinned() {
-    let mut c = Biquad::new();
-    c.set(FilterSpec::LowShelf { hz: 200.0, db: 6.0 }, FS as f32);
+    let mut c = Biquad::new(FilterSpec::LowShelf { hz: 200.0, db: 6.0 });
+    c.prepare(FS as f32);
     let lip = resp(&mut c, 17); // ~99.6 Hz
     let dip = resp(&mut c, 68); // ~398 Hz
     let flat = resp(&mut c, 341); // ~2 kHz
@@ -50,8 +50,8 @@ fn stave_shelf_lip_and_dip_are_pinned() {
 
 #[test]
 fn rbj_shelf_is_monotonic_and_cookbook_flat() {
-    let mut c = Biquad::new();
-    c.set(FilterSpec::LowShelfRbj { hz: 200.0, db: 6.0 }, FS as f32);
+    let mut c = Biquad::new(FilterSpec::LowShelfRbj { hz: 200.0, db: 6.0 });
+    c.prepare(FS as f32);
     let below = resp(&mut c, 8); // ~46.9 Hz → near full gain
     let corner = resp(&mut c, 34); // ~199 Hz → ~half gain
     let above = resp(&mut c, 341); // ~2 kHz → ~0

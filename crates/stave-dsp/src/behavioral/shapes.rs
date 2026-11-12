@@ -12,6 +12,16 @@
 //! the slope normalisation in consumers stays meaningful) and bounded on
 //! the Curve domain.
 
+/// The canonical smooth saturator, `tanh(x)`: unity slope at 0 (clean
+/// at low level), bounded to (−1, 1), rounding peaks gently as it is
+/// driven instead of flat-topping, with harmonics that fall off roughly
+/// exponentially with order. The per-sample `f32` form, for direct use
+/// in a `tick`; [`knee`]`(2.4)` is the tabulatable near-equivalent.
+#[inline]
+pub fn soft_clip(x: f32) -> f32 {
+    x.tanh()
+}
+
 /// Variable-knee symmetric clipper: `x / (1 + |x|^k)^(1/k)`.
 /// k = 1 is softer than tanh, k ≈ 2.4 ≈ tanh, k → ∞ is a hard clip at ±1.
 /// This is the EDGE control's family.

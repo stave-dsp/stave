@@ -24,25 +24,18 @@
 //! — i.e. it saturates like real gear. Memoryless (per-sample), so run it
 //! inside an oversampler for anti-aliasing.
 
-use crate::primitives::filters::biquad::Biquad;
-use crate::FilterSpec;
+use crate::behavioral::shapes::soft_clip;
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 
 /// Number of Chebyshev terms (harmonic orders modelled).
 const N: usize = 10;
 
-/// Smooth bound to (−1, 1) via `tanh`. This is the canonical smooth
-/// saturator: identity-slope at 0 (clean at low level), and it rounds the
-/// peaks gently as it's driven instead of flat-topping. An earlier
-/// identity-then-exp clip flat-topped hard at high drive → the signal went
-/// near-square → a fat, slowly-decaying high-harmonic tail (audible fizz).
-/// `tanh` keeps the argument strictly inside (−1, 1) for Chebyshev
-/// stability while its harmonics roll off ~exponentially with order, so
-/// the pushed character is smooth (like a good analog soft-clip); the
-/// Chebyshev sum then adds the tunable even/odd colour on top.
-#[inline]
-fn soft_clip(x: f32) -> f32 {
-    x.tanh()
-}
+// The shaper's bound is `soft_clip` (tanh): it keeps the Chebyshev
+// argument strictly inside (−1, 1) for stability while rounding peaks
+// instead of flat-topping (an identity-then-exp clip flat-topped hard at
+// high drive and left a slowly decaying high-harmonic tail — fizz); the
+// Chebyshev sum then adds the tunable even/odd colour on top.
 
 pub struct SmoothSat {
     a: [f32; N],    // harmonic weights: a[0]=a₁ (fundamental) .. a[N-1]=a_N
@@ -57,7 +50,6 @@ pub struct SmoothSat {
     pre: Biquad,  // de-emphasis (HF cut into the shaper)
     post: Biquad, // re-emphasis (complementary HF boost)
     dc: Biquad,   // remove DC from even-order terms
-    fs: f32,
 }
 
 impl Default for SmoothSat {
@@ -78,28 +70,12 @@ impl SmoothSat {
             odd: 0.10,
             smoothness: 0.7,
             hf_db: 4.0,
-            pre: Biquad::new(),
-            post: Biquad::new(),
-            dc: Biquad::new(),
-            fs: 48_000.0,
+            pre: Biquad::passthrough(),
+            post: Biquad::passthrough(),
+            dc: Biquad::new(FilterSpec::Highpass { hz: 5.0, q: 0.707 }),
         };
         s.rebuild_weights();
         s
-    }
-
-    pub fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.fs = sample_rate;
-        self.dc
-            .set(FilterSpec::Highpass { hz: 5.0, q: 0.707 }, self.fs);
-        self.update_companding();
-        self.reset();
-    }
-
-    pub fn reset(&mut self) {
-        self.pre.reset();
-        self.post.reset();
-        self.dc.reset();
     }
 
     /// Input gain into the shaper (how hard / how much of the spectrum is
@@ -222,20 +198,14 @@ impl SmoothSat {
         // from the per-block param update, and zeroing the shelf state
         // every buffer is a discontinuity each block = zipper noise on the
         // top end. State is only cleared in prepare()/reset().
-        self.pre.set(
-            FilterSpec::HighShelf {
-                hz: 2_500.0,
-                db: -self.hf_db,
-            },
-            self.fs,
-        );
-        self.post.set(
-            FilterSpec::HighShelf {
-                hz: 2_500.0,
-                db: self.hf_db,
-            },
-            self.fs,
-        );
+        self.pre.set(FilterSpec::HighShelf {
+            hz: 2_500.0,
+            db: -self.hf_db,
+        });
+        self.post.set(FilterSpec::HighShelf {
+            hz: 2_500.0,
+            db: self.hf_db,
+        });
     }
 
     /// Σ aₙ·Tₙ(x) via the Chebyshev recurrence (x must be in [-1, 1]).
@@ -257,8 +227,8 @@ impl SmoothSat {
 
     /// De-emphasis (drive + HF cut) — BASE RATE, runs before upsampling.
     #[inline]
-    pub fn process_pre(&mut self, x: f32) -> f32 {
-        self.pre.process(x * self.drive)
+    pub fn tick_pre(&mut self, x: f32) -> f32 {
+        self.pre.tick(x * self.drive)
     }
 
     /// The memoryless shaper — runs INSIDE the oversampler. Offsets by the
@@ -273,8 +243,8 @@ impl SmoothSat {
 
     /// Re-emphasis (HF boost) + DC block — BASE RATE, after decimation.
     #[inline]
-    pub fn process_post(&mut self, x: f32) -> f32 {
-        self.dc.process(self.post.process(x))
+    pub fn tick_post(&mut self, x: f32) -> f32 {
+        self.dc.tick(self.post.tick(x))
     }
 
     /// Unification bridge: export the CURRENT recipe (weights,
@@ -289,16 +259,37 @@ impl SmoothSat {
             self.shape(x as f32) as f64
         })
     }
+}
 
-    /// Base-rate convenience (no oversampling) — used by the offline
-    /// harmonic/IMD analysis. The plugin instead does pre → OS(shape) →
-    /// post so the stateful filters stay at base rate and only the
-    /// memoryless shaper is oversampled.
+impl Stage for SmoothSat {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.pre.prepare(sample_rate);
+        self.post.prepare(sample_rate);
+        self.dc.prepare(sample_rate);
+        self.update_companding();
+        self.reset();
+    }
+
+    fn reset(&mut self) {
+        self.pre.reset();
+        self.post.reset();
+        self.dc.reset();
+    }
+
+    /// Base-rate convenience (no oversampling) — the offline
+    /// harmonic/IMD analysis. Oversampled use runs
+    /// `tick_pre` → 2×(`shape`) → `tick_post`, so the stateful filters
+    /// stay at base rate and only the memoryless shaper is oversampled.
     #[inline]
-    pub fn process(&mut self, x: f32) -> f32 {
-        let pre = self.process_pre(x);
+    fn tick(&mut self, x: f32) -> f32 {
+        let pre = self.tick_pre(x);
         let shaped = self.shape(pre);
-        self.process_post(shaped)
+        self.tick_post(shaped)
+    }
+
+    fn tail(&self) -> Tail {
+        self.pre.tail().then(self.post.tail()).then(self.dc.tail())
     }
 }
 

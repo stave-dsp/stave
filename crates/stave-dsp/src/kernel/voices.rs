@@ -1,12 +1,11 @@
-//! The Voice form — event-keyed Lanes: a fixed pool of
-//! per-note node instances under a declared allocation POLICY.
+//! **Voices** — event-keyed lanes: a fixed pool of per-note voice
+//! instances under a declared allocation policy.
 //!
-//! Layering: the kernel does not know hosts
-//! exist — [`VoiceEvent`] is the form's OWN note vocabulary, and
-//! projects bridge `stave_core` events to it in their engine.
-//! Tuning is caller-owned: events carry **hz**, never keys-as-pitch
-//! ([`hz_of_key`] is the equal-temperament helper, not an
-//! assumption), so microtuning is a different bridge, not a form
+//! Layering: the kernel does not know hosts exist — [`VoiceEvent`] is
+//! the form's own note vocabulary, and engines bridge host events to it.
+//! Tuning is the caller's: events carry **hz**, never keys-as-pitch
+//! ([`hz_of_key`](crate::hz_of_key) is the equal-temperament helper, not
+//! an assumption), so microtuning is a different bridge, not a form
 //! change.
 //!
 //! Sample-accurate by construction: the rack exposes per-frame
@@ -21,24 +20,15 @@
 //! * a note-on takes an idle voice; with none idle the POLICY picks
 //!   the victim (quietest by `level()`, oldest by age) and
 //!   retriggers it — never a dropped note;
-//! * STEALING IS CLICK-FREE: a stolen voice fades over ~2 ms before
-//!   the incoming note retriggers it (the rack owns the fade — a
-//!   naive immediate retrigger resets phase mid-sound and measured
-//!   a 6× waveform discontinuity in chime; commercial voice
-//!   management steals with a fade, so does the form);
+//! * stealing is click-free: a stolen voice fades over ~2 ms before
+//!   the incoming note retriggers it (the rack owns the fade — a naive
+//!   immediate retrigger resets phase mid-sound and measured a 6×
+//!   waveform discontinuity);
 //! * note-off matches id-then-key and RELEASES (the voice rings
 //!   through its release; `active()` reports until silent);
 //! * choke silences its match immediately;
 //! * the sum is superposition: rack output ≡ the per-slot sum of
 //!   each voice ticked alone.
-
-/// Equal-temperament pitch for a MIDI key, A4 (key 69) = 440 Hz.
-/// A HELPER, not policy — bridges that tune differently pass their
-/// own hz.
-#[inline]
-pub fn hz_of_key(key: i16) -> f32 {
-    440.0 * ((f32::from(key) - 69.0) / 12.0).exp2()
-}
 
 /// One per-note node. Stereo out — spread/detune are voice business.
 pub trait Voice {

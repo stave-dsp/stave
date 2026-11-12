@@ -1,20 +1,19 @@
-//! **Sequence** — kernel form #2: serial
-//! composition as a static tuple over any `impl Stage`, no framework
-//! kind enum at the gate. Owns the serial invariants: prepare cascades,
-//! latency sums, tail sums (unbounded absorbs), block form
-//! dispatches each element once per block. For topologies that MORPH
-//! at runtime (kind swaps, slots) use `structures::chain::Chain` —
-//! that is this form elaborated, not a rival.
+//! **Serial** — static serial composition as a tuple over any
+//! `impl Stage`. Owns the serial invariants: prepare cascades, latency
+//! sums, tail sums (infinite absorbs), the block form dispatches each
+//! element once per block. For topologies that change at runtime
+//! (kind swaps, addressable slots) use [`Chain`](crate::Chain) — this
+//! form elaborated, not a rival.
 
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 
 pub struct Serial<T>(pub T);
 
 macro_rules! impl_serial {
     ($($T:ident . $idx:tt),+) => {
         impl<$($T: Stage),+> Stage for Serial<($($T,)+)> {
-            fn prepare(&mut self, rate: f32) {
-                $(self.0.$idx.prepare(rate);)+
+            fn prepare(&mut self, sample_rate: f32) {
+                $(self.0.$idx.prepare(sample_rate);)+
             }
             fn reset(&mut self) {
                 $(self.0.$idx.reset();)+
@@ -25,16 +24,14 @@ macro_rules! impl_serial {
                 $(let y = self.0.$idx.tick(y);)+
                 y
             }
-            fn process_block(&mut self, io: &mut [f32]) {
-                $(self.0.$idx.process_block(io);)+
+            fn process(&mut self, block: &mut [f32]) {
+                $(self.0.$idx.process(block);)+
             }
-            fn latency_samples(&self) -> u32 {
-                0 $(+ self.0.$idx.latency_samples())+
+            fn latency(&self) -> u32 {
+                0 $(+ self.0.$idx.latency())+
             }
-            fn tail_samples(&self) -> Option<u32> {
-                let mut t: u32 = 0;
-                $(t = t.checked_add(self.0.$idx.tail_samples()?)?;)+
-                Some(t)
+            fn tail(&self) -> Tail {
+                Tail::None $(.then(self.0.$idx.tail()))+
             }
         }
     };

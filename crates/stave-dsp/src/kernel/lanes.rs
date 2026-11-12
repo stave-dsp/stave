@@ -12,6 +12,8 @@
 //! real bug the type prevents. Adapters between layouts are explicit
 //! (never implicit up/down-mixes).
 
+use crate::kernel::node::{Stage, Tail};
+
 /// What the lanes of a [`PerChannel`] (or a buffer) denote.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ChannelLayout {
@@ -106,6 +108,26 @@ impl<T, const N: usize> PerChannel<T, N> {
         for lane in &mut self.lanes {
             f(lane);
         }
+    }
+}
+
+/// A lane of [`Stage`]s: the whole bank prepares, resets and reports as
+/// one (lanes are parallel, so latency and tail are the longest lane's).
+impl<T: Stage, const N: usize> PerChannel<T, N> {
+    pub fn prepare(&mut self, sample_rate: f32) {
+        self.each_mut(|lane| lane.prepare(sample_rate));
+    }
+
+    pub fn reset(&mut self) {
+        self.each_mut(Stage::reset);
+    }
+
+    pub fn latency(&self) -> u32 {
+        self.iter().map(Stage::latency).max().unwrap_or(0)
+    }
+
+    pub fn tail(&self) -> Tail {
+        self.iter().fold(Tail::None, |t, lane| t.max(lane.tail()))
     }
 }
 

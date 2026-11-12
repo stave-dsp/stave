@@ -1,13 +1,15 @@
 //! The Voice form's invariants, driven by the TWO
 //! consumers the design demands:
-//! * `SineVoice` — the tier-1 shape (Osc + Adsr), what chime ships;
+//! * `SineVoice` — the simplest instrument shape (Osc + Adsr);
 //! * `MiniFmVoice` — a 2-operator FM voice whose MODULATOR carries
 //!   its own Adsr instance: per-voice control-plane instancing must
 //!   fit the trait with no framework help, BEFORE tier 2 needs it.
 //!   If this voice is awkward to write, the form is wrong — that is
 //!   this file's job.
 
-use stave_dsp::{hz_of_key, Adsr, AdsrConfig, Osc, OscShape, Steal, Voice, VoiceEvent, VoiceRack};
+use stave_dsp::{
+    hz_of_key, Adsr, AdsrConfig, Osc, Stage, Steal, Voice, VoiceEvent, VoiceRack, Waveform,
+};
 
 const SR: f32 = 48_000.0;
 
@@ -16,32 +18,28 @@ struct SineVoice {
     osc: Osc,
     env: Adsr,
     vel: f32,
-    sr: f32,
 }
 
 impl SineVoice {
     fn new() -> Self {
         Self {
-            osc: Osc::new(OscShape::Sine),
+            osc: Osc::new(Waveform::Sine),
             env: Adsr::new(),
             vel: 0.0,
-            sr: SR,
         }
     }
 }
 
 impl Voice for SineVoice {
     fn prepare(&mut self, sample_rate: f32) {
-        self.sr = sample_rate;
-        self.env.set(
-            &AdsrConfig {
-                attack_ms: 2.0,
-                decay_ms: 30.0,
-                sustain: 0.7,
-                release_ms: 80.0,
-            },
-            sample_rate,
-        );
+        self.osc.prepare(sample_rate);
+        self.env.prepare(sample_rate);
+        self.env.set(&AdsrConfig {
+            attack_ms: 2.0,
+            decay_ms: 30.0,
+            sustain: 0.7,
+            release_ms: 80.0,
+        });
         self.reset();
     }
     fn reset(&mut self) {
@@ -50,7 +48,7 @@ impl Voice for SineVoice {
         self.vel = 0.0;
     }
     fn note_on(&mut self, hz: f32, velocity: f32) {
-        self.osc.set_hz(hz, self.sr);
+        self.osc.set_hz(hz);
         self.osc.reset();
         self.vel = velocity;
         self.env.gate_on();
@@ -68,7 +66,7 @@ impl Voice for SineVoice {
         self.env.level() * self.vel
     }
     fn tick(&mut self) -> (f32, f32) {
-        let y = self.osc.tick() * self.env.tick() * self.vel;
+        let y = self.osc.tick(0.0) * self.env.tick(0.0) * self.vel;
         (y, y)
     }
 }
@@ -86,7 +84,7 @@ struct MiniFmVoice {
     amp_env: Adsr,
     mod_env: Adsr,
     vel: f32,
-    sr: f32,
+    sample_rate: f32,
 }
 
 impl MiniFmVoice {
@@ -100,34 +98,30 @@ impl MiniFmVoice {
             amp_env: Adsr::new(),
             mod_env: Adsr::new(),
             vel: 0.0,
-            sr: SR,
+            sample_rate: SR,
         }
     }
 }
 
 impl Voice for MiniFmVoice {
     fn prepare(&mut self, sample_rate: f32) {
-        self.sr = sample_rate;
-        self.amp_env.set(
-            &AdsrConfig {
-                attack_ms: 1.0,
-                decay_ms: 200.0,
-                sustain: 0.6,
-                release_ms: 60.0,
-            },
-            sample_rate,
-        );
+        self.sample_rate = sample_rate;
+        self.amp_env.prepare(sample_rate);
+        self.amp_env.set(&AdsrConfig {
+            attack_ms: 1.0,
+            decay_ms: 200.0,
+            sustain: 0.6,
+            release_ms: 60.0,
+        });
         // The modulator's OWN envelope: no sustain — the brightness
         // is an attack transient.
-        self.mod_env.set(
-            &AdsrConfig {
-                attack_ms: 0.5,
-                decay_ms: 40.0,
-                sustain: 0.0,
-                release_ms: 40.0,
-            },
-            sample_rate,
-        );
+        self.mod_env.prepare(sample_rate);
+        self.mod_env.set(&AdsrConfig {
+            attack_ms: 0.5,
+            decay_ms: 40.0,
+            sustain: 0.0,
+            release_ms: 40.0,
+        });
         self.reset();
     }
     fn reset(&mut self) {
@@ -138,7 +132,7 @@ impl Voice for MiniFmVoice {
         self.vel = 0.0;
     }
     fn note_on(&mut self, hz: f32, velocity: f32) {
-        self.inc = f64::from(hz) / f64::from(self.sr);
+        self.inc = f64::from(hz) / f64::from(self.sample_rate);
         self.carrier = 0.0;
         self.modulator = 0.0;
         self.vel = velocity;
@@ -161,8 +155,8 @@ impl Voice for MiniFmVoice {
     }
     fn tick(&mut self) -> (f32, f32) {
         use core::f64::consts::TAU;
-        let m = (TAU * self.modulator).sin() * self.index * f64::from(self.mod_env.tick());
-        let y = (TAU * self.carrier + m).sin() * f64::from(self.amp_env.tick() * self.vel);
+        let m = (TAU * self.modulator).sin() * self.index * f64::from(self.mod_env.tick(0.0));
+        let y = (TAU * self.carrier + m).sin() * f64::from(self.amp_env.tick(0.0) * self.vel);
         self.carrier = (self.carrier + self.inc).rem_euclid(1.0);
         self.modulator = (self.modulator + self.inc * self.ratio).rem_euclid(1.0);
         (y as f32, y as f32)

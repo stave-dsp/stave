@@ -2,13 +2,11 @@
 //! instantiated with probe leaves, every invariant asserted headless.
 
 use core::num::NonZeroU32;
-use stave_dsp::{Loop, Oversampled2x, Par2, PerChannel, Serial, Stage};
+use stave_dsp::{Loop, Oversampled2x, Par2, PerChannel, Serial, Stage, Tail};
 
 /// Zero-latency gain leaf.
 struct Gain(f32);
 impl Stage for Gain {
-    fn prepare(&mut self, _r: f32) {}
-    fn reset(&mut self) {}
     fn tick(&mut self, x: f32) -> f32 {
         x * self.0
     }
@@ -43,21 +41,20 @@ impl Stage for Late {
         self.idx = (self.idx + 1) % self.buf.len();
         y
     }
-    fn latency_samples(&self) -> u32 {
+    fn latency(&self) -> u32 {
         self.n
     }
-    fn tail_samples(&self) -> Option<u32> {
-        Some(self.n)
+    fn tail(&self) -> Tail {
+        Tail::samples(self.n)
     }
 }
 
 /// Records the rate it was prepared at (region invariant probe).
 struct RateSpy(f32);
 impl Stage for RateSpy {
-    fn prepare(&mut self, r: f32) {
-        self.0 = r;
+    fn prepare(&mut self, sample_rate: f32) {
+        self.0 = sample_rate;
     }
-    fn reset(&mut self) {}
     fn tick(&mut self, x: f32) -> f32 {
         x
     }
@@ -67,11 +64,11 @@ impl Stage for RateSpy {
 fn sequence_properties() {
     let mut s = Serial((Gain(2.0), Late::new(3), Gain(0.5)));
     s.prepare(48_000.0);
-    assert_eq!(s.latency_samples(), 3, "latency sums");
-    assert_eq!(s.tail_samples(), Some(3), "tail sums");
+    assert_eq!(s.latency(), 3, "latency sums");
+    assert_eq!(s.tail(), Tail::Samples(3), "tail sums");
     let mut out = [0.0f32; 8];
     out[0] = 1.0;
-    s.process_block(&mut out);
+    s.process(&mut out);
     let mut s2 = Serial((Gain(2.0), Late::new(3), Gain(0.5)));
     s2.prepare(48_000.0);
     for (i, &b) in out.iter().enumerate() {
@@ -89,8 +86,12 @@ fn branch_properties() {
     // Dry/wet shape: the join is aligned whatever either branch reports.
     let mut p = Par2::new(Gain(1.0), Late::new(7));
     p.prepare(48_000.0);
-    assert_eq!(p.latency_samples(), 7, "join reports the slow branch");
-    assert_eq!(p.tail_samples(), Some(7), "tail maxes");
+    assert_eq!(p.latency(), 7, "join reports the slow branch");
+    assert_eq!(
+        p.tail(),
+        Tail::Samples(7),
+        "tail maxes (the padded dry branch rings through its pad)"
+    );
     for i in 0..32 {
         let y = p.tick(if i == 0 { 1.0 } else { 0.0 });
         assert_eq!(y, if i == 7 { 2.0 } else { 0.0 }, "aligned join at {i}");
@@ -136,15 +137,15 @@ fn loop_properties() {
             "geometric decay at {i}: {y} vs {want}"
         );
     }
-    assert_eq!(voiced.tail_samples(), None, "unbounded unless declared");
+    assert_eq!(voiced.tail(), Tail::Infinite, "unbounded unless declared");
     assert_eq!(
         Loop::new(Gain(a), NonZeroU32::new(1).unwrap())
             .with_tail_bound(4800)
-            .tail_samples(),
-        Some(4800),
+            .tail(),
+        Tail::Samples(4800),
         "declared bound reported"
     );
-    assert_eq!(voiced.latency_samples(), 0, "feed-forward path only");
+    assert_eq!(voiced.latency(), 0, "feed-forward path only");
 }
 
 #[test]
@@ -153,11 +154,19 @@ fn region_properties() {
     let mut r = Oversampled2x::front(Oversampled2x::nested(RateSpy(0.0)));
     r.prepare(48_000.0);
     assert_eq!(r.inner.inner.0, 192_000.0, "4× at the interior");
-    // Latency from structure: the forge arithmetic.
+    // Latency from structure: a 4× stack's arithmetic.
     let r = Oversampled2x::front(Oversampled2x::nested(Gain(1.0)));
-    assert_eq!(r.latency_samples(), 84, "66 + 36/2 computed, not pinned");
-    assert_eq!(Oversampled2x::front(Gain(1.0)).latency_samples(), 66);
-    assert_eq!(Oversampled2x::nested(Gain(1.0)).latency_samples(), 36);
+    assert_eq!(r.latency(), 84, "66 + 36/2 computed, not pinned");
+    assert_eq!(Oversampled2x::front(Gain(1.0)).latency(), 66);
+    assert_eq!(Oversampled2x::nested(Gain(1.0)).latency(), 36);
+    // Tail through a region: the interior's tail at the outer rate
+    // (rounded up) plus the pair's own ring-out.
+    assert_eq!(Oversampled2x::front(Gain(1.0)).tail(), Tail::Samples(66));
+    assert_eq!(
+        Oversampled2x::front(Late::new(9)).tail(),
+        Tail::Samples(66 + 5),
+        "9 interior samples are 4.5 outer, rounded up"
+    );
     // Unity passthrough sanity at the join of both presets.
     let mut r = Oversampled2x::front(Gain(1.0));
     r.prepare(48_000.0);
@@ -271,10 +280,9 @@ fn ms_adapter_is_exact_in_domain() {
 
 #[test]
 fn control_properties() {
-    use stave_dsp::{ControlRoute, Router, Source};
+    use stave_dsp::{Full, Route, Router, Source};
     struct Smooth(f32);
-    impl Source for Smooth {
-        fn prepare(&mut self, _r: f32) {}
+    impl Stage for Smooth {
         fn reset(&mut self) {
             self.0 = 0.0;
         }
@@ -282,6 +290,8 @@ fn control_properties() {
             self.0 += 0.5 * (d.abs() - self.0);
             self.0
         }
+    }
+    impl Source for Smooth {
         fn state(&self) -> f32 {
             self.0
         }
@@ -293,18 +303,27 @@ fn control_properties() {
         Gain,
         Cutoff,
     }
-    let mut r: Router<Smooth, Inlet, 2, 4> = Router::new([Smooth(0.0), Smooth(0.0)]);
+    let mut r: Router<Smooth, Inlet, 2, 2> = Router::new([Smooth(0.0), Smooth(0.0)]);
     r.prepare(48_000.0);
-    assert!(r.push_route(ControlRoute {
+    let gain = Route {
         source: 0,
         target: Inlet::Gain,
-        amount: -0.5
-    }));
-    assert!(r.push_route(ControlRoute {
-        source: 1,
-        target: Inlet::Cutoff,
-        amount: 1.0
-    }));
+        amount: -0.5,
+    };
+    assert_eq!(r.push_route(gain), Ok(()));
+    assert_eq!(
+        r.push_route(Route {
+            source: 1,
+            target: Inlet::Cutoff,
+            amount: 1.0
+        }),
+        Ok(())
+    );
+    assert_eq!(
+        r.push_route(gain),
+        Err(Full),
+        "capacity is reported, not hidden"
+    );
     let states = r.tick_states(&[1.0, 0.5]);
     assert_eq!(states, [0.5, 0.25], "sources advance from their detectors");
     let wiring: Vec<_> = r.routes().map(|e| (e.source, e.target, e.amount)).collect();
@@ -322,8 +341,8 @@ fn control_properties() {
 
 #[test]
 fn param_and_detector_sources_are_one_class() {
-    use stave_dsp::{ControlRoute, EnvelopeFollower, EnvelopeTimes, Router, SmoothedParam, Source};
-    // Doctrine 3 as structure: the class has two KINDS behind one
+    use stave_dsp::{EnvelopeFollower, EnvelopeTimes, Route, Router, SmoothedParam, Source};
+    // The class has two KINDS behind one
     // surface — writer-driven (param ramps) and program-driven
     // (detectors) — so a route from a knob and a route from an
     // envelope are the same data. Mixing kinds in one Router is a
@@ -332,25 +351,27 @@ fn param_and_detector_sources_are_one_class() {
         Param(SmoothedParam),
         Det(EnvelopeFollower),
     }
-    impl Source for Kind {
-        fn prepare(&mut self, r: f32) {
+    impl Stage for Kind {
+        fn prepare(&mut self, sample_rate: f32) {
             match self {
-                Kind::Param(p) => Source::prepare(p, r),
-                Kind::Det(d) => Source::prepare(d, r),
+                Kind::Param(p) => p.prepare(sample_rate),
+                Kind::Det(d) => d.prepare(sample_rate),
             }
         }
         fn reset(&mut self) {
             match self {
-                Kind::Param(p) => Source::reset(p),
-                Kind::Det(d) => Source::reset(d),
+                Kind::Param(p) => p.reset(),
+                Kind::Det(d) => d.reset(),
             }
         }
         fn tick(&mut self, det: f32) -> f32 {
             match self {
-                Kind::Param(p) => Source::tick(p, det),
-                Kind::Det(d) => Source::tick(d, det),
+                Kind::Param(p) => p.tick(det),
+                Kind::Det(d) => d.tick(det),
             }
         }
+    }
+    impl Source for Kind {
         fn state(&self) -> f32 {
             match self {
                 Kind::Param(p) => Source::state(p),
@@ -364,7 +385,8 @@ fn param_and_detector_sources_are_one_class() {
         Gain,
     }
     let mut knob = SmoothedParam::new(0.0);
-    knob.prepare(48_000.0, 0.005);
+    knob.prepare(48_000.0);
+    knob.set_time_ms(5.0);
     knob.set_target(1.0); // the block-rate write — the knob's word
     let mut det = EnvelopeFollower::new(EnvelopeTimes {
         attack_ms: 1.0,
@@ -373,16 +395,18 @@ fn param_and_detector_sources_are_one_class() {
     });
     det.prepare(48_000.0);
     let mut r: Router<Kind, Inlet, 2, 4> = Router::new([Kind::Param(knob), Kind::Det(det)]);
-    assert!(r.push_route(ControlRoute {
+    r.push_route(Route {
         source: 0,
         target: Inlet::Depth,
-        amount: 1.0
-    }));
-    assert!(r.push_route(ControlRoute {
+        amount: 1.0,
+    })
+    .unwrap();
+    r.push_route(Route {
         source: 1,
         target: Inlet::Gain,
-        amount: -0.5
-    }));
+        amount: -0.5,
+    })
+    .unwrap();
     // The distinguishing invariant: the param source glides to its WRITTEN
     // target no matter what program detector it is fed; the detector
     // source follows the program. Feed both a hot program.

@@ -19,7 +19,7 @@
 //! Output is the inverted plate swing `(Vpk0 − Vpk)`, scaled by the
 //! [`LevelPolicy`].
 //!
-//! **Rate contract:** `prepare()` takes the rate `process_sample` runs at
+//! **Rate contract:** `prepare()` takes the rate `tick` runs at
 //! — N× the host rate inside an N× oversampler, or the cathode's time
 //! constant is off by N.
 
@@ -30,6 +30,7 @@ use crate::circuit::devices::triode::dempwolf::Dempwolf;
 use crate::circuit::devices::triode::koren::Koren;
 use crate::circuit::methods::load_line::LoadLine;
 use crate::circuit::methods::newton::NewtonSettings;
+use crate::kernel::node::{Stage, Tail};
 
 /// Koren constants + circuit. Defaults are a classic 12AX7 gain stage
 /// (300 V supply, 100 kΩ plate load, −1.5 V grid bias).
@@ -140,7 +141,7 @@ pub struct Triode {
     // — the stage compresses, then recovers with the RC time constant. This
     // is the core living/responsive tube behaviour and the basis of a
     // vari-mu / tube-comp character. None under `Bias::Fixed`.
-    fs: f64,
+    sample_rate: f64,
     vk: f64,  // cathode voltage state
     vk0: f64, // quiescent cathode voltage (= −grid_bias)
     rk: f64,  // cathode resistance (sets bias from current)
@@ -186,7 +187,7 @@ impl Triode {
             vpk0: p.supply_v * 0.7,
             extra_bias: 0.0,
             external_bias: 0.0,
-            fs: 48_000.0,
+            sample_rate: 48_000.0,
             vk: 0.0,
             vk0: 0.0,
             rk: 0.0,
@@ -239,23 +240,9 @@ impl Triode {
         self.cathode_coeff = match self.bias {
             Bias::Fixed => 0.0,
             Bias::Cathode { bypass_farads } => {
-                1.0 - (-1.0 / (self.rk * bypass_farads * self.fs)).exp()
+                1.0 - (-1.0 / (self.rk * bypass_farads * self.sample_rate)).exp()
             }
         };
-    }
-
-    pub fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.fs = sample_rate as f64;
-        self.recompute_operating_point();
-    }
-
-    pub fn reset(&mut self) {
-        self.external_bias = 0.0;
-        self.cathode_shift = 0.0;
-        self.extra_bias = 0.0;
-        self.vk = self.vk0;
-        self.adaa.reset();
     }
 
     /// Instantaneous gain reduction (dB, ≤ 0) from the current bias drift —
@@ -341,7 +328,7 @@ impl Triode {
     /// The affine frame mapping normalised input to the tabulated curve:
     /// vg = (grid_bias − extra_bias) + grid_drive·x, output × output_scale.
     /// This is the `Modulation`-shaped surface program-dependent dynamics
-    /// re-point. (`process_sample` constructs it inline for borrow
+    /// re-point. (`tick` constructs it inline for borrow
     /// disjointness with the ADAA state; this accessor serves tests.)
     #[cfg_attr(not(test), allow(dead_code))]
     #[inline]
@@ -512,49 +499,6 @@ impl Triode {
 
     /// Process one normalised sample (−1..1) → saturated sample.
     ///
-    /// Evaluates the (tabulated) physical transfer through antiderivative
-    /// anti-aliasing, then advances the cathode self-bias state. The
-    /// nonlinearity is LUT-ADAA'd (cheap, no per-sample solve); the cathode
-    /// bias is a slow one-pole feedback of the plate current, so it adds
-    /// living/responsive dynamics without breaking the antialiasing.
-    #[inline]
-    pub fn process_sample(&mut self, input: f32) -> f32 {
-        let x0 = input as f64;
-        // The frame (bias/drive/scale) is frozen for this evaluation; the
-        // cathode update below commits its bias shift AFTER, between
-        // difference quotients — the ordering ADAA requires.
-        let y = {
-            let framed = self.curve.framed(
-                self.p.grid_bias - self.extra_bias,
-                self.grid_drive,
-                self.output_scale,
-            );
-            if self.adaa_on {
-                self.adaa.process(&framed, x0)
-            } else {
-                self.adaa.advance(x0);
-                framed.f(x0)
-            }
-        };
-
-        // Cathode self-bias: track the cathode current (plate plus grid)
-        // through the RC and drift the operating point. The tube curve's
-        // convexity and grid conduction rectify the signal, so the averaged
-        // current (hence bias) rises with program level → compression that
-        // recovers with `cathode_tau_ms`.
-        if let Bias::Cathode { .. } = self.bias {
-            let input = self.vg_of(x0);
-            let vpk = self.vpk0 - self.core_at(input);
-            let ip = (self.p.supply_v - vpk) / self.p.r_plate;
-            let ig = GRID.grid_current(grid_volts_at(&self.p, input)).0;
-            let vk_target = (ip + ig) * self.rk;
-            self.vk += (vk_target - self.vk) * self.cathode_coeff;
-            self.cathode_shift = self.vk - self.vk0;
-            self.extra_bias = self.external_bias + self.cathode_shift;
-        }
-        y as f32
-    }
-
     /// Test/inspection: quiescent plate voltage.
     pub fn operating_point(&self) -> f64 {
         self.vpk0
@@ -663,6 +607,77 @@ pub(crate) fn grid_amps_at(p: &TriodeParams, input: f64) -> f64 {
 #[inline]
 pub(crate) fn core_transfer_at(p: &TriodeParams, vpk0: f64, input: f64) -> f64 {
     vpk0 - solve_load_line(p, grid_volts_at(p, input), vpk0)
+}
+
+impl Stage for Triode {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate as f64;
+        self.recompute_operating_point();
+    }
+
+    fn reset(&mut self) {
+        self.external_bias = 0.0;
+        self.cathode_shift = 0.0;
+        self.extra_bias = 0.0;
+        self.vk = self.vk0;
+        self.adaa.reset();
+    }
+
+    /// Evaluates the (tabulated) physical transfer through antiderivative
+    /// anti-aliasing, then advances the cathode self-bias state. The
+    /// nonlinearity is LUT-ADAA'd (cheap, no per-sample solve); the cathode
+    /// bias is a slow one-pole feedback of the plate current, so it adds
+    /// living/responsive dynamics without breaking the antialiasing.
+    #[inline]
+    fn tick(&mut self, input: f32) -> f32 {
+        let x0 = input as f64;
+        // The frame (bias/drive/scale) is frozen for this evaluation; the
+        // cathode update below commits its bias shift AFTER, between
+        // difference quotients — the ordering ADAA requires.
+        let y = {
+            let framed = self.curve.framed(
+                self.p.grid_bias - self.extra_bias,
+                self.grid_drive,
+                self.output_scale,
+            );
+            if self.adaa_on {
+                self.adaa.tick(&framed, x0)
+            } else {
+                self.adaa.push(x0);
+                framed.f(x0)
+            }
+        };
+
+        // Cathode self-bias: track the cathode current (plate plus grid)
+        // through the RC and drift the operating point. The tube curve's
+        // convexity and grid conduction rectify the signal, so the averaged
+        // current (hence bias) rises with program level → compression that
+        // recovers with `cathode_tau_ms`.
+        if let Bias::Cathode { .. } = self.bias {
+            let input = self.vg_of(x0);
+            let vpk = self.vpk0 - self.core_at(input);
+            let ip = (self.p.supply_v - vpk) / self.p.r_plate;
+            let ig = GRID.grid_current(grid_volts_at(&self.p, input)).0;
+            let vk_target = (ip + ig) * self.rk;
+            self.vk += (vk_target - self.vk) * self.cathode_coeff;
+            self.cathode_shift = self.vk - self.vk0;
+            self.extra_bias = self.external_bias + self.cathode_shift;
+        }
+        y as f32
+    }
+
+    /// The cathode RC under `Bias::Cathode` (an upper bound: the loop
+    /// factor 1 + gm·Rk shortens the observed recovery); memoryless
+    /// under `Bias::Fixed`.
+    fn tail(&self) -> Tail {
+        match self.bias {
+            Bias::Fixed => Tail::None,
+            Bias::Cathode { bypass_farads } => {
+                Tail::from_time_constant(self.rk * bypass_farads, self.sample_rate as f32)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

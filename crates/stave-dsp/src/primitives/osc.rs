@@ -1,37 +1,73 @@
-//! `Osc` — the audio-rate oscillator leaf (`Lfo` is control-rate;
-//! this one is what you HEAR). A phase accumulator with f64 phase —
-//! pitch is exactness, and f32 increments drift audibly over a held
-//! note (the f64-where-exactness-demands rule) — producing:
+//! `Osc` — the audio-rate oscillator (`Lfo` is the control-rate one)
+//! — and [`Waveform`], the shape vocabulary both share. A phase
+//! accumulator with f64 phase (pitch is exactness, and f32 increments
+//! drift audibly over a held note), producing:
 //! * `Sine` — pure, THD at the float floor;
+//! * `Triangle` — naive; its harmonics fall at 12 dB/octave;
 //! * `Saw` / `Square` — polyBLEP band-limited: each discontinuity is
 //!   smoothed over the two samples around it by the polynomial
 //!   residual. Measured at 2 kHz/48 k (the in-module invariant): exposed
 //!   midband aliases (< 8 kHz, where naive saws audibly ring) drop
 //!   ≥ 20 dB; the worst near-Nyquist fold drops 12.4 dB — first-
 //!   order BLEP rejection grows as the alias departs Nyquist, and
-//!   that residual sits where ears are masked. Serum-class cleanness
-//!   is a wavetable's job, not this
-//!   leaf's.
+//!   that residual sits where ears are masked. Wavetable-grade
+//!   cleanness is a wavetable's job, not this leaf's.
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum OscShape {
+use crate::kernel::node::{Stage, Tail};
+
+/// The periodic waveforms every oscillator and LFO draws from.
+///
+/// Phase is in **cycles**, `0 ≤ t < 1`, everywhere in stave-dsp. At
+/// `t = 0`: the sine is 0 and rising, the triangle is at −1 and rising
+/// to +1 at `t = ½`, the saw ramps −1 → +1 over the cycle, and the
+/// square is +1 for the first half (in phase with the sine).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum Waveform {
+    #[default]
     Sine,
+    Triangle,
     Saw,
     Square,
 }
 
+impl Waveform {
+    /// The naive (not band-limited) waveform at phase `t` cycles —
+    /// exact for control-rate use; [`Osc`] band-limits the edges.
+    #[inline]
+    pub fn eval(self, t: f32) -> f32 {
+        let t = t.rem_euclid(1.0);
+        match self {
+            Waveform::Sine => (core::f32::consts::TAU * t).sin(),
+            Waveform::Triangle => {
+                if t < 0.5 {
+                    4.0 * t - 1.0
+                } else {
+                    3.0 - 4.0 * t
+                }
+            }
+            Waveform::Saw => 2.0 * t - 1.0,
+            Waveform::Square => {
+                if t < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+        }
+    }
+}
+
+/// The audio-rate oscillator: a generator [`Stage`] (its input is
+/// ignored). Phase is `f64` cycles.
 #[derive(Copy, Clone, Debug)]
 pub struct Osc {
-    shape: OscShape,
-    /// Normalized phase 0..1 (f64: pitch is exactness).
+    waveform: Waveform,
+    hz: f32,
+    sample_rate: f32,
     phase: f64,
-    /// Per-sample phase increment = hz / sr.
     inc: f64,
 }
 
-/// The polyBLEP residual: the two-sample polynomial correction
-/// subtracted around each discontinuity. `t` is the phase 0..1,
-/// `dt` the per-sample increment.
 #[inline]
 fn polyblep(t: f64, dt: f64) -> f64 {
     if t < dt {
@@ -46,49 +82,75 @@ fn polyblep(t: f64, dt: f64) -> f64 {
 }
 
 impl Osc {
-    pub fn new(shape: OscShape) -> Self {
+    pub fn new(waveform: Waveform) -> Self {
         Self {
-            shape,
+            waveform,
+            hz: 0.0,
+            sample_rate: 48_000.0,
             phase: 0.0,
             inc: 0.0,
         }
     }
 
-    pub fn set_shape(&mut self, shape: OscShape) {
-        self.shape = shape;
+    pub fn set_waveform(&mut self, waveform: Waveform) {
+        self.waveform = waveform;
     }
 
-    /// Set the frequency (per-sample cheap: one divide).
     #[inline]
-    pub fn set_hz(&mut self, hz: f32, sr: f32) {
-        debug_assert!(sr > 0.0, "sample rate must be positive");
-        self.inc = f64::from(hz) / f64::from(sr);
+    pub fn set_hz(&mut self, hz: f32) {
+        self.hz = hz;
+        self.inc = f64::from(hz) / f64::from(self.sample_rate);
     }
 
-    /// Restart the cycle (note-on phase discipline: a voice that
-    /// resets phase sounds the same attack every time — reproducible
-    /// by construction).
-    pub fn reset(&mut self) {
+    /// Phase in cycles, `0 ≤ t < 1`.
+    pub fn phase(&self) -> f64 {
+        self.phase
+    }
+
+    pub fn set_phase(&mut self, cycles: f64) {
+        self.phase = cycles.rem_euclid(1.0);
+    }
+}
+
+impl Stage for Osc {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_hz(self.hz);
+        self.reset();
+    }
+    fn reset(&mut self) {
         self.phase = 0.0;
     }
-
     #[inline]
-    pub fn tick(&mut self) -> f32 {
+    fn tick(&mut self, _: f32) -> f32 {
         let t = self.phase;
         self.phase += self.inc;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
         }
         let dt = self.inc;
-        let y = match self.shape {
-            OscShape::Sine => (core::f64::consts::TAU * t).sin(),
-            OscShape::Saw => (2.0 * t - 1.0) - polyblep(t, dt),
-            OscShape::Square => {
+        let y = match self.waveform {
+            Waveform::Sine => (core::f64::consts::TAU * t).sin(),
+            // Harmonics fall at 12 dB/octave: the naive form is used.
+            Waveform::Triangle => {
+                if t < 0.5 {
+                    4.0 * t - 1.0
+                } else {
+                    3.0 - 4.0 * t
+                }
+            }
+            Waveform::Saw => (2.0 * t - 1.0) - polyblep(t, dt),
+            Waveform::Square => {
                 let raw = if t < 0.5 { 1.0 } else { -1.0 };
                 raw + polyblep(t, dt) - polyblep((t + 0.5).rem_euclid(1.0), dt)
             }
         };
         y as f32
+    }
+    /// A generator: it never stops.
+    fn tail(&self) -> Tail {
+        Tail::Infinite
     }
 }
 
@@ -110,27 +172,21 @@ mod tests {
         (re * re + im * im).sqrt() / n
     }
 
-    fn render(shape: OscShape, hz: f32, n: usize, blep: bool) -> Vec<f32> {
+    fn render(shape: Waveform, hz: f32, n: usize, blep: bool) -> Vec<f32> {
         let mut o = Osc::new(shape);
-        o.set_hz(hz, SR);
+        o.prepare(SR);
+        o.set_hz(hz);
         (0..n)
             .map(|_| {
                 if blep {
-                    o.tick()
+                    o.tick(0.0)
                 } else {
                     // The naive comparison: same accumulator, no BLEP.
                     let t = o.phase;
                     o.phase = (o.phase + o.inc).rem_euclid(1.0);
                     match shape {
-                        OscShape::Sine => (core::f64::consts::TAU * t).sin() as f32,
-                        OscShape::Saw => (2.0 * t - 1.0) as f32,
-                        OscShape::Square => {
-                            if t < 0.5 {
-                                1.0
-                            } else {
-                                -1.0
-                            }
-                        }
+                        Waveform::Sine => (core::f64::consts::TAU * t).sin() as f32,
+                        other => other.eval(t as f32),
                     }
                 }
             })
@@ -141,7 +197,12 @@ mod tests {
     fn pitch_is_exact() {
         // The fundamental dominates at exactly the dialed hz, and a
         // detuned probe half a semitone off reads ≥ 30 dB down.
-        for shape in [OscShape::Sine, OscShape::Saw, OscShape::Square] {
+        for shape in [
+            Waveform::Sine,
+            Waveform::Triangle,
+            Waveform::Saw,
+            Waveform::Square,
+        ] {
             let w = render(shape, 440.0, 48_000, true);
             let on = mag_at(&w, 440.0);
             let off = mag_at(&w, 440.0 * 1.03);
@@ -154,7 +215,7 @@ mod tests {
 
     #[test]
     fn sine_harmonics_are_at_the_floor() {
-        let w = render(OscShape::Sine, 997.0, 48_000, true);
+        let w = render(Waveform::Sine, 997.0, 48_000, true);
         let h1 = mag_at(&w, 997.0);
         let h2 = mag_at(&w, 2.0 * 997.0);
         let h3 = mag_at(&w, 3.0 * 997.0);
@@ -176,8 +237,8 @@ mod tests {
         // masked; the EXPOSED midband folds (< 8 kHz — where naive
         // saws audibly ring) win ≥ 20 dB.
         let (f0, fs) = (2_093.0f64, f64::from(SR));
-        let naive = render(OscShape::Saw, f0 as f32, 48_000, false);
-        let blep = render(OscShape::Saw, f0 as f32, 48_000, true);
+        let naive = render(Waveform::Saw, f0 as f32, 48_000, false);
+        let blep = render(Waveform::Saw, f0 as f32, 48_000, true);
         let mut alias_freqs = Vec::new();
         for k in 1..200 {
             let f = k as f64 * f0;

@@ -1,9 +1,59 @@
-//! Conformance: the FIR half-band oversampler against the world-class
-//! limits — flatness, transparency, latency exactness, and alias rejection
-//! versus the Butterworth IIR it replaces.
+//! Conformance: `Oversampled2x` (the FIR half-band pairs) against the
+//! world-class limits — flatness, transparency, latency exactness, and
+//! alias rejection versus a Butterworth IIR oversampler.
 
-use stave_dsp::{Oversampler2x, Oversampler2xFir, Oversampler2xFirInner};
+use stave_dsp::{Biquad, FilterSpec, Oversampled2x, Stage};
 use stave_measure::tone_test::ToneTest;
+
+/// The interior that passes its input through.
+struct Identity;
+impl Stage for Identity {
+    fn tick(&mut self, x: f32) -> f32 {
+        x
+    }
+}
+
+/// The Butterworth IIR 2× oversampler the FIR pairs replaced: a 12th-order
+/// cascade at 0.45·fs on each side of the interior — the reference the
+/// rejection claim is measured against.
+struct IirOversampler {
+    up: [Biquad; 6],
+    down: [Biquad; 6],
+}
+
+impl IirOversampler {
+    fn new(sample_rate: f32) -> Self {
+        let section = |k: usize| {
+            let theta = (2.0 * k as f32 + 1.0) * core::f32::consts::PI / 24.0;
+            let mut bq = Biquad::default();
+            bq.prepare(2.0 * sample_rate);
+            bq.set(FilterSpec::Lowpass {
+                hz: 0.45 * sample_rate,
+                q: 1.0 / (2.0 * theta.cos()),
+            });
+            bq
+        };
+        Self {
+            up: core::array::from_fn(section),
+            down: core::array::from_fn(section),
+        }
+    }
+
+    fn run(stages: &mut [Biquad; 6], mut x: f32) -> f32 {
+        for s in stages.iter_mut() {
+            x = s.tick(x);
+        }
+        x
+    }
+
+    fn tick_with(&mut self, x: f32, mut inner: impl FnMut(f32) -> f32) -> f32 {
+        let u0 = Self::run(&mut self.up, 2.0 * x);
+        let u1 = Self::run(&mut self.up, 0.0);
+        let (p0, p1) = (inner(u0), inner(u1));
+        let _ = Self::run(&mut self.down, p0);
+        Self::run(&mut self.down, p1)
+    }
+}
 
 /// Check: passband deviation of the full up+down round trip, 20 Hz–20 kHz,
 /// at the TIGHTEST rate (44.1 kHz — 20 kHz is 0.907 of Nyquist there).
@@ -20,7 +70,7 @@ fn fir_round_trip_flat_to_20k_at_44k1_and_48k() {
         let mut worst = 0.0f64;
         let mut worst_hz = 0.0f64;
         for &m in &bins {
-            let mut os = Oversampler2xFir::new();
+            let mut os = Oversampled2x::front(Identity);
             os.prepare(fs as f32);
             let g = ToneTest {
                 bin: m,
@@ -29,7 +79,7 @@ fn fir_round_trip_flat_to_20k_at_44k1_and_48k() {
                 amplitude: 0.5,
                 warmup_windows: 1,
             }
-            .gain_db(|x: f32| os.process_one(x, |s| s));
+            .gain_db(|x: f32| os.tick(x));
             let hz = m as f64 * fs / n as f64;
             if g.abs() > worst {
                 worst = g.abs();
@@ -46,16 +96,16 @@ fn fir_round_trip_flat_to_20k_at_44k1_and_48k() {
 
 /// Check: identity round trip through the NESTED 4× stack is transparent —
 /// audible-band non-harmonic residue ≤ −110 dB on a mid-band tone, and
-/// the total latency is exactly 99 samples (66 outer + 33 inner).
+/// the total latency is exactly the 84 samples the stack reports
+/// (66 outer + 18 inner, at the base rate).
 #[test]
 fn nested_4x_is_transparent_with_exact_integer_latency() {
     let fs = 48_000.0;
     let n = 8192usize;
     let m = 171usize; // ~1002 Hz, bin-centred
-    let mut outer = Oversampler2xFir::new();
-    outer.prepare(fs as f32);
-    let mut inner = Oversampler2xFirInner::new();
-    inner.prepare(fs as f32 * 2.0);
+    let stack = || Oversampled2x::front(Oversampled2x::nested(Identity));
+    let mut os = stack();
+    os.prepare(fs as f32);
     let r = ToneTest {
         bin: m,
         window: n,
@@ -63,7 +113,7 @@ fn nested_4x_is_transparent_with_exact_integer_latency() {
         amplitude: 0.5,
         warmup_windows: 1,
     }
-    .alias(|x: f32| outer.process_one(x, |a| inner.process_one(a, |s| s)));
+    .alias(|x: f32| os.tick(x));
     println!("nested 4× identity: audible floor {:.1} dB", r.audible_db);
     assert!(
         r.audible_db < -110.0,
@@ -71,18 +121,17 @@ fn nested_4x_is_transparent_with_exact_integer_latency() {
         r.audible_db
     );
 
-    // Latency: impulse peaks at exactly 66 + 33 = 99 base samples. A
-    // half-sample error would comb every wet/dry mix downstream.
-    let expected =
-        Oversampler2xFir::latency_samples() + Oversampler2xFirInner::latency_samples_base();
-    let mut outer = Oversampler2xFir::new();
-    outer.prepare(fs as f32);
-    let mut inner = Oversampler2xFirInner::new();
-    inner.prepare(fs as f32 * 2.0);
+    // Latency: the impulse peaks at exactly the reported 66 + 18 = 84
+    // base samples. A half-sample error would comb every wet/dry mix
+    // downstream.
+    let mut os = stack();
+    os.prepare(fs as f32);
+    let expected = os.latency() as usize;
+    assert_eq!(expected, 84);
     let mut peak = (0usize, 0.0f32);
     for i in 0..4 * expected {
         let x = if i == 0 { 1.0 } else { 0.0 };
-        let y = outer.process_one(x, |a| inner.process_one(a, |s| s));
+        let y = os.tick(x);
         if y.abs() > peak.1 {
             peak = (i, y.abs());
         }
@@ -117,24 +166,28 @@ fn fir_decimator_rejects_the_audible_fold_band() {
         let f_us = k_us as f64 * fs / n as f64;
         let fold_hz = fs - f_us;
         let run = |fir: bool| -> f64 {
-            let mut osf = Oversampler2xFir::new();
-            osf.prepare(fs as f32);
-            let mut osb = Oversampler2x::new();
-            osb.prepare(fs as f32);
-            // Inner closure: pass the signal AND add the ultrasonic tone
+            // The interior passes the signal AND adds the ultrasonic tone
             // (phase-continuous via its own inner-rate counter).
-            let mut i_inner = 0usize;
-            let mut inner = move |x: f32| -> f32 {
-                let t = i_inner as f64 / (2.0 * fs);
-                i_inner += 1;
-                x + (amp * (2.0 * core::f64::consts::PI * f_us * t).sin()) as f32
+            let mut osf = Oversampled2x::front(Inject {
+                f_us,
+                amp,
+                inner_rate: 2.0 * fs,
+                i: 0,
+            });
+            osf.prepare(fs as f32);
+            let mut osb = IirOversampler::new(fs as f32);
+            let mut inject = Inject {
+                f_us,
+                amp,
+                inner_rate: 2.0 * fs,
+                i: 0,
             };
             let out: Vec<f64> = (0..2 * n)
                 .map(|_| {
                     if fir {
-                        osf.process_one(0.0, &mut inner) as f64
+                        osf.tick(0.0) as f64
                     } else {
-                        osb.process_one(0.0, &mut inner) as f64
+                        osb.tick_with(0.0, |x| inject.tick(x)) as f64
                     }
                 })
                 .skip(n)
@@ -152,5 +205,20 @@ fn fir_decimator_rejects_the_audible_fold_band() {
             fir_db < iir_db - 25.0,
             "FIR should beat IIR by ≥25 dB in the audible fold band: {fir_db:.1} vs {iir_db:.1}"
         );
+    }
+}
+
+/// Adds a tone at `f_us` inside the oversampled domain.
+struct Inject {
+    f_us: f64,
+    amp: f64,
+    inner_rate: f64,
+    i: usize,
+}
+impl Stage for Inject {
+    fn tick(&mut self, x: f32) -> f32 {
+        let t = self.i as f64 / self.inner_rate;
+        self.i += 1;
+        x + (self.amp * (2.0 * core::f64::consts::PI * self.f_us * t).sin()) as f32
     }
 }

@@ -277,25 +277,30 @@ fn envelope_compression_flattens_program_sidebands() {
 /// Env-scaling gates them with program heat (ripple ∝ current draw).
 #[test]
 fn lfo_driver_gain_route_makes_gated_ghost_sidebands() {
-    use stave_dsp::{Chain, Driver, ModMatrix, Route, StageKind, Target};
+    use stave_dsp::{Chain, Driver, ModMatrix, Route, StageKind, StageTarget, Target};
     let f_lfo = 32.0 * FS / N as f64; // bin-centred 46.875 Hz
     let render = |amount: f32, amp: f64| -> Vec<f64> {
         let mut ch = Chain::<2>::new();
-        let id = ch.push(StageKind::Curve(CurveStage::from_fn(
-            -4.0,
-            4.0,
-            0.0,
-            shapes::knee(2.0),
-        )));
+        let id = ch
+            .push(StageKind::Curve(CurveStage::from_fn(
+                -4.0,
+                4.0,
+                0.0,
+                shapes::knee(2.0),
+            )))
+            .unwrap();
         ch.prepare(FS as f32);
         let mut mm = ModMatrix::<1, 2>::new([Driver::lfo_env_scaled(f_lfo as f32, 5.0, 60.0)]);
         mm.prepare(FS as f32);
         mm.push_route(Route {
-            driver: 0,
-            stage: id,
-            target: Target::Gain,
+            source: 0,
+            target: StageTarget {
+                stage: id,
+                target: Target::Gain,
+            },
             amount,
-        });
+        })
+        .unwrap();
         let base = [(id, Frame::NEUTRAL)];
         capture(amp, |x| {
             mm.tick(&[x.abs() as f32], &mut ch, &base, &[]);
@@ -353,7 +358,7 @@ fn lfo_driver_gain_route_makes_gated_ghost_sidebands() {
 /// energy at 1.5·f0 / 2.5·f0, between the integer harmonics.
 #[test]
 fn sub_octave_populates_the_half_integer_comb() {
-    use stave_dsp::{Chain, Driver, ModMatrix, Route, StageKind, SubOctave, Target};
+    use stave_dsp::{Chain, Driver, ModMatrix, Route, StageKind, StageTarget, SubOctave, Target};
     // --- Signal role: program + sub mix ---
     let mut sub = SubOctave::new();
     sub.prepare(FS as f32);
@@ -385,21 +390,26 @@ fn sub_octave_populates_the_half_integer_comb() {
 
     // --- Driver role: sub-rate gain modulation between the harmonics ---
     let mut ch = Chain::<2>::new();
-    let id = ch.push(StageKind::Curve(CurveStage::from_fn(
-        -4.0,
-        4.0,
-        0.0,
-        shapes::knee(2.0),
-    )));
+    let id = ch
+        .push(StageKind::Curve(CurveStage::from_fn(
+            -4.0,
+            4.0,
+            0.0,
+            shapes::knee(2.0),
+        )))
+        .unwrap();
     ch.prepare(FS as f32);
     let mut mm = ModMatrix::<1, 2>::new([Driver::sub()]);
     mm.prepare(FS as f32);
     mm.push_route(Route {
-        driver: 0,
-        stage: id,
-        target: Target::Gain,
+        source: 0,
+        target: StageTarget {
+            stage: id,
+            target: Target::Gain,
+        },
         amount: 0.6,
-    });
+    })
+    .unwrap();
     let base = [(id, Frame::NEUTRAL)];
     let out = capture(0.4, |x| {
         // Signed signal as the divider's detector.
@@ -446,9 +456,9 @@ fn feedback_chain_bifurcation_scan() {
                 drive: 3.0,
                 gain: 1.0,
             });
-            let id_a = ch.push(StageKind::Curve(a));
+            let id_a = ch.push(StageKind::Curve(a)).unwrap();
             if reactive {
-                ch.push(StageKind::Slew(Slew::new(2.0, 2.0)));
+                ch.push(StageKind::Slew(Slew::new(2.0, 2.0))).unwrap();
             }
             let mut b = CurveStage::from_fn(-4.0, 4.0, 0.0, shapes::knee(4.0));
             b.set_pending(Frame {
@@ -456,7 +466,7 @@ fn feedback_chain_bifurcation_scan() {
                 drive: 1.2,
                 gain: 1.0,
             });
-            let id_b = ch.push(StageKind::Curve(b));
+            let id_b = ch.push(StageKind::Curve(b)).unwrap();
             ch.set_feedback(beta, id_b, id_a, None);
             ch.prepare(FS as f32);
             let out = capture(0.7, |x| ch.tick(x as f32) as f64);

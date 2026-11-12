@@ -70,22 +70,23 @@ impl Adaa {
         self.x2 = 0.0;
     }
 
-    /// Anti-aliased evaluation of `shape` at `x0`; advances state.
+    /// One anti-aliased sample: `shape` evaluated at `x0` through the
+    /// antiderivative difference quotient; the history moves on.
     #[inline]
-    pub fn process(&mut self, shape: &impl AdaaShape, x0: f64) -> f64 {
+    pub fn tick(&mut self, shape: &impl AdaaShape, x0: f64) -> f64 {
         let y = match self.order {
             AdaaOrder::First => self.adaa1(shape, x0),
             AdaaOrder::Second => self.adaa2(shape, x0),
         };
-        self.advance(x0);
+        self.push(x0);
         y
     }
 
-    /// Advance the input history without evaluating — used by callers that
-    /// evaluated the shape directly (ADAA bypassed for A/B) so a later
+    /// Move the input history on without evaluating — for callers that
+    /// evaluated the shape directly (ADAA bypassed for A/B), so a later
     /// re-enable starts from consistent state.
     #[inline]
-    pub fn advance(&mut self, x0: f64) {
+    pub fn push(&mut self, x0: f64) {
         self.x2 = self.x1;
         self.x1 = x0;
     }
@@ -167,9 +168,9 @@ mod tests {
             let mut a = Adaa::new(order);
             for &dc in &[-0.7f64, -0.1, 0.25, 0.9] {
                 for _ in 0..4 {
-                    let _ = a.process(&fr, dc);
+                    let _ = a.tick(&fr, dc);
                 }
-                let y = a.process(&fr, dc);
+                let y = a.tick(&fr, dc);
                 let f = (3.0 * dc).tanh();
                 assert!(
                     (y - f).abs() < 1e-5,
@@ -189,17 +190,17 @@ mod tests {
             // sub-epsilon deltas — all must stay finite and bounded.
             for i in 0..64 {
                 let x = if i % 2 == 0 { 0.5 } else { -0.5 };
-                let y = a.process(&fr, x);
+                let y = a.tick(&fr, x);
                 assert!(
                     y.is_finite() && y.abs() < 4.0,
                     "order {order:?} period-2 blew up"
                 );
             }
             for _ in 0..8 {
-                let y = a.process(&fr, 0.31);
+                let y = a.tick(&fr, 0.31);
                 assert!(y.is_finite());
             }
-            let y = a.process(&fr, 0.31 + 1e-9);
+            let y = a.tick(&fr, 0.31 + 1e-9);
             assert!(y.is_finite() && (y - (4.0 * 0.31f64).tanh()).abs() < 1e-3);
         }
     }
@@ -221,9 +222,9 @@ mod tests {
             for i in 0..2 * n {
                 let x = 0.9 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin();
                 let y = if use_adaa {
-                    a.process(&fr, x)
+                    a.tick(&fr, x)
                 } else {
-                    a.advance(x);
+                    a.push(x);
                     fr.f(x)
                 };
                 if i >= n {

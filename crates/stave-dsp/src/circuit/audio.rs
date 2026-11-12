@@ -3,7 +3,7 @@
 //! reads its output's departure from the quiescent point in units of
 //! `full_scale_out_volts`. Subtracting the exact quiescent point removes
 //! the circuit's DC without filtering its lows.
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 
 /// A circuit that knows where its output quiescents with no input.
 pub trait Circuit: Stage {
@@ -40,8 +40,8 @@ impl<C: Circuit> AudioAdapter<C> {
 }
 
 impl<C: Circuit> Stage for AudioAdapter<C> {
-    fn prepare(&mut self, rate: f32) {
-        self.circuit.prepare(rate);
+    fn prepare(&mut self, sample_rate: f32) {
+        self.circuit.prepare(sample_rate);
         self.quiescent = self.circuit.quiescent_output_volts();
     }
 
@@ -56,11 +56,11 @@ impl<C: Circuit> Stage for AudioAdapter<C> {
         ((f64::from(volts) - self.quiescent) / self.config.full_scale_out_volts) as f32
     }
 
-    fn latency_samples(&self) -> u32 {
-        self.circuit.latency_samples()
+    fn latency(&self) -> u32 {
+        self.circuit.latency()
     }
 
-    fn tail_samples(&self) -> Option<u32> {
-        self.circuit.tail_samples()
+    fn tail(&self) -> Tail {
+        self.circuit.tail()
     }
 }

@@ -1,10 +1,8 @@
-//! Fixed integer-delay storage the kernel forms own: the Branch pad and the Loop history both need "hold a sample
-//! for exactly N ticks" — nothing fractional, nothing musical. The
-//! fractional, modulatable line lives in `primitives/time/delay.rs`; this
-//! is deliberately smaller so the kernel depends on nothing below it.
-
-extern crate alloc;
-use alloc::vec::Vec;
+//! Fixed integer-delay storage the kernel forms own: the Branch pad and
+//! the Loop history both need "hold a sample for exactly N ticks" —
+//! nothing fractional, nothing musical. The fractional, modulatable line
+//! is [`DelayLine`](crate::DelayLine); this is deliberately smaller so
+//! the kernel depends on nothing below it.
 
 pub(crate) struct Ring {
     buf: Vec<f32>,
@@ -21,7 +19,7 @@ impl Ring {
 
     /// Size for exactly `len` samples of delay (allocates — message
     /// thread). Flushes on every call.
-    pub(crate) fn prepare(&mut self, len: usize) {
+    pub(crate) fn allocate(&mut self, len: usize) {
         self.buf.clear();
         self.buf.resize(len, 0.0);
         self.idx = 0;
@@ -34,13 +32,13 @@ impl Ring {
 
     /// The sample written `len` ticks ago (the oldest). Callers that
     /// need read-before-write (Loop) peek, compute, then `push`.
-    /// Before `prepare` (empty ring) reads `0.0` — never a panic.
+    /// Before `allocate` (empty ring) reads `0.0` — never a panic.
     #[inline]
     pub(crate) fn delayed(&self) -> f32 {
         self.buf.get(self.idx).copied().unwrap_or(0.0)
     }
 
-    /// Store `x`; a no-op before `prepare` (empty ring).
+    /// Store `x`; a no-op before `allocate` (empty ring).
     #[inline]
     pub(crate) fn push(&mut self, x: f32) {
         if let Some(slot) = self.buf.get_mut(self.idx) {
@@ -60,7 +58,7 @@ mod tests {
     #[test]
     fn delays_by_exactly_len() {
         let mut r = Ring::new();
-        r.prepare(3);
+        r.allocate(3);
         for i in 0..16i32 {
             let y = r.delayed();
             r.push(i as f32);

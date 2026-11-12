@@ -4,22 +4,24 @@
 //! Voices that restart its phase at note-on read it at their own phase,
 //! faded in by an onset ramp.
 
-use core::f32::consts::TAU;
-
-use super::lfo::{Lfo, LfoShape};
+use super::lfo::Lfo;
 use super::random_walk::RandomWalk;
+use crate::kernel::control::Source;
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::osc::Waveform;
 
 /// Beats per cycle of each tempo division: 1/1, 1/2, 1/4, 1/8, 1/16,
 /// 1/4T, 1/8T.
 pub const SYNC_BEATS: [f32; 7] = [4.0, 2.0, 1.0, 0.5, 0.25, 2.0 / 3.0, 1.0 / 3.0];
 
+/// What a [`ModLfo`] draws: a periodic [`Waveform`], or a random walk at
+/// the same rate.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ModLfoShape {
-    Sine,
-    Triangle,
-    Saw,
-    Square,
+    Wave(Waveform),
+    /// Stepped renewal once per cycle.
     SampleHold,
+    /// Eased toward each renewal.
     Drift,
 }
 
@@ -27,29 +29,18 @@ impl ModLfoShape {
     /// In the order instruments list them (SINE, TRI, SAW, SQR, S&H, DRIFT).
     pub fn from_index(index: usize) -> Self {
         match index {
-            1 => Self::Triangle,
-            2 => Self::Saw,
-            3 => Self::Square,
+            1 => Self::Wave(Waveform::Triangle),
+            2 => Self::Wave(Waveform::Saw),
+            3 => Self::Wave(Waveform::Square),
             4 => Self::SampleHold,
             5 => Self::Drift,
-            _ => Self::Sine,
-        }
-    }
-
-    /// The oscillator shape; the random shapes have none.
-    pub fn basis(self) -> Option<LfoShape> {
-        match self {
-            Self::Sine => Some(LfoShape::Sine),
-            Self::Triangle => Some(LfoShape::Triangle),
-            Self::Saw => Some(LfoShape::Saw),
-            Self::Square => Some(LfoShape::Square),
-            Self::SampleHold | Self::Drift => None,
+            _ => Self::Wave(Waveform::Sine),
         }
     }
 }
 
-/// The rate: `free_hz`, or division `sync` (1-based into [`SYNC_BEATS`];
-/// 0 = free) at `tempo_bpm`.
+/// The LFO rate: `free_hz`, or the tempo division at `sync` (1-based
+/// into [`SYNC_BEATS`]; 0 = free).
 pub fn mod_lfo_hz(free_hz: f32, sync: usize, tempo_bpm: f32) -> f32 {
     match sync.checked_sub(1).and_then(|i| SYNC_BEATS.get(i)) {
         Some(beats) => (tempo_bpm / 60.0) / beats,
@@ -57,7 +48,7 @@ pub fn mod_lfo_hz(free_hz: f32, sync: usize, tempo_bpm: f32) -> f32 {
     }
 }
 
-/// A note's onset ramp, 0 → 1 over `rise_ms` (a player's vibrato fades in).
+/// The onset ramp: 0 → 1 over `rise_ms` from note-on.
 pub fn rise(age_samples: u32, rise_ms: f32, sample_rate: f32) -> f32 {
     if rise_ms <= 0.0 {
         1.0
@@ -75,68 +66,85 @@ pub struct ModLfo {
 }
 
 impl ModLfo {
-    /// `walk_interval_ms` and `seed` start the random walk (its interval
-    /// follows the rate from the first `set`).
     pub fn new(walk_interval_ms: f32, seed: u32) -> Self {
         Self {
             lfo: Lfo::default(),
             walk: RandomWalk::new(walk_interval_ms, 0.0, seed),
-            shape: ModLfoShape::Sine,
+            shape: ModLfoShape::Wave(Waveform::Sine),
             hz: 1.0,
             value: 0.0,
         }
     }
 
-    pub fn prepare(&mut self, sample_rate: f32, hz: f32) {
-        self.lfo.prepare(sample_rate, hz, 0.0);
-        self.walk.prepare(sample_rate);
-        self.hz = hz;
-    }
-
-    pub fn set(&mut self, hz: f32, shape: ModLfoShape, sample_rate: f32) {
+    /// Rate and shape (block rate).
+    pub fn set(&mut self, hz: f32, shape: ModLfoShape) {
         self.hz = hz;
         self.shape = shape;
-        self.lfo.set_rate(hz);
-        self.lfo.set_shape(shape.basis().unwrap_or(LfoShape::Sine));
+        self.lfo.set_hz(hz);
+        if let ModLfoShape::Wave(w) = shape {
+            self.lfo.set_waveform(w);
+        }
         let interval_ms = 1_000.0 / hz.max(0.01);
         let ease_ms = if shape == ModLfoShape::Drift {
             interval_ms * 0.6
         } else {
             0.0
         };
-        self.walk.set_times(interval_ms, ease_ms, sample_rate);
+        self.walk.set_times(interval_ms, ease_ms);
     }
 
-    /// Run `frames` samples; the value at the last.
-    pub fn advance(&mut self, frames: usize) -> f32 {
+    /// Run `frames` samples and return the value at the end (block-rate
+    /// use: one read per block).
+    pub fn tick_frames(&mut self, frames: usize) -> f32 {
         let (mut oscillator, mut walk) = (self.value, self.value);
         for _ in 0..frames {
-            oscillator = self.lfo.tick();
-            walk = self.walk.tick();
+            oscillator = self.lfo.tick(0.0);
+            walk = self.walk.tick(0.0);
         }
-        self.value = match self.shape.basis() {
-            Some(_) => oscillator,
-            None => walk,
+        self.value = match self.shape {
+            ModLfoShape::Wave(_) => oscillator,
+            _ => walk,
         };
         self.value
     }
 
-    pub fn value(&self) -> f32 {
-        self.value
-    }
-
-    /// The value at a voice's own phase (radians). The random shapes have
-    /// no phase: every voice reads the shared walk.
+    /// The shape at a voice's own `phase` (cycles); a random shape
+    /// reads the shared walk.
     pub fn at_phase(&self, phase: f32) -> f32 {
-        match self.shape.basis() {
-            Some(basis) => Lfo::eval(basis, phase),
-            None => self.value,
+        match self.shape {
+            ModLfoShape::Wave(w) => w.eval(phase),
+            _ => self.value,
         }
     }
 
-    /// A voice phase advanced by `seconds` at this rate, wrapped.
+    /// `phase` (cycles) moved on by `seconds` at this LFO's rate.
     pub fn advance_phase(&self, phase: f32, seconds: f32) -> f32 {
-        (phase + TAU * self.hz * seconds) % TAU
+        (phase + self.hz * seconds).rem_euclid(1.0)
+    }
+}
+
+impl Stage for ModLfo {
+    fn prepare(&mut self, sample_rate: f32) {
+        self.lfo.prepare(sample_rate);
+        self.walk.prepare(sample_rate);
+    }
+    fn reset(&mut self) {
+        self.lfo.reset();
+        self.walk.reset();
+        self.value = 0.0;
+    }
+    /// One sample (input ignored).
+    fn tick(&mut self, _: f32) -> f32 {
+        self.tick_frames(1)
+    }
+    fn tail(&self) -> Tail {
+        Tail::Infinite
+    }
+}
+
+impl Source for ModLfo {
+    fn state(&self) -> f32 {
+        self.value
     }
 }
 
@@ -158,15 +166,12 @@ mod tests {
     #[test]
     fn random_shapes_read_the_shared_walk_at_any_phase() {
         let mut lfo = ModLfo::new(833.0, 7);
-        lfo.prepare(48_000.0, 4.0);
-        lfo.set(4.0, ModLfoShape::SampleHold, 48_000.0);
-        let v = lfo.advance(4_800);
-        assert_eq!(lfo.at_phase(1.0), v);
-        lfo.set(4.0, ModLfoShape::Sine, 48_000.0);
-        assert_eq!(
-            lfo.at_phase(core::f32::consts::FRAC_PI_2),
-            Lfo::eval(LfoShape::Sine, core::f32::consts::FRAC_PI_2)
-        );
+        lfo.prepare(48_000.0);
+        lfo.set(4.0, ModLfoShape::SampleHold);
+        let v = lfo.tick_frames(4_800);
+        assert_eq!(lfo.at_phase(0.16), v);
+        lfo.set(4.0, ModLfoShape::Wave(Waveform::Sine));
+        assert_eq!(lfo.at_phase(0.25), Waveform::Sine.eval(0.25));
     }
 
     #[test]

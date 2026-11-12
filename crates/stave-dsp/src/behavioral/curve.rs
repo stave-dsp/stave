@@ -636,7 +636,7 @@ impl CurveStage {
 }
 
 impl Stage for CurveStage {
-    fn prepare(&mut self, _rate: f32) {
+    fn prepare(&mut self, _sample_rate: f32) {
         self.reset();
     }
     fn reset(&mut self) {
@@ -655,9 +655,9 @@ impl Stage for CurveStage {
         self.last_x = x;
         let x0 = x as f64;
         let y = if self.adaa_on {
-            self.adaa.process(&framed, x0)
+            self.adaa.tick(&framed, x0)
         } else {
-            self.adaa.advance(x0);
+            self.adaa.push(x0);
             use crate::behavioral::curve::AdaaShape;
             framed.f(x0)
         };

@@ -68,9 +68,7 @@ fn the_transformer_matches_the_reference() {
         let mut t = Transformer::new(config);
         t.prepare(rate as f32);
         let render: Vec<f64> = (0..(r.value.len() - 1) * oversample + 1)
-            .map(|n| {
-                t.process_volts(400.0 * (std::f64::consts::TAU * 50.0 * n as f64 / rate).sin())
-            })
+            .map(|n| t.tick_f64(400.0 * (std::f64::consts::TAU * 50.0 * n as f64 / rate).sin()))
             .step_by(oversample)
             .collect();
         assert_eq!(t.stats().capped, 0);

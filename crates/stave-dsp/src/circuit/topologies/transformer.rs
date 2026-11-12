@@ -7,7 +7,7 @@
 
 use crate::circuit::devices::magnetic::{JilesAtherton, JilesAthertonCore, MU_0};
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TransformerConfig {
@@ -27,6 +27,7 @@ pub struct Transformer {
     config: TransformerConfig,
     core: JilesAthertonCore,
     step: f64,
+    sample_rate: f32,
     current: f64,
     emf: f64,
     flux_density: f64,
@@ -38,7 +39,8 @@ impl Transformer {
         Self {
             config,
             core: JilesAthertonCore::new(config.core, config.newton),
-            step: 0.0,
+            step: 1.0 / 48_000.0,
+            sample_rate: 48_000.0,
             current: 0.0,
             emf: 0.0,
             flux_density: 0.0,
@@ -62,8 +64,9 @@ impl Transformer {
         self.flux_density
     }
 
-    /// Drive the primary with `volts`; returns the secondary's volts.
-    pub fn process_volts(&mut self, volts: f64) -> f64 {
+    /// One sample in `f64` volts: drive the primary with `volts`;
+    /// returns the secondary's volts.
+    pub fn tick_f64(&mut self, volts: f64) -> f64 {
         let c = self.config;
         let field_per_amp = c.primary_turns / c.path_length;
         let linkage = c.primary_turns * c.core_area;
@@ -90,9 +93,10 @@ impl Transformer {
 }
 
 impl Stage for Transformer {
-    fn prepare(&mut self, rate: f32) {
-        debug_assert!(rate > 0.0, "sample rate must be positive");
-        self.step = 1.0 / f64::from(rate);
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.step = 1.0 / f64::from(sample_rate);
         self.reset();
         self.stats = NewtonStats::default();
     }
@@ -105,6 +109,17 @@ impl Stage for Transformer {
     }
 
     fn tick(&mut self, x: f32) -> f32 {
-        self.process_volts(f64::from(x)) as f32
+        self.tick_f64(f64::from(x)) as f32
+    }
+
+    /// The primary's current decays through the source resistance with
+    /// τ = L/Rs, L the small-signal magnetizing inductance of the
+    /// demagnetized core.
+    fn tail(&self) -> Tail {
+        let c = &self.config;
+        let chi = c.core.susceptibility(0.0, 0.0, true);
+        let inductance =
+            c.primary_turns * c.core_area * MU_0 * (c.primary_turns / c.path_length) * (1.0 + chi);
+        Tail::from_time_constant(inductance / c.source_ohms, self.sample_rate)
     }
 }

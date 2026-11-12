@@ -10,7 +10,7 @@
 use crate::circuit::audio::Circuit;
 use crate::circuit::devices::triode::TriodeModel;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CommonCathodeConfig<T> {
@@ -26,6 +26,7 @@ pub struct CommonCathodeConfig<T> {
 
 pub struct CommonCathode<T> {
     config: CommonCathodeConfig<T>,
+    sample_rate: f32,
     /// Trapezoidal companion conductance of the bypass cap, 2C/T.
     companion_siemens: f64,
     nodes: NodeVoltages,
@@ -56,7 +57,8 @@ impl<T: TriodeModel> CommonCathode<T> {
     pub fn new(config: CommonCathodeConfig<T>) -> Self {
         let mut stage = Self {
             config,
-            companion_siemens: 0.0,
+            sample_rate: 48_000.0,
+            companion_siemens: 2.0 * config.bypass_farads * 48_000.0,
             nodes: NodeVoltages::cutoff(&config),
             cap_amps: 0.0,
             stats: NewtonStats::default(),
@@ -83,9 +85,9 @@ impl<T: TriodeModel> CommonCathode<T> {
 
     /// Component values change in place; the circuit moves toward its
     /// new operating point through its own dynamics.
-    pub fn configure(&mut self, config: &CommonCathodeConfig<T>, rate: f64) {
+    pub fn configure(&mut self, config: &CommonCathodeConfig<T>) {
         self.config = *config;
-        self.companion_siemens = 2.0 * config.bypass_farads * rate;
+        self.companion_siemens = 2.0 * config.bypass_farads * f64::from(self.sample_rate);
     }
 
     /// The DC operating point for the current component values (input
@@ -243,8 +245,9 @@ impl<T: TriodeModel> Circuit for CommonCathode<T> {
 }
 
 impl<T: TriodeModel> Stage for CommonCathode<T> {
-    fn prepare(&mut self, rate: f32) {
-        self.companion_siemens = 2.0 * self.config.bypass_farads * f64::from(rate);
+    fn prepare(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.companion_siemens = 2.0 * self.config.bypass_farads * f64::from(sample_rate);
         self.settle_at_operating_point();
         self.stats = NewtonStats::default();
     }
@@ -271,6 +274,13 @@ impl<T: TriodeModel> Stage for CommonCathode<T> {
             self.companion_siemens * (solved.cathode - self.nodes.cathode) - self.cap_amps;
         self.nodes = solved;
         solved.plate as f32
+    }
+
+    /// The bypass capacitor recovers through the cathode resistor:
+    /// τ ≤ Rk·Ck (feedback through gm only shortens it).
+    fn tail(&self) -> Tail {
+        let tau = self.config.cathode_ohms * self.config.bypass_farads;
+        Tail::from_time_constant(tau, self.sample_rate)
     }
 }
 

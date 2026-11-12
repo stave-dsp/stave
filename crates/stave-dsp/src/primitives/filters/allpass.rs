@@ -1,57 +1,67 @@
 //! First-order frequency-tunable allpass.
 //!
-//! Transfer function: H(z) = (g + z^-1) / (1 + g·z^-1), where the
-//! coefficient g is set such that the phase response passes through π at
-//! the given centre frequency. Phasers cascade these and modulate the
-//! centre to create the swept notches.
+//! `H(z) = (g + z⁻¹) / (1 + g·z⁻¹)`, with `g` set so the phase passes
+//! through −90° at the centre frequency. Phasers cascade these and
+//! modulate the centre to sweep their notches.
 
-use crate::primitives::denormal;
+use crate::kernel::denormal;
+use crate::kernel::node::{Stage, Tail};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Allpass1 {
+    hz: f32,
+    sample_rate: f32,
     g: f32,
     z: f32,
-    sr: f32,
 }
 
 impl Default for Allpass1 {
+    /// Centred at 1 kHz.
     fn default() -> Self {
-        Self::new()
+        Self::new(1_000.0)
     }
 }
 
 impl Allpass1 {
-    pub const fn new() -> Self {
-        Self {
+    pub fn new(hz: f32) -> Self {
+        let mut ap = Self {
+            hz,
+            sample_rate: 48_000.0,
             g: 0.0,
             z: 0.0,
-            sr: 48_000.0,
-        }
+        };
+        ap.set_hz(hz);
+        ap
     }
 
-    pub fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.sr = sample_rate;
-        self.z = 0.0;
-    }
-
-    pub fn reset(&mut self) {
-        self.z = 0.0;
-    }
-
-    /// Set the phase-shift centre frequency (Hz).
+    /// Move the phase-shift centre (state kept). Held inside
+    /// (1 Hz, 0.499·fs).
     #[inline]
-    pub fn set_frequency(&mut self, hz: f32) {
-        let pi = core::f32::consts::PI;
-        let hz = hz.clamp(1.0, self.sr * 0.499);
-        let t = (pi * hz / self.sr).tan();
+    pub fn set_hz(&mut self, hz: f32) {
+        self.hz = hz;
+        let hz = hz.clamp(1.0, self.sample_rate * 0.499);
+        let t = (core::f32::consts::PI * hz / self.sample_rate).tan();
         self.g = (t - 1.0) / (t + 1.0);
     }
+}
 
+impl Stage for Allpass1 {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_hz(self.hz);
+        self.reset();
+    }
+    fn reset(&mut self) {
+        self.z = 0.0;
+    }
     #[inline]
-    pub fn process(&mut self, x: f32) -> f32 {
+    fn tick(&mut self, x: f32) -> f32 {
         let y = self.g * x + self.z;
         self.z = denormal::flush(x - self.g * y);
         y
+    }
+    fn tail(&self) -> Tail {
+        Tail::from_pole(f64::from(self.g)).max(Tail::Samples(1))
     }
 }

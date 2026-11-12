@@ -14,8 +14,10 @@
 //! full-scale glitch. Real polyphonic tracking is a separate future
 //! investment.
 
-use crate::primitives::filters::biquad::Biquad;
-use crate::FilterSpec;
+use crate::kernel::control::Source;
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::biquad::{Biquad, FilterSpec};
+use crate::primitives::filters::one_pole::tau_coeff;
 
 pub struct SubOctave {
     /// Detector band-limit: highpass clears DC/rumble so the comparator
@@ -43,7 +45,6 @@ pub struct SubOctave {
     /// so noise floors can't flap the divider.
     hyst_frac: f32,
     gate_floor: f32,
-    rate: f32,
 }
 
 impl Default for SubOctave {
@@ -54,9 +55,12 @@ impl Default for SubOctave {
 
 impl SubOctave {
     pub fn new() -> Self {
-        Self {
-            det_hp: Biquad::new(),
-            det_lp: Biquad::new(),
+        let mut s = Self {
+            det_hp: Biquad::new(FilterSpec::Highpass { hz: 35.0, q: 0.707 }),
+            det_lp: Biquad::new(FilterSpec::Lowpass {
+                hz: 900.0,
+                q: 0.707,
+            }),
             env: 0.0,
             env_atk: 0.0,
             env_rel: 0.0,
@@ -64,41 +68,37 @@ impl SubOctave {
             ff: 1.0,
             smooth: 0.0,
             smooth_coeff: 0.0,
-            out_lp: Biquad::new(),
-            hyst_frac: 0.35,
-            gate_floor: 1.5e-3,
-            rate: 48_000.0,
-        }
-    }
-
-    pub fn prepare(&mut self, rate: f32) {
-        debug_assert!(rate > 0.0, "sample rate must be positive");
-        self.rate = rate;
-        self.det_hp
-            .set(FilterSpec::Highpass { hz: 35.0, q: 0.707 }, self.rate);
-        self.det_lp.set(
-            FilterSpec::Lowpass {
-                hz: 900.0,
-                q: 0.707,
-            },
-            self.rate,
-        );
-        self.out_lp.set(
-            FilterSpec::Lowpass {
+            out_lp: Biquad::new(FilterSpec::Lowpass {
                 hz: 1_500.0,
                 q: 0.707,
-            },
-            self.rate,
-        );
+            }),
+            hyst_frac: 0.35,
+            gate_floor: 1.5e-3,
+        };
+        s.derive(48_000.0);
+        s
+    }
+
+    fn derive(&mut self, sample_rate: f32) {
         // Envelope: 1 ms attack / 60 ms release.
-        self.env_atk = 1.0 - (-1.0f32 / (0.001 * self.rate)).exp();
-        self.env_rel = 1.0 - (-1.0f32 / (0.060 * self.rate)).exp();
+        self.env_atk = tau_coeff(0.001, sample_rate);
+        self.env_rel = tau_coeff(0.060, sample_rate);
         // Edge smoothing ≈ 400 Hz one-pole.
-        self.smooth_coeff = 1.0 - (-2.0 * core::f32::consts::PI * 400.0 / self.rate).exp();
+        self.smooth_coeff = 1.0 - (-2.0 * core::f32::consts::PI * 400.0 / sample_rate).exp();
+    }
+}
+
+impl Stage for SubOctave {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.det_hp.prepare(sample_rate);
+        self.det_lp.prepare(sample_rate);
+        self.out_lp.prepare(sample_rate);
+        self.derive(sample_rate);
         self.reset();
     }
 
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.det_hp.reset();
         self.det_lp.reset();
         self.out_lp.reset();
@@ -112,15 +112,15 @@ impl SubOctave {
     /// rectified level) — the divider needs the waveform's crossings.
     /// Returns the band-limited sub-octave, level-tracked to the input.
     #[inline]
-    pub fn tick(&mut self, x: f32) -> f32 {
-        let d = self.det_lp.process(self.det_hp.process(x));
+    fn tick(&mut self, x: f32) -> f32 {
+        let d = self.det_lp.tick(self.det_hp.tick(x));
         let t = d.abs();
         let c = if t > self.env {
             self.env_atk
         } else {
             self.env_rel
         };
-        self.env = crate::primitives::denormal::flush(self.env + (t - self.env) * c);
+        self.env = crate::kernel::denormal::flush(self.env + (t - self.env) * c);
         // Hysteresis rides the envelope; the floor gates noise.
         let th = (self.hyst_frac * self.env).max(self.gate_floor);
         if !self.comp_high && d > th {
@@ -136,11 +136,18 @@ impl SubOctave {
             0.0
         };
         self.smooth += (gated - self.smooth) * self.smooth_coeff;
-        self.out_lp.process(self.smooth)
+        self.out_lp.tick(self.smooth)
     }
 
+    /// The envelope's release, then the output filter's ring.
+    fn tail(&self) -> Tail {
+        Tail::from_pole(f64::from(1.0 - self.env_rel)).then(self.out_lp.tail())
+    }
+}
+
+impl Source for SubOctave {
     /// Last output — bipolar, for driver use.
-    pub fn state(&self) -> f32 {
+    fn state(&self) -> f32 {
         self.smooth
     }
 }

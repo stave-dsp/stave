@@ -1,132 +1,96 @@
-//! Phase-accumulator LFO with the SHAPE BASIS (sine, triangle,
-//! saw, square) and optional analog drift. Character beyond the
-//! basis is COMPOSITION, not variants: run a shape through
-//! [`Lag`](crate::primitives::control::lag::Lag) — a rounded triangle is
-//! the Juno chorus, a fast-rise/slow-fall sine is the Univibe lamp.
-//! `prepare` sets the sample rate, `set_rate` the cycle frequency,
-//! `tick` advances and returns the next sample in [−1, 1].
+//! Phase-accumulator LFO over the shared [`Waveform`] basis, with
+//! optional analog drift. Character beyond the basis is composition,
+//! not variants: run a shape through [`Lag`](crate::Lag) — a rounded
+//! triangle is the classic ensemble chorus, a fast-rise/slow-fall sine
+//! is a photocell lamp's throb.
+//!
+//! A generator [`Stage`]: `set_hz` sets the cycle frequency, `tick`
+//! (input ignored) returns the next sample in [−1, 1]. Phase is in
+//! cycles, `0 ≤ t < 1`, as everywhere in stave-dsp.
 
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::osc::Waveform;
 use crate::primitives::random::Xorshift32;
-
-/// The mathematical waveform basis. Everything vintage is a recipe
-/// over these plus shaping stages — never a fifth variant here.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum LfoShape {
-    #[default]
-    Sine,
-    Triangle,
-    Saw,
-    Square,
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Lfo {
-    sr: f32,
+    sample_rate: f32,
+    hz: f32,
+    /// Cycles, `0 ≤ phase < 1`.
     phase: f32,
     inc: f32,
-    shape: LfoShape,
-    /// Analog clock imperfection: 0 = crystal, 1 = ±5% slow random
-    /// walk on the rate. Updated once per cycle so the walk is
-    /// rate-independent.
+    waveform: Waveform,
     drift: f32,
     drift_state: f32,
     rng: Xorshift32,
 }
 
 impl Default for Lfo {
+    /// 1 Hz sine.
     fn default() -> Self {
-        Self::new()
+        Self::new(1.0)
     }
 }
 
 impl Lfo {
-    pub const fn new() -> Self {
-        Self {
-            sr: 48_000.0,
+    pub fn new(hz: f32) -> Self {
+        let mut lfo = Self {
+            sample_rate: 48_000.0,
+            hz,
             phase: 0.0,
             inc: 0.0,
-            shape: LfoShape::Sine,
+            waveform: Waveform::Sine,
             drift: 0.0,
             drift_state: 0.0,
             rng: Xorshift32::new(0x9E37_79B9),
-        }
+        };
+        lfo.set_hz(hz);
+        lfo
     }
 
-    pub fn prepare(&mut self, sample_rate: f32, hz: f32, initial_phase_radians: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.sr = sample_rate;
-        self.phase = initial_phase_radians;
-        self.drift_state = 0.0;
-        self.set_rate(hz);
+    pub fn set_hz(&mut self, hz: f32) {
+        self.hz = hz;
+        self.inc = hz.max(0.0) / self.sample_rate;
     }
 
-    pub fn set_rate(&mut self, hz: f32) {
-        let two_pi = core::f32::consts::TAU;
-        self.inc = two_pi * hz.max(0.0) / self.sr;
+    pub fn set_waveform(&mut self, waveform: Waveform) {
+        self.waveform = waveform;
     }
 
-    pub fn set_shape(&mut self, shape: LfoShape) {
-        self.shape = shape;
-    }
-
-    /// Analog clock imperfection, 0..1 (1 ≈ ±5% rate walk).
+    /// Cycle-to-cycle rate wander, 0 (off) … 1 (±5 %).
     pub fn set_drift(&mut self, amount: f32) {
         debug_assert!((0.0..=1.0).contains(&amount), "drift {amount}");
         self.drift = amount;
     }
 
-    pub fn set_phase(&mut self, radians: f32) {
-        self.phase = radians;
+    /// Phase in cycles.
+    pub fn set_phase(&mut self, cycles: f32) {
+        self.phase = cycles.rem_euclid(1.0);
     }
 
-    /// Current phase in [0, τ) — the display cursor reads this.
     pub fn phase(&self) -> f32 {
         self.phase
     }
+}
 
-    /// The shape evaluated at an arbitrary phase — the display draws
-    /// one cycle by sweeping this; `tick` uses it live. Pure.
-    #[inline]
-    pub fn eval(shape: LfoShape, phase: f32) -> f32 {
-        let two_pi = core::f32::consts::TAU;
-        let t = (phase / two_pi).rem_euclid(1.0); // 0..1 cycle position
-        match shape {
-            LfoShape::Sine => (two_pi * t).sin(),
-            // −1 at t=0, +1 at t=0.5, back to −1. Tri/saw/square
-            // start at their minimum; sine at its zero-crossing.
-            LfoShape::Triangle => {
-                if t < 0.5 {
-                    4.0 * t - 1.0
-                } else {
-                    3.0 - 4.0 * t
-                }
-            }
-            LfoShape::Saw => 2.0 * t - 1.0,
-            LfoShape::Square => {
-                if t < 0.5 {
-                    -1.0
-                } else {
-                    1.0
-                }
-            }
-        }
+impl Stage for Lfo {
+    /// Re-derive the increment; restart at phase 0 with no drift.
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_hz(self.hz);
+        self.reset();
     }
-
+    fn reset(&mut self) {
+        self.phase = 0.0;
+        self.drift_state = 0.0;
+    }
     #[inline]
-    pub fn tick(&mut self) -> f32 {
-        // Sine keeps the raw-phase expression: existing consumers
-        // (forge's ripple driver) are bit-pinned on it, and the
-        // wrapped phase makes it equal to eval() mathematically.
-        let y = match self.shape {
-            LfoShape::Sine => self.phase.sin(),
-            other => Self::eval(other, self.phase),
-        };
-        let inc = self.inc * (1.0 + self.drift_state);
-        self.phase += inc;
-        let two_pi = core::f32::consts::TAU;
-        if self.phase >= two_pi {
-            self.phase -= two_pi;
-            // New cycle: step the drift walk (bounded, zero-mean).
+    fn tick(&mut self, _: f32) -> f32 {
+        let y = self.waveform.eval(self.phase);
+        self.phase += self.inc * (1.0 + self.drift_state);
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
             if self.drift > 0.0 {
                 let x = self.rng.next_u32();
                 let step = (x as f32 / u32::MAX as f32 - 0.5) * 0.04;
@@ -136,43 +100,40 @@ impl Lfo {
         }
         y
     }
+    /// A generator: it never stops.
+    fn tail(&self) -> Tail {
+        Tail::Infinite
+    }
 }
 
 #[cfg(test)]
 mod properties {
-    extern crate alloc;
-
     use super::*;
 
     #[test]
     fn shapes_hit_their_marks() {
-        let tau = core::f32::consts::TAU;
-        // Triangle: min at 0, max at half-cycle, linear between.
-        assert_eq!(Lfo::eval(LfoShape::Triangle, 0.0), -1.0);
-        assert_eq!(Lfo::eval(LfoShape::Triangle, tau * 0.5), 1.0);
-        assert!((Lfo::eval(LfoShape::Triangle, tau * 0.25)).abs() < 1e-6);
-        // Saw: −1 → +1 over the cycle.
-        assert_eq!(Lfo::eval(LfoShape::Saw, 0.0), -1.0);
-        assert!((Lfo::eval(LfoShape::Saw, tau * 0.75) - 0.5).abs() < 1e-6);
-        // Square: low half then high half.
-        assert_eq!(Lfo::eval(LfoShape::Square, tau * 0.25), -1.0);
-        assert_eq!(Lfo::eval(LfoShape::Square, tau * 0.75), 1.0);
-        // Sine: zero at 0, +1 at quarter.
-        assert!(Lfo::eval(LfoShape::Sine, 0.0).abs() < 1e-6);
-        assert!((Lfo::eval(LfoShape::Sine, tau * 0.25) - 1.0).abs() < 1e-6);
+        assert_eq!(Waveform::Triangle.eval(0.0), -1.0);
+        assert_eq!(Waveform::Triangle.eval(0.5), 1.0);
+        assert!(Waveform::Triangle.eval(0.25).abs() < 1e-6);
+        assert_eq!(Waveform::Saw.eval(0.0), -1.0);
+        assert!((Waveform::Saw.eval(0.75) - 0.5).abs() < 1e-6);
+        // In phase with the sine: positive for the first half cycle.
+        assert_eq!(Waveform::Square.eval(0.25), 1.0);
+        assert_eq!(Waveform::Square.eval(0.75), -1.0);
+        assert!(Waveform::Sine.eval(0.0).abs() < 1e-6);
+        assert!((Waveform::Sine.eval(0.25) - 1.0).abs() < 1e-6);
     }
 
     #[test]
     fn drift_is_bounded_and_zero_when_off() {
         let sr = 48_000.0;
-        // Off: cycle length is exact.
-        let mut clean = Lfo::new();
-        clean.prepare(sr, 2.0, 0.0);
-        let mut intervals = alloc::vec::Vec::new();
+        let mut clean = Lfo::new(2.0);
+        clean.prepare(sr);
+        let mut intervals = Vec::new();
         let mut last_cross = None;
-        let mut last = clean.tick();
+        let mut last = clean.tick(0.0);
         for i in 0..(sr as usize * 5) {
-            let y = clean.tick();
+            let y = clean.tick(0.0);
             if last < 0.0 && y >= 0.0 {
                 if let Some(prev) = last_cross {
                     intervals.push(i - prev);
@@ -181,9 +142,6 @@ mod properties {
             }
             last = y;
         }
-        // A crystal: cycle lengths cluster tightly at sr/2 Hz. (f32
-        // phase accumulation quantizes crossings by a couple of
-        // samples — that is not drift.)
         let expect = (sr / 2.0) as usize;
         assert!(intervals.len() >= 8);
         let min = *intervals.iter().min().unwrap() as i64;
@@ -193,14 +151,13 @@ mod properties {
             (min - expect as i64).abs() <= 4,
             "clean rate near {expect}: {min}"
         );
-        // On: rate walks, but never past ±5%.
-        let mut drifty = Lfo::new();
-        drifty.prepare(sr, 2.0, 0.0);
+        let mut drifty = Lfo::new(2.0);
+        drifty.prepare(sr);
         drifty.set_drift(1.0);
         let mut crossings = 0;
-        let mut last = drifty.tick();
+        let mut last = drifty.tick(0.0);
         for _ in 0..(sr as usize * 30) {
-            let y = drifty.tick();
+            let y = drifty.tick(0.0);
             if last < 0.0 && y >= 0.0 {
                 crossings += 1;
             }

@@ -1,21 +1,25 @@
-//! The modulation matrix.
+//! The modulation matrix: a kernel [`Router`] whose sources are
+//! [`Driver`]s and whose targets are a [`Chain`]'s stage axes.
 //!
-//! `Driver` (driver) × `Coupling`/`Route` (wiring) × `ModMatrix`
-//! (fixed-capacity router). Runs at BASE rate outside the oversampler;
-//! writes PENDING stage frames only (the CurveStage commit discipline
-//! keeps ADAA honest). Targets cover the Frame axes plus TILT — the
-//! spectral axis (level-dependent frequency response: Miller darkening,
-//! saturating-inductor EQ).
+//! Runs at base rate outside any oversampler; writes pending stage
+//! frames only (the `CurveStage` commit discipline keeps ADAA honest).
+//! Targets cover the [`Frame`] axes plus tilt — the spectral axis
+//! (level-dependent frequency response: Miller darkening, saturating-
+//! inductor EQ).
 
 use crate::behavioral::curve::Frame;
+use crate::kernel::control::{Full, Route, Router, Source};
+use crate::kernel::node::{Stage, Tail};
 use crate::primitives::control::envelope::{EnvelopeFollower, EnvelopeTimes};
+use crate::primitives::control::lfo::Lfo;
+use crate::primitives::control::sub::SubOctave;
 use crate::primitives::filters::biquad::FilterSpec;
 use crate::structures::chain::StageKind;
 use crate::structures::chain::{Chain, StageId};
 
-/// Modulation SOURCE — the generalization that makes every sideband
-/// phenomenon a route recipe instead of plugin code
-/// ///
+/// A modulation source — the generalization that makes every sideband
+/// phenomenon a route recipe instead of plugin code.
+///
 /// * `Env` — the classic detector-following source (state ≥ 0).
 /// * `Lfo` — a periodic source (state ∈ [−1, 1] · scale). With
 ///   `env_scale`, the LFO is multiplied by an envelope of the detector:
@@ -24,8 +28,7 @@ use crate::structures::chain::{Chain, StageId};
 pub enum Driver {
     Env(EnvelopeFollower),
     Lfo {
-        lfo: crate::primitives::control::lfo::Lfo,
-        hz: f32,
+        lfo: Lfo,
         env_scale: bool,
         env: EnvelopeFollower,
         last: f32,
@@ -34,7 +37,7 @@ pub enum Driver {
     /// fundamental. A Gain route driven by it puts energy at 1.5·f0,
     /// 2.5·f0, … — between the integer harmonics. Feed it the SIGNED
     /// signal as its detector, not a rectified level.
-    Sub(crate::primitives::control::sub::SubOctave),
+    Sub(SubOctave),
 }
 
 impl From<EnvelopeFollower> for Driver {
@@ -47,8 +50,7 @@ impl Driver {
     /// Free-running periodic source (bipolar output).
     pub fn lfo(hz: f32) -> Self {
         Driver::Lfo {
-            lfo: crate::primitives::control::lfo::Lfo::new(),
-            hz,
+            lfo: Lfo::new(hz),
             env_scale: false,
             env: EnvelopeFollower::new(EnvelopeTimes {
                 attack_ms: 5.0,
@@ -62,8 +64,7 @@ impl Driver {
     /// in ms) — ripple that rides program heat.
     pub fn lfo_env_scaled(hz: f32, attack_ms: f32, release_ms: f32) -> Self {
         Driver::Lfo {
-            lfo: crate::primitives::control::lfo::Lfo::new(),
-            hz,
+            lfo: Lfo::new(hz),
             env_scale: true,
             env: EnvelopeFollower::new(EnvelopeTimes {
                 attack_ms,
@@ -75,7 +76,7 @@ impl Driver {
     }
     /// Divider driver (see `SubOctave`).
     pub fn sub() -> Self {
-        Driver::Sub(crate::primitives::control::sub::SubOctave::new())
+        Driver::Sub(SubOctave::new())
     }
     /// Retune the envelope half (no-op timing on a free-running LFO's
     /// phase or a divider; retunes the env-scaling follower where present).
@@ -86,20 +87,21 @@ impl Driver {
             Driver::Sub(_) => {}
         }
     }
-    pub fn prepare(&mut self, rate: f32) {
+}
+
+impl Stage for Driver {
+    fn prepare(&mut self, sample_rate: f32) {
         match self {
-            Driver::Env(c) => c.prepare(rate),
-            Driver::Lfo {
-                lfo, hz, env, last, ..
-            } => {
-                lfo.prepare(rate, *hz, 0.0);
-                env.prepare(rate);
+            Driver::Env(c) => c.prepare(sample_rate),
+            Driver::Lfo { lfo, env, last, .. } => {
+                lfo.prepare(sample_rate);
+                env.prepare(sample_rate);
                 *last = 0.0;
             }
-            Driver::Sub(s) => s.prepare(rate),
+            Driver::Sub(s) => s.prepare(sample_rate),
         }
     }
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         match self {
             Driver::Env(c) => c.reset(),
             Driver::Lfo { env, last, .. } => {
@@ -110,7 +112,7 @@ impl Driver {
         }
     }
     #[inline]
-    pub fn tick(&mut self, detector: f32) -> f32 {
+    fn tick(&mut self, detector: f32) -> f32 {
         match self {
             // An envelope follows the detector's level.
             Driver::Env(c) => c.tick(detector.abs()),
@@ -119,9 +121,8 @@ impl Driver {
                 env_scale,
                 env,
                 last,
-                ..
             } => {
-                let osc = lfo.tick();
+                let osc = lfo.tick(0.0);
                 let s = if *env_scale {
                     osc * env.tick(detector.abs())
                 } else {
@@ -133,7 +134,17 @@ impl Driver {
             Driver::Sub(s) => s.tick(detector),
         }
     }
-    pub fn state(&self) -> f32 {
+    fn tail(&self) -> Tail {
+        match self {
+            Driver::Env(c) => c.tail(),
+            Driver::Lfo { .. } => Tail::Infinite,
+            Driver::Sub(s) => s.tail(),
+        }
+    }
+}
+
+impl Source for Driver {
+    fn state(&self) -> f32 {
         match self {
             Driver::Env(c) => c.state(),
             Driver::Lfo { last, .. } => *last,
@@ -143,7 +154,7 @@ impl Driver {
 }
 
 /// What a route writes on its target stage.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// Frame.bias += amount·state
     Bias,
@@ -151,26 +162,26 @@ pub enum Target {
     Drive,
     /// Frame.gain ×= (1 − amount·state), floored at 0
     Gain,
-    /// FilterStage shelf/peak gain += amount·state dB (the spectral axis)
+    /// Filter shelf/peak gain += amount·state dB (the spectral axis)
     TiltDb,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Route {
-    pub driver: usize,
+/// Where a [`ModMatrix`] route lands: one axis of one chain stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StageTarget {
     pub stage: StageId,
     pub target: Target,
-    pub amount: f32,
 }
 
 /// Fixed-capacity modulation router. Each `tick`, drivers advance from
-/// their detectors, then routes are applied ON TOP of caller-provided
+/// their detectors, then routes are applied on top of caller-provided
 /// base values (`base_frames` = what the knobs say; routes displace from
 /// there, so knob writes and modulation never fight).
+///
+/// The matrix is a kernel [`Router`] — sources and edges as data, the
+/// one [`Route`] type — plus the chain-typed apply pass.
 pub struct ModMatrix<const D: usize, const R: usize> {
-    /// the matrix IS a kernel Router instance — sources +
-    /// edges as data; only the chain-typed APPLY invariant lives here.
-    router: crate::kernel::control::Router<Driver, (StageId, Target), D, R>,
+    router: Router<Driver, StageTarget, D, R>,
 }
 
 impl<const D: usize, const R: usize> ModMatrix<D, R> {
@@ -178,24 +189,25 @@ impl<const D: usize, const R: usize> ModMatrix<D, R> {
     /// `[EnvelopeFollower; D]` among them).
     pub fn new<T: Into<Driver>>(drivers: [T; D]) -> Self {
         Self {
-            router: crate::kernel::control::Router::new(drivers.map(Into::into)),
+            router: Router::new(drivers.map(Into::into)),
         }
     }
     pub fn drivers(&mut self) -> &mut [Driver; D] {
         &mut self.router.sources
     }
-    pub fn push_route(&mut self, r: Route) -> bool {
-        self.router.push_route(crate::kernel::control::Route {
-            source: r.driver,
-            target: (r.stage, r.target),
-            amount: r.amount,
-        })
+    /// The underlying router (its live routes, for reflection).
+    pub fn router(&self) -> &Router<Driver, StageTarget, D, R> {
+        &self.router
+    }
+    /// Add a route; [`Full`] when all `R` slots are taken.
+    pub fn push_route(&mut self, route: Route<StageTarget>) -> Result<(), Full> {
+        self.router.push_route(route)
     }
     pub fn clear_routes(&mut self) {
         self.router.clear_routes();
     }
-    pub fn prepare(&mut self, rate: f32) {
-        self.router.prepare(rate);
+    pub fn prepare(&mut self, sample_rate: f32) {
+        self.router.prepare(sample_rate);
     }
     pub fn reset(&mut self) {
         self.router.reset();
@@ -221,12 +233,11 @@ impl<const D: usize, const R: usize> ModMatrix<D, R> {
         for &(id, f) in base_frames {
             let mut frame = f;
             for r in self.router.routes() {
-                let (stage, target) = r.target;
-                if stage != id {
+                if r.target.stage != id {
                     continue;
                 }
                 let s = states[r.source.min(D - 1)];
-                match target {
+                match r.target.target {
                     Target::Bias => frame.bias += r.amount * s,
                     Target::Drive => frame.drive *= (1.0 + r.amount * s).max(1e-3),
                     Target::Gain => frame.gain *= (1.0 - r.amount * s).max(0.0),
@@ -240,11 +251,8 @@ impl<const D: usize, const R: usize> ModMatrix<D, R> {
         for &(id, spec) in base_tilt {
             let mut db_add = 0.0f32;
             for r in self.router.routes() {
-                let (stage, target) = r.target;
-                if stage == id {
-                    if let Target::TiltDb = target {
-                        db_add += r.amount * states[r.source.min(D - 1)];
-                    }
+                if r.target.stage == id && r.target.target == Target::TiltDb {
+                    db_add += r.amount * states[r.source.min(D - 1)];
                 }
             }
             if let Some(StageKind::Filter(fs)) = chain.stage_mut(id) {
@@ -282,27 +290,11 @@ impl<const D: usize, const R: usize> ModMatrix<D, R> {
     }
 }
 
-impl crate::kernel::control::Source for Driver {
-    fn prepare(&mut self, rate: f32) {
-        Driver::prepare(self, rate);
-    }
-    fn reset(&mut self) {
-        Driver::reset(self);
-    }
-    fn tick(&mut self, detector: f32) -> f32 {
-        Driver::tick(self, detector)
-    }
-    fn state(&self) -> f32 {
-        Driver::state(self)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::behavioral::curve::CurveStage;
     use crate::behavioral::shapes;
-    use crate::kernel::node::Stage;
 
     #[test]
     fn envelope_times_are_honest_across_rates() {
@@ -338,12 +330,14 @@ mod tests {
         // One driver → bias on a curve stage: under sustained detector the
         // pending bias rises above base; after silence it returns.
         let mut ch = Chain::<2>::new();
-        let id = ch.push(StageKind::Curve(CurveStage::from_fn(
-            -4.0,
-            4.0,
-            0.0,
-            shapes::knee(2.0),
-        )));
+        let id = ch
+            .push(StageKind::Curve(CurveStage::from_fn(
+                -4.0,
+                4.0,
+                0.0,
+                shapes::knee(2.0),
+            )))
+            .unwrap();
         ch.prepare(48_000.0);
         let mut mm = ModMatrix::<1, 4>::new([EnvelopeFollower::new(EnvelopeTimes {
             attack_ms: 5.0,
@@ -352,11 +346,14 @@ mod tests {
         })]);
         mm.prepare(48_000.0);
         mm.push_route(Route {
-            driver: 0,
-            stage: id,
-            target: Target::Bias,
+            source: 0,
+            target: StageTarget {
+                stage: id,
+                target: Target::Bias,
+            },
             amount: 0.5,
-        });
+        })
+        .unwrap();
         let base = [(
             id,
             Frame {

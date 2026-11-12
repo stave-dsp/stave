@@ -2,7 +2,7 @@
 //! high-pass, discretized as the circuit layer discretizes every
 //! capacitor (trapezoidal), so it matches ngspice to 6e-7 normalized RMS
 //! (stave-test `matches_ngspice`).
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 
 /// `y = (x − x₁ + (1 − g)·y₁) / (1 + g)`, g = ωc·T/2: unity gain at
 /// Nyquist, zero at DC. Coefficient and state are f64: low corners at 4×
@@ -11,6 +11,7 @@ use crate::kernel::node::Stage;
 /// `stave-test/tests/coupler_conformance.rs`).
 pub struct Coupler {
     hz: f32,
+    sample_rate: f32,
     /// ωc·T/2, the trapezoidal companion's half-step conductance ratio.
     g: f64,
     x1: f64,
@@ -20,33 +21,30 @@ pub struct Coupler {
 impl Coupler {
     pub fn new(hz: f32) -> Self {
         debug_assert!(hz > 0.0, "corner must be positive");
-        Self {
+        let mut c = Self {
             hz,
+            sample_rate: 48_000.0,
             g: 0.0,
             x1: 0.0,
             y1: 0.0,
-        }
+        };
+        c.set_hz(hz);
+        c
     }
     /// Corner change keeps state (a knob move must not re-charge the
-    /// cap); takes effect via the next `prepare` OR immediately if
-    /// already prepared at `rate`.
-    pub fn set_corner(&mut self, hz: f32, rate: f32) {
+    /// cap).
+    pub fn set_hz(&mut self, hz: f32) {
         debug_assert!(hz > 0.0, "corner must be positive");
         self.hz = hz;
-        if rate > 0.0 {
-            self.g = half_step(self.hz, rate);
-        }
+        self.g = core::f64::consts::PI * f64::from(hz) / f64::from(self.sample_rate);
     }
-}
-
-fn half_step(hz: f32, rate: f32) -> f64 {
-    core::f64::consts::PI * f64::from(hz) / f64::from(rate)
 }
 
 impl Stage for Coupler {
-    fn prepare(&mut self, rate: f32) {
-        debug_assert!(rate > 0.0, "sample rate must be positive");
-        self.g = half_step(self.hz, rate);
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_hz(self.hz);
         self.reset();
     }
     fn reset(&mut self) {
@@ -57,7 +55,11 @@ impl Stage for Coupler {
     fn tick(&mut self, x: f32) -> f32 {
         let out = (f64::from(x) - self.x1 + (1.0 - self.g) * self.y1) / (1.0 + self.g);
         self.x1 = f64::from(x);
-        self.y1 = crate::primitives::denormal::flush64(out);
+        self.y1 = crate::kernel::denormal::flush64(out);
         out as f32
+    }
+    /// The pole at `(1 − g)/(1 + g)`.
+    fn tail(&self) -> Tail {
+        Tail::from_pole((1.0 - self.g) / (1.0 + self.g))
     }
 }

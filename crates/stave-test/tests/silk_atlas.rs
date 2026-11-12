@@ -31,14 +31,17 @@
 use std::fs;
 use std::io::Write as _;
 
-use stave_dsp::SmoothSat;
+use stave_dsp::{SmoothSat, Stage};
 use stave_measure::spectrum::goertzel;
 
 const FS: f64 = 48_000.0;
 /// Where the CSVs go: $SILK_ATLAS_DIR, else <temp dir>/silk_atlas.
 fn out_dir() -> String {
     std::env::var("SILK_ATLAS_DIR").unwrap_or_else(|_| {
-        std::env::temp_dir().join("silk_atlas").to_string_lossy().into_owned()
+        std::env::temp_dir()
+            .join("silk_atlas")
+            .to_string_lossy()
+            .into_owned()
     })
 }
 
@@ -106,7 +109,7 @@ fn silk_atlas_dump() {
     }
     for &sk in &silks {
         let mut s = ember_sat(sk, 4.0);
-        let rows: Vec<Vec<f64>> = dry.iter().map(|&v| vec![s.process(v) as f64]).collect();
+        let rows: Vec<Vec<f64>> = dry.iter().map(|&v| vec![s.tick(v) as f64]).collect();
         write_csv(&format!("kick_s{:03}.csv", (sk * 100.0) as u32), "y", &rows);
     }
 
@@ -141,11 +144,9 @@ fn silk_atlas_dump() {
                     (amp * (2.0 * core::f64::consts::PI * 60.0 * i as f64 / FS).sin()) as f32
                 };
                 for i in 0..n / 2 {
-                    let _ = s.process(sig(i)); // settle DC blocker / shelves
+                    let _ = s.tick(sig(i)); // settle DC blocker / shelves
                 }
-                let out: Vec<f64> = (n / 2..n + n / 2)
-                    .map(|i| s.process(sig(i)) as f64)
-                    .collect();
+                let out: Vec<f64> = (n / 2..n + n / 2).map(|i| s.tick(sig(i)) as f64).collect();
                 let rms = (out.iter().map(|v| v * v).sum::<f64>() / out.len() as f64).sqrt();
                 let peak = out.iter().fold(0.0f64, |m, v| m.max(v.abs()));
                 let in_rms = amp / core::f64::consts::SQRT_2;
@@ -175,11 +176,9 @@ fn silk_atlas_dump() {
                     (0.8 * (2.0 * core::f64::consts::PI * f0 * i as f64 / FS).sin()) as f32
                 };
                 for i in 0..n / 2 {
-                    let _ = s.process(sig(i));
+                    let _ = s.tick(sig(i));
                 }
-                let out: Vec<f64> = (n / 2..n + n / 2)
-                    .map(|i| s.process(sig(i)) as f64)
-                    .collect();
+                let out: Vec<f64> = (n / 2..n + n / 2).map(|i| s.tick(sig(i)) as f64).collect();
                 let h1 = goertzel(&out, f0 / FS).max(1e-12);
                 let mut row = vec![f0, sk];
                 let mut mud = 0.0f64;
@@ -211,11 +210,9 @@ fn silk_atlas_dump() {
                 (0.8 * (2.0 * core::f64::consts::PI * 60.0 * i as f64 / FS).sin()) as f32
             };
             for i in 0..n / 2 {
-                let _ = s.process(sig(i));
+                let _ = s.tick(sig(i));
             }
-            let out: Vec<f64> = (n / 2..n + n / 2)
-                .map(|i| s.process(sig(i)) as f64)
-                .collect();
+            let out: Vec<f64> = (n / 2..n + n / 2).map(|i| s.tick(sig(i)) as f64).collect();
             let h1 = goertzel(&out, 60.0 / FS).max(1e-12);
             let mut mud = 0.0f64;
             for k in 2..=10 {
@@ -238,7 +235,7 @@ fn silk_atlas_dump() {
             let mut s = ember_sat(sk, 4.0);
             let mut acc = 0.0f64;
             for i in 0..24_000 {
-                let p = s.process_pre(sig(i)) as f64;
+                let p = s.tick_pre(sig(i)) as f64;
                 acc += p * p;
             }
             (acc / 24_000.0).sqrt()
@@ -254,5 +251,8 @@ fn silk_atlas_dump() {
         );
     }
 
-    println!("silk atlas dumped to {}/ — plot with scripts/plot_silk_atlas.py", out_dir());
+    println!(
+        "silk atlas dumped to {}/ — plot with scripts/plot_silk_atlas.py",
+        out_dir()
+    );
 }

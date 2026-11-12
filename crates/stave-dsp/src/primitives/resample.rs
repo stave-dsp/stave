@@ -1,11 +1,10 @@
-//! The legacy IIR 2× oversampler (Butterworth cascade) — a CELL:
-//! amplifier-cascade/`SmoothSat`/`Triode` consumers predate the FIR pair and
-//! keep it as a measured alternative (kernel/resample.rs holds the
-//! linear-phase half-bands the oversampled region form uses). The comparison
-//! tests against the FIR path live here too.
+//! The IIR 2× oversampler (Butterworth cascade), kept test-only as the
+//! reference the FIR half-bands of [`Oversampled2x`](crate::Oversampled2x)
+//! are measured against, and as the measured alternative some in-crate
+//! characterization tests were pinned with.
 
-use crate::primitives::filters::biquad::Biquad;
-use crate::FilterSpec;
+use crate::kernel::node::Stage;
+use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 
 const STAGES: usize = 6;
 
@@ -24,14 +23,10 @@ impl Default for Oversampler2x {
 }
 
 impl Oversampler2x {
-    /// Rate-region factor: the wrapped callback runs at `FACTOR ×`
-    /// the outer rate (`env.region(Oversampler2x::FACTOR)`).
-    pub const FACTOR: usize = 2;
-
     pub const fn new() -> Self {
         Self {
-            up: [Biquad::new(); STAGES],
-            down: [Biquad::new(); STAGES],
+            up: [Biquad::passthrough(); STAGES],
+            down: [Biquad::passthrough(); STAGES],
             sample_rate: 48_000.0,
         }
     }
@@ -50,23 +45,17 @@ impl Oversampler2x {
             // Per-section Butterworth Q: 1 / (2·cos( (2k+1)·π / (2N) )).
             let theta = (2.0 * k as f32 + 1.0) * core::f32::consts::PI / (2.0 * n);
             let q = 1.0 / (2.0 * theta.cos());
-            self.up[k].set(FilterSpec::Lowpass { hz: cutoff, q }, inner_rate);
-            self.up[k].reset();
-            self.down[k].set(FilterSpec::Lowpass { hz: cutoff, q }, inner_rate);
-            self.down[k].reset();
-        }
-    }
-
-    pub fn reset(&mut self) {
-        for bq in self.up.iter_mut().chain(self.down.iter_mut()) {
-            bq.reset();
+            for bq in [&mut self.up[k], &mut self.down[k]] {
+                bq.prepare(inner_rate);
+                bq.set(FilterSpec::Lowpass { hz: cutoff, q });
+            }
         }
     }
 
     #[inline]
     fn run(stages: &mut [Biquad; STAGES], mut x: f32) -> f32 {
         for s in stages.iter_mut() {
-            x = s.process(x);
+            x = s.tick(x);
         }
         x
     }
@@ -77,7 +66,7 @@ impl Oversampler2x {
     /// inputs (we call it for both interleaved samples — the order matters
     /// for stateful inner processors).
     #[inline]
-    pub fn process_one<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
+    pub fn tick_with<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
         // Upsample: zero-insertion + LPF. The 2× on the even tap
         // compensates the zero-insertion energy loss (unity passband gain).
         let u0 = Self::run(&mut self.up, 2.0 * x);
@@ -168,12 +157,12 @@ mod tests {
         let f = m / n as f64;
         for i in 0..n {
             let s = (2.0 * core::f64::consts::PI * f * i as f64).sin() as f32;
-            let _ = hb.process(s);
+            let _ = hb.tick(s);
         }
         let mut acc = 0.0f64;
         for i in n..2 * n {
             let s = (2.0 * core::f64::consts::PI * f * i as f64).sin() as f32;
-            let y = hb.process(s) as f64;
+            let y = hb.tick(s) as f64;
             acc += y * y;
         }
         let out_rms = (acc / n as f64).sqrt();
@@ -191,7 +180,7 @@ mod tests {
         let mut hb = HalfbandFir::new();
         let mut y = 0.0f32;
         for _ in 0..HB_TAPS + 8 {
-            y = hb.process(1.0);
+            y = hb.tick(1.0);
         }
         assert!((y - 1.0).abs() < 1e-6, "DC gain not unity: {y}");
         let mut worst_pass = 0.0f64;
@@ -219,12 +208,12 @@ mod tests {
         // error here would comb the dry/wet mix of every consumer.
         let mut os = Oversampler2xFir::new();
         os.prepare(48_000.0);
-        let lat = Oversampler2xFir::latency_samples();
+        let lat = Oversampler2xFir::latency();
         let n = 4 * lat;
         let mut h = vec![0.0f32; n];
         for (i, v) in h.iter_mut().enumerate() {
             let x = if i == 0 { 1.0 } else { 0.0 };
-            *v = os.process_one(x, |s| s);
+            *v = os.tick_with(x, |s| s);
         }
         let peak = h
             .iter()
@@ -263,9 +252,9 @@ mod tests {
             osb.prepare(fs as f32);
             let mut step = move |x: f32| -> f32 {
                 if fir {
-                    osf.process_one(x, |s| t.process_sample(s))
+                    osf.tick_with(x, |s| t.tick(s))
                 } else {
-                    osb.process_one(x, |s| t.process_sample(s))
+                    osb.tick_with(x, |s| t.tick(s))
                 }
             };
             let sig = |i: usize| {
@@ -362,7 +351,7 @@ mod tests {
         // measurement has no leakage and no phase confound.
         let mut os = Oversampler2xFir::new();
         os.prepare(48_000.0);
-        let lat = Oversampler2xFir::latency_samples();
+        let lat = Oversampler2xFir::latency();
         let n = 8192usize;
         let m = 512usize; // 3 kHz at 48 k — bin-centred
         let tone = |i: isize| -> f64 {
@@ -370,12 +359,12 @@ mod tests {
         };
         // settle
         for i in -(n as isize)..0 {
-            let _ = os.process_one(tone(i) as f32, |s| s);
+            let _ = os.tick_with(tone(i) as f32, |s| s);
         }
         let mut err_acc = 0.0f64;
         let mut sig_acc = 0.0f64;
         for i in 0..n as isize {
-            let y = os.process_one(tone(i) as f32, |s| s) as f64;
+            let y = os.tick_with(tone(i) as f32, |s| s) as f64;
             let want = tone(i - lat as isize);
             err_acc += (y - want) * (y - want);
             sig_acc += want * want;

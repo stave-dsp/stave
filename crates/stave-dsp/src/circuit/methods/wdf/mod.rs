@@ -61,10 +61,15 @@ impl Capacitor {
         }
     }
 
-    pub fn prepare(&mut self, sample_rate: f64) {
-        self.sample_rate = sample_rate;
+    /// Re-derive the port resistance for `sample_rate`; clears state.
+    pub fn prepare(&mut self, sample_rate: f32) {
+        self.sample_rate = f64::from(sample_rate);
         self.set_farads(self.farads);
         self.reset();
+    }
+
+    pub const fn farads(&self) -> f64 {
+        self.farads
     }
 
     /// A value change keeps the stored wave: no allocation, no reset.
@@ -158,7 +163,7 @@ mod tests {
     /// 1 − exp(−t/RC) closely when RC spans many samples.
     #[test]
     fn rc_step_follows_its_time_constant() {
-        let (rate, r, c) = (192_000.0, 1e3, 100e-9);
+        let (rate, r, c) = (192_000.0f32, 1e3, 100e-9);
         let mut cap = Capacitor::new(c);
         cap.prepare(rate);
         let mut tree = Parallel::new(
@@ -174,8 +179,8 @@ mod tests {
             // Open-circuit root: the adapted port sees no load.
             tree.incident(a);
             let v = a;
-            let t = n as f64 / rate;
-            worst = worst.max((v - (1.0 - (-(t - 0.5 / rate) / (r * c)).exp())).abs());
+            let t = n as f64 / f64::from(rate);
+            worst = worst.max((v - (1.0 - (-(t - 0.5 / f64::from(rate)) / (r * c)).exp())).abs());
         }
         assert!(worst < 2e-3, "{worst}");
     }

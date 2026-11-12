@@ -1,8 +1,8 @@
 //! NonlinearRc — one-state implicit stage (diode + capacitor),
 //! warm-started Newton per tick.
 use crate::behavioral::curve::Curve;
+use crate::kernel::node::{Stage, Tail};
 use crate::primitives::solve::NewtonStats;
-use crate::kernel::node::Stage;
 
 /// A clipper's charge time, conduction threshold and knee hardness
 /// (higher = more abrupt, more diode-like).
@@ -44,7 +44,7 @@ pub struct NonlinearRc {
     /// The prepared rate (0 until `prepare`) — in-place re-voices
     /// ([`set_ts_feedback_clipper`](Self::set_ts_feedback_clipper))
     /// recompute `k` from it without a state-dumping re-prepare.
-    rate: f64,
+    sample_rate: f64,
     v: f64,
     stats: NewtonStats,
 }
@@ -68,7 +68,7 @@ impl NonlinearRc {
             tau_ms,
             topology: RcTopology::Series,
             k: 0.0,
-            rate: 0.0,
+            sample_rate: 0.0,
             v: 0.0,
             stats: NewtonStats::default(),
         }
@@ -84,7 +84,7 @@ impl NonlinearRc {
             tau_ms: 1.0,
             topology: RcTopology::Series,
             k: 0.0,
-            rate: 0.0,
+            sample_rate: 0.0,
             v: 0.0,
             stats: NewtonStats::default(),
         };
@@ -124,8 +124,8 @@ impl NonlinearRc {
         self.topology = RcTopology::Shunt {
             input_gain: input_gain as f64,
         };
-        if self.rate > 0.0 {
-            self.k = 1.0 / (self.tau_ms as f64 * 1e-3 * self.rate);
+        if self.sample_rate > 0.0 {
+            self.k = 1.0 / (self.tau_ms as f64 * 1e-3 * self.sample_rate);
         }
     }
 
@@ -161,8 +161,8 @@ impl NonlinearRc {
         });
         self.tau_ms = tau_ms;
         self.topology = RcTopology::Series;
-        if self.rate > 0.0 {
-            self.k = 1.0 / (self.tau_ms as f64 * 1e-3 * self.rate);
+        if self.sample_rate > 0.0 {
+            self.k = 1.0 / (self.tau_ms as f64 * 1e-3 * self.sample_rate);
         }
     }
 
@@ -181,10 +181,10 @@ impl NonlinearRc {
 }
 
 impl Stage for NonlinearRc {
-    fn prepare(&mut self, rate: f32) {
-        debug_assert!(rate > 0.0, "sample rate must be positive");
-        self.rate = f64::from(rate);
-        self.k = 1.0 / (self.tau_ms as f64 * 1e-3 * self.rate);
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = f64::from(sample_rate);
+        self.k = 1.0 / (self.tau_ms as f64 * 1e-3 * self.sample_rate);
         self.v = 0.0;
         self.stats = NewtonStats::default();
     }
@@ -243,5 +243,17 @@ impl Stage for NonlinearRc {
                 (x + v) as f32
             }
         }
+    }
+    /// The capacitor discharges through the curve's small-signal
+    /// conductance: time constant τ / i′(0).
+    fn tail(&self) -> Tail {
+        let (_, slope) = self.i_and_slope(0.0);
+        if slope <= 0.0 {
+            return Tail::Infinite;
+        }
+        Tail::from_time_constant(
+            f64::from(self.tau_ms) * 1e-3 / slope,
+            self.sample_rate as f32,
+        )
     }
 }

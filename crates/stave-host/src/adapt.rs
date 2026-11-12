@@ -80,11 +80,11 @@ impl<S: Stage> Instance for StageInstance<S> {
     }
 
     fn latency(&self) -> u32 {
-        self.stages.first().map_or(0, Stage::latency_samples)
+        self.stages.first().map_or(0, Stage::latency)
     }
 
     fn tail(&self) -> Tail {
-        match self.stages.first().map(Stage::tail_samples) {
+        match self.stages.first().map(|s| s.tail().to_samples()) {
             Some(None) => Tail::Infinite,
             Some(Some(n)) => Tail::Samples(n),
             None => Tail::Samples(0),
@@ -94,7 +94,7 @@ impl<S: Stage> Instance for StageInstance<S> {
     fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[NoteEvent]) {
         for ((stage, input), output) in self.stages.iter_mut().zip(inputs).zip(outputs.iter_mut()) {
             output.copy_from_slice(input);
-            stage.process_block(output);
+            stage.process(output);
         }
     }
 }
@@ -105,17 +105,17 @@ mod tests {
     use crate::config::HostConfig;
     use crate::testing::Gain;
     use crate::validate::{self, Status};
-    use stave_dsp::{FilterSpec, FilterStage};
+    use stave_dsp::{Biquad, FilterSpec};
     use stave_measure::tone_test::ToneTest;
 
-    fn peak_filter(channels: usize) -> StageInstance<FilterStage> {
+    fn peak_filter(channels: usize) -> StageInstance<Biquad> {
         let peak = FilterSpec::Peak {
             hz: 1_000.0,
             db: 6.0,
             q: 1.0,
         };
         StageInstance::new(StageInstanceConfig {
-            stages: (0..channels).map(|_| FilterStage::new(peak)).collect(),
+            stages: (0..channels).map(|_| Biquad::new(peak)).collect(),
             sample_rate: HostConfig::default().sample_rate,
             max_block: NonZeroUsize::new(64).unwrap(),
         })

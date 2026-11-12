@@ -64,13 +64,35 @@ mod tests {
 
     #[test]
     fn flush_zeroes_tiny_and_non_finite_and_keeps_the_rest_bit_exact() {
-        for x in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1e-30, -1e-25, 0.0] {
+        for x in [
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            1e-30,
+            -1e-25,
+            0.0,
+        ] {
             assert_eq!(flush(x).to_bits(), 0.0f32.to_bits(), "{x}");
         }
-        for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e-31, -1e-35, 0.0] {
+        for x in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            1e-31,
+            -1e-35,
+            0.0,
+        ] {
             assert_eq!(flush64(x).to_bits(), 0.0f64.to_bits(), "{x}");
         }
-        for x in [DENORMAL_FLOOR, -DENORMAL_FLOOR, 1.0, -0.5, f32::MAX, f32::MIN, 1e-19] {
+        for x in [
+            DENORMAL_FLOOR,
+            -DENORMAL_FLOOR,
+            1.0,
+            -0.5,
+            f32::MAX,
+            f32::MIN,
+            1e-19,
+        ] {
             assert_eq!(flush(x).to_bits(), x.to_bits(), "{x}");
         }
         for x in [1.0e-30f64, 1.0, f64::MAX, f64::MIN] {

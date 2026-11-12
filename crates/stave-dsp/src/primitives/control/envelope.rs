@@ -7,7 +7,10 @@
 //! two-stage release of an opto cell (LA-2A T4) — a fast initial drop,
 //! then a long tail.
 
-use crate::primitives::denormal::flush;
+use crate::kernel::control::Source;
+use crate::kernel::denormal::flush;
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::one_pole::tau_coeff;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct EnvelopeTimes {
@@ -19,7 +22,7 @@ pub struct EnvelopeTimes {
 #[derive(Copy, Clone, Debug)]
 pub struct EnvelopeFollower {
     times: EnvelopeTimes,
-    rate: f32,
+    sample_rate: f32,
     attack: f32,
     release: f32,
     slow_release: f32,
@@ -28,30 +31,19 @@ pub struct EnvelopeFollower {
 }
 
 impl EnvelopeFollower {
-    pub const fn new(times: EnvelopeTimes) -> Self {
-        Self {
+    /// A follower with `times`, runnable at 48 kHz before `prepare`.
+    pub fn new(times: EnvelopeTimes) -> Self {
+        let mut f = Self {
             times,
-            rate: 0.0,
+            sample_rate: 48_000.0,
             attack: 1.0,
             release: 1.0,
             slow_release: 1.0,
             state: 0.0,
             slow: 0.0,
-        }
-    }
-
-    /// Rate-dependent coefficients from the stored times; state cleared.
-    pub fn prepare(&mut self, rate: f32) {
-        self.retime(rate);
-        self.reset();
-    }
-
-    /// New rate, state kept: a time-constant change mid-signal must not
-    /// click.
-    pub fn retime(&mut self, rate: f32) {
-        debug_assert!(rate > 0.0, "sample rate must be positive");
-        self.rate = rate;
-        self.set_times(self.times);
+        };
+        f.set_times(times);
+        f
     }
 
     pub fn times(&self) -> EnvelopeTimes {
@@ -84,20 +76,30 @@ impl EnvelopeFollower {
         }
     }
 
-    pub fn reset(&mut self) {
+    /// The one-pole step toward the input per sample for time constant
+    /// `ms`. Zero follows instantly.
+    fn coefficient(&self, ms: f32) -> f32 {
+        debug_assert!(ms >= 0.0, "time constant {ms} ms");
+        tau_coeff(ms * 0.001, self.sample_rate)
+    }
+}
+
+impl Stage for EnvelopeFollower {
+    /// Rate-dependent coefficients from the stored times; state cleared.
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_times(self.times);
+        self.reset();
+    }
+
+    fn reset(&mut self) {
         self.state = 0.0;
         self.slow = 0.0;
     }
 
-    pub fn state(&self) -> f32 {
-        match self.times.slow_release_ms {
-            Some(_) => self.state.max(self.slow),
-            None => self.state,
-        }
-    }
-
     #[inline]
-    pub fn tick(&mut self, x: f32) -> f32 {
+    fn tick(&mut self, x: f32) -> f32 {
         let k = if x > self.state {
             self.attack
         } else {
@@ -115,27 +117,22 @@ impl EnvelopeFollower {
         self.state()
     }
 
-    /// The one-pole step toward the input per sample for time constant
-    /// `ms`: 1 − e^(−1/τ). τ = 0 follows instantly.
-    fn coefficient(&self, ms: f32) -> f32 {
-        debug_assert!(ms >= 0.0, "time constant {ms} ms");
-        let tau_samples = ms * 0.001 * self.rate;
-        1.0 - (-1.0 / tau_samples).exp()
+    /// The slowest release, to −120 dB.
+    fn tail(&self) -> Tail {
+        let release = Tail::from_pole(f64::from(1.0 - self.release));
+        match self.times.slow_release_ms {
+            Some(_) => release.max(Tail::from_pole(f64::from(1.0 - self.slow_release))),
+            None => release,
+        }
     }
 }
 
-impl crate::kernel::control::Source for EnvelopeFollower {
-    fn prepare(&mut self, rate: f32) {
-        EnvelopeFollower::prepare(self, rate);
-    }
-    fn reset(&mut self) {
-        EnvelopeFollower::reset(self);
-    }
-    fn tick(&mut self, detector: f32) -> f32 {
-        EnvelopeFollower::tick(self, detector)
-    }
+impl Source for EnvelopeFollower {
     fn state(&self) -> f32 {
-        EnvelopeFollower::state(self)
+        match self.times.slow_release_ms {
+            Some(_) => self.state.max(self.slow),
+            None => self.state,
+        }
     }
 }
 

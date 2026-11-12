@@ -1,24 +1,24 @@
 //! `RandomWalk` — the bounded random walker for parts that DRIFT: a
 //! white target that RENEWS at an interval, eased toward by a
 //! one-pole. Renewal is what gives a walk its reach — white noise
-//! through a slow one-pole alone has almost no variance (eddy's
-//! flutter model measured it, and four parametric-pump incidents
-//! settled the spelling: anything that MOVES inside a recirculation
-//! pumps energy unless its excursion is bounded and its spectrum
-//! band-limited). `RandomWalk` is both by construction: targets are
+//! through a slow one-pole alone has almost no variance, and anything
+//! that moves inside a recirculation pumps energy unless its excursion
+//! is bounded and its spectrum band-limited. `RandomWalk` is both by construction: targets are
 //! uniform ±1 and the ease is convex, so the walk never leaves ±1
 //! and never steps — a wandering delay or gain modulated by it can
 //! contribute at most its dialed depth.
 //!
-//! Unipolar walks (0..1 positions, DUST-style tap clouds) are the
-//! affine remap `0.5 + 0.5 · tick()` — easing commutes with affine
+//! Unipolar walks (0..1 positions, tap clouds) are the affine remap
+//! `0.5 + 0.5 · tick()` — easing commutes with affine
 //! maps, and the remapped target distribution is the same uniform
 //! 0..1, so no second kind is earned.
 //!
 //! Deterministic: same seed, same sequence — walks are part of the
-//! sound and must survive a bit-compare (validation's `reproducible`
-//! check renders twice).
+//! sound and must survive a bit-compare (validation renders twice).
 
+use crate::kernel::control::Source;
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::one_pole::tau_coeff;
 use crate::primitives::random::Xorshift32;
 
 #[derive(Clone, Copy, Debug)]
@@ -31,15 +31,7 @@ pub struct RandomWalk {
     interval_ms: f32,
     ease_ms: f32,
     ease: f32,
-}
-
-#[inline]
-fn coeff(ms: f32, sr: f32) -> f32 {
-    if ms <= 0.0 {
-        return 1.0; // instantaneous: value IS the target
-    }
-    debug_assert!(sr > 0.0, "sample rate must be positive");
-    1.0 - (-1.0 / (ms * 0.001 * sr)).exp()
+    sample_rate: f32,
 }
 
 impl RandomWalk {
@@ -47,7 +39,7 @@ impl RandomWalk {
     /// `ease_ms` the approach time constant (its smoothness). Seeds
     /// must be nonzero (xorshift's absorbing state) — 0 is remapped.
     pub fn new(interval_ms: f32, ease_ms: f32, seed: u32) -> Self {
-        Self {
+        let mut w = Self {
             rng: Xorshift32::new(seed),
             value: 0.0,
             target: 0.0,
@@ -56,31 +48,20 @@ impl RandomWalk {
             interval_ms,
             ease_ms,
             ease: 1.0,
-        }
-    }
-
-    /// Derive rate-dependent constants. Non-realtime (activate).
-    pub fn prepare(&mut self, sample_rate: f32) {
-        self.period = ((self.interval_ms * 0.001 * sample_rate) as u32).max(1);
-        self.ease = coeff(self.ease_ms, sample_rate);
-        self.reset();
-    }
-
-    /// Back to rest at center; the seed (and thus the sequence)
-    /// restarts with it — reset is part of reproducibility.
-    pub fn reset(&mut self) {
-        self.value = 0.0;
-        self.target = 0.0;
-        self.countdown = 0;
+            sample_rate: 48_000.0,
+        };
+        w.set_times(interval_ms, ease_ms);
+        w.countdown = 0;
+        w
     }
 
     /// Retime a live walk (the Lag precedent): cadence and ease
     /// follow a knob without resetting state or sequence.
-    pub fn set_times(&mut self, interval_ms: f32, ease_ms: f32, sample_rate: f32) {
+    pub fn set_times(&mut self, interval_ms: f32, ease_ms: f32) {
         self.interval_ms = interval_ms;
         self.ease_ms = ease_ms;
-        self.period = ((interval_ms * 0.001 * sample_rate) as u32).max(1);
-        self.ease = coeff(ease_ms, sample_rate);
+        self.period = ((interval_ms * 0.001 * self.sample_rate) as u32).max(1);
+        self.ease = tau_coeff(ease_ms * 0.001, self.sample_rate);
         self.countdown = self.countdown.min(self.period);
     }
 
@@ -91,17 +72,45 @@ impl RandomWalk {
         self.value = value;
         self.target = self.value;
     }
+}
 
-    /// The walk, one sample: renew on the countdown, ease toward the
-    /// target, yield the bounded position.
+impl Stage for RandomWalk {
+    /// Derive rate-dependent constants and come to rest.
+    fn prepare(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.set_times(self.interval_ms, self.ease_ms);
+        self.reset();
+    }
+
+    /// Back to rest at center. The generator's position in its
+    /// sequence is kept — reset never repeats a stretch of walk.
+    fn reset(&mut self) {
+        self.value = 0.0;
+        self.target = 0.0;
+        self.countdown = 0;
+    }
+
+    /// The walk, one sample (the input is ignored): renew on the
+    /// countdown, ease toward the target, yield the bounded position.
     #[inline]
-    pub fn tick(&mut self) -> f32 {
+    fn tick(&mut self, _: f32) -> f32 {
         if self.countdown == 0 {
             self.countdown = self.period;
             self.target = self.rng.next_bipolar();
         }
         self.countdown -= 1;
         self.value += (self.target - self.value) * self.ease;
+        self.value
+    }
+
+    /// A generator: it never stops.
+    fn tail(&self) -> Tail {
+        Tail::Infinite
+    }
+}
+
+impl Source for RandomWalk {
+    fn state(&self) -> f32 {
         self.value
     }
 }
@@ -111,7 +120,7 @@ mod tests {
     use super::*;
 
     fn run(w: &mut RandomWalk, n: usize) -> Vec<f32> {
-        (0..n).map(|_| w.tick()).collect()
+        (0..n).map(|_| w.tick(0.0)).collect()
     }
 
     #[test]

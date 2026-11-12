@@ -194,7 +194,7 @@ fn adaa_noise_floor_stays_inaudible() {
         let mut t = Triode::new();
         t.prepare(fs as f32);
         t.set_grid_drive(knob(drv));
-        let floor = noise_floor_db(m, n, amp, move |x| t.process_sample(x));
+        let floor = noise_floor_db(m, n, amp, move |x| t.tick(x));
         println!("drive {drv:>4.0} dB | ADAA noise floor {floor:.1} dB");
         assert!(
             floor < -50.0,
@@ -228,9 +228,9 @@ fn decimator_vs_adaa_order_headroom() {
         os2.prepare(fs as f32 * 2.0);
         alias_to_signal_db(m, n, fs, amp, move |x| {
             if factor == 4 {
-                os1.process_one(x, |a| os2.process_one(a, |b| t.process_sample(b)))
+                os1.tick_with(x, |a| os2.tick_with(a, |b| t.tick(b)))
             } else {
-                os1.process_one(x, |a| t.process_sample(a))
+                os1.tick_with(x, |a| t.tick(a))
             }
         })
     };
@@ -275,9 +275,9 @@ fn oversampler_net_verdict() {
         osr.prepare(fs as f32);
         alias_to_signal_db(m, n, fs, amp, move |x| {
             if os {
-                osr.process_one(x, |s| t.process_sample(s))
+                osr.tick_with(x, |s| t.tick(s))
             } else {
-                t.process_sample(x)
+                t.tick(x)
             }
         })
     };
@@ -368,9 +368,9 @@ fn aliasing_verification_table() {
                 osr.prepare(fs as f32);
                 alias_to_signal_db(m, n, fs, amp, move |x| {
                     if os {
-                        osr.process_one(x, |s| t.process_sample(s))
+                        osr.tick_with(x, |s| t.tick(s))
                     } else {
-                        t.process_sample(x)
+                        t.tick(x)
                     }
                 })
             };
@@ -444,9 +444,9 @@ fn adaa_matches_transfer_for_dc_and_slow_signals() {
     for &dc in &[-0.6_f64, -0.2, 0.3, 0.8] {
         // settle the ADAA state at this DC level
         for _ in 0..4 {
-            let _ = t.process_sample(dc as f32);
+            let _ = t.tick(dc as f32);
         }
-        let y = t.process_sample(dc as f32) as f64;
+        let y = t.tick(dc as f32) as f64;
         let f = t.f_eval(dc);
         assert!((y - f).abs() < 1e-4, "ADAA DC mismatch at {dc}: {y} vs {f}");
     }
@@ -460,9 +460,9 @@ fn adaa_ill_conditioned_branches_are_finite_and_correct() {
     t.set_grid_drive(knob(18.0));
     // Constant input → must equal f(const), no NaN.
     for _ in 0..8 {
-        let _ = t.process_sample(0.4);
+        let _ = t.tick(0.4);
     }
-    let y_const = t.process_sample(0.4);
+    let y_const = t.tick(0.4);
     assert!(y_const.is_finite());
     assert!((y_const as f64 - t.f_eval(0.4)).abs() < 1e-4);
     // x0≈x2 with x1 different: feed A, B, A (period-2). All finite.
@@ -471,7 +471,7 @@ fn adaa_ill_conditioned_branches_are_finite_and_correct() {
     let mut mx = 0.0f32;
     for i in 0..256 {
         let v = if i % 2 == 0 { 0.5 } else { -0.5 };
-        let y = tr.process_sample(v);
+        let y = tr.tick(v);
         assert!(y.is_finite(), "non-finite in period-2 drive");
         mx = mx.max(y.abs());
     }
@@ -480,9 +480,9 @@ fn adaa_ill_conditioned_branches_are_finite_and_correct() {
     let mut td = Triode::new();
     td.set_grid_drive(knob(6.0));
     for _ in 0..4 {
-        let _ = td.process_sample(0.31);
+        let _ = td.tick(0.31);
     }
-    let y = td.process_sample(0.31 + 1e-9);
+    let y = td.tick(0.31 + 1e-9);
     assert!(y.is_finite() && (y as f64 - td.f_eval(0.31)).abs() < 1e-3);
 }
 
@@ -505,12 +505,12 @@ fn adaa_reduces_aliasing() {
         // warm-up
         for i in 0..n {
             let s = 0.5 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-            let _ = t.process_sample(s);
+            let _ = t.tick(s);
         }
         let mut out = vec![0.0f32; n];
         for i in 0..n {
             let s = 0.5 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-            out[i] = t.process_sample(s);
+            out[i] = t.tick(s);
         }
         out
     };
@@ -547,9 +547,9 @@ fn adaa_preserves_inband_harmonics() {
         let sine =
             |i: usize| 0.4 * (2.0 * core::f64::consts::PI * f0 * i as f64 / rate).sin() as f32;
         for i in 0..frames {
-            let _ = t.process_sample(sine(i));
+            let _ = t.tick(sine(i));
         }
-        (0..frames).map(|i| t.process_sample(sine(i))).collect()
+        (0..frames).map(|i| t.tick(sine(i))).collect()
     };
     let truth = render(fs * 8.0, false);
     let on = render(fs, true);
@@ -620,14 +620,14 @@ fn cathode_bias_does_not_add_aliasing() {
         let mut t = Triode::new();
         t.prepare(fs as f32);
         t.set_grid_drive(knob(14.0));
-        noise_floor_db(m, 8192, 0.5, move |x| t.process_sample(x))
+        noise_floor_db(m, 8192, 0.5, move |x| t.tick(x))
     };
     for &tau in &[0.05_f32, 1.0, 5.0, 30.0] {
         let mut t = Triode::new();
         t.prepare(fs as f32);
         t.set_grid_drive(knob(14.0));
         self_biased(&mut t, f64::from(tau));
-        let on = noise_floor_db(m, 8192, 0.5, move |x| t.process_sample(x));
+        let on = noise_floor_db(m, 8192, 0.5, move |x| t.tick(x));
         println!(
             "4 kHz floor — base {base:.1} dB, cathode τ={tau:>4}ms {on:.1} dB (Δ {:+.1})",
             on - base
@@ -664,7 +664,7 @@ fn full_path_high_freq_is_clean_with_cathode() {
     // oversampling can — the multiband product's 4× saturation stack does).
     let max_bin = (20_000.0 * 8192.0 / fs) as usize;
     let floor = noise_floor_db_upto(m, 8192, 0.5, max_bin, move |x| {
-        os.process_one(x, |s| t.process_sample(s))
+        os.tick_with(x, |s| t.tick(s))
     });
     println!("4 kHz full-path audible-band floor (cathode on + FIR 2×): {floor:.1} dB");
     assert!(
@@ -692,24 +692,17 @@ fn companding_reduces_tube_hf_thd() {
         t.set_grid_drive(knob(8.0));
         let mut os = Oversampler2x::new();
         os.prepare(fs as f32);
-        let mut pre = Biquad::new();
-        pre.set(
-            FilterSpec::HighShelf {
-                hz: 2_500.0,
-                db: -hf,
-            },
-            fs as f32,
-        );
-        let mut post = Biquad::new();
-        post.set(
-            FilterSpec::HighShelf {
-                hz: 2_500.0,
-                db: hf,
-            },
-            fs as f32,
-        );
-        let mut step =
-            |x: f32| post.process(os.process_one(pre.process(x), |s| t.process_sample(s)));
+        let mut pre = Biquad::new(FilterSpec::HighShelf {
+            hz: 2_500.0,
+            db: -hf,
+        });
+        pre.prepare(fs as f32);
+        let mut post = Biquad::new(FilterSpec::HighShelf {
+            hz: 2_500.0,
+            db: hf,
+        });
+        post.prepare(fs as f32);
+        let mut step = |x: f32| post.tick(os.tick_with(pre.tick(x), |s| t.tick(s)));
         let sig = |i: usize| 0.4 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
         for i in 0..n {
             let _ = step(sig(i));
@@ -780,7 +773,7 @@ fn tube_types_are_sane_and_gain_orders_by_mu() {
         let mut mx = 0.0f32;
         for i in 0..4096 {
             let s = 0.5 * (2.0 * core::f64::consts::PI * 1000.0 * i as f64 / fs).sin() as f32;
-            let y = tube.process_sample(s);
+            let y = tube.tick(s);
             assert!(y.is_finite());
             mx = mx.max(y.abs());
         }
@@ -829,7 +822,7 @@ fn set_tube_is_a_noop_when_unchanged() {
 fn run_sine(t: &mut Triode, f0: f64, fs: f64, amp: f32, samples: usize) {
     for i in 0..samples {
         let s = amp * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-        let _ = t.process_sample(s);
+        let _ = t.tick(s);
     }
 }
 
@@ -882,12 +875,12 @@ fn cathode_responds_and_recovers_over_time() {
         self_biased(&mut t, rc_ms);
         let loud = (0..fs as usize).map(|i| {
             let s = 0.8 * (2.0 * core::f64::consts::PI * 200.0 * i as f64 / fs).sin() as f32;
-            let _ = t.process_sample(s);
+            let _ = t.tick(s);
             t.cathode_shift()
         });
         let mut out: Vec<f64> = loud.collect();
         out.extend((0..fs as usize).map(|_| {
-            let _ = t.process_sample(0.0);
+            let _ = t.tick(0.0);
             t.cathode_shift()
         }));
         out
@@ -921,7 +914,7 @@ fn cathode_stable_at_extreme() {
     let mut mx = 0.0f32;
     for i in 0..(fs as usize) {
         let s = 0.9 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-        let y = t.process_sample(s);
+        let y = t.tick(s);
         assert!(y.is_finite(), "non-finite with extreme cathode bias");
         mx = mx.max(y.abs());
     }
@@ -936,7 +929,7 @@ fn cathode_does_not_add_aliasing() {
     t.prepare(fs as f32);
     t.set_grid_drive(knob(12.0));
     self_biased(&mut t, 30.0);
-    let floor = noise_floor_db(38, 8192, 0.5, move |x| t.process_sample(x));
+    let floor = noise_floor_db(38, 8192, 0.5, move |x| t.tick(x));
     println!("cathode-on noise floor: {floor:.1} dB");
     assert!(floor < -50.0, "cathode bias added audible noise: {floor}");
 }
@@ -1022,7 +1015,7 @@ fn the_report_is_the_truth() {
         for i in 0..n {
             // −60 dB: far below any knee, pure small-signal.
             let s = 0.001 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-            out[i] = t.process_sample(s);
+            out[i] = t.tick(s);
         }
         let g = goertzel(&out[n / 2..], f0, fs) / 0.001;
         (20.0 * g.max(1e-12).log10(), t.small_signal_gain_db())
@@ -1081,7 +1074,7 @@ fn the_ceiling_obeys_the_policy() {
         for i in 0..n {
             // 0 dBFS — far past any knee at any drive.
             let s = (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-            let y = t.process_sample(s);
+            let y = t.tick(s);
             if i > n / 2 {
                 pk = pk.max(f64::from(y.abs()));
             }
@@ -1146,7 +1139,7 @@ fn rebind_is_a_no_op() {
                     t.set_grid_drive(knob(12.0)); // same value, mid-stream
                 }
                 let s = 0.3 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-                t.process_sample(s)
+                t.tick(s)
             })
             .collect()
     };
@@ -1177,7 +1170,7 @@ fn drive_sweep_explore() {
             let mut out = vec![0.0f32; n];
             for i in 0..n {
                 let s = amp * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-                out[i] = t.process_sample(s);
+                out[i] = t.tick(s);
             }
             let h1 = goertzel(&out, f0, fs);
             let thd: f64 = (2..=8)
@@ -1212,7 +1205,7 @@ fn stable_and_tube_voiced() {
             let mut out = vec![0.0f32; n];
             for i in 0..n {
                 let s = amp * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-                out[i] = t.process_sample(s);
+                out[i] = t.tick(s);
             }
             assert!(
                 out.iter().all(|x| x.is_finite()),
@@ -1240,7 +1233,7 @@ fn stable_and_tube_voiced() {
     let mut q = vec![0.0f32; n];
     for i in 0..n {
         let s = 0.1 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-        q[i] = t.process_sample(s);
+        q[i] = t.tick(s);
     }
     let qh1 = goertzel(&q, f0, fs);
     let qh2 = goertzel(&q, 2.0 * f0, fs);
@@ -1261,7 +1254,7 @@ fn stable_and_tube_voiced() {
     let mut out = vec![0.0f32; n];
     for i in 0..n {
         let s = 0.08 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-        out[i] = t.process_sample(s);
+        out[i] = t.tick(s);
     }
     let h1 = goertzel(&out, f0, fs);
     let h2 = goertzel(&out, 2.0 * f0, fs);

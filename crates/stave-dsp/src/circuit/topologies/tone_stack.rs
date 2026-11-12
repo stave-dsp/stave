@@ -15,6 +15,8 @@
 //! Baxandall network, a four-control network, or an active equalizer is a
 //! different mechanism rather than a mode of this type.
 
+use crate::kernel::node::{Stage, Tail};
+
 /// Component values for the family of passive treble/bass/midrange networks
 /// described by Yeh and Smith (DAFx-06).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,18 +82,6 @@ impl PassiveToneStack {
         stack
     }
 
-    pub fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.sample_rate = f64::from(sample_rate);
-        self.reset();
-        self.update_coefficients();
-    }
-
-    pub fn reset(&mut self) {
-        self.input_history = [0.0; 3];
-        self.output_history = [0.0; 3];
-    }
-
     /// Update all three potentiometers as one circuit operation.
     pub fn set_controls(&mut self, controls: PassiveToneControlPositions) {
         debug_assert!(
@@ -102,26 +92,6 @@ impl PassiveToneStack {
         );
         self.controls = controls;
         self.update_coefficients();
-    }
-
-    #[inline]
-    pub fn process(&mut self, input: f32) -> f32 {
-        let coefficients = self.coefficients;
-        let current_input = f64::from(input);
-        let current_output = coefficients.numerator[0] * current_input
-            + coefficients.numerator[1] * self.input_history[0]
-            + coefficients.numerator[2] * self.input_history[1]
-            + coefficients.numerator[3] * self.input_history[2]
-            - coefficients.denominator[1] * self.output_history[0]
-            - coefficients.denominator[2] * self.output_history[1]
-            - coefficients.denominator[3] * self.output_history[2];
-        self.input_history = [current_input, self.input_history[0], self.input_history[1]];
-        self.output_history = [
-            current_output,
-            self.output_history[0],
-            self.output_history[1],
-        ];
-        current_output as f32
     }
 
     /// The network's own magnitude at `frequency_hz` (the analog transfer
@@ -237,6 +207,73 @@ impl PassiveToneStack {
     }
 }
 
+impl Stage for PassiveToneStack {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = f64::from(sample_rate);
+        self.reset();
+        self.update_coefficients();
+    }
+
+    fn reset(&mut self) {
+        self.input_history = [0.0; 3];
+        self.output_history = [0.0; 3];
+    }
+
+    #[inline]
+    fn tick(&mut self, input: f32) -> f32 {
+        let coefficients = self.coefficients;
+        let current_input = f64::from(input);
+        let current_output = coefficients.numerator[0] * current_input
+            + coefficients.numerator[1] * self.input_history[0]
+            + coefficients.numerator[2] * self.input_history[1]
+            + coefficients.numerator[3] * self.input_history[2]
+            - coefficients.denominator[1] * self.output_history[0]
+            - coefficients.denominator[2] * self.output_history[1]
+            - coefficients.denominator[3] * self.output_history[2];
+        self.input_history = [current_input, self.input_history[0], self.input_history[1]];
+        self.output_history = [
+            current_output,
+            self.output_history[0],
+            self.output_history[1],
+        ];
+        current_output as f32
+    }
+
+    /// The slowest of the three poles, to −120 dB.
+    fn tail(&self) -> Tail {
+        let [_, d1, d2, d3] = self.coefficients.denominator;
+        Tail::from_pole(cubic_pole_radius(d1, d2, d3)).max(Tail::Samples(3))
+    }
+}
+
+/// The largest root magnitude of `z³ + d1·z² + d2·z + d3`: one real root
+/// by bisection inside the Cauchy bound, the other two from the deflated
+/// quadratic.
+fn cubic_pole_radius(d1: f64, d2: f64, d3: f64) -> f64 {
+    let p = |z: f64| ((z + d1) * z + d2) * z + d3;
+    let bound = 1.0 + d1.abs().max(d2.abs()).max(d3.abs());
+    let (mut lo, mut hi) = (-bound, bound);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if (p(mid) < 0.0) == (p(lo) < 0.0) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let r = 0.5 * (lo + hi);
+    let (b, c) = (d1 + r, d2 + r * (d1 + r));
+    let disc = b * b - 4.0 * c;
+    let quadratic = if disc < 0.0 {
+        c.abs().sqrt()
+    } else {
+        let s = disc.sqrt();
+        ((-b + s) * 0.5).abs().max(((-b - s) * 0.5).abs())
+    };
+    r.abs().max(quadratic)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,7 +300,7 @@ mod tests {
                     stack.set_controls(PassiveToneControlPositions::new(treble, bass, midrange));
                     let mut peak = 0.0f32;
                     for sample_index in 0..48_000 {
-                        let output = stack.process(if sample_index == 0 { 1.0 } else { 0.0 });
+                        let output = stack.tick(if sample_index == 0 { 1.0 } else { 0.0 });
                         assert!(output.is_finite());
                         peak = peak.max(output.abs());
                     }

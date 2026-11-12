@@ -154,12 +154,12 @@ fn the_common_cathode_stage_with_grid_current_matches_spice() {
 /// and sag and recovery around a 20 → 80 → 20 mA load step.
 #[test]
 fn the_power_supply_matches_spice() {
-    use stave_dsp::{PowerSupply, PowerSupplyConfig};
+    use stave_dsp::{PowerSupply, PowerSupplyConfig, Stage};
     let g = ngspice("power_supply");
     let oversample = 4;
     let rate = 48_000.0 * oversample as f64;
     let mut supply = PowerSupply::new(PowerSupplyConfig::SILICON_CHOKE);
-    supply.prepare(rate);
+    supply.prepare(rate as f32);
     let load = |t: f64| {
         if (0.3..0.4).contains(&t) {
             80e-3
@@ -169,7 +169,7 @@ fn the_power_supply_matches_spice() {
     };
     // Tick i ends at (i + 1)/rate; ngspice's points are at k/48 kHz, k ≥ 1.
     let render: Vec<f64> = (0..g.value.len() * oversample)
-        .map(|i| supply.tick(load((i + 1) as f64 / rate)))
+        .map(|i| supply.tick_f64(load((i + 1) as f64 / rate)))
         .skip(oversample - 1)
         .step_by(oversample)
         .collect();
@@ -234,7 +234,7 @@ fn the_coupler_matches_spice() {
 /// to the stage's level calibration, one fitted scale factor.
 #[test]
 fn the_triode_stage_static_transfer_matches_spice() {
-    use stave_dsp::Triode;
+    use stave_dsp::{Stage, Triode};
     let g = ngspice("triode_stage");
     let mut stage = Triode::new();
     stage.prepare(48_000.0);
@@ -280,7 +280,7 @@ fn the_triode_stage_static_transfer_matches_spice() {
 /// the ngspice plate difference, up to the pair's level calibration.
 #[test]
 fn the_push_pull_static_transfer_matches_spice() {
-    use stave_dsp::PushPull;
+    use stave_dsp::{PushPull, Stage};
     let g = ngspice("push_pull");
     let mut pair = PushPull::new();
     pair.prepare(48_000.0);
@@ -315,7 +315,7 @@ fn the_opamp_clipper_matches_spice() {
         stage.prepare(rate as f32);
         let render: Vec<f64> = (0..g.value.len() * oversample)
             .map(|n| {
-                stage.process_volts(0.5 * (std::f64::consts::TAU * 1_000.0 * n as f64 / rate).sin())
+                stage.tick_f64(0.5 * (std::f64::consts::TAU * 1_000.0 * n as f64 / rate).sin())
             })
             .step_by(oversample)
             .collect();

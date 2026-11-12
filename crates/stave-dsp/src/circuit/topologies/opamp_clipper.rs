@@ -9,7 +9,7 @@
 
 use crate::circuit::devices::diode::Shockley;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct OpAmpClipperConfig {
@@ -39,6 +39,7 @@ impl OpAmpClipperConfig {
 pub struct OpAmpClipper {
     config: OpAmpClipperConfig,
     step: f64,
+    sample_rate: f32,
     /// Ground-leg capacitor voltage and the leg's current, last sample.
     ground_volts: f64,
     ground_amps: f64,
@@ -53,7 +54,8 @@ impl OpAmpClipper {
     pub fn new(config: OpAmpClipperConfig) -> Self {
         Self {
             config,
-            step: 0.0,
+            step: 1.0 / 48_000.0,
+            sample_rate: 48_000.0,
             ground_volts: 0.0,
             ground_amps: 0.0,
             feedback_volts: 0.0,
@@ -72,7 +74,8 @@ impl OpAmpClipper {
         self.config = *config;
     }
 
-    pub fn process_volts(&mut self, input: f64) -> f64 {
+    /// One sample in `f64` volts.
+    pub fn tick_f64(&mut self, input: f64) -> f64 {
         let c = self.config;
         let t = self.step;
         // Ground leg: i = (vin − vc)/R, C·dvc/dt = i, trapezoidal.
@@ -103,9 +106,10 @@ impl OpAmpClipper {
 }
 
 impl Stage for OpAmpClipper {
-    fn prepare(&mut self, rate: f32) {
-        debug_assert!(rate > 0.0, "sample rate must be positive");
-        self.step = 1.0 / f64::from(rate);
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.step = 1.0 / f64::from(sample_rate);
         self.reset();
         self.stats = NewtonStats::default();
     }
@@ -118,6 +122,13 @@ impl Stage for OpAmpClipper {
     }
 
     fn tick(&mut self, x: f32) -> f32 {
-        self.process_volts(f64::from(x)) as f32
+        self.tick_f64(f64::from(x)) as f32
+    }
+
+    /// The slower of the two RC legs.
+    fn tail(&self) -> Tail {
+        let c = &self.config;
+        let tau = (c.ground_ohms * c.ground_farads).max(c.feedback_ohms * c.feedback_farads);
+        Tail::from_time_constant(tau, self.sample_rate)
     }
 }

@@ -1,20 +1,17 @@
-//! Oversampled2x's resampling machinery: the
-//! linear-phase FIR half-band pairs `Oversampled2x` runs between —
-//! `front` (133-tap, full steepness) and `nested` (73-tap, relaxed
-//! interior). Public only for the conformance instruments; effects
-//! compose `Oversampled2x`, not these. (The legacy IIR `Oversampler2x`
-//! is a primitive — primitives/resample.rs.)
+//! [`Oversampled2x`](crate::Oversampled2x)'s resampling machinery:
+//! the linear-phase FIR half-band pairs it runs between — `front`
+//! (133-tap, full steepness) and `nested` (73-tap, relaxed interior).
+//! Crate-private: everything composes `Oversampled2x`.
 
 // ===== Linear-phase FIR half-band oversampler =====
 //
-// The Butterworth cascade above is phase-benign and latency-free, but its
+// A Butterworth IIR cascade is phase-benign and latency-free, but its
 // transition band is the measured ceiling on alias rejection for hard
 // nonlinearities (~−34 dB alias-to-signal on hot bright material — the
 // filter, not the oversampling factor, is the wall; 4× tested identical).
 // This FIR half-band replaces that ceiling with ~96 dB of stopband at the
 // cost of a fixed, exactly-integer group delay that callers must
-// compensate (delay the dry path by `latency_samples()` and report it to
-// the host).
+// compensate (`Oversampled2x` reports it as its `latency`).
 //
 // Design: Kaiser-windowed ideal half-band (cutoff at the outer Nyquist).
 // Half-band symmetry ⇒ every even-offset tap except the center is exactly
@@ -110,7 +107,7 @@ fn halfband_coeffs() -> (f64, [f64; HB_HALF]) {
 /// zeros: only (taps−1)/4 + 1 multiplies per sample. `m`/`n_side` select
 /// the outer (133-tap) or relaxed inner (73-tap) design.
 #[derive(Clone)]
-pub struct HalfbandFir {
+pub(crate) struct HalfbandFir {
     buf: [f32; HB_RING],
     idx: usize,
     center: f64,
@@ -158,7 +155,7 @@ impl HalfbandFir {
 
     /// Filter one sample (f64 accumulation for a deep artifact floor).
     #[inline]
-    pub fn process(&mut self, x: f32) -> f32 {
+    pub fn tick(&mut self, x: f32) -> f32 {
         self.idx = (self.idx + 1) & (HB_RING - 1);
         self.buf[self.idx] = x;
         let buf = &self.buf;
@@ -182,14 +179,14 @@ impl HalfbandFir {
     }
 
     /// Block decimation: consume `up` (2N samples at the inner rate),
-    /// write N outputs. Per pair this is exactly `process(even)` then
+    /// write N outputs. Per pair this is exactly `tick(even)` then
     /// `push(odd)` — same ring, same accumulation order, bit-identical
     /// to the per-sample path (the block win is the hoisted dispatch,
     /// not a different algorithm).
     pub fn process_block_decim(&mut self, up: &[f32], out: &mut [f32]) {
         debug_assert_eq!(up.len(), 2 * out.len());
         for (i, y) in out.iter_mut().enumerate() {
-            *y = self.process(up[2 * i]);
+            *y = self.tick(up[2 * i]);
             self.push(up[2 * i + 1]);
         }
     }
@@ -204,7 +201,7 @@ impl HalfbandFir {
 /// skipped terms were exact zeros — outputs are bit-identical (proven
 /// by `polyphase_up_is_bit_identical_to_zero_stuffed`).
 #[derive(Clone)]
-pub struct HalfbandUp {
+pub(crate) struct HalfbandUp {
     sig: [f32; 128],
     n: usize,
     center: f64,
@@ -282,13 +279,11 @@ impl Default for HalfbandUp {
     }
 }
 
-/// 2× oversampling wrapper around a linear-phase FIR half-band pair.
-/// Same closure API as `Oversampler2x`; adds `latency_samples()` of
-/// group delay at the outer rate, which the caller must compensate (delay
-/// the dry path; report to the host). Decimation keeps the even phase so
-/// the latency is exactly integer.
+/// 2× oversampling around a linear-phase FIR half-band pair: `latency()`
+/// samples of group delay at the outer rate. Decimation keeps the even
+/// phase so the latency is exactly integer.
 #[derive(Clone)]
-pub struct Oversampler2xFir {
+pub(crate) struct Oversampler2xFir {
     up: HalfbandUp,
     down: HalfbandFir,
 }
@@ -300,11 +295,6 @@ impl Default for Oversampler2xFir {
 }
 
 impl Oversampler2xFir {
-    /// Rate-region factor: the wrapped callback runs at `FACTOR ×`
-    /// the outer rate. Nested regions multiply — the forge 4× path is
-    /// `Oversampler2xFir::FACTOR * Oversampler2xFirInner::FACTOR`.
-    pub const FACTOR: usize = 2;
-
     pub fn new() -> Self {
         Self {
             up: HalfbandUp::new(),
@@ -312,10 +302,10 @@ impl Oversampler2xFir {
         }
     }
 
-    /// The half-band design is normalised (cutoff is always the outer
-    /// Nyquist), so there is nothing rate-dependent to compute — `prepare`
-    /// just clears state. The signature matches `Oversampler2x` so the
-    /// two are drop-in interchangeable.
+    /// Nothing is rate-dependent (the design is normalised to the outer
+    /// Nyquist): clears state, for drop-in symmetry with the IIR
+    /// reference in tests.
+    #[cfg(test)]
     pub fn prepare(&mut self, _sample_rate: f32) {
         self.reset();
     }
@@ -327,7 +317,7 @@ impl Oversampler2xFir {
 
     /// Group delay of the up+down chain, in samples at the OUTER rate.
     /// Exactly integer by construction (TAPS ≡ 1 mod 4).
-    pub const fn latency_samples() -> usize {
+    pub const fn latency() -> usize {
         HB_M // (133−1) inner samples round trip = 66 outer samples
     }
 
@@ -335,7 +325,7 @@ impl Oversampler2xFir {
     /// decimation half-bands. The `2·x` on the non-zero-stuffed sample
     /// compensates the zero-insertion energy loss (unity passband gain).
     #[inline]
-    pub fn process_one<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
+    pub fn tick_with<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
         // Polyphase both directions: the upsampler computes only
         // signal-bearing taps per phase; the decimator's discarded odd
         // output becomes a state-only push. Bit-identical to the
@@ -344,20 +334,18 @@ impl Oversampler2xFir {
         // Keep the EVEN decimation phase (return the first of the pair):
         // the impulse peak of the 132-sample round trip lands on an even
         // inner index, so the outer-rate latency is exactly 66 samples.
-        let y = self.down.process(inner(u0));
+        let y = self.down.tick(inner(u0));
         self.down.push(inner(u1));
         y
     }
 
-    /// Block form of [`process_one`](Self::process_one): upsample the
-    /// whole block into `up_scratch` (caller-allocated, ≥ 2·`io.len()`),
-    /// run `inner` ONCE over the 2× block, decimate back in place.
-    /// BIT-identical to the per-sample path (each component sees the
-    /// same sample sequence; `inner` sees the identical 2× stream) —
-    /// pinned in `tests/block_api.rs`. The win is one closure dispatch
-    /// per block instead of two per sample, and `inner` gets a slice it
-    /// can vectorize over.
-    pub fn process_block<F: FnMut(&mut [f32])>(
+    /// Block form of [`tick_with`](Self::tick_with): upsample the
+    /// whole block into `up_scratch` (≥ 2·`io.len()`), run `inner` ONCE
+    /// over the 2× block, decimate back in place. Bit-identical to the
+    /// per-sample path (each component sees the same sample sequence;
+    /// `inner` sees the identical 2× stream) — pinned in
+    /// `tests/block_api.rs` through `Oversampled2x::process`.
+    pub fn process_with<F: FnMut(&mut [f32])>(
         &mut self,
         io: &mut [f32],
         up_scratch: &mut [f32],
@@ -370,11 +358,11 @@ impl Oversampler2xFir {
     }
 }
 
-/// The INNER 2× of a nested 4× stack — same closure API, relaxed 73-tap
+/// The INNER 2× of a nested 4× stack — same API, relaxed 73-tap
 /// design (see `HB_TAPS_INNER`), exactly-integer 18-sample latency at
 /// the BASE rate (its own outer rate is 2× base, so 36 samples there).
 #[derive(Clone)]
-pub struct Oversampler2xFirInner {
+pub(crate) struct Oversampler2xFirInner {
     up: HalfbandUp,
     down: HalfbandFir,
 }
@@ -386,18 +374,11 @@ impl Default for Oversampler2xFirInner {
 }
 
 impl Oversampler2xFirInner {
-    /// Rate-region factor relative to ITS outer rate (the front
-    /// half-band's inner rate when nested in the 4× stack).
-    pub const FACTOR: usize = 2;
-
     pub fn new() -> Self {
         Self {
             up: HalfbandUp::inner(),
             down: HalfbandFir::inner(),
         }
-    }
-    pub fn prepare(&mut self, _sample_rate: f32) {
-        self.reset();
     }
     pub fn reset(&mut self) {
         self.up.reset();
@@ -405,20 +386,20 @@ impl Oversampler2xFirInner {
     }
     /// Group delay at the BASE rate when used as the inner stage of a 4×
     /// stack: (73−1) samples at 4× = 18 base samples, exactly integer.
-    pub const fn latency_samples_base() -> usize {
+    pub const fn latency_base() -> usize {
         (HB_TAPS_INNER - 1) / 4
     }
     #[inline]
-    pub fn process_one<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
+    pub fn tick_with<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
         let (u0, u1) = self.up.process_pair(2.0 * x);
-        let y = self.down.process(inner(u0));
+        let y = self.down.tick(inner(u0));
         self.down.push(inner(u1));
         y
     }
 
-    /// Block form — see [`Oversampler2xFir::process_block`]; same
+    /// Block form — see [`Oversampler2xFir::process_with`]; same
     /// contract, relaxed inner design.
-    pub fn process_block<F: FnMut(&mut [f32])>(
+    pub fn process_with<F: FnMut(&mut [f32])>(
         &mut self,
         io: &mut [f32],
         up_scratch: &mut [f32],
@@ -454,11 +435,11 @@ mod polyphase_bitexact {
                 down: HalfbandFir::inner(),
             }
         }
-        fn process_one<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
-            let u0 = self.up.process(2.0 * x);
-            let u1 = self.up.process(0.0);
-            let y = self.down.process(inner(u0));
-            let _ = self.down.process(inner(u1));
+        fn tick_with<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
+            let u0 = self.up.tick(2.0 * x);
+            let u1 = self.up.tick(0.0);
+            let y = self.down.tick(inner(u0));
+            let _ = self.down.tick(inner(u1));
             y
         }
     }
@@ -494,8 +475,8 @@ mod polyphase_bitexact {
         let mut inner_new = make_inner();
         let mut inner_old = make_inner();
         for (i, &x) in noise.iter().enumerate() {
-            let a = new.process_one(x, &mut inner_new);
-            let b = old.process_one(x, &mut inner_old);
+            let a = new.tick_with(x, &mut inner_new);
+            let b = old.tick_with(x, &mut inner_old);
             assert_eq!(a.to_bits(), b.to_bits(), "sample {i}: {a} vs {b}");
         }
     }
@@ -508,8 +489,8 @@ mod polyphase_bitexact {
         let mut inner_new = make_inner();
         let mut inner_old = make_inner();
         for (i, &x) in noise.iter().enumerate() {
-            let a = new.process_one(x, &mut inner_new);
-            let b = old.process_one(x, &mut inner_old);
+            let a = new.tick_with(x, &mut inner_new);
+            let b = old.tick_with(x, &mut inner_old);
             assert_eq!(a.to_bits(), b.to_bits(), "sample {i}: {a} vs {b}");
         }
     }

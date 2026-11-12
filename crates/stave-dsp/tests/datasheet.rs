@@ -26,7 +26,7 @@ use std::time::Instant;
 
 use stave_dsp::{
     Adaa, Adsr, Allpass1, Biquad, Curve, DelayLine, DiodeClipper, DiodeClipperConfig, Hysteresis,
-    Lag, Lfo, NonlinearRc, Osc, OscShape, PairSolver, RandomWalk, Shockley, Slew, Stage,
+    Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley, Slew, Stage, Waveform,
 };
 
 const N: usize = 1 << 17;
@@ -72,20 +72,16 @@ fn primitive_datasheet() {
     noise(&mut input);
     println!("stave-dsp primitive datasheet ({N} samples, median of {REPEATS})");
 
-    let mut biquad = Biquad::new();
-    biquad.set(
-        FilterSpec::Lowpass {
-            hz: 1_000.0,
-            q: 0.707,
-        },
-        sr,
-    );
-    bench("Biquad (lowpass)", &input, |x| biquad.process(x));
+    let mut biquad = Biquad::new(FilterSpec::Lowpass {
+        hz: 1_000.0,
+        q: 0.707,
+    });
+    biquad.prepare(sr);
+    bench("Biquad (lowpass)", &input, |x| biquad.tick(x));
 
-    let mut ap = Allpass1::default();
+    let mut ap = Allpass1::new(700.0);
     ap.prepare(sr);
-    ap.set_frequency(700.0);
-    bench("Allpass1", &input, |x| ap.process(x));
+    bench("Allpass1", &input, |x| ap.tick(x));
 
     let mut curve = Curve::flat();
     curve.rebuild(-4.0, 4.0, 0.0, |x| x.tanh());
@@ -99,7 +95,7 @@ fn primitive_datasheet() {
     let mut adaa = Adaa::new(AdaaOrder::First);
     let framed = curve.framed(0.0, 1.0, 1.0);
     bench("Adaa(1) over Curve", &input, |x| {
-        adaa.process(&framed, f64::from(x) * 3.0) as f32
+        adaa.tick(&framed, f64::from(x) * 3.0) as f32
     });
 
     let mut hys = Hysteresis::new(2.2, 0.5);
@@ -133,7 +129,7 @@ fn primitive_datasheet() {
     }
 
     let mut line = DelayLine::new();
-    line.prepare(4_800);
+    line.allocate(4_800);
     bench("DelayLine write+read_cubic", &input, |x| {
         line.write(x);
         line.advance();
@@ -144,32 +140,32 @@ fn primitive_datasheet() {
     lag.prepare(sr);
     bench("Lag", &input, |x| lag.tick(x));
 
-    let mut lfo = Lfo::default();
-    lfo.prepare(sr, 1.3, 0.0);
-    bench("Lfo", &input, |x| lfo.tick() + x * 0.0);
+    let mut lfo = Lfo::new(1.3);
+    lfo.prepare(sr);
+    bench("Lfo", &input, |x| lfo.tick(x));
 
     let mut wander = RandomWalk::new(140.0, 30.0, 7);
     wander.prepare(sr);
-    bench("RandomWalk", &input, |x| wander.tick() + x * 0.0);
+    bench("RandomWalk", &input, |x| wander.tick(x));
 
     let mut adsr = Adsr::new();
-    adsr.set(
-        &AdsrConfig {
-            attack_ms: 2.0,
-            decay_ms: 50.0,
-            sustain: 0.7,
-            release_ms: 100.0,
-        },
-        sr,
-    );
+    adsr.prepare(sr);
+    adsr.set(&AdsrConfig {
+        attack_ms: 2.0,
+        decay_ms: 50.0,
+        sustain: 0.7,
+        release_ms: 100.0,
+    });
     adsr.gate_on();
-    bench("Adsr", &input, |x| adsr.tick() + x * 0.0);
+    bench("Adsr", &input, |x| adsr.tick(x));
 
-    let mut osc_sine = Osc::new(OscShape::Sine);
-    osc_sine.set_hz(220.0, sr);
-    bench("Osc (sine)", &input, |x| osc_sine.tick() + x * 0.0);
+    let mut osc_sine = Osc::new(Waveform::Sine);
+    osc_sine.prepare(sr);
+    osc_sine.set_hz(220.0);
+    bench("Osc (sine)", &input, |x| osc_sine.tick(x));
 
-    let mut osc_saw = Osc::new(OscShape::Saw);
-    osc_saw.set_hz(220.0, sr);
-    bench("Osc (saw, polyBLEP)", &input, |x| osc_saw.tick() + x * 0.0);
+    let mut osc_saw = Osc::new(Waveform::Saw);
+    osc_saw.prepare(sr);
+    osc_saw.set_hz(220.0);
+    bench("Osc (saw, polyBLEP)", &input, |x| osc_saw.tick(x));
 }

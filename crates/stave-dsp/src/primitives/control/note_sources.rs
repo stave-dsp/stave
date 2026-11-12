@@ -24,7 +24,7 @@ pub struct NoteSources<const LFOS: usize> {
     pub spread: f32,
     /// Samples since note-on.
     pub age: u32,
-    /// Each note-triggered LFO's phase, restarted at note-on.
+    /// Each note-triggered LFO's phase in cycles, restarted at note-on.
     pub lfo_phases: [f32; LFOS],
     rng: Xorshift32,
 }

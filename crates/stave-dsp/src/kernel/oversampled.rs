@@ -1,20 +1,24 @@
-//! **Oversampled** — kernel form #5: run a node in
-//! another clock domain. ONE name, two half-band designs as
-//! construction presets: `front` (full-steepness pair guarding the
-//! base Nyquist) and `nested` (the relaxed interior pair — inside a
-//! front region the wideband content is already gone). The wrapper
-//! owns the crossing: interior prepared at 2× (no stale-rate
-//! coefficients possible), latency divided back to the outer rate.
-//! Forge's 4× stack is `Oversampled2x::front(Oversampled2x::nested(chain))`
-//! and its 66+18=84 latency is computed from this structure.
+//! **Oversampled2x** — run a stage in a clock domain twice as fast. The
+//! one public oversampler: one name, two linear-phase half-band designs
+//! as construction presets — `front` (full-steepness pair guarding the
+//! base Nyquist) and `nested` (the relaxed interior pair: inside a front
+//! region the wideband content is already gone). The wrapper owns the
+//! crossing: the interior is prepared at 2× (no stale-rate coefficients
+//! possible), latency and tail are divided back to the outer rate.
+//! A 4× stack is `Oversampled2x::front(Oversampled2x::nested(stage))`,
+//! and its 66 + 18 = 84 sample latency is computed from that structure.
 
-use crate::kernel::node::Stage;
+use crate::kernel::node::{Stage, Tail};
 use crate::kernel::resample::{Oversampler2xFir, Oversampler2xFirInner};
 
 enum Halfbands {
     Front(Oversampler2xFir),
     Nested(Oversampler2xFirInner),
 }
+
+/// Block chunk at the outer rate for [`Stage::process`]: the 2× interior
+/// block lives on the stack, so the block form allocates nothing.
+const CHUNK: usize = 64;
 
 pub struct Oversampled2x<S: Stage> {
     pub inner: S,
@@ -46,49 +50,68 @@ impl<S: Stage> Oversampled2x<S> {
     fn own_latency(&self) -> u32 {
         match &self.os {
             // (133−1)/2 = 66 outer samples through the up+down pair.
-            Halfbands::Front(_) => Oversampler2xFir::latency_samples() as u32,
+            Halfbands::Front(_) => Oversampler2xFir::latency() as u32,
             // (73−1) samples at the inner rate = 36 at this outer.
-            Halfbands::Nested(_) => (Oversampler2xFirInner::latency_samples_base() * 2) as u32,
+            Halfbands::Nested(_) => (Oversampler2xFirInner::latency_base() * 2) as u32,
         }
     }
 }
 
 impl<S: Stage> Stage for Oversampled2x<S> {
-    fn prepare(&mut self, rate: f32) {
-        match &mut self.os {
-            Halfbands::Front(o) => o.prepare(rate),
-            Halfbands::Nested(o) => o.prepare(rate),
-        }
+    fn prepare(&mut self, sample_rate: f32) {
+        self.reset_halfbands();
         // The region contract: the interior runs at FACTOR× and is
         // prepared at that rate.
-        self.inner.prepare(rate * Self::FACTOR as f32);
+        self.inner.prepare(sample_rate * Self::FACTOR as f32);
     }
     fn reset(&mut self) {
-        match &mut self.os {
-            Halfbands::Front(o) => o.reset(),
-            Halfbands::Nested(o) => o.reset(),
-        }
+        self.reset_halfbands();
         self.inner.reset();
     }
     #[inline]
     fn tick(&mut self, x: f32) -> f32 {
         let inner = &mut self.inner;
         match &mut self.os {
-            Halfbands::Front(o) => o.process_one(x, |s| inner.tick(s)),
-            Halfbands::Nested(o) => o.process_one(x, |s| inner.tick(s)),
+            Halfbands::Front(o) => o.tick_with(x, |s| inner.tick(s)),
+            Halfbands::Nested(o) => o.tick_with(x, |s| inner.tick(s)),
         }
     }
-    fn latency_samples(&self) -> u32 {
-        let inner = self.inner.latency_samples();
+    /// Upsample a chunk, run the interior's block form once over the 2×
+    /// chunk, decimate back. Bit-identical to the tick loop whenever the
+    /// interior's `process` is (each half-band sees the same sequence).
+    fn process(&mut self, block: &mut [f32]) {
+        let mut up = [0.0f32; 2 * CHUNK];
+        let inner = &mut self.inner;
+        for chunk in block.chunks_mut(CHUNK) {
+            match &mut self.os {
+                Halfbands::Front(o) => o.process_with(chunk, &mut up, |b| inner.process(b)),
+                Halfbands::Nested(o) => o.process_with(chunk, &mut up, |b| inner.process(b)),
+            }
+        }
+    }
+    fn latency(&self) -> u32 {
+        let inner = self.inner.latency();
         debug_assert!(
             inner % Self::FACTOR == 0,
             "interior group delay must be integer at the outer rate ({inner}/2)"
         );
         self.own_latency() + inner / Self::FACTOR
     }
-    fn tail_samples(&self) -> Option<u32> {
-        // Interior tail at the outer rate rounds UP (a bound may be
-        // conservative), plus the pair's own ring-out.
-        Some(self.own_latency() + self.inner.tail_samples()?.div_ceil(Self::FACTOR))
+    /// The interior tail at the outer rate rounds up (a bound may be
+    /// conservative), plus the pair's own ring-out.
+    fn tail(&self) -> Tail {
+        self.inner
+            .tail()
+            .div_ceil(Self::FACTOR)
+            .plus(self.own_latency())
+    }
+}
+
+impl<S: Stage> Oversampled2x<S> {
+    fn reset_halfbands(&mut self) {
+        match &mut self.os {
+            Halfbands::Front(o) => o.reset(),
+            Halfbands::Nested(o) => o.reset(),
+        }
     }
 }

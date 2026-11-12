@@ -1,20 +1,19 @@
-//! `Chain` — series composition of [`Stage`]s inside ONE oversampler.
+//! `Chain` — runtime-addressable serial composition of [`Stage`]s.
 //!
-//! This is the amp-topology container: nonlinearity ⊗ filter ⊗
-//! nonlinearity. The interstage filters are the part no single curve can
+//! The container for nonlinearity ⊗ filter ⊗ nonlinearity topologies. The interstage filters are the part no single curve can
 //! absorb (distorting a filtered signal ≠ filtering distortion), and
 //! they're where "sounds like an amp channel" comes from: the measured
 //! G(frequency, level) surface of a chain BENDS — gain compression that
 //! depends on frequency — while any memoryless curve's surface is flat
 //! across frequency by definition.
 //!
-//! Usage: build at construction / block rate, run inside the oversampler:
-//! `os.process_one(x, |s| chain.tick(s))`. `Chain` implements `Stage`
-//! itself, so chains nest. Fixed capacity, no audio-thread allocation.
+//! Usage: build at construction / block rate; `Chain` is a `Stage`, so it
+//! nests in any form — typically `Oversampled2x::front(chain)` so its
+//! nonlinearities run at 2×. Fixed capacity, no audio-thread allocation.
 
-use crate::kernel::node::Stage;
-use crate::primitives::filters::biquad::FilterSpec;
-use crate::primitives::filters::biquad::FilterStage;
+use crate::kernel::control::Full;
+use crate::kernel::node::{Stage, Tail};
+use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 
 pub struct Chain<const N: usize> {
     stages: [StageKind; N],
@@ -42,7 +41,8 @@ pub struct Chain<const N: usize> {
     fb_from: StageId,
     fb_to: StageId,
     fb_last: f32,
-    fb_filter: Option<FilterStage>,
+    fb_filter: Option<Biquad>,
+    sample_rate: f32,
 }
 
 /// Handle for block-rate parameter access to a pushed stage.
@@ -66,20 +66,22 @@ impl<const N: usize> Chain<N> {
             fb_to: StageId(N),
             fb_last: 0.0,
             fb_filter: None,
+            sample_rate: 48_000.0,
         }
     }
 
-    /// Append a stage (build time / block rate). Returns its handle;
-    /// pushes beyond capacity are ignored and return an id that resolves
-    /// to a bypass.
-    pub fn push(&mut self, stage: StageKind) -> StageId {
-        if self.used < N {
-            self.stages[self.used] = stage;
-            self.used += 1;
-            StageId(self.used - 1)
-        } else {
-            StageId(N)
-        }
+    /// Append a stage (build time / block rate) and return its handle;
+    /// [`Full`] when all `N` slots are taken.
+    pub fn push(&mut self, stage: StageKind) -> Result<StageId, Full> {
+        let slot = self.stages.get_mut(self.used).ok_or(Full)?;
+        *slot = stage;
+        self.used += 1;
+        Ok(StageId(self.used - 1))
+    }
+
+    /// The rate the chain was last prepared at.
+    pub const fn sample_rate(&self) -> f32 {
+        self.sample_rate
     }
 
     /// Block-rate access for retuning a stage's parameters.
@@ -128,7 +130,16 @@ impl<const N: usize> Chain<N> {
         self.fb_gain = gain;
         self.fb_from = from;
         self.fb_to = to;
-        self.fb_filter = filter.map(FilterStage::new);
+        self.fb_filter = filter.map(|spec| {
+            let mut f = Biquad::new(spec);
+            f.prepare(self.sample_rate);
+            f
+        });
+    }
+
+    /// Global feedback is on: the chain is a loop.
+    fn feedback_on(&self) -> bool {
+        self.fb_gain != 0.0 && self.fb_to.0 < self.used
     }
 
     pub fn len(&self) -> usize {
@@ -170,15 +181,15 @@ impl SwapPoint {
 
     /// Ensure the stage at `id` satisfies `wanted` — if it does not,
     /// swap the benched stage in (it must satisfy it; debug-asserted)
-    /// and prepare it at `rate`. Returns true when a swap happened.
-    /// Move-only: no allocation on either path.
+    /// and prepare it at the chain's rate. Returns true when a swap
+    /// happened. Move-only: no allocation on either path.
     pub fn engage<const N: usize>(
         &mut self,
         chain: &mut Chain<N>,
         id: StageId,
         wanted: fn(&StageKind) -> bool,
-        rate: f32,
     ) -> bool {
+        let sample_rate = chain.sample_rate;
         let Some(slot) = chain.stage_mut(id) else {
             return false;
         };
@@ -187,25 +198,33 @@ impl SwapPoint {
         }
         debug_assert!(wanted(&self.bench), "benched stage is not the wanted kind");
         core::mem::swap(slot, &mut self.bench);
-        slot.prepare(rate);
+        slot.prepare(sample_rate);
         true
     }
 }
 
 impl<const N: usize> Stage for Chain<N> {
-    fn latency_samples(&self) -> u32 {
-        // Serial invariant (stave-core latency.rs): paths sum.
+    /// Serial invariant: latencies sum.
+    fn latency(&self) -> u32 {
+        self.stages[..self.used].iter().map(Stage::latency).sum()
+    }
+    /// Serial invariant: tails sum. With global feedback on the chain is
+    /// a loop whose stability depends on its gain — infinite.
+    fn tail(&self) -> Tail {
+        if self.feedback_on() {
+            return Tail::Infinite;
+        }
         self.stages[..self.used]
             .iter()
-            .map(Stage::latency_samples)
-            .sum()
+            .fold(Tail::None, |t, s| t.then(s.tail()))
     }
-    fn prepare(&mut self, rate: f32) {
+    fn prepare(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
         for s in self.stages[..self.used].iter_mut() {
-            s.prepare(rate);
+            s.prepare(sample_rate);
         }
         if let Some(f) = self.fb_filter.as_mut() {
-            f.prepare(rate);
+            f.prepare(sample_rate);
         }
         self.fb_last = 0.0;
     }
@@ -222,7 +241,7 @@ impl<const N: usize> Stage for Chain<N> {
     #[inline]
     fn tick(&mut self, x: f32) -> f32 {
         let mut y = x;
-        let fb_on = self.fb_gain != 0.0 && self.fb_to.0 < self.used;
+        let fb_on = self.feedback_on();
         for (i, s) in self.stages[..self.used].iter_mut().enumerate() {
             if fb_on && i == self.fb_to.0 {
                 y += self.fb_gain * self.fb_last;
@@ -241,7 +260,7 @@ impl<const N: usize> Stage for Chain<N> {
                 None => raw,
             };
             // A non-finite sample must not recirculate (finite bit-exact).
-            self.fb_last = crate::primitives::denormal::finite_or_zero(fb);
+            self.fb_last = crate::kernel::denormal::finite_or_zero(fb);
         }
         y
     }
@@ -252,20 +271,19 @@ impl<const N: usize> Stage for Chain<N> {
     /// either way — including the sense endpoints (last-sample values,
     /// the block-rate detector contract). Global feedback is a
     /// one-sample cross-stage loop, so it keeps the per-sample path.
-    fn process_block(&mut self, io: &mut [f32]) {
-        let fb_on = self.fb_gain != 0.0 && self.fb_to.0 < self.used;
-        if fb_on {
-            for s in io.iter_mut() {
+    fn process(&mut self, block: &mut [f32]) {
+        if self.feedback_on() {
+            for s in block.iter_mut() {
                 *s = self.tick(*s);
             }
             return;
         }
-        if io.is_empty() {
+        if block.is_empty() {
             return;
         }
         for (i, s) in self.stages[..self.used].iter_mut().enumerate() {
-            s.process_block(io);
-            self.senses[i] = io[io.len() - 1];
+            s.process(block);
+            self.senses[i] = block[block.len() - 1];
         }
     }
 }
@@ -277,7 +295,6 @@ mod tests {
     use crate::behavioral::curve::Frame;
     use crate::behavioral::shapes;
     use crate::primitives::filters::biquad::FilterSpec;
-    use crate::primitives::filters::biquad::FilterStage;
 
     fn goertzel(buf: &[f32], f: f64, fs: f64) -> f64 {
         let w = 2.0 * core::f64::consts::PI * f / fs;
@@ -299,18 +316,19 @@ mod tests {
             drive: 3.0,
             gain: 1.0,
         });
-        ch.push(StageKind::Curve(in_stage));
-        ch.push(StageKind::Filter(FilterStage::new(FilterSpec::HighShelf {
+        ch.push(StageKind::Curve(in_stage)).unwrap();
+        ch.push(StageKind::Filter(Biquad::new(FilterSpec::HighShelf {
             hz: 900.0,
             db: -9.0,
-        })));
+        })))
+        .unwrap();
         let mut out_stage = CurveStage::from_fn(-6.0, 6.0, 0.0, shapes::knee(8.0));
         out_stage.set_pending(Frame {
             bias: 0.0,
             drive: 1.6,
             gain: 1.0,
         });
-        ch.push(StageKind::Curve(out_stage));
+        ch.push(StageKind::Curve(out_stage)).unwrap();
         ch
     }
 
@@ -368,14 +386,14 @@ mod tests {
                 drive: 3.0,
                 gain: 1.0,
             });
-            ch.push(StageKind::Curve(a));
+            ch.push(StageKind::Curve(a)).unwrap();
             let mut b = CurveStage::from_fn(-6.0, 6.0, 0.0, shapes::knee(8.0));
             b.set_pending(Frame {
                 bias: 0.0,
                 drive: 1.6,
                 gain: 1.0,
             });
-            ch.push(StageKind::Curve(b));
+            ch.push(StageKind::Curve(b)).unwrap();
             ch
         };
         let m_low = comp(no_filter, 200.0);
@@ -395,6 +413,43 @@ mod tests {
 }
 
 #[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use crate::behavioral::curve::CurveStage;
+
+    #[test]
+    fn push_reports_full_instead_of_a_sentinel() {
+        let mut ch = Chain::<1>::new();
+        assert_eq!(ch.push(StageKind::Bypass), Ok(StageId(0)));
+        assert_eq!(ch.push(StageKind::Bypass), Err(Full));
+        assert_eq!(ch.len(), 1);
+    }
+
+    #[test]
+    fn tail_and_latency_forward_through_every_slot() {
+        let lp = |hz| StageKind::Filter(Biquad::new(FilterSpec::Lowpass { hz, q: 0.7 }));
+        let mut ch = Chain::<3>::new();
+        ch.push(lp(100.0)).unwrap();
+        ch.push(StageKind::Curve(CurveStage::from_fn(-1.0, 1.0, 0.0, |x| x)))
+            .unwrap();
+        ch.push(lp(50.0)).unwrap();
+        ch.prepare(48_000.0);
+        let mut a = Biquad::new(FilterSpec::Lowpass { hz: 100.0, q: 0.7 });
+        let mut b = Biquad::new(FilterSpec::Lowpass { hz: 50.0, q: 0.7 });
+        a.prepare(48_000.0);
+        b.prepare(48_000.0);
+        assert_eq!(ch.tail(), a.tail().then(b.tail()), "serial tails sum");
+        assert!(matches!(ch.tail(), Tail::Samples(_)));
+        assert_eq!(ch.latency(), 0);
+        // Global feedback makes the chain a loop: no finite bound.
+        ch.set_feedback(-0.3, StageId(2), StageId(0), None);
+        assert_eq!(ch.tail(), Tail::Infinite);
+        ch.set_feedback(0.0, StageId(2), StageId(0), None);
+        assert_eq!(ch.tail(), a.tail().then(b.tail()));
+    }
+}
+
+#[cfg(test)]
 mod swap_tests {
     use super::*;
     use crate::behavioral::curve::CurveStage;
@@ -402,7 +457,9 @@ mod swap_tests {
 
     fn tiny_chain() -> (Chain<2>, StageId) {
         let mut ch = Chain::<2>::new();
-        let id = ch.push(StageKind::Curve(CurveStage::from_fn(-1.0, 1.0, 0.0, |x| x)));
+        let id = ch
+            .push(StageKind::Curve(CurveStage::from_fn(-1.0, 1.0, 0.0, |x| x)))
+            .unwrap();
         ch.prepare(48_000.0);
         (ch, id)
     }
@@ -412,9 +469,11 @@ mod swap_tests {
         // A 2x curve parked and unparked comes back WITH its table —
         // the same instance moved (a fresh CurveStage would be x→0).
         let mut ch = Chain::<2>::new();
-        let id = ch.push(StageKind::Curve(CurveStage::from_fn(-2.0, 2.0, 0.0, |x| {
-            2.0 * x
-        })));
+        let id = ch
+            .push(StageKind::Curve(CurveStage::from_fn(-2.0, 2.0, 0.0, |x| {
+                2.0 * x
+            })))
+            .unwrap();
         ch.prepare(48_000.0);
         let mut sp = SwapPoint::parking(StageKind::Bypass);
         // Settle ADAA (the first quotient averages from x=0).
@@ -423,12 +482,12 @@ mod swap_tests {
             y0 = ch.tick(0.25);
         }
         assert!((y0 - 0.5).abs() < 1e-3, "table sanity: {y0}");
-        assert!(sp.engage(&mut ch, id, |s| matches!(s, StageKind::Bypass), 48_000.0));
+        assert!(sp.engage(&mut ch, id, |s| matches!(s, StageKind::Bypass)));
         assert!(
             (ch.tick(0.25) - 0.25).abs() < 1e-6,
             "parked slot is a passthrough"
         );
-        assert!(sp.engage(&mut ch, id, |s| matches!(s, StageKind::Curve(_)), 48_000.0));
+        assert!(sp.engage(&mut ch, id, |s| matches!(s, StageKind::Curve(_))));
         let mut y1 = 0.0;
         for _ in 0..4 {
             y1 = ch.tick(0.25);
@@ -444,7 +503,7 @@ mod swap_tests {
             } else {
                 |s| matches!(s, StageKind::Curve(_))
             };
-            assert!(sp.engage(&mut ch, id, want, 48_000.0));
+            assert!(sp.engage(&mut ch, id, want));
         }
     }
 
@@ -452,19 +511,22 @@ mod swap_tests {
     fn engage_is_idempotent_when_already_wanted() {
         let (mut ch, id) = tiny_chain();
         let mut sp = SwapPoint::parking(StageKind::Bypass);
-        assert!(!sp.engage(&mut ch, id, |s| matches!(s, StageKind::Curve(_)), 48_000.0));
-        assert!(sp.engage(&mut ch, id, |s| matches!(s, StageKind::Bypass), 48_000.0));
-        assert!(!sp.engage(&mut ch, id, |s| matches!(s, StageKind::Bypass), 48_000.0));
+        assert!(!sp.engage(&mut ch, id, |s| matches!(s, StageKind::Curve(_))));
+        assert!(sp.engage(&mut ch, id, |s| matches!(s, StageKind::Bypass)));
+        assert!(!sp.engage(&mut ch, id, |s| matches!(s, StageKind::Bypass)));
     }
 
     #[test]
     fn topology_reads_the_live_structure() {
         let mut ch = Chain::<3>::new();
-        let a = ch.push(StageKind::Curve(CurveStage::from_fn(-1.0, 1.0, 0.0, |x| x)));
-        ch.push(StageKind::Filter(FilterStage::new(FilterSpec::Lowpass {
+        let a = ch
+            .push(StageKind::Curve(CurveStage::from_fn(-1.0, 1.0, 0.0, |x| x)))
+            .unwrap();
+        ch.push(StageKind::Filter(Biquad::new(FilterSpec::Lowpass {
             hz: 1_000.0,
             q: 0.7,
-        })));
+        })))
+        .unwrap();
         fn snapshot<const N: usize>(ch: &Chain<N>) -> Vec<(usize, &'static str)> {
             ch.topology().map(|(id, k)| (id.0, k)).collect()
         }
@@ -472,13 +534,13 @@ mod swap_tests {
         // A swap changes the emitted data because it changes the
         // structure — same source of truth.
         let mut sp = SwapPoint::parking(StageKind::Bypass);
-        sp.engage(&mut ch, a, |s| matches!(s, StageKind::Bypass), 48_000.0);
+        sp.engage(&mut ch, a, |s| matches!(s, StageKind::Bypass));
         assert_eq!(snapshot(&ch)[0], (0, "bypass"));
     }
 }
 
-// StageKind — Chain's OWN fixed-dispatch storage (the closed set
-// is a chain detail, never a gate on what can be a Node).
+// StageKind — Chain's own fixed-dispatch storage (the closed set is a
+// chain detail, never a gate on what can be a Stage).
 use crate::behavioral::curve::CurveStage;
 use crate::behavioral::hysteresis::Hysteresis;
 use crate::behavioral::rc::NonlinearRc;
@@ -490,7 +552,7 @@ use crate::circuit::topologies::coupler::Coupler;
 pub enum StageKind {
     Bypass,
     Curve(CurveStage),
-    Filter(FilterStage),
+    Filter(Biquad),
     Slew(Slew),
     Hysteresis(Hysteresis),
     Rc(NonlinearRc),
@@ -514,53 +576,43 @@ impl StageKind {
     }
 }
 
-impl Stage for StageKind {
-    fn prepare(&mut self, rate: f32) {
-        match self {
-            StageKind::Bypass => {}
-            StageKind::Curve(s) => s.prepare(rate),
-            StageKind::Filter(s) => s.prepare(rate),
-            StageKind::Slew(s) => s.prepare(rate),
-            StageKind::Hysteresis(s) => s.prepare(rate),
-            StageKind::Rc(s) => s.prepare(rate),
-            StageKind::Coupler(s) => s.prepare(rate),
+/// Forward one `Stage` method to whichever variant is live; `Bypass` is
+/// the identity.
+macro_rules! each_kind {
+    ($self:expr, $s:ident => $e:expr, bypass => $b:expr) => {
+        match $self {
+            StageKind::Bypass => $b,
+            StageKind::Curve($s) => $e,
+            StageKind::Filter($s) => $e,
+            StageKind::Slew($s) => $e,
+            StageKind::Hysteresis($s) => $e,
+            StageKind::Rc($s) => $e,
+            StageKind::Coupler($s) => $e,
         }
+    };
+}
+
+impl Stage for StageKind {
+    fn prepare(&mut self, sample_rate: f32) {
+        each_kind!(self, s => s.prepare(sample_rate), bypass => {})
     }
     fn reset(&mut self) {
-        match self {
-            StageKind::Bypass => {}
-            StageKind::Curve(s) => s.reset(),
-            StageKind::Filter(s) => s.reset(),
-            StageKind::Slew(s) => s.reset(),
-            StageKind::Hysteresis(s) => s.reset(),
-            StageKind::Rc(s) => s.reset(),
-            StageKind::Coupler(s) => s.reset(),
-        }
+        each_kind!(self, s => s.reset(), bypass => {})
     }
     #[inline]
     fn tick(&mut self, x: f32) -> f32 {
-        match self {
-            StageKind::Bypass => x,
-            StageKind::Curve(s) => s.tick(x),
-            StageKind::Filter(s) => s.tick(x),
-            StageKind::Slew(s) => s.tick(x),
-            StageKind::Hysteresis(s) => s.tick(x),
-            StageKind::Rc(s) => s.tick(x),
-            StageKind::Coupler(s) => s.tick(x),
-        }
+        each_kind!(self, s => s.tick(x), bypass => x)
     }
-    /// One variant dispatch per BLOCK, then the leaf's monomorphic tick
-    /// loop — this is the block API's whole win at the container level.
-    fn process_block(&mut self, io: &mut [f32]) {
-        match self {
-            StageKind::Bypass => {}
-            StageKind::Curve(s) => s.process_block(io),
-            StageKind::Filter(s) => s.process_block(io),
-            StageKind::Slew(s) => s.process_block(io),
-            StageKind::Hysteresis(s) => s.process_block(io),
-            StageKind::Rc(s) => s.process_block(io),
-            StageKind::Coupler(s) => s.process_block(io),
-        }
+    /// One variant dispatch per block, then the leaf's monomorphic tick
+    /// loop — the block form's whole win at the container level.
+    fn process(&mut self, block: &mut [f32]) {
+        each_kind!(self, s => s.process(block), bypass => {})
+    }
+    fn latency(&self) -> u32 {
+        each_kind!(self, s => s.latency(), bypass => 0)
+    }
+    fn tail(&self) -> Tail {
+        each_kind!(self, s => s.tail(), bypass => Tail::None)
     }
 }
 
@@ -601,7 +653,7 @@ mod stage_kind_tests {
         // toward unity; and the response in Hz survives the rate contract
         // (same numbers prepared at 48k and at 4×192k).
         let amp_at = |rate: f32, f0: f64| -> f64 {
-            let mut fs = FilterStage::new(FilterSpec::Peak {
+            let mut fs = Biquad::new(FilterSpec::Peak {
                 hz: 800.0,
                 db: -7.0,
                 q: 1.4,

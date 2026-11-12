@@ -1,24 +1,32 @@
-//! Block-rate parameter smoother. The host writes a target value at any
-//! time; the audio thread pulls smoothly toward it sample-by-sample.
+//! Block-rate parameter smoother. The writer sets a target at any time;
+//! the audio thread pulls toward it smoothly.
 //!
-//! Two flavours wrapped in one type:
-//! - `set_target(v)` + `tick()` per sample = one-pole exponential glide.
-//! - `set_target(v)` + `next_block(n)` = linear ramp over `n` samples,
-//!   useful when you want to read once per block and apply N times.
+//! Two flavours in one type:
+//! - `set_target(v)` + `tick` per sample = one-pole exponential glide.
+//! - `set_target(v)` + `next_block(n)` = a linear step per block, to read
+//!   once per block and apply N times.
 
-/// Default time constant in seconds. ~5 ms = no zipper at GUI rate, no
-/// audible lag.
-pub const DEFAULT_TC_SECS: f32 = 0.005;
+use crate::kernel::control::Source;
+use crate::kernel::node::Stage;
+use crate::primitives::filters::one_pole::tau_coeff;
 
+/// Default time constant. ~5 ms = no zipper at GUI rate, no audible lag.
+pub const DEFAULT_TIME_MS: f32 = 5.0;
+
+/// A parameter ramp: a control [`Source`] driven by its writer, never by
+/// program material — `tick` ignores its input.
+///
+/// `prepare` retunes the coefficient for the new rate, keeping the time
+/// constant; `reset` completes the glide — a parameter's rest state is
+/// its target (zeroing would fabricate a value the writer never set).
 #[derive(Clone, Copy, Debug)]
 pub struct SmoothedParam {
     target: f32,
     current: f32,
-    /// Coefficient α for the one-pole: cur += α * (target - cur).
-    /// Recomputed when sample-rate or time-constant changes.
+    /// α for the one-pole: cur += α · (target − cur).
     alpha: f32,
     sample_rate: f32,
-    tc_secs: f32,
+    time_ms: f32,
 }
 
 impl SmoothedParam {
@@ -28,24 +36,17 @@ impl SmoothedParam {
             current: initial,
             alpha: 0.0,
             sample_rate: 48_000.0,
-            tc_secs: DEFAULT_TC_SECS,
+            time_ms: DEFAULT_TIME_MS,
         };
-        s.recompute();
+        s.set_time_ms(DEFAULT_TIME_MS);
         s
     }
 
-    pub fn prepare(&mut self, sample_rate: f32, tc_secs: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        debug_assert!(tc_secs > 0.0, "time constant must be positive");
-        self.sample_rate = sample_rate;
-        self.tc_secs = tc_secs;
-        self.recompute();
-    }
-
-    fn recompute(&mut self) {
-        // α = 1 − exp(−1/(tc·fs)); a one-pole can't be faster than one sample.
-        let tau = self.tc_secs * self.sample_rate;
-        self.alpha = 1.0 - (-1.0 / tau.max(1.0)).exp();
+    /// The glide's time constant (state kept).
+    pub fn set_time_ms(&mut self, ms: f32) {
+        debug_assert!(ms > 0.0, "time constant must be positive");
+        self.time_ms = ms;
+        self.alpha = tau_coeff(ms * 0.001, self.sample_rate);
     }
 
     pub fn set_target(&mut self, v: f32) {
@@ -57,33 +58,18 @@ impl SmoothedParam {
         self.current = v;
     }
 
-    /// Per-sample tick. Returns the freshly-smoothed value.
-    #[inline]
-    pub fn tick(&mut self) -> f32 {
-        self.current += self.alpha * (self.target - self.current);
-        self.current
-    }
-
-    /// Block-rate linear ramp (the second flavour the module docs
-    /// promise): advance toward the target by one block's worth of the
-    /// time constant and return the NEW value, to be held for the
-    /// block. Reaches the target in ~`tc_secs` regardless of block
-    /// size; never overshoots.
+    /// Block-rate linear step: advance toward the target by one block's
+    /// worth of the time constant and return the new value, to be held
+    /// for the block. Reaches the target in ~one time constant
+    /// regardless of block size; never overshoots.
     pub fn next_block(&mut self, n: usize) -> f32 {
-        let steps_total = (self.sample_rate * self.tc_secs()).max(1.0);
+        let steps_total = (self.sample_rate * self.time_ms * 0.001).max(1.0);
         let frac = (n as f32 / steps_total).min(1.0);
         self.current += (self.target - self.current) * frac;
         if (self.current - self.target).abs() < 1e-9 {
             self.current = self.target;
         }
         self.current
-    }
-
-    /// Time constant currently in effect (derived back from α).
-    fn tc_secs(&self) -> f32 {
-        // α = 1 − e^(−1/(τ·fs))  ⇒  τ = −1 / (fs·ln(1 − α))
-        let one_minus = (1.0 - self.alpha).max(1e-9);
-        -1.0 / (self.sample_rate * one_minus.ln())
     }
 
     pub fn current(&self) -> f32 {
@@ -95,31 +81,49 @@ impl SmoothedParam {
     }
 }
 
-/// A host parameter IS a control
-/// source — the ramp fed targets at block rate joins the same
-/// class as detectors and LFOs, so a route from a knob and a route
-/// from an envelope are the same data. The distinguishing invariant:
-/// `tick` IGNORES its detector — a param stream is driven by its
-/// writer (host automation, editor gestures), never by program
-/// material. `prepare` retunes the coefficient for the new rate
-/// KEEPING the declared time constant; `reset` completes the glide —
-/// a param's rest state is its target (zeroing would fabricate a
-/// value the writer never set). stave-core's `ContinuousControl` is the
-/// table-parameter instance of this same concept; the crates are
-/// deliberately independent, so the correspondence is this documented
-/// contract, not a trait impl.
-impl crate::kernel::control::Source for SmoothedParam {
-    fn prepare(&mut self, rate: f32) {
-        SmoothedParam::prepare(self, rate, self.tc_secs);
+impl Stage for SmoothedParam {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_time_ms(self.time_ms);
     }
     fn reset(&mut self) {
         self.current = self.target;
     }
+    /// One sample of glide; the input is ignored.
     #[inline]
-    fn tick(&mut self, _detector: f32) -> f32 {
-        SmoothedParam::tick(self)
+    fn tick(&mut self, _: f32) -> f32 {
+        self.current += self.alpha * (self.target - self.current);
+        self.current
     }
+}
+
+impl Source for SmoothedParam {
     fn state(&self) -> f32 {
         self.current
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glide_and_block_step_both_arrive_in_about_one_time_constant() {
+        let mut s = SmoothedParam::new(0.0);
+        s.prepare(48_000.0);
+        s.set_target(1.0);
+        for _ in 0..240 {
+            s.tick(0.0);
+        }
+        assert!((s.current() - (1.0 - (-1.0f32).exp())).abs() < 1e-3);
+        let mut b = SmoothedParam::new(0.0);
+        b.prepare(48_000.0);
+        b.set_target(1.0);
+        assert!(b.next_block(120) < 1.0);
+        assert_eq!(b.next_block(480), 1.0, "a time constant of blocks arrives");
+        b.set_target(0.0);
+        b.reset();
+        assert_eq!(b.state(), 0.0, "reset completes the glide");
     }
 }

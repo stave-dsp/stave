@@ -23,14 +23,14 @@ fn nfb_chain(fb: f32) -> Chain<3> {
         drive: 3.0,
         gain: 1.0,
     });
-    let id_a = ch.push(StageKind::Curve(a));
+    let id_a = ch.push(StageKind::Curve(a)).unwrap();
     let mut b = CurveStage::from_fn(-4.0, 4.0, 0.0, shapes::knee(4.0));
     b.set_pending(Frame {
         bias: 0.0,
         drive: 1.2,
         gain: 1.0,
     });
-    let id_b = ch.push(StageKind::Curve(b));
+    let id_b = ch.push(StageKind::Curve(b)).unwrap();
     // NFB: output fed back (inverted) into the first stage's input.
     ch.set_feedback(fb, id_b, id_a, None);
     ch.prepare(FS as f32);

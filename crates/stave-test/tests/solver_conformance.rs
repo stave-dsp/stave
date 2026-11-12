@@ -49,7 +49,7 @@ fn opamp_clipper_converges_at_the_host_rate() {
     });
     s.prepare(RATE as f32);
     for n in 0..RATE as usize {
-        s.process_volts(hot(n, 1.0));
+        s.tick_f64(hot(n, 1.0));
     }
     let st = s.stats();
     report("op-amp clipper", st.solves, st.iterations, st.capped);
@@ -77,9 +77,9 @@ fn common_cathode_converges_at_the_host_rate() {
 #[test]
 fn power_supply_converges_under_a_swinging_load() {
     let mut s = PowerSupply::new(PowerSupplyConfig::SILICON_CHOKE);
-    s.prepare(RATE);
+    s.prepare(RATE as f32);
     for n in 0..RATE as usize {
-        s.tick(0.05 + 0.04 * (std::f64::consts::TAU * 7.0 * n as f64 / RATE).sin());
+        s.tick_f64(0.05 + 0.04 * (std::f64::consts::TAU * 7.0 * n as f64 / RATE).sin());
     }
     let st = s.stats();
     report("power supply", st.solves, st.iterations, st.capped);
@@ -92,7 +92,7 @@ fn push_pull_feedback_converges_at_the_host_rate() {
     s.set_drive_db(18.0);
     s.set_feedback_db(12.0);
     for n in 0..RATE as usize {
-        s.process_sample(hot(n, 1.0) as f32);
+        s.tick(hot(n, 1.0) as f32);
     }
     let st = s.stats();
     report("push-pull feedback", st.solves, st.iterations, st.capped);

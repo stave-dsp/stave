@@ -51,13 +51,13 @@ fn oversampled_alias_floor_high_input() {
         // Correct topology: de-emphasis (base) → OS(memoryless shape) →
         // re-emphasis + DC (base).
         let samp = |x: f32, s: &mut SmoothSat, os: &mut Oversampler2x, os2: &mut Oversampler2x| {
-            let pre = s.process_pre(x);
+            let pre = s.tick_pre(x);
             let shaped = if factor == 4 {
-                os.process_one(pre, |a| os2.process_one(a, |b| s.shape(b)))
+                os.tick_with(pre, |a| os2.tick_with(a, |b| s.shape(b)))
             } else {
-                os.process_one(pre, |a| s.shape(a))
+                os.tick_with(pre, |a| s.shape(a))
             };
-            s.process_post(shaped)
+            s.tick_post(shaped)
         };
         for i in 0..n {
             let _ = samp(
@@ -125,9 +125,9 @@ fn hf_grain_stays_below_the_floor() {
         let mut os2 = Oversampler2x::new();
         os2.prepare(fs as f32 * 2.0);
         let step = |x: f32, s: &mut SmoothSat, os: &mut Oversampler2x, os2: &mut Oversampler2x| {
-            let pre = s.process_pre(x);
-            let sh = os.process_one(pre, |a| os2.process_one(a, |b| s.shape(b)));
-            s.process_post(sh)
+            let pre = s.tick_pre(x);
+            let sh = os.tick_with(pre, |a| os2.tick_with(a, |b| s.shape(b)));
+            s.tick_post(sh)
         };
         for i in 0..n {
             let _ = step(
@@ -216,9 +216,9 @@ fn per_block_param_updates_dont_zipper() {
             apply(s); // re-apply constant params every block, as the host does
         }
         let x = 0.7 * (2.0 * core::f64::consts::PI * f0 * i as f64 / fs).sin() as f32;
-        let pre = s.process_pre(x);
-        let sh = os.process_one(pre, |a| os2.process_one(a, |b| s.shape(b)));
-        s.process_post(sh)
+        let pre = s.tick_pre(x);
+        let sh = os.tick_with(pre, |a| os2.tick_with(a, |b| s.shape(b)));
+        s.tick_post(sh)
     };
     for i in 0..n {
         let _ = step(i, &mut s, &mut os, &mut os2);
@@ -265,7 +265,7 @@ fn pushed_high_harmonics_decay() {
     s.set_drive(3.0);
     s.set_smoothness(0.7);
     s.set_hf_smoothing(0.0);
-    let out = render(f1, fs, 0.6, n, |x| s.process(x));
+    let out = render(f1, fs, 0.6, n, |x| s.tick(x));
     let h1 = goertzel(&out, f1, fs).max(1e-12);
     let h = |k: usize| 20.0 * (goertzel(&out, k as f64 * f1, fs) / h1).log10();
     let tail = (6..=10).map(h).fold(f64::NEG_INFINITY, f64::max);
@@ -327,8 +327,8 @@ fn stereo_width_report() {
         let (mut ms, mut ss) = (0.0f64, 0.0f64);
         for i in 0..2 * n {
             let (m, s) = (mid(i), side(i));
-            let l = a.process(m + s);
-            let r = b.process(m - s);
+            let l = a.tick(m + s);
+            let r = b.tick(m - s);
             if i >= n {
                 ms += ((l + r) as f64 * 0.5).powi(2);
                 ss += ((l - r) as f64 * 0.5).powi(2);
@@ -358,7 +358,7 @@ fn stereo_width_report() {
             let (lo, ro) = match kind {
                 0 => (li, ri),                                   // input
                 1 => ((drive * li).tanh(), (drive * ri).tanh()), // tanh
-                _ => (a.process(li), b.process(ri)),             // smoothsat
+                _ => (a.tick(li), b.tick(ri)),                   // smoothsat
             };
             if i >= n {
                 lr += lo as f64 * ro as f64;
@@ -412,7 +412,7 @@ fn mid_side_keeps_center_better_than_dual_mono() {
     let (mut lo, mut ro) = (Vec::new(), Vec::new());
     for i in 0..2 * n {
         let (l, r) = (m(i) + sl(i), m(i) + sr(i));
-        let (lp, rp) = (a.process(l), b.process(r));
+        let (lp, rp) = (a.tick(l), b.tick(r));
         if i >= n {
             lo.push(lp);
             ro.push(rp);
@@ -425,7 +425,7 @@ fn mid_side_keeps_center_better_than_dual_mono() {
     for i in 0..2 * n {
         let (l, r) = (m(i) + sl(i), m(i) + sr(i));
         let (mid, side) = (0.5 * (l + r), 0.5 * (l - r));
-        let (mp, sp) = (mid_s.process(mid), side_s.process(side));
+        let (mp, sp) = (mid_s.tick(mid), side_s.tick(side));
         if i >= n {
             lo2.push(mp + sp);
             ro2.push(mp - sp);
@@ -453,7 +453,7 @@ fn harmonic_profile_is_warm_and_smooth() {
         s.set_drive(1.0); // stays in range ⇒ pure Chebyshev profile
         s.set_hf_smoothing(0.0); // isolate the Chebyshev profile
         s.set_smoothness(smoothness);
-        let out = render(f0, fs, 0.9, n, |x| s.process(x));
+        let out = render(f0, fs, 0.9, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
         let mut h = [0.0f64; 8];
         for k in 2..=8 {
@@ -521,7 +521,7 @@ fn highs_distort_less_than_lows() {
         s.prepare(fs as f32);
         s.set_drive(1.6);
         s.set_hf_smoothing(8.0);
-        let out = render(f0, fs, 0.6, n, |x| s.process(x));
+        let out = render(f0, fs, 0.6, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
         (2..=5)
             .map(|k| goertzel(&out, k as f64 * f0, fs))
@@ -558,11 +558,11 @@ fn companding_reduces_intermod() {
                 + (2.0 * core::f64::consts::PI * f2 * i as f64 / fs).sin()) as f32
         };
         for i in 0..n {
-            let _ = s.process(two(i));
+            let _ = s.tick(two(i));
         }
         let mut out = vec![0.0f32; n];
         for i in 0..n {
-            out[i] = s.process(two(i));
+            out[i] = s.tick(two(i));
         }
         goertzel(&out, diff, fs)
     };
@@ -613,8 +613,8 @@ fn dual_mono_is_coherent() {
     for i in 0..8192 {
         let x = 0.7 * (2.0 * core::f64::consts::PI * 730.0 * i as f64 / fs).sin() as f32
             + 0.2 * (2.0 * core::f64::consts::PI * 3100.0 * i as f64 / fs).sin() as f32;
-        let dl = l.process(x);
-        let dr = r.process(x);
+        let dl = l.tick(x);
+        let dr = r.tick(x);
         max_diff = max_diff.max((dl - dr).abs());
     }
     assert!(
@@ -640,7 +640,7 @@ fn bias_creates_even_harmonic_asymmetry() {
         s.set_smoothness(0.6);
         s.set_hf_smoothing(0.0);
         s.set_bias(bias);
-        let out = render(f0, fs, 0.7, n, |x| s.process(x));
+        let out = render(f0, fs, 0.7, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
         20.0 * (goertzel(&out, 2.0 * f0, fs) / h1).log10()
     };
@@ -669,7 +669,7 @@ fn static_bias_still_silences() {
     let total = (fs * 1.5) as usize;
     let tail_start = (fs * 1.2) as usize;
     for i in 0..total {
-        let y = s.process(0.0).abs();
+        let y = s.tick(0.0).abs();
         if i >= tail_start {
             tail = tail.max(y);
         }
@@ -685,7 +685,7 @@ fn stable_and_level_sane() {
     s.prepare(fs as f32);
     s.set_drive(4.0);
     s.set_hf_smoothing(12.0);
-    let out = render(220.0, fs, 0.95, 16_384, |x| s.process(x));
+    let out = render(220.0, fs, 0.95, 16_384, |x| s.tick(x));
     assert!(out.iter().all(|x| x.is_finite()));
     let mx = out.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
     assert!(mx < 6.0, "runaway: {mx}");

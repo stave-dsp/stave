@@ -11,7 +11,7 @@
 
 use stave_dsp::{
     shapes, Chain, CurveStage, EnvelopeFollower, EnvelopeTimes, Frame, ModMatrix, Route, Stage,
-    StageId, StageKind, Target,
+    StageId, StageKind, StageTarget, Target,
 };
 use stave_measure::dynamics::GainStepTest;
 
@@ -29,12 +29,14 @@ const FS: f64 = 48_000.0;
 /// One near-linear gain stage + a Gain route = a compressor.
 fn comp(atk_ms: f32, rel_ms: f32, amount: f32) -> (Chain<2>, StageId, ModMatrix<1, 2>) {
     let mut ch = Chain::<2>::new();
-    let id = ch.push(StageKind::Curve(CurveStage::from_fn(
-        -8.0,
-        8.0,
-        0.0,
-        shapes::knee(1.2),
-    )));
+    let id = ch
+        .push(StageKind::Curve(CurveStage::from_fn(
+            -8.0,
+            8.0,
+            0.0,
+            shapes::knee(1.2),
+        )))
+        .unwrap();
     ch.prepare(FS as f32);
     let mut mm = ModMatrix::<1, 2>::new([EnvelopeFollower::new(EnvelopeTimes {
         attack_ms: atk_ms,
@@ -43,11 +45,14 @@ fn comp(atk_ms: f32, rel_ms: f32, amount: f32) -> (Chain<2>, StageId, ModMatrix<
     })]);
     mm.prepare(FS as f32);
     mm.push_route(Route {
-        driver: 0,
-        stage: id,
-        target: Target::Gain,
+        source: 0,
+        target: StageTarget {
+            stage: id,
+            target: Target::Gain,
+        },
         amount,
-    });
+    })
+    .unwrap();
     (ch, id, mm)
 }
 
@@ -139,13 +144,15 @@ fn feedback_detection_differs_and_is_stable() {
 #[test]
 fn sense_driven_route_reproduces_blocking() {
     let mut ch = Chain::<2>::new();
-    let id = ch.push(StageKind::Curve(CurveStage::from_fn_with_sense(
-        -6.0,
-        6.0,
-        0.0,
-        shapes::knee(3.0),
-        |x| (x - 0.8).max(0.0), // "grid conduction": excess above 0.8
-    )));
+    let id = ch
+        .push(StageKind::Curve(CurveStage::from_fn_with_sense(
+            -6.0,
+            6.0,
+            0.0,
+            shapes::knee(3.0),
+            |x| (x - 0.8).max(0.0), // "grid conduction": excess above 0.8
+        )))
+        .unwrap();
     ch.prepare(FS as f32);
     let mut mm = ModMatrix::<1, 2>::new([EnvelopeFollower::new(EnvelopeTimes {
         attack_ms: 1.0,
@@ -155,11 +162,14 @@ fn sense_driven_route_reproduces_blocking() {
     mm.prepare(FS as f32);
     // Conduction pushes bias NEGATIVE (toward cutoff) — the choke.
     mm.push_route(Route {
-        driver: 0,
-        stage: id,
-        target: Target::Bias,
+        source: 0,
+        target: StageTarget {
+            stage: id,
+            target: Target::Bias,
+        },
         amount: -1.2,
-    });
+    })
+    .unwrap();
     let base = Frame {
         bias: 0.0,
         drive: 3.0,
@@ -235,13 +245,13 @@ fn cathode_loop_recovers_faster_than_its_rc() {
         t.set_bias(Bias::Cathode { bypass_farads });
         for i in 0..(fs * 0.75) as usize {
             let x = 0.8 * (2.0 * core::f64::consts::PI * 200.0 * i as f64 / fs).sin();
-            let _ = t.process_sample(x as f32);
+            let _ = t.tick(x as f32);
         }
         let shift_hot = t.cathode_shift();
         assert!(shift_hot > 0.1, "no drift under program: {shift_hot}");
         let recovered = (0..fs as usize)
             .position(|_| {
-                let _ = t.process_sample(0.0);
+                let _ = t.tick(0.0);
                 t.cathode_shift() < shift_hot * (-1.0f64).exp()
             })
             .expect("recovers within a second");

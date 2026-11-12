@@ -9,7 +9,7 @@ use stave_dsp::FilterSpec;
 
 use stave_core::params::ContinuousControl;
 use stave_core::{Environment, ProcessCtx, Tail};
-use stave_dsp::{db_to_amp, Biquad, PerChannel};
+use stave_dsp::{db_to_amp, Biquad, PerChannel, Stage};
 
 use crate::params::TiltParams;
 
@@ -26,7 +26,6 @@ struct Shelves {
 
 pub struct TiltEngine {
     params: Arc<TiltParams>,
-    sr: f32,
     lanes: PerChannel<Shelves, 2>,
     /// The tilt the shelves are voiced for; NaN until the first sample.
     /// Tilt 0 bypasses them, so a flat setting is bit-exact.
@@ -43,17 +42,19 @@ impl stave_core::Processor for TiltEngine {
             output: ContinuousControl::new(&params.output),
             tilt: ContinuousControl::new(&params.tilt),
             params,
-            sr: 48_000.0,
             lanes: PerChannel::new(|_| Shelves {
-                low: Biquad::new(),
-                high: Biquad::new(),
+                low: Biquad::default(),
+                high: Biquad::default(),
             }),
             voiced: f32::NAN,
         }
     }
 
     fn activate(&mut self, env: Environment) {
-        self.sr = env.sample_rate;
+        for lane in self.lanes.iter_mut() {
+            lane.low.prepare(env.sample_rate);
+            lane.high.prepare(env.sample_rate);
+        }
         self.voiced = f32::NAN;
         self.tilt
             .prepare(f64::from(env.sample_rate), &self.params.tilt);
@@ -65,7 +66,6 @@ impl stave_core::Processor for TiltEngine {
         let p = self.params.clone();
         let mut tilt = self.tilt.begin_block(ctx.params, &p.tilt);
         let mut out_ramp = self.output.begin_block(ctx.params, &p.output);
-        let sr = self.sr;
         let voiced = &mut self.voiced;
         let lanes_state = &mut self.lanes;
         let lanes = ctx.lanes::<2>();
@@ -75,20 +75,14 @@ impl stave_core::Processor for TiltEngine {
             if t != *voiced {
                 *voiced = t;
                 for lane in lanes_state.iter_mut() {
-                    lane.low.set(
-                        FilterSpec::LowShelf {
-                            hz: PIVOT_HZ,
-                            db: -t,
-                        },
-                        sr,
-                    );
-                    lane.high.set(
-                        FilterSpec::HighShelf {
-                            hz: PIVOT_HZ,
-                            db: t,
-                        },
-                        sr,
-                    );
+                    lane.low.set(FilterSpec::LowShelf {
+                        hz: PIVOT_HZ,
+                        db: -t,
+                    });
+                    lane.high.set(FilterSpec::HighShelf {
+                        hz: PIVOT_HZ,
+                        db: t,
+                    });
                 }
             }
             let g = db_to_amp(out_ramp.next());
@@ -96,7 +90,7 @@ impl stave_core::Processor for TiltEngine {
                 let x = fr.input(lane);
                 let y = if t != 0.0 {
                     let s = &mut lanes_state[lane];
-                    s.high.process(s.low.process(x))
+                    s.high.tick(s.low.tick(x))
                 } else {
                     x
                 };

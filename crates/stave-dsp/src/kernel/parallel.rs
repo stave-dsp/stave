@@ -1,15 +1,15 @@
-//! **Branch** — kernel form #3: split → parallel
-//! paths → join, with the alignment invariant owned here: branches arrive
-//! at the join together (`Compensator` pads computed from reported
-//! latencies). Split/join math is caller-owned.
-//!
-use crate::kernel::node::Stage;
+//! **Branch** — split → parallel paths → join, with the alignment
+//! invariant owned here: branches arrive at the join together
+//! (`Compensator` pads computed from reported latencies). Split/join
+//! math is the caller's.
+
+use crate::kernel::node::{Stage, Tail};
 use crate::kernel::ring::Ring;
 
-/// Latency compensation as a SERVICE: the realization of the Branch
-/// invariant (`stave-core latency.rs` `parallel().pad`) and of hand-rolled
-/// dry paths (Forge, multiband saturation). A fixed INTEGER delay by type —
-/// zero samples is a true passthrough, storage untouched.
+/// Latency compensation as a service: the Branch invariant's pad, and
+/// the dry path of any hand-rolled parallel structure. A fixed integer
+/// delay — zero samples is a true passthrough, storage untouched. Its
+/// `latency` is the pad itself.
 pub struct Compensator {
     ring: Ring,
     samples: u32,
@@ -29,33 +29,40 @@ impl Compensator {
         }
     }
 
-    /// Size for a pad (allocates — message thread). Re-preparing
-    /// flushes.
-    pub fn prepare(&mut self, samples: u32) {
+    /// Size for a pad of `samples` (allocates — not on the audio
+    /// thread). Re-allocating flushes.
+    pub fn allocate(&mut self, samples: u32) {
         self.samples = samples;
         if samples > 0 {
-            self.ring.prepare(samples as usize);
+            self.ring.allocate(samples as usize);
         }
     }
 
     pub const fn samples(&self) -> u32 {
         self.samples
     }
+}
 
-    pub fn reset(&mut self) {
+impl Stage for Compensator {
+    fn reset(&mut self) {
         if self.samples > 0 {
             self.ring.reset();
         }
     }
-
     #[inline]
-    pub fn tick(&mut self, x: f32) -> f32 {
+    fn tick(&mut self, x: f32) -> f32 {
         if self.samples == 0 {
             return x;
         }
         let y = self.ring.delayed();
         self.ring.push(x);
         y
+    }
+    fn latency(&self) -> u32 {
+        self.samples
+    }
+    fn tail(&self) -> Tail {
+        Tail::samples(self.samples)
     }
 }
 
@@ -95,15 +102,15 @@ impl<A: Stage, B: Stage> Par2<A, B> {
 }
 
 impl<A: Stage, B: Stage> Stage for Par2<A, B> {
-    fn prepare(&mut self, rate: f32) {
-        self.a.prepare(rate);
-        self.b.prepare(rate);
-        // The parallel invariant (stave-core latency.rs): the join is the
-        // slower branch; the faster one is padded to meet it.
-        let (la, lb) = (self.a.latency_samples(), self.b.latency_samples());
+    fn prepare(&mut self, sample_rate: f32) {
+        self.a.prepare(sample_rate);
+        self.b.prepare(sample_rate);
+        // The parallel invariant: the join is the slower branch; the
+        // faster one is padded to meet it.
+        let (la, lb) = (self.a.latency(), self.b.latency());
         let join = la.max(lb);
-        self.pad_a.prepare(join - la);
-        self.pad_b.prepare(join - lb);
+        self.pad_a.allocate(join - la);
+        self.pad_b.allocate(join - lb);
     }
     fn reset(&mut self) {
         self.a.reset();
@@ -119,11 +126,15 @@ impl<A: Stage, B: Stage> Stage for Par2<A, B> {
         let (ya, yb) = self.tick_pair(x, x);
         ya + yb
     }
-    fn latency_samples(&self) -> u32 {
-        self.a.latency_samples().max(self.b.latency_samples())
+    fn latency(&self) -> u32 {
+        self.a.latency().max(self.b.latency())
     }
-    fn tail_samples(&self) -> Option<u32> {
-        Some(self.a.tail_samples()?.max(self.b.tail_samples()?))
+    /// Each branch rings through its pad, so a padded branch's tail
+    /// ends that much later.
+    fn tail(&self) -> Tail {
+        let a = self.a.tail().then(self.pad_a.tail());
+        let b = self.b.tail().then(self.pad_b.tail());
+        a.max(b)
     }
 }
 
@@ -146,9 +157,9 @@ mod tests {
         }
     }
     impl Stage for Late {
-        fn prepare(&mut self, _rate: f32) {
+        fn prepare(&mut self, _sample_rate: f32) {
             if self.samples > 0 {
-                self.ring.prepare(self.samples as usize);
+                self.ring.allocate(self.samples as usize);
             }
         }
         fn reset(&mut self) {
@@ -162,16 +173,17 @@ mod tests {
             self.ring.push(x);
             y
         }
-        fn latency_samples(&self) -> u32 {
+        fn latency(&self) -> u32 {
             self.samples
+        }
+        fn tail(&self) -> Tail {
+            Tail::samples(self.samples)
         }
     }
 
     /// A gain leaf — zero latency, distinguishable output.
     struct Gain(f32);
     impl Stage for Gain {
-        fn prepare(&mut self, _rate: f32) {}
-        fn reset(&mut self) {}
         fn tick(&mut self, x: f32) -> f32 {
             x * self.0
         }
@@ -184,7 +196,12 @@ mod tests {
         // with a unity wet, the sum is exactly 2× the delayed input.
         let mut p = Par2::new(Gain(1.0), Late::new(7));
         p.prepare(48_000.0);
-        assert_eq!(p.latency_samples(), 7, "join reports the slow branch");
+        assert_eq!(p.latency(), 7, "join reports the slow branch");
+        assert_eq!(
+            p.tail(),
+            Tail::Samples(7),
+            "the padded dry branch rings through its pad"
+        );
         let mut out = Vec::new();
         for i in 0..32 {
             let x = if i == 0 { 1.0 } else { 0.0 }; // impulse
@@ -215,5 +232,39 @@ mod tests {
             .iter()
             .enumerate()
             .all(|(i, &(a, b))| i == 3 || (a, b) == (0.0, 0.0)));
+    }
+
+    #[test]
+    fn par2_tail_is_the_longer_padded_branch() {
+        // a: 3 latency + 3 tail; b: zero latency, 10 tail, padded by 3.
+        let mut p = Par2::new(Late::new(3), Rings(10));
+        p.prepare(48_000.0);
+        assert_eq!(p.tail(), Tail::Samples(13));
+        let mut p = Par2::new(Late::new(3), Rings(0));
+        p.prepare(48_000.0);
+        assert_eq!(p.tail(), Tail::Samples(3));
+        let p = Par2::new(Gain(1.0), Endless);
+        assert_eq!(p.tail(), Tail::Infinite);
+    }
+
+    /// Zero latency, a declared tail.
+    struct Rings(u32);
+    impl Stage for Rings {
+        fn tick(&mut self, x: f32) -> f32 {
+            x
+        }
+        fn tail(&self) -> Tail {
+            Tail::samples(self.0)
+        }
+    }
+
+    struct Endless;
+    impl Stage for Endless {
+        fn tick(&mut self, x: f32) -> f32 {
+            x
+        }
+        fn tail(&self) -> Tail {
+            Tail::Infinite
+        }
     }
 }
