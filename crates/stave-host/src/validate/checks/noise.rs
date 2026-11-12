@@ -48,7 +48,7 @@ pub fn self_noise(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
 mod tests {
     use super::*;
     use crate::instance::{Instance, Layout};
-    use crate::note::NoteEvent;
+    use stave_core::Event;
     use crate::testing::Gain;
     use crate::validate::checks::outcome;
     use crate::validate::Status;
@@ -60,7 +60,7 @@ mod tests {
         fn layout(&self) -> Layout {
             crate::testing::layout(1, 1)
         }
-        fn process(&mut self, _: &[&[f32]], o: &mut [&mut [f32]], _: &[NoteEvent]) {
+        fn process(&mut self, _: &[&[f32]], o: &mut [&mut [f32]], _: &[Event]) {
             o[0].fill(1e-3);
         }
     }

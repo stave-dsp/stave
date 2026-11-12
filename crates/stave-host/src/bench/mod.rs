@@ -217,7 +217,7 @@ mod tests {
         let mut s = Synth::new();
         let cfg = BenchConfig {
             notes: vec![Note {
-                pitch: 60,
+                key: 60,
                 velocity: 1.0,
                 on_s: 0.0,
                 off_s: 10.0,

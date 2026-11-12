@@ -297,21 +297,17 @@ pub fn layout(project: &str, make: &impl Fn() -> FaceDriver, laws: &Laws) {
 
 // ------------------------------------------------------------ U5
 
-/// Every parameter's normalized value, by id.
+/// Every parameter's value, by id.
 fn values(ui: &FaceDriver) -> Vec<(ParamId, f64)> {
-    ui.table_params().into_iter().map(|(_, id)| (id, ui.normalized(id))).collect()
+    ui.table_params().into_iter().map(|(_, id)| (id, ui.value(id))).collect()
 }
 
-/// Put every parameter back to `values` (as automation would). One
-/// already there is left alone: a plain round trip of a log-tapered
-/// default can move it by an ulp, and the picture with it.
+/// Put every parameter back to `values` (as automation would), in its
+/// own units: the exact values read, so a log-tapered value does not
+/// round-trip through normalized and move its knob's pointer by an ulp.
 fn restore(ui: &mut FaceDriver, values: &[(ParamId, f64)]) {
-    for &(id, n) in values {
-        if ui.controller().normalized(id) == n {
-            continue;
-        }
-        let plain = ui.controller().param(id).expect("listed").denormalize(n);
-        ui.set(id, plain);
+    for &(id, v) in values {
+        ui.set(id, v);
     }
 }
 

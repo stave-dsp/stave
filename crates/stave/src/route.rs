@@ -4,10 +4,15 @@
 //! modulation with no extra machinery. The source and target vocabularies
 //! are the instrument's (its `param_enum!`s); the shaping vocabulary
 //! (mode, quant) is shared.
+//!
+//! [`RouteParams::row`] is the slot on a face: one row of a modulation
+//! page, the same on every instrument.
 
 use stave_core::param_enum;
 use stave_core::params::{EnumParam, FloatParam, ParamEnum, ParamId, Range, Smooth, Unit};
 use stave_dsp::RouteSlot;
+use stave_face::prelude::*;
+use stave_face::TapId;
 
 use crate::Params;
 
@@ -98,6 +103,24 @@ impl<Source: ParamEnum, Target: ParamEnum> RouteParams<Source, Target> {
         }
     }
 
+    /// This slot as one row of a modulation page, like a channel strip:
+    /// the source's live value on a bipolar trace (tap `tap`, ±1, the
+    /// slot's `label` printed on it), then all seven parameters.
+    pub fn row(&self, tap: TapId, label: &'static str) -> FaceNode {
+        row(vec![
+            Trace::new(tap, 64.0, 44.0, (-1.0, 1.0)).bipolar().label(label).node(),
+            Stepper::new(self.src.bind()).label("SOURCE").width(120.0).node(),
+            Stepper::new(self.tgt.bind()).label("DEST").width(120.0).node(),
+            Knob::new(self.depth.bind()).small().centered().label("AMOUNT").node(),
+            Stepper::new(self.via.bind()).label("VIA").width(120.0).node(),
+            Toggle::new(self.mode.bind()).label("MODE").node(),
+            Knob::new(self.lag.bind()).small().label("LAG").node(),
+            Stepper::new(self.quant.bind()).label("QUANT").width(96.0).node(),
+        ])
+        .gap(10.0)
+        .align(Align::Center)
+    }
+
     /// This block's slot; the lag knob becomes a one-pole coefficient at
     /// the caller's block rate.
     pub fn slot(&self, block_seconds: f32) -> RouteSlot {
@@ -142,6 +165,23 @@ mod tests {
             [11, 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 25, 26, 27]
         );
         assert_eq!(routes.by_name("quant 2").unwrap().meta().id.0, 27);
+    }
+
+    #[test]
+    fn a_slot_row_shows_every_param_and_its_source() {
+        use stave_face::{FaceNode, Kind};
+        fn leaves(n: &FaceNode, out: &mut Vec<stave_face::Reads>) {
+            if let Kind::Widget(p) = &n.kind {
+                out.push(p.reads());
+            }
+            n.children.iter().for_each(|c| leaves(c, out));
+        }
+        let r: RouteParams<Source, Target> = RouteParams::new(ParamId(30), 1, "Mod");
+        let mut reads = Vec::new();
+        leaves(&r.row(TapId::new("mod1"), "1"), &mut reads);
+        let ids: Vec<u32> = reads.iter().flat_map(|r| r.params.iter().map(|b| b.id.0)).collect();
+        assert_eq!(ids, [31, 32, 33, 34, 35, 36, 37], "every param once, in field order");
+        assert_eq!(reads[0].taps, [TapId::new("mod1")], "the trace reads the source");
     }
 
     #[test]

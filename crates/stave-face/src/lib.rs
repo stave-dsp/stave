@@ -36,11 +36,12 @@ pub mod theme;
 pub mod trace;
 
 pub use part::{
-    leaf, on_page, on_step, pages, step_of, step_value, Area, Bind, BindParam, FaceNode, Focus, Frame, Gesture, Grab, Part,
+    leaf, measured, on_page, on_step, pages, step_of, step_value, Area, Bind, BindParam, FaceNode, Focus, Frame, Gesture, Grab, Part,
     PartId, Reads,
 };
 pub use stave_core::telemetry::TapId;
 pub use stave_core::Controller;
+pub use stave_ui::Kind;
 pub use parts::*;
 pub use runtime::{Cursor, Face, Key, Layer, Mods, Runtime, Visibility};
 pub use trace::{Act, Trace, TraceError};

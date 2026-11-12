@@ -25,6 +25,7 @@ use stave_core::telemetry::TapId;
 use stave_core::Controller;
 use stave_ui::layout::Rect;
 use stave_ui::scene::{Image, Op, Pt, Scene};
+use stave_ui::Fonts;
 
 use crate::material::Occluder;
 use crate::theme::Theme;
@@ -311,6 +312,13 @@ pub enum PartId {
 
 /// One leaf of a face.
 pub trait Part: Send + Sync + 'static {
+    /// The part's natural size in points, from the theme's spacing and
+    /// type scale and its text as `fonts` sets it. Layout asks for it
+    /// where the node leaves a size `Auto` ([`measured`]); a fixed-size
+    /// [`leaf`] never asks.
+    fn size(&self, _theme: &Theme, _fonts: &dyn Fonts) -> (f64, f64) {
+        (0.0, 0.0)
+    }
     /// Raised shapes that shade the enclosure around them.
     fn occluders(&self, _r: Rect, _theme: &Theme, _out: &mut Vec<Occluder>) {}
     /// The static picture, in face coordinates within `r`.
@@ -342,6 +350,12 @@ pub type FaceNode = stave_ui::Node<Arc<dyn Part>>;
 /// Wrap a part as a fixed-size leaf.
 pub fn leaf(part: impl Part, w: f64, h: f64) -> FaceNode {
     stave_ui::widget(Arc::new(part) as Arc<dyn Part>).size(w, h)
+}
+
+/// Wrap a part as a leaf that sizes itself ([`Part::size`]): measured
+/// against the face's theme and the platform's fonts when it is laid out.
+pub fn measured(part: impl Part) -> FaceNode {
+    stave_ui::widget(Arc::new(part) as Arc<dyn Part>)
 }
 
 /// Show `node` only while page set `key` shows `page` (see `Pager`).

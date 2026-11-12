@@ -1,10 +1,14 @@
 //! What the audio thread could not do, as counts: recording is one atomic
 //! add, so a fault costs nothing realtime; a non-realtime entry point
-//! turns the counts into log messages.
+//! turns the counts into log messages. Each record also lands in the
+//! instance's event trace (lock-free), once one is watched.
 
 use super::{Log, Severity};
 use core::fmt;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
+
+use stave_telemetry::{Event, Fault, Telemetry};
 
 /// A process call the wrapper had to refuse, or ran with input dropped.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -58,6 +62,21 @@ impl ProcessFault {
     fn index(self) -> usize {
         self as usize
     }
+
+    /// The fault as the event trace names it.
+    pub fn traced(self) -> Fault {
+        match self {
+            Self::ConcurrentProcess => Fault::ConcurrentProcess,
+            Self::MissingProcessData => Fault::MissingProcessData,
+            Self::BlockTooLong => Fault::BlockTooLong,
+            Self::MissingOutput => Fault::MissingOutput,
+            Self::UnsupportedSampleSize => Fault::UnsupportedSampleSize,
+            Self::ParamChangesDropped => Fault::ParamChangesDropped,
+            Self::EventsDropped => Fault::EventsDropped,
+            Self::BlockTruncated => Fault::BlockTruncated,
+            Self::Unprepared => Fault::Unprepared,
+        }
+    }
 }
 
 impl fmt::Display for ProcessFault {
@@ -83,6 +102,8 @@ pub struct FaultCounts {
     recorded: [AtomicU32; ProcessFault::ALL.len()],
     reported: [AtomicU32; ProcessFault::ALL.len()],
     unreported: AtomicBool,
+    /// The trace each record also lands in.
+    pub(super) events: OnceLock<Arc<Telemetry>>,
 }
 
 impl FaultCounts {
@@ -93,6 +114,9 @@ impl FaultCounts {
             return false;
         }
         self.recorded[fault.index()].fetch_add(count, Ordering::Relaxed);
+        if let Some(t) = self.events.get() {
+            t.event(Event::Fault(fault.traced()));
+        }
         !self.unreported.swap(true, Ordering::AcqRel)
     }
 

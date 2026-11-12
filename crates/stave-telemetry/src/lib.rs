@@ -38,6 +38,9 @@
 //!   wrapper (or by the plugin after [`Telemetry::claim_capture`]).
 //! - **Curve**: a published transfer-curve table ([`Telemetry::publish_curve`]).
 //! - **Messages**: the plugin's recent log lines ([`Messages`]).
+//! - **Events**: the instance's event trace — lifecycle, gestures,
+//!   restores, faults — as typed records a test or tool checks against
+//!   the protocol's laws ([`events`]).
 //! - **Pause**: an armed breakpoint that fires sets `paused`; the wrapper
 //!   then writes silence while the plugin keeps running (a real halt would
 //!   underrun), so its state stays observable.
@@ -50,6 +53,7 @@ extern crate std;
 
 mod breakpoint;
 mod capture;
+pub mod events;
 mod inline_str;
 mod limits;
 #[macro_use]
@@ -57,6 +61,7 @@ mod macros;
 mod messages;
 mod scope;
 mod slot;
+mod sync;
 mod tap;
 mod telemetry;
 #[cfg(test)]
@@ -64,8 +69,19 @@ mod tests;
 
 pub use self::breakpoint::Breakpoint;
 pub use self::capture::Capture;
+pub use self::events::{Event, Events, Fault};
 pub use self::limits::*;
 pub use self::messages::Messages;
 pub use self::scope::Scope;
 pub use self::tap::{Tap, TapId, TapReading};
 pub use self::telemetry::Telemetry;
+
+/// The lock-free pieces the loom models (`tests/loom.rs`) check, built on
+/// loom's atomics under `cfg(loom)`: the shipping types, not copies.
+#[cfg(loom)]
+#[doc(hidden)]
+pub mod model {
+    pub use crate::inline_str::InlineStr;
+    pub use crate::messages::Message;
+    pub use crate::slot::{reserve_index, TapSlot};
+}

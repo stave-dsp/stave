@@ -1,11 +1,11 @@
 //! stave-dsp stages by name, so every host tool loads a stage the way
-//! it loads a plugin: `stage:<name>` with its settings as controls.
-//! A setting change is applied in place at the next block: no
+//! it loads a plugin: `stage:<name>`, its settings stave-core params.
+//! A param change is applied in place at the next block: no
 //! allocation, state kept, safe from any thread.
 //!
 //! ```text
-//! mod.rs       the stage model: StageSpec, Setting, Range, SettingValues
-//! catalog.rs   the static catalog: every stage, its settings and builder
+//! mod.rs       the stage model: StageSpec, StageParams
+//! catalog.rs   the static catalog: every stage, its params and builder
 //! instance.rs  CatalogInstance / CatalogHandle: a catalog stage running
 //! ```
 
@@ -17,88 +17,14 @@ mod tests;
 pub use catalog::CATALOG;
 pub use instance::{CatalogHandle, CatalogInstance};
 
+use stave_core::params::{AnyParam, Params};
 use stave_dsp::{NewtonStats, Stage};
 
 pub const PREFIX: &str = "stage:";
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Setting {
-    pub name: &'static str,
-    pub default: f64,
-    pub range: Range,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Range {
-    Continuous {
-        min: f64,
-        max: f64,
-        unit: &'static str,
-    },
-    /// One of the named options, held as its index.
-    Choice(&'static [&'static str]),
-}
-
-impl Range {
-    pub fn min(&self) -> f64 {
-        match self {
-            Self::Continuous { min, .. } => *min,
-            Self::Choice(_) => 0.0,
-        }
-    }
-
-    pub fn max(&self) -> f64 {
-        match self {
-            Self::Continuous { max, .. } => *max,
-            Self::Choice(options) => options.len().saturating_sub(1) as f64,
-        }
-    }
-
-    pub fn admits(&self, value: f64) -> bool {
-        let within = (self.min()..=self.max()).contains(&value);
-        match self {
-            Self::Continuous { .. } => within,
-            Self::Choice(_) => within && value.fract() == 0.0,
-        }
-    }
-
-    /// Position 0..1 across the range (linear; a lone option is 0).
-    pub fn normalize(&self, value: f64) -> f64 {
-        let span = self.max() - self.min();
-        if span > 0.0 {
-            (value - self.min()) / span
-        } else {
-            0.0
-        }
-    }
-
-    /// The value at position 0..1; a choice lands on its nearest option.
-    pub fn denormalize(&self, normalized: f64) -> f64 {
-        let value = self.min() + normalized.clamp(0.0, 1.0) * (self.max() - self.min());
-        match self {
-            Self::Continuous { .. } => value,
-            Self::Choice(_) => value.round(),
-        }
-    }
-
-    fn unit(&self) -> &'static str {
-        match self {
-            Self::Continuous { unit, .. } => unit,
-            Self::Choice(_) => "",
-        }
-    }
-
-    fn options(&self) -> &'static [&'static str] {
-        match self {
-            Self::Continuous { .. } => &[],
-            Self::Choice(options) => options,
-        }
-    }
-}
-
-/// A stage whose settings can change while it runs.
+/// A stage whose params can change while it runs.
 pub trait Configurable: Stage + Send {
-    fn configure(&mut self, values: &SettingValues);
+    fn configure(&mut self, params: &StageParams);
 
     /// What its nonlinear solver has done since `prepare`, if it has one.
     fn solver(&self) -> Option<NewtonStats> {
@@ -108,35 +34,50 @@ pub trait Configurable: Stage + Send {
 
 pub type BoxedStage = Box<dyn Configurable>;
 
+/// A catalog entry: a stage's name, its params, and how it builds.
 pub struct StageSpec {
     pub name: &'static str,
-    pub settings: &'static [Setting],
-    pub build: fn(&SettingValues) -> BoxedStage,
+    /// A fresh table of the stage's params at their defaults.
+    pub params: fn() -> StageParams,
+    pub build: fn(&StageParams) -> BoxedStage,
 }
 
-/// A stage's current setting values, read by name.
-pub struct SettingValues<'a> {
-    pub(crate) settings: &'a [Setting],
-    pub(crate) values: &'a [f64],
-}
+/// A stage's params: stave-core params in declaration order (ids are
+/// the positions), read by name when the stage builds or reconfigures.
+pub struct StageParams(Vec<Box<dyn AnyParam>>);
 
-impl SettingValues<'_> {
+impl StageParams {
+    pub fn new(params: Vec<Box<dyn AnyParam>>) -> Self {
+        Self(params)
+    }
+
+    /// The value of the param named `name`.
+    ///
+    /// # Panics
+    /// If the stage declares no such param (a catalog bug).
     pub fn get(&self, name: &str) -> f64 {
-        let i = self
-            .settings
-            .iter()
-            .position(|s| s.name == name)
-            .unwrap_or_else(|| panic!("stage reads undeclared setting '{name}'"));
-        self.values[i]
+        self.by_name(name)
+            .unwrap_or_else(|| panic!("stage reads undeclared param '{name}'"))
+            .value()
     }
 
     pub(crate) fn f32(&self, name: &str) -> f32 {
         self.get(name) as f32
     }
 
-    /// A choice setting's option index.
+    /// A choice param's option index.
     pub fn choice(&self, name: &str) -> usize {
         self.get(name) as usize
+    }
+}
+
+impl Params for StageParams {
+    fn count(&self) -> usize {
+        self.0.len()
+    }
+
+    fn by_index(&self, index: usize) -> Option<&dyn AnyParam> {
+        self.0.get(index).map(|p| &**p)
     }
 }
 

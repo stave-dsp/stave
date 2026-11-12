@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn gain_reads_flat_on_every_channel() {
         let mut g = Gain::new(2, 2);
-        g.set_control("gain", 0.5).unwrap();
+        g.set_param("gain", 0.5).unwrap();
         let tfs = measure(&mut g, &quick());
         assert_eq!(tfs.len(), 2);
         for tf in &tfs {

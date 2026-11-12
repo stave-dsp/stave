@@ -1,7 +1,7 @@
 use super::*;
 use crate::adapt::InstanceChannel;
 use crate::config::HostConfig;
-use crate::control::ControlError;
+use crate::param::ParamError;
 use crate::instance::{Instance, TapReading};
 use crate::validate::{Status, Suite};
 use stave_measure::tone_window::ToneWindow;
@@ -24,19 +24,26 @@ fn tone() -> ToneWindow {
 }
 
 #[test]
-fn names_are_unique_and_defaults_in_range() {
+fn names_are_unique_and_params_valid() {
+    use stave_core::params::Params;
     for (i, m) in CATALOG.iter().enumerate() {
         assert!(CATALOG[..i].iter().all(|o| o.name != m.name), "{}", m.name);
-        for s in m.settings {
-            assert!(s.range.admits(s.default), "{}.{}", m.name, s.name);
-        }
+        let params = (m.params)();
+        assert_eq!(params.validate(), Ok(()), "{}", m.name);
+        let mut names: Vec<_> = (0..params.count())
+            .filter_map(|i| params.by_index(i))
+            .map(|p| p.meta().name)
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), params.count(), "{}: duplicate names", m.name);
     }
 }
 
 #[test]
-fn settings_are_controls_and_a_change_reaches_the_audio() {
+fn params_are_listed_and_a_change_reaches_the_audio() {
     let mut peak = CatalogInstance::new(find("filter/peak").unwrap(), &config());
-    let names: Vec<_> = peak.controls().into_iter().map(|c| c.name).collect();
+    let names: Vec<_> = peak.params().into_iter().map(|c| c.name).collect();
     assert_eq!(names, ["hz", "db", "q"]);
     let gain = |inst: &mut CatalogInstance| {
         tone().gain_db(InstanceChannel {
@@ -45,21 +52,38 @@ fn settings_are_controls_and_a_change_reaches_the_audio() {
         })
     };
     assert!((gain(&mut peak) - 6.0).abs() < 0.1);
-    peak.set_control("db", -12.0).unwrap();
+    peak.set_param("db", -12.0).unwrap();
     assert!((gain(&mut peak) + 12.0).abs() < 0.1);
 }
 
 #[test]
-fn out_of_range_and_unknown_settings_are_refused() {
+fn out_of_range_and_unknown_params_are_refused() {
     let mut m = CatalogInstance::new(find("coupler").unwrap(), &config());
     assert!(matches!(
-        m.set_control("hz", 1e6),
-        Err(ControlError::OutOfRange { .. })
+        m.set_param("hz", 1e6),
+        Err(ParamError::OutOfRange { .. })
     ));
     assert!(matches!(
-        m.set_control("nope", 1.0),
-        Err(ControlError::NotFound(_))
+        m.set_param("nope", 1.0),
+        Err(ParamError::NotFound(_))
     ));
+    let mut tube = CatalogInstance::new(find("circuit/common_cathode").unwrap(), &config());
+    assert!(matches!(
+        tube.set_param("tube", 0.5),
+        Err(ParamError::NotAnOption { .. })
+    ));
+    assert_eq!(tube.set_param("tube", 1.0), Ok(()));
+    assert_eq!(tube.handle().get("tube"), Some(1.0));
+}
+
+#[test]
+fn display_uses_the_params_unit() {
+    let peak = CatalogInstance::new(find("filter/peak").unwrap(), &config());
+    let h = peak.handle();
+    assert_eq!(h.display("db", 1.0).as_deref(), Some("24.0 dB"));
+    let tube = CatalogInstance::new(find("circuit/common_cathode").unwrap(), &config());
+    let source = tube.handle().display("source", 0.0);
+    assert_eq!(source.as_deref(), Some("0.00 kΩ"));
 }
 
 #[test]

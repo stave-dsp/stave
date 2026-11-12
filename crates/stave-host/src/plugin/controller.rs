@@ -15,7 +15,7 @@ use crossbeam_queue::ArrayQueue;
 use stave_vst3_sys::{IEditControllerVtbl, ParamId, ParamValue, ParameterInfo, K_RESULT_OK};
 
 use super::com::{utf16_z, Com, Initialized};
-use crate::control::{find, Control, ControlError, ControlFlags};
+use crate::param::{find, Param, ParamError, ParamFlags};
 
 // ParameterInfo::flags (VST3 ivsteditcontroller.h).
 const CAN_AUTOMATE: i32 = 1 << 0;
@@ -91,7 +91,7 @@ impl Controller {
             alive: Arc::new(AtomicBool::new(true)),
             inventory: Arc::new(Vec::new()),
         };
-        handle.inventory = Arc::new(handle.controls());
+        handle.inventory = Arc::new(handle.params());
         Self { obj, handle }
     }
 
@@ -130,7 +130,7 @@ pub struct ControllerHandle {
     alive: Arc<AtomicBool>,
     /// Ids, names and flags as of load (the inventory is static; only
     /// values move) — name lookups without re-walking the controller.
-    inventory: Arc<Vec<Control>>,
+    inventory: Arc<Vec<Param>>,
 }
 
 impl ControllerHandle {
@@ -145,17 +145,17 @@ impl ControllerHandle {
     }
 
     /// Every parameter, values read live.
-    pub fn controls(&self) -> Vec<Control> {
+    pub fn params(&self) -> Vec<Param> {
         let Some(vt) = self.vtbl() else {
             return Vec::new();
         };
         // SAFETY: the controller's own method; `vtbl()` returned it, so the
         // controller is alive.
         let n = unsafe { (vt.get_parameter_count)(self.obj) };
-        (0..n).filter_map(|i| self.control_at(vt, i)).collect()
+        (0..n).filter_map(|i| self.param_at(vt, i)).collect()
     }
 
-    fn control_at(&self, vt: &IEditControllerVtbl, index: i32) -> Option<Control> {
+    fn param_at(&self, vt: &IEditControllerVtbl, index: i32) -> Option<Param> {
         // SAFETY: all-zero is a valid `ParameterInfo` (integers, a float,
         // UTF-16 arrays).
         let mut info = unsafe { std::mem::zeroed::<ParameterInfo>() };
@@ -171,9 +171,14 @@ impl ControllerHandle {
         // SAFETY: as above.
         let normalized = unsafe { (vt.get_param_normalized)(self.obj, info.id) };
         let name = utf16_z(&info.title);
-        let steps = info.step_count.max(0) as u32;
         // A program list's positions are its preset names, however many.
         let program = info.flags & IS_PROGRAM_CHANGE != 0;
+        // VST3 counts steps between positions; stave counts positions.
+        let step_count = match info.step_count.max(0) as u32 {
+            0 if program => 1,
+            0 => 0,
+            steps => steps + 1,
+        };
         let step_names = if program || (1..=MAX_NAMED_STEPS).contains(&info.step_count) {
             (0..=info.step_count)
                 .map(|k| self.value_string(vt, info.id, f64::from(k) / f64::from(info.step_count)))
@@ -181,8 +186,8 @@ impl ControllerHandle {
         } else {
             Vec::new()
         };
-        Some(Control {
-            id: info.id,
+        Some(Param {
+            id: stave_core::params::ParamId(info.id),
             group: name
                 .rsplit_once('·')
                 .map(|(g, _)| g.trim().to_string())
@@ -194,15 +199,15 @@ impl ControllerHandle {
             default: plain(info.default_normalized_value),
             value: plain(normalized),
             normalized,
-            steps,
+            step_count,
             step_names,
-            flags: ControlFlags {
-                automatable: info.flags & CAN_AUTOMATE != 0,
-                read_only: info.flags & IS_READ_ONLY != 0,
-                hidden: info.flags & IS_HIDDEN != 0,
+            flags: ParamFlags {
                 bypass: info.flags & IS_BYPASS != 0,
-                program_change: program,
+                non_automatable: info.flags & CAN_AUTOMATE == 0,
+                hidden: info.flags & IS_HIDDEN != 0,
             },
+            read_only: info.flags & IS_READ_ONLY != 0,
+            program,
         })
     }
 
@@ -218,25 +223,25 @@ impl ControllerHandle {
         }
     }
 
-    fn writable(&self, name: &str) -> Result<&Control, ControlError> {
-        let c = find(&self.inventory, name).ok_or_else(|| ControlError::NotFound(name.into()))?;
-        if c.flags.read_only {
-            return Err(ControlError::ReadOnly(c.name.clone()));
+    fn writable(&self, name: &str) -> Result<&Param, ParamError> {
+        let c = find(&self.inventory, name).ok_or_else(|| ParamError::NotFound(name.into()))?;
+        if c.read_only {
+            return Err(ParamError::ReadOnly(c.name.clone()));
         }
         Ok(c)
     }
 
-    /// Set a parameter by name, PLAIN value.
-    pub fn set(&self, name: &str, plain: f64) -> Result<(), ControlError> {
+    /// Set a parameter by name, in its own units.
+    pub fn set(&self, name: &str, value: f64) -> Result<(), ParamError> {
         let id = self.writable(name)?.id;
-        self.set_by_id(id, plain);
+        self.set_by_id(id.0, value);
         Ok(())
     }
 
     /// Set a parameter by name at a normalized position (its own taper).
-    pub fn set_normalized(&self, name: &str, normalized: f64) -> Result<(), ControlError> {
+    pub fn set_normalized(&self, name: &str, normalized: f64) -> Result<(), ParamError> {
         let id = self.writable(name)?.id;
-        self.apply(id, normalized);
+        self.apply(id.0, normalized);
         Ok(())
     }
 
@@ -244,7 +249,7 @@ impl ControllerHandle {
     pub fn display(&self, name: &str, normalized: f64) -> Option<String> {
         let vt = self.vtbl()?;
         let c = find(&self.inventory, name)?;
-        Some(self.value_string(vt, c.id, normalized))
+        Some(self.value_string(vt, c.id.0, normalized))
     }
 
     /// Set a parameter by id, PLAIN value.

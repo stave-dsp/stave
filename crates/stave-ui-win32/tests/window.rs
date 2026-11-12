@@ -65,7 +65,7 @@ struct Rig {
 impl Rig {
     fn new(scale: Option<f64>) -> Rig {
         let t = table();
-        let rt = Runtime::new(face(&t));
+        let rt = Runtime::new(face(&t), &stave_font::FontText);
         let probe = controller(&t);
         let at = |id| {
             let c = rt.grabs(&probe, PartId::Param(ParamId(id)))[0].area.centre();

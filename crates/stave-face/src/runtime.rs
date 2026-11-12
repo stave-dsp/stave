@@ -13,7 +13,7 @@ use stave_core::{Controller, Normalized};
 use stave_raster::{Canvas, TextPainter};
 use stave_ui::layout::Rect;
 use stave_ui::scene::{Pt, Scene};
-use stave_ui::{Kind, Layout};
+use stave_ui::{Fonts, Kind, Layout};
 
 use crate::material::Shadows;
 use crate::part::{
@@ -155,14 +155,30 @@ fn flatten(node: &FaceNode, layout: &Layout, when: &[(u32, u16)], out: &mut Vec<
     }
 }
 
+/// Every part's natural size, keyed by the part.
+fn measure_parts(node: &FaceNode, theme: &Theme, fonts: &dyn Fonts, out: &mut HashMap<*const (), (f64, f64)>) {
+    if let Kind::Widget(part) = &node.kind {
+        out.entry(Arc::as_ptr(part).cast::<()>()).or_insert_with(|| part.size(theme, fonts));
+    }
+    for child in &node.children {
+        measure_parts(child, theme, fonts, out);
+    }
+}
+
 impl Runtime {
-    pub fn new(face: Face) -> Self {
+    /// The runtime for `face`, laid out with text measured in `fonts`
+    /// (the platform's, the same the face's text is painted in).
+    pub fn new(face: Face, fonts: &dyn Fonts) -> Self {
+        // Each part is measured once, up front (the solver asks many times).
+        let mut sizes: HashMap<*const (), (f64, f64)> = HashMap::new();
+        measure_parts(&face.root, &face.theme, fonts, &mut sizes);
+        let measure = |part: &Arc<dyn Part>| sizes.get(&Arc::as_ptr(part).cast::<()>()).copied().unwrap_or((0.0, 0.0));
         // A face is as big as its content: measure with no space to
         // spare (fills and spacers take nothing), then lay out at that
         // size so they share whatever the widest row left over.
-        let natural = stave_ui::solve(&face.root, (0.0, 0.0)).rect;
+        let natural = stave_ui::solve(&face.root, (0.0, 0.0), &measure).rect;
         let size = (natural.w.ceil(), natural.h.ceil());
-        let layout = stave_ui::solve(&face.root, size);
+        let layout = stave_ui::solve(&face.root, size, &measure);
         let mut items = Vec::new();
         flatten(&face.root, &layout, &[], &mut items);
         let mut watch_params: Vec<ParamId> = items.iter().flat_map(|it| it.reads.params.iter().map(|b| b.id)).collect();

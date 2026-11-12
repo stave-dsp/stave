@@ -6,7 +6,8 @@
 use std::time::Duration;
 
 use crate::instance::Instance;
-use crate::note::{NoteEvent, NoteSchedule};
+use crate::note::NoteSchedule;
+use stave_core::Event;
 use stave_measure::signal::Signal;
 
 /// This thread's CPU time so far.
@@ -99,7 +100,7 @@ pub struct Driver<'i> {
     block: usize,
     inputs: Vec<Vec<f32>>,
     outputs: Vec<Vec<f32>>,
-    notes: Vec<NoteEvent>,
+    events: Vec<Event>,
     frame: u64,
     processed: u64,
 }
@@ -119,7 +120,7 @@ impl<'i> Driver<'i> {
             block,
             inputs: vec![vec![0.0; block]; l.inputs],
             outputs: vec![vec![0.0; block]; l.outputs],
-            notes: Vec::new(),
+            events: Vec::new(),
             frame: 0,
             processed: 0,
         }
@@ -162,12 +163,12 @@ impl<'i> Driver<'i> {
         while self.frame < end {
             let n = (end - self.frame).min(self.block as u64) as usize;
             signal.fill(self.frame, &mut self.inputs, n);
-            self.notes.clear();
-            notes.block(self.frame, n, &mut self.notes);
+            self.events.clear();
+            notes.block(self.frame, n, &mut self.events);
             let ins: Vec<&[f32]> = self.inputs.iter().map(|b| &b[..n]).collect();
             let mut outs: Vec<&mut [f32]> = self.outputs.iter_mut().map(|b| &mut b[..n]).collect();
             let t0 = thread_cpu_time();
-            self.inst.process(&ins, &mut outs, &self.notes);
+            self.inst.process(&ins, &mut outs, &self.events);
             let process_time = thread_cpu_time().saturating_sub(t0);
             on_block(&BlockOut {
                 start: self.frame,
@@ -278,7 +279,7 @@ mod tests {
         let on = (BLOCK as f64 * 2.5) / rate;
         let notes = NoteSchedule::new(
             &[Note {
-                pitch: 60,
+                key: 60,
                 velocity: 1.0,
                 on_s: on,
                 off_s: 1.0,

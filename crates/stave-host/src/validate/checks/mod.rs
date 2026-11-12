@@ -36,8 +36,8 @@ pub const ALL: &[Check] = &[
         run: sweep::param_sweep,
     },
     Check {
-        name: "controls_glide",
-        run: glide::controls_glide,
+        name: "params_glide",
+        run: glide::params_glide,
     },
     Check {
         name: "self_noise",

@@ -5,9 +5,12 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
+use crate::sync::zeroed_array;
+
 use crate::breakpoint::BreakpointSlot;
 use crate::capture::CaptureFrame;
 use crate::slot::TapSlot;
+use crate::events::{Event, Events};
 use crate::{Messages, ABI_VERSION, CURVE_POINTS, MAX_BREAKPOINTS, MAX_TAPS};
 
 const PLUGIN_CAPTURE: u8 = 1;
@@ -21,8 +24,9 @@ const PLUGIN_CAPTURE: u8 = 1;
 #[repr(C)]
 pub struct Telemetry {
     abi_version: u32,
-    pub(crate) taps_used: AtomicU16,
-    pub(crate) breakpoints_used: AtomicU16,
+    /// Slots reserved ([`reserve_index`](crate::slot::reserve_index)).
+    pub(crate) taps_used: crate::sync::AtomicU16,
+    pub(crate) breakpoints_used: crate::sync::AtomicU16,
     pub(crate) paused: AtomicBool,
     pub(crate) block_counter: AtomicU64,
     pub(crate) taps: [TapSlot; MAX_TAPS],
@@ -36,6 +40,7 @@ pub struct Telemetry {
     /// L/R, the default) or the plugin (`claim_capture`).
     capture_owner: AtomicU8,
     messages: Messages,
+    events: Events,
     /// This block's own `Arc`, so a [`Tap`](crate::Tap) registered
     /// through `&Telemetry` keeps the block alive. Last: the layout a
     /// host reads ends before it.
@@ -48,17 +53,18 @@ impl Telemetry {
     pub fn new() -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             abi_version: ABI_VERSION,
-            taps_used: AtomicU16::new(0),
-            breakpoints_used: AtomicU16::new(0),
+            taps_used: crate::sync::AtomicU16::new(0),
+            breakpoints_used: crate::sync::AtomicU16::new(0),
             paused: AtomicBool::new(false),
             block_counter: AtomicU64::new(0),
-            taps: [const { TapSlot::zeroed() }; MAX_TAPS],
-            breakpoints: [const { BreakpointSlot::zeroed() }; MAX_BREAKPOINTS],
+            taps: zeroed_array![TapSlot; MAX_TAPS],
+            breakpoints: zeroed_array![BreakpointSlot; MAX_BREAKPOINTS],
             curve_used: AtomicU16::new(0),
             curve: [const { AtomicU32::new(0) }; CURVE_POINTS],
             capture: CaptureFrame::zeroed(),
             capture_owner: AtomicU8::new(0),
             messages: Messages::zeroed(),
+            events: Events::zeroed(),
             me: me.clone(),
         })
     }
@@ -129,5 +135,16 @@ impl Telemetry {
     /// The plugin's recent log messages.
     pub fn messages(&self) -> &Messages {
         &self.messages
+    }
+
+    /// The instance's event trace ([`crate::events`]).
+    pub fn events(&self) -> &Events {
+        &self.events
+    }
+
+    /// Record `event` in the trace, as landing in the current block. Any
+    /// thread, lock-free, never allocates.
+    pub fn event(&self, event: Event) {
+        self.events.push(self.block(), event);
     }
 }

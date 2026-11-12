@@ -4,9 +4,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::control::{Control, ControlError};
+use crate::param::{Param, ParamError};
 use crate::instance::{Instance, Layout, PluginMessage, TapReading, StateError, Tail};
-use crate::note::NoteEvent;
+use stave_core::Event;
 
 pub(super) struct Logged {
     pub inner: Box<dyn Instance>,
@@ -29,14 +29,14 @@ impl Instance for Logged {
     fn tail(&self) -> Tail {
         self.inner.tail()
     }
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], notes: &[NoteEvent]) {
-        self.inner.process(inputs, outputs, notes)
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[Event]) {
+        self.inner.process(inputs, outputs, events)
     }
-    fn controls(&self) -> Vec<Control> {
-        self.inner.controls()
+    fn params(&self) -> Vec<Param> {
+        self.inner.params()
     }
-    fn set_control(&mut self, name: &str, plain: f64) -> Result<(), ControlError> {
-        self.inner.set_control(name, plain)
+    fn set_param(&mut self, name: &str, plain: f64) -> Result<(), ParamError> {
+        self.inner.set_param(name, plain)
     }
     fn save_state(&mut self) -> Result<Vec<u8>, StateError> {
         self.inner.save_state()

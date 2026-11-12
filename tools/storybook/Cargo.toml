@@ -20,16 +20,15 @@ stave-core.workspace = true
 stave-face.workspace = true
 stave-raster.workspace = true
 stave-ui.workspace = true
+stave-font.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 stave-ui-cocoa.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-stave-font.workspace = true
 stave-ui-win32.workspace = true
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-stave-font.workspace = true
 stave-ui-x11.workspace = true
 
 [lints]

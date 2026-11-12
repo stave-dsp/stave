@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::control::ControlError;
+use crate::param::ParamError;
 use crate::instance::{Instance, PluginMessage, StateError};
 use crate::opened::OpenError;
 use crate::note::{Note, NoteSchedule};
@@ -100,7 +100,7 @@ pub enum CheckError {
     #[error("could not load a fresh instance")]
     Load(#[from] OpenError),
     #[error(transparent)]
-    Control(#[from] ControlError),
+    Param(#[from] ParamError),
     #[error(transparent)]
     State(#[from] StateError),
 }
@@ -155,7 +155,7 @@ pub struct SuiteConfig {
 pub struct Excitation {
     pub effect_noise: Noise,
     pub instrument_chord: Vec<i16>,
-    pub velocity: f32,
+    pub velocity: f64,
 }
 
 impl Default for Excitation {
@@ -276,7 +276,7 @@ mod tests {
         fn layout(&self) -> crate::instance::Layout {
             self.0.layout()
         }
-        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], n: &[crate::note::NoteEvent]) {
+        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], n: &[stave_core::Event]) {
             self.0.process(i, o, n)
         }
         fn messages(&self, _from: u64) -> Vec<PluginMessage> {

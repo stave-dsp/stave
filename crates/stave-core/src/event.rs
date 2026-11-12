@@ -1,16 +1,29 @@
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Event {
     /// Frame offset from the start of the block.
     pub frame: usize,
     pub kind: EventKind,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EventKind {
     Note(NoteEvent),
 }
 
-#[derive(Copy, Clone, Debug)]
+impl Event {
+    /// `note`, `frame` frames into its block.
+    pub fn note(frame: usize, note: NoteEvent) -> Self {
+        Self {
+            frame,
+            kind: EventKind::Note(note),
+        }
+    }
+}
+
+/// A note on, off or choke: the one note model, for plugins and for
+/// every host and tool that drives them (stave-host converts to a
+/// format's own events at the ABI).
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct NoteEvent {
     pub kind: NoteKind,
     /// 0..=127, or -1 for "no key" (use note_id instead)
@@ -18,6 +31,28 @@ pub struct NoteEvent {
     pub channel: i16,
     pub velocity: f64,
     pub note_id: i32,
+}
+
+impl NoteEvent {
+    /// A note on of `key` at `velocity` (0–1), channel 0, no note id.
+    pub fn on(key: i16, velocity: f64) -> Self {
+        Self {
+            kind: NoteKind::On,
+            key,
+            channel: 0,
+            velocity,
+            note_id: -1,
+        }
+    }
+
+    /// A note off of `key` with release `velocity` (0–1), channel 0, no
+    /// note id.
+    pub fn off(key: i16, velocity: f64) -> Self {
+        Self {
+            kind: NoteKind::Off,
+            ..Self::on(key, velocity)
+        }
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

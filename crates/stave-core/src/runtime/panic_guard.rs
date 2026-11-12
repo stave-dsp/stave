@@ -68,6 +68,7 @@ impl PanicGuard {
             Ok(value) => value,
             Err(_) => {
                 self.disabled.store(true, Ordering::Release);
+                diagnostics.event(stave_telemetry::Event::Fault(stave_telemetry::Fault::Panic));
                 diagnostics.log.write(
                     Severity::Fatal,
                     &format_args!("{name} panicked; the instance is disabled and outputs silence"),
@@ -140,6 +141,7 @@ impl PanicGuard {
             // SAFETY: the exchange above made this thread the only reader,
             // after the writer's Release of RECORDED (see the `Sync` impl).
             let name = unsafe { *self.slot.get() };
+            diagnostics.event(stave_telemetry::Event::Fault(stave_telemetry::Fault::Panic));
             diagnostics.log.write(
                 Severity::Fatal,
                 &format_args!("{name} panicked; the instance is disabled and outputs silence"),
@@ -169,6 +171,7 @@ mod tests {
         let diagnostics = Diagnostics {
             log: Log::new(vec![Box::new(memory.clone())]),
             faults: Default::default(),
+            session: Default::default(),
         };
         (diagnostics, memory)
     }

@@ -1,7 +1,7 @@
 //! The identity dump agents start from: what the plugin is, how it
-//! loaded, its shape, and its whole control surface.
+//! loaded, its shape, and every parameter.
 
-use crate::control::Control;
+use crate::param::Param;
 use crate::instance::{Instance, Layout, TapReading, Tail};
 use crate::plugin::{HostStats, PluginInfo};
 
@@ -13,7 +13,7 @@ pub struct Description {
     pub layout: Layout,
     pub latency: u32,
     pub tail: Tail,
-    pub controls: Vec<Control>,
+    pub params: Vec<Param>,
     pub presets: Vec<String>,
     pub taps: Vec<TapReading>,
 }
@@ -25,7 +25,7 @@ pub fn describe(inst: &dyn Instance) -> Description {
         layout: inst.layout(),
         latency: inst.latency(),
         tail: inst.tail(),
-        controls: inst.controls(),
+        params: inst.params(),
         presets: crate::instance::presets(inst),
         taps: inst.taps(),
     }
@@ -58,7 +58,7 @@ mod tests {
         let g = Gain::new(2, 2).with_preset("warm", &[]);
         let d = describe(&g);
         assert_eq!(
-            (d.layout.inputs, d.controls.len()),
+            (d.layout.inputs, d.params.len()),
             (2, 3),
             "gain, bypass, program"
         );

@@ -25,12 +25,17 @@ pub const NAME_BYTES: usize = 32;
 /// 12: control slots removed (parameters are the plugin's typed table).
 /// 13: the message ring (`Telemetry::messages`).
 /// 14: tap slots carry their `TapId`; fields are private (`Telemetry`).
-pub const ABI_VERSION: u32 = 14;
+/// 15: the event ring (`Telemetry::events`).
+pub const ABI_VERSION: u32 = 15;
 
 // The IEEE-754 bit patterns of ±infinity (the empty min/max).
 pub(crate) const F64_INFINITY_BITS: u64 = 0x7ff0_0000_0000_0000;
 
 pub(crate) const F64_NEG_INFINITY_BITS: u64 = 0xfff0_0000_0000_0000;
+
+/// Events the block's trace ring keeps (`Telemetry::events`): a reader
+/// that falls further behind loses the oldest.
+pub const EVENT_SLOTS: usize = 256;
 
 /// Log messages the block keeps, newest last.
 pub const MESSAGE_SLOTS: usize = 32;

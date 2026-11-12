@@ -15,6 +15,6 @@ pub mod node;
 pub mod scene;
 pub mod style;
 
-pub use layout::{solve, Layout};
+pub use layout::{solve, Fonts, Layout, Measure, Unmeasured};
 pub use node::{boxed, column, grid, row, spacer, stack, widget, Kind, Node};
 pub use style::{Align, Color, Dim, Dir, Edges, Justify, Style};

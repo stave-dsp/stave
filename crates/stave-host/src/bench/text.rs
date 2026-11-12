@@ -220,12 +220,12 @@ pub fn description(d: &Description) -> String {
         "   {} in / {} out @ {} Hz, latency {} samples, tail {:?}",
         l.inputs, l.outputs, l.sample_rate, d.latency, d.tail
     );
-    let _ = writeln!(w, "controls ({}):", d.controls.len());
-    for c in &d.controls {
+    let _ = writeln!(w, "params ({}):", d.params.len());
+    for c in &d.params {
         let value = c
             .step_names
             .get(c.value as usize)
-            .filter(|_| c.steps > 0)
+            .filter(|_| c.step_count > 0)
             .map_or_else(|| format!("{:.4}", c.value), |name| name.clone());
         let _ = writeln!(
             w,
@@ -235,7 +235,7 @@ pub fn description(d: &Description) -> String {
             c.unit,
             c.min,
             c.max,
-            if c.flags.read_only {
+            if c.read_only {
                 "  (read-only)"
             } else {
                 ""
@@ -280,10 +280,10 @@ mod tests {
     }
 
     #[test]
-    fn description_lists_controls_and_flags() {
+    fn description_lists_params_and_flags() {
         let t = description(&describe(&Gain::new(1, 1)));
         assert!(
-            t.contains("controls (2):") && t.contains("Level · gain"),
+            t.contains("params (2):") && t.contains("Level · gain"),
             "{t}"
         );
     }

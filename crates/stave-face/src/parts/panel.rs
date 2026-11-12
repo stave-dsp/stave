@@ -10,6 +10,7 @@ use stave_ui::{Dim, Edges};
 
 use crate::material::{self, cov, RRect};
 use crate::part::{Bake, FaceNode, Part, PartId};
+use crate::theme::Theme;
 
 /// What kind of hardware the face is.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -414,7 +415,19 @@ impl Plate {
 
 struct PlatePart(Plate);
 
+/// Where a plate's title starts, in from its left edge (and the least
+/// room after it).
+const PLATE_TITLE_X: f64 = 16.0;
+
 impl Part for PlatePart {
+    /// Never narrower than its title (the plate's background is a fill;
+    /// this is its floor).
+    fn size(&self, th: &Theme, fonts: &dyn stave_ui::Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        let w = self.0.title.map_or(0.0, |t| fonts.width(t, ty.caption_size, &ty.caption) + 2.0 * PLATE_TITLE_X);
+        (w, 0.0)
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let plate = RRect::new(r.x, r.y, r.w, r.h, 9.0);
@@ -441,7 +454,7 @@ impl Part for PlatePart {
             let ty = &th.typography;
             let font = ty.caption.align(stave_ui::scene::TextAlign::Left);
             cx.scene
-                .text_in(stave_ui::scene::pt(r.x + 16.0, r.y + 19.0), t, ty.caption_size, th.palette.ink_soft, font);
+                .text_in(stave_ui::scene::pt(r.x + PLATE_TITLE_X, r.y + 19.0), t, ty.caption_size, th.palette.ink_soft, font);
         }
     }
 }

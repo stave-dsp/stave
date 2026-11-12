@@ -1,11 +1,11 @@
 //! Print on the face: the product title and small captions.
 
-
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, TextAlign};
-use stave_ui::Dim;
+use stave_ui::{Dim, Fonts};
 
-use crate::part::{leaf, Bake, FaceNode, Part, PartId};
+use crate::part::{measured, Bake, FaceNode, Part, PartId};
+use crate::theme::Theme;
 
 /// The product name, with an optional line beneath.
 #[derive(Copy, Clone, Debug)]
@@ -31,23 +31,32 @@ impl Title {
         self.align = TextAlign::Center;
         self
     }
+    /// A title takes its share of a row, and never less than its print
+    /// measures.
     pub fn node(self) -> FaceNode {
-        let h = if self.tagline.is_some() { 42.0 } else { 28.0 };
-        // A strut as wide as the print (estimated at the house sizes),
-        // so a row can never squeeze the title narrower than its text.
-        let ty = &crate::theme::TYPE;
-        let est = |s: &str, size: f64, track: f64| s.chars().count() as f64 * size * (0.64 + track);
-        let w = est(self.name, ty.title_size, ty.title.tracking)
-            .max(self.tagline.map_or(0.0, |t| est(t, ty.tagline_size, ty.tagline.tracking)));
-        stave_ui::column(std::vec![leaf(self, 0.0, h).width(Dim::Fill(1.0)), stave_ui::boxed(std::vec![]).size(w, 0.0)])
-            .width(Dim::Fill(1.0))
-            .align(stave_ui::Align::Stretch)
+        measured(self).width(Dim::Fill(1.0))
+    }
+    /// The baselines of the name and the tagline, below the top.
+    fn baselines(&self, th: &Theme) -> (f64, f64) {
+        let ty = &th.typography;
+        let name = ty.title_size * 0.95;
+        (name, name + th.space(1) + ty.tagline_size * 1.2)
     }
 }
 
 impl Part for Title {
     fn id(&self) -> Option<PartId> {
         Some(PartId::Name("title"))
+    }
+
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        let name = fonts.width(self.name, ty.title_size, &ty.title);
+        let (top, under) = self.baselines(th);
+        match self.tagline {
+            Some(t) => (name.max(fonts.width(t, ty.tagline_size, &ty.tagline)), under + ty.tagline_size * 0.25),
+            None => (name, top + ty.title_size * 0.32),
+        }
     }
 
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
@@ -58,11 +67,11 @@ impl Part for Title {
             TextAlign::Center => r.x + r.w / 2.0,
             TextAlign::Right => r.x + r.w,
         };
-        let base = r.y + ty.title_size * 0.95;
-        cx.scene.text_in(pt(x, base), self.name, ty.title_size, th.palette.ink, ty.title.align(self.align));
+        let (top, under) = self.baselines(th);
+        cx.scene.text_in(pt(x, r.y + top), self.name, ty.title_size, th.palette.ink, ty.title.align(self.align));
         if let Some(t) = self.tagline {
             cx.scene.text_in(
-                pt(x, base + 8.0 + ty.tagline_size * 1.2),
+                pt(x, r.y + under),
                 t,
                 ty.tagline_size,
                 th.palette.ink_soft,
@@ -87,11 +96,16 @@ impl Caption {
         }
     }
     pub fn node(self) -> FaceNode {
-        leaf(self, 0.0, 14.0).width(Dim::Fill(1.0))
+        measured(self).width(Dim::Fill(1.0))
     }
 }
 
 impl Part for Caption {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        (fonts.width(self.text, ty.caption_size, &ty.caption), th.line(ty.caption_size))
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let ty = &th.typography;
@@ -101,6 +115,6 @@ impl Part for Caption {
             TextAlign::Right => r.x + r.w,
         };
         cx.scene
-            .text_in(pt(x, r.y + 10.0), self.text, ty.caption_size, th.palette.ink_soft, ty.caption.align(self.align));
+            .text_in(pt(x, r.y + ty.caption_size * 1.33), self.text, ty.caption_size, th.palette.ink_soft, ty.caption.align(self.align));
     }
 }

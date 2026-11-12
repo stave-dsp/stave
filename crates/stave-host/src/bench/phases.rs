@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn timed_measures_gain_cpu_and_levels() {
         let mut g = Gain::new(2, 2);
-        g.set_control("gain", 0.5).unwrap();
+        g.set_param("gain", 0.5).unwrap();
         let mut d = Driver::new(&mut g);
         let n = 4096;
         let s = Sine {

@@ -77,7 +77,7 @@ fn rig() -> (Runtime, Rig, Pt, Pt, Pt) {
         Theme::graphite(),
         row(vec![Knob::new(KNOB).node(), Toggle::new(TOGGLE).node(), Footswitch::new(FOOT).node()]),
     );
-    let rt = Runtime::new(face);
+    let rt = Runtime::new(face, &stave_raster::BoxText);
     let r = rt.rects();
     let knob = pt(r[0].x + r[0].w / 2.0, r[0].y + 21.0 + 7.0 + 5.0);
     let toggle = pt(r[1].x + 28.0, r[1].y + 46.0);

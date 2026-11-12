@@ -11,7 +11,7 @@ use stave_vst3_sys::{
     K_NOT_IMPLEMENTED, K_NO_INTERFACE, K_RESULT_OK,
 };
 
-use crate::note::{NoteEvent, NoteKind};
+use stave_core::{EventKind, NoteKind};
 
 /// Events one block can carry.
 pub(crate) const CAPACITY: usize = 512;
@@ -30,12 +30,12 @@ impl EventList {
         })
     }
 
-    /// Replace the list with `notes`; how many did not fit.
-    pub fn set(&mut self, notes: &[NoteEvent]) -> usize {
+    /// Replace the list with `events`; how many did not fit.
+    pub fn set(&mut self, events: &[stave_core::Event]) -> usize {
         self.events.clear();
-        let fit = notes.len().min(CAPACITY);
-        self.events.extend(notes[..fit].iter().map(to_vst3));
-        notes.len() - fit
+        let fit = events.len().min(CAPACITY);
+        self.events.extend(events[..fit].iter().map(to_vst3));
+        events.len() - fit
     }
 
     pub fn as_raw(&mut self) -> *mut IEventList {
@@ -43,30 +43,32 @@ impl EventList {
     }
 }
 
-fn to_vst3(n: &NoteEvent) -> Event {
+/// A stave event as VST3's (a choke, which VST3 lacks, is an off).
+fn to_vst3(e: &stave_core::Event) -> Event {
+    let EventKind::Note(n) = e.kind;
     let (r#type, data) = if n.kind == NoteKind::On {
         let note_on = NoteOnEvent {
-            channel: 0,
-            pitch: n.pitch,
+            channel: n.channel,
+            pitch: n.key,
             tuning: 0.0,
-            velocity: n.velocity,
+            velocity: n.velocity as f32,
             length: 0,
-            note_id: -1,
+            note_id: n.note_id,
         };
         (EVENT_NOTE_ON, EventData { note_on })
     } else {
         let note_off = NoteOffEvent {
-            channel: 0,
-            pitch: n.pitch,
-            velocity: n.velocity,
-            note_id: -1,
+            channel: n.channel,
+            pitch: n.key,
+            velocity: n.velocity as f32,
+            note_id: n.note_id,
             tuning: 0.0,
         };
         (EVENT_NOTE_OFF, EventData { note_off })
     };
     Event {
         bus_index: 0,
-        sample_offset: n.offset as i32,
+        sample_offset: i32::try_from(e.frame).unwrap_or(i32::MAX),
         ppq_position: 0.0,
         flags: 0,
         r#type,
@@ -164,22 +166,17 @@ mod tests {
             .collect()
     }
 
-    const ON: NoteEvent = NoteEvent {
-        offset: 0,
-        pitch: 60,
-        velocity: 0.8,
-        kind: NoteKind::On,
-    };
+    use stave_core::NoteEvent;
+
+    fn on() -> stave_core::Event {
+        stave_core::Event::note(0, NoteEvent::on(60, 0.8))
+    }
 
     #[test]
     fn converts_on_and_off_with_offsets() {
         let mut l = EventList::new();
-        let off = NoteEvent {
-            offset: 100,
-            kind: NoteKind::Off,
-            ..ON
-        };
-        let dropped = l.set(&[NoteEvent { offset: 3, ..ON }, off]);
+        let off = stave_core::Event::note(100, NoteEvent::off(60, 0.8));
+        let dropped = l.set(&[stave_core::Event { frame: 3, ..on() }, off]);
         assert_eq!(dropped, 0);
         assert_eq!(
             read(&mut l),
@@ -190,7 +187,7 @@ mod tests {
     #[test]
     fn overflow_is_counted() {
         let mut l = EventList::new();
-        let notes = vec![ON; CAPACITY + 5];
+        let notes = vec![on(); CAPACITY + 5];
         assert_eq!(l.set(&notes), 5);
         assert_eq!(read(&mut l).len(), CAPACITY);
     }
@@ -198,7 +195,7 @@ mod tests {
     #[test]
     fn bad_indices_are_refused() {
         let mut l = EventList::new();
-        l.set(&[ON]);
+        l.set(&[on()]);
         let raw = l.as_raw();
         let vt = unsafe { &**(raw as *const *const IEventListVtbl) };
         let mut e: Event = unsafe { std::mem::zeroed() };

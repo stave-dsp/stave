@@ -46,6 +46,7 @@ pub(super) unsafe extern "C" fn state_load<P: ClapExport>(
                 &inst.state_store,
             )
         });
+        inst.diagnostics.event(stave_core::telemetry::Event::Restore(result.is_ok()));
         // The values just changed under the host: it must re-read them
         // (clap ext/state.h, ext/params.h).
         if result.is_ok() {

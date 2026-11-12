@@ -10,7 +10,7 @@ use stave_host::stages::{CatalogInstance, CATALOG};
 static ALLOCATOR: AllocDisabler = AllocDisabler;
 
 #[test]
-fn a_setting_change_is_applied_without_allocating() {
+fn a_param_change_is_applied_without_allocating() {
     for stage in CATALOG {
         let config = HostConfig {
             max_block: std::num::NonZeroUsize::new(64).unwrap(),
@@ -21,8 +21,8 @@ fn a_setting_change_is_applied_without_allocating() {
         let input = vec![0.25f32; 64];
         let mut left = vec![0.0f32; 64];
         let mut right = vec![0.0f32; 64];
-        for setting in stage.settings {
-            handle.set(setting.name, setting.range.max()).unwrap();
+        for param in handle.params() {
+            handle.set(&param.name, param.max).unwrap();
             assert_no_alloc(|| {
                 instance.process(&[&input, &input], &mut [&mut left, &mut right], &[]);
             });

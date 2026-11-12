@@ -149,7 +149,7 @@ impl Tap {
     /// The latest published value (0 until the first `set`, or detached).
     pub fn get(&self) -> f64 {
         self.slot()
-            .map_or(0.0, |s| f64::from_bits(s.latest.load(Ordering::Relaxed)))
+            .map_or(0.0, TapSlot::latest)
     }
 }
 
@@ -176,13 +176,13 @@ impl Telemetry {
     pub fn value(&self, id: TapId) -> Option<f64> {
         let slot = self.tap_slot(self.find_tap(id)?)?;
         (slot.hits.load(Ordering::Relaxed) > 0)
-            .then(|| f64::from_bits(slot.latest.load(Ordering::Relaxed)))
+            .then(|| slot.latest())
     }
 
     /// Every published slot, in registration order (tools: the debugger,
     /// the bench). Allocates.
     pub fn taps(&self) -> Vec<TapReading> {
-        let f = |a: &core::sync::atomic::AtomicU64| f64::from_bits(a.load(Ordering::Relaxed));
+        let f = |a: &crate::sync::AtomicU64| f64::from_bits(a.load(Ordering::Relaxed));
         self.tap_slots()
             .iter()
             .map(|s| TapReading {

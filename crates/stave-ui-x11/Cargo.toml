@@ -16,6 +16,7 @@ stave-ui-shell.workspace = true
 x11rb = { version = "0.13", default-features = false }
 
 [target.'cfg(unix)'.dev-dependencies]
+stave-font.workspace = true
 x11rb = { version = "0.13", default-features = false, features = ["xtest"] }
 
 [lints]

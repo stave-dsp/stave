@@ -9,7 +9,7 @@ use std::num::NonZeroUsize;
 
 use crate::config::SampleRate;
 use crate::instance::{Instance, Layout, Tail};
-use crate::note::NoteEvent;
+use stave_core::Event;
 
 /// One output channel of an instance, driven with the same signal on
 /// every input channel.
@@ -91,7 +91,7 @@ impl<S: Stage> Instance for StageInstance<S> {
         }
     }
 
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[NoteEvent]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[Event]) {
         for ((stage, input), output) in self.stages.iter_mut().zip(inputs).zip(outputs.iter_mut()) {
             output.copy_from_slice(input);
             stage.process(output);
@@ -148,14 +148,14 @@ mod tests {
                 .checks
                 .iter()
                 .any(|c| c.status == Status::NotApplicable),
-            "no controls or state to test"
+            "no params or state to test"
         );
     }
 
     #[test]
     fn instance_channels_carry_hosted_gain() {
         let mut g = Gain::new(1, 2);
-        g.set_control("gain", 0.5).unwrap();
+        g.set_param("gain", 0.5).unwrap();
         let mut ch = InstanceChannel {
             instance: &mut g,
             channel: 1,

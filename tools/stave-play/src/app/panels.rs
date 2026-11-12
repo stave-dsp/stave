@@ -1,5 +1,5 @@
 //! The frame around the views: top bar (rate, block, plugin), project
-//! sidebar, controls panel, status bar.
+//! sidebar, params panel, status bar.
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui::{self, Color32, RichText};
 use stave_host::config::{non_zero, HostConfig, SampleRate};
-use stave_host::control::Control;
+use stave_host::param::Param;
 
 use super::{library, HostApp};
 use crate::project::{self, Project};
@@ -207,9 +207,9 @@ impl HostApp {
         }
     }
 
-    /// Live controls: stave's grouped panel when the plugin has
+    /// Live params: stave's grouped panel when the plugin has
     /// telemetry, the controller's generic sliders otherwise (third-party).
-    pub(super) fn draw_controls(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn draw_params(&mut self, ui: &mut egui::Ui) {
         ui.heading(&self.project.name);
         ui.label(RichText::new(library::display_name(&self.project.plugin_path)).weak());
         ui.add_space(6.0);
@@ -226,15 +226,15 @@ impl HostApp {
             }
         };
         let display = |name: &str, normalized: f64| s.display(name, normalized);
-        let controls = s.controls();
-        if controls.is_empty() {
+        let params = s.params();
+        if params.is_empty() {
             ui.label(
                 RichText::new("(plugin exposes no parameters)")
                     .italics()
                     .weak(),
             );
         } else {
-            generic_controls(ui, &controls, &mut write, &display);
+            generic_params(ui, &params, &mut write, &display);
         }
     }
 
@@ -253,18 +253,18 @@ impl HostApp {
     }
 }
 
-/// One slider per writable, visible control, under a heading per group.
-/// Sliders move in the control's own normalized space (its taper) and
+/// One slider per writable, visible param, under a heading per group.
+/// Sliders move in the param's own normalized space (its taper) and
 /// show its owner's text for the value.
-fn generic_controls(
+fn generic_params(
     ui: &mut egui::Ui,
-    controls: &[Control],
+    params: &[Param],
     write: &mut dyn FnMut(&str, f64),
     display: &dyn Fn(&str, f64) -> String,
 ) {
-    let shown: Vec<&Control> = controls
+    let shown: Vec<&Param> = params
         .iter()
-        .filter(|c| !c.flags.hidden && !c.flags.read_only)
+        .filter(|c| !c.flags.hidden && !c.read_only)
         .collect();
     let mut groups: Vec<&str> = vec![];
     for c in &shown {
@@ -285,8 +285,8 @@ fn generic_controls(
                     let mut slider = egui::Slider::new(&mut normalized, 0.0..=1.0)
                         .text(c.leaf())
                         .custom_formatter(|n, _| display(&c.name, n));
-                    if c.steps > 0 {
-                        slider = slider.step_by(1.0 / f64::from(c.steps));
+                    if c.step_count > 1 {
+                        slider = slider.step_by(1.0 / f64::from(c.step_count - 1));
                     }
                     if ui.add(slider).changed() {
                         write(&c.name, normalized);

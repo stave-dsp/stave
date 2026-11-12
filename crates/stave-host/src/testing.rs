@@ -4,9 +4,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::control::{find, test_control, Control, ControlError};
+use crate::param::{find, test_param, Param, ParamError};
 use crate::instance::{Instance, Layout, StateError, Tail};
-use crate::note::{NoteEvent, NoteKind};
+use stave_core::{Event, EventCursor, EventKind, NoteKind, ParamId};
 
 pub const RATE: f64 = 48_000.0;
 pub const BLOCK: usize = 64;
@@ -20,28 +20,28 @@ pub fn layout(inputs: usize, outputs: usize) -> Layout {
     }
 }
 
-/// What every double shares: controls, state as control values, and
-/// presets behind a program-change control.
+/// What every double shares: params, state as param values, and
+/// presets behind a program param.
 #[derive(Clone)]
 struct Surface {
-    controls: Vec<Control>,
+    params: Vec<Param>,
     presets: Vec<Vec<(String, f64)>>,
 }
 
 impl Surface {
     fn get(&self, name: &str) -> f64 {
-        find(&self.controls, name).map_or(0.0, |c| c.value)
+        find(&self.params, name).map_or(0.0, |c| c.value)
     }
-    fn set(&mut self, name: &str, v: f64) -> Result<(), ControlError> {
-        let id = find(&self.controls, name)
-            .ok_or_else(|| ControlError::NotFound(name.into()))?
+    fn set(&mut self, name: &str, v: f64) -> Result<(), ParamError> {
+        let id = find(&self.params, name)
+            .ok_or_else(|| ParamError::NotFound(name.into()))?
             .id;
-        let c = self.controls.iter_mut().find(|c| c.id == id).unwrap();
-        if c.flags.read_only {
-            return Err(ControlError::ReadOnly(name.into()));
+        let c = self.params.iter_mut().find(|c| c.id == id).unwrap();
+        if c.read_only {
+            return Err(ParamError::ReadOnly(name.into()));
         }
         c.value = v.clamp(c.min, c.max);
-        if c.flags.program_change {
+        if c.program {
             for (name, value) in self.presets[c.value as usize].clone() {
                 self.set(&name, value)?;
             }
@@ -49,23 +49,23 @@ impl Surface {
         Ok(())
     }
     fn save(&self) -> Vec<u8> {
-        self.controls
+        self.params
             .iter()
             .flat_map(|c| c.value.to_le_bytes())
             .collect()
     }
     fn load(&mut self, bytes: &[u8]) -> Result<(), StateError> {
-        if bytes.len() != self.controls.len() * 8 {
+        if bytes.len() != self.params.len() * 8 {
             return Err(StateError::Unreadable { bytes: bytes.len() });
         }
-        for (c, chunk) in self.controls.iter_mut().zip(bytes.chunks_exact(8)) {
+        for (c, chunk) in self.params.iter_mut().zip(bytes.chunks_exact(8)) {
             c.value = f64::from_le_bytes(chunk.try_into().unwrap());
         }
         Ok(())
     }
 }
 
-/// out[c] = in[c] × gain (bypass → in). Controls: `gain` [0, max],
+/// out[c] = in[c] × gain (bypass → in). Params: `gain` [0, max],
 /// gliding 5 ms to each new value after the first block, and `bypass`
 /// (flagged). `leaky_bypass` keeps applying gain when bypassed.
 #[derive(Clone)]
@@ -82,15 +82,15 @@ impl Gain {
     }
 
     pub fn with_max(inputs: usize, outputs: usize, max_gain: f64) -> Self {
-        let mut gain = test_control("Level · gain", 0.0, max_gain);
-        gain.id = 1;
+        let mut gain = test_param("Level · gain", 0.0, max_gain);
+        gain.id = ParamId(1);
         (gain.default, gain.value) = (1.0, 1.0);
-        let mut bypass = test_control("bypass", 0.0, 1.0);
-        (bypass.id, bypass.steps, bypass.flags.bypass) = (2, 1, true);
+        let mut bypass = test_param("bypass", 0.0, 1.0);
+        (bypass.id, bypass.step_count, bypass.flags.bypass) = (ParamId(2), 2, true);
         Self {
             layout: layout(inputs, outputs),
             surface: Surface {
-                controls: vec![gain, bypass],
+                params: vec![gain, bypass],
                 presets: vec![],
             },
             gain: None,
@@ -102,19 +102,19 @@ impl Gain {
         let s = &mut self.surface;
         s.presets
             .push(values.iter().map(|(n, v)| (n.to_string(), *v)).collect());
-        if !s.controls.iter().any(|c| c.flags.program_change) {
-            let mut program = test_control("Program", 0.0, 0.0);
-            (program.id, program.flags.program_change) = (3, true);
-            s.controls.push(program);
+        if !s.params.iter().any(|c| c.program) {
+            let mut program = test_param("Program", 0.0, 0.0);
+            (program.id, program.program) = (ParamId(3), true);
+            s.params.push(program);
         }
         let program = s
-            .controls
+            .params
             .iter_mut()
-            .find(|c| c.flags.program_change)
+            .find(|c| c.program)
             .unwrap();
         program.step_names.push(name.into());
-        program.steps = program.step_names.len() as u32 - 1;
-        program.max = f64::from(program.steps);
+        program.step_count = program.step_names.len() as u32;
+        program.max = f64::from(program.step_count - 1);
         self
     }
 }
@@ -123,7 +123,7 @@ impl Instance for Gain {
     fn layout(&self) -> Layout {
         self.layout
     }
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[NoteEvent]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[Event]) {
         let target = self.surface.get("gain") as f32;
         let bypassed = self.surface.get("bypass") >= 0.5 && !self.leaky_bypass;
         let k = 1.0 - (-1.0 / (0.005 * self.layout.sample_rate)).exp() as f32;
@@ -140,11 +140,11 @@ impl Instance for Gain {
             }
         }
     }
-    fn controls(&self) -> Vec<Control> {
-        self.surface.controls.clone()
+    fn params(&self) -> Vec<Param> {
+        self.surface.params.clone()
     }
-    fn set_control(&mut self, name: &str, plain: f64) -> Result<(), ControlError> {
-        self.surface.set(name, plain)
+    fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {
+        self.surface.set(name, value)
     }
     fn save_state(&mut self) -> Result<Vec<u8>, StateError> {
         Ok(self.surface.save())
@@ -155,7 +155,7 @@ impl Instance for Gain {
 }
 
 /// A one-pole feedback loop, y = x + feedback·y₋₁ per channel: stable
-/// below `feedback` 1, growing without bound above it. Control:
+/// below `feedback` 1, growing without bound above it. Param:
 /// `feedback` [0, 1.1].
 pub struct Feedback {
     layout: Layout,
@@ -165,12 +165,12 @@ pub struct Feedback {
 
 impl Feedback {
     pub fn new(channels: usize) -> Self {
-        let mut feedback = test_control("feedback", 0.0, 1.1);
-        feedback.id = 1;
+        let mut feedback = test_param("feedback", 0.0, 1.1);
+        feedback.id = ParamId(1);
         Self {
             layout: layout(channels, channels),
             surface: Surface {
-                controls: vec![feedback],
+                params: vec![feedback],
                 presets: vec![],
             },
             state: vec![0.0; channels],
@@ -182,7 +182,7 @@ impl Instance for Feedback {
     fn layout(&self) -> Layout {
         self.layout
     }
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[NoteEvent]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[Event]) {
         let feedback = self.surface.get("feedback") as f32;
         for ((out, inp), y) in outputs.iter_mut().zip(inputs).zip(&mut self.state) {
             for (o, &x) in out.iter_mut().zip(*inp) {
@@ -191,11 +191,11 @@ impl Instance for Feedback {
             }
         }
     }
-    fn controls(&self) -> Vec<Control> {
-        self.surface.controls.clone()
+    fn params(&self) -> Vec<Param> {
+        self.surface.params.clone()
     }
-    fn set_control(&mut self, name: &str, plain: f64) -> Result<(), ControlError> {
-        self.surface.set(name, plain)
+    fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {
+        self.surface.set(name, value)
     }
 }
 
@@ -231,7 +231,7 @@ impl Instance for Delay {
     fn tail(&self) -> Tail {
         Tail::Samples(self.ring[0].len() as u32)
     }
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[NoteEvent]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[Event]) {
         let n = outputs[0].len();
         let len = self.ring[0].len();
         for c in 0..outputs.len() {
@@ -267,7 +267,7 @@ impl Instance for NanAfter {
     fn layout(&self) -> Layout {
         self.layout
     }
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[NoteEvent]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[Event]) {
         for (i, o) in outputs[0].iter_mut().enumerate() {
             *o = if self.frame + i as u64 >= self.after {
                 f32::NAN
@@ -301,7 +301,7 @@ impl Instance for Drift {
     fn layout(&self) -> Layout {
         self.layout
     }
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[NoteEvent]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _: &[Event]) {
         for (o, i) in outputs[0].iter_mut().zip(inputs[0]) {
             *o = i + self.offset;
         }
@@ -319,13 +319,13 @@ pub struct Synth {
 
 impl Synth {
     pub fn new() -> Self {
-        let mut bypass = test_control("bypass", 0.0, 1.0);
-        (bypass.id, bypass.flags.bypass) = (1, true);
+        let mut bypass = test_param("bypass", 0.0, 1.0);
+        (bypass.id, bypass.flags.bypass) = (ParamId(1), true);
         Self {
             layout: layout(0, 2),
             held: vec![],
             surface: Surface {
-                controls: vec![bypass],
+                params: vec![bypass],
                 presets: vec![],
             },
             phase: 0,
@@ -337,16 +337,16 @@ impl Instance for Synth {
     fn layout(&self) -> Layout {
         self.layout
     }
-    fn process(&mut self, _: &[&[f32]], outputs: &mut [&mut [f32]], notes: &[NoteEvent]) {
+    fn process(&mut self, _: &[&[f32]], outputs: &mut [&mut [f32]], events: &[Event]) {
         let n = outputs[0].len();
-        let mut next = 0;
+        let mut cursor = EventCursor::new(events);
         for i in 0..n {
-            while let Some(e) = notes.get(next).filter(|e| e.offset as usize == i) {
-                match e.kind {
-                    NoteKind::On => self.held.push(e.pitch),
-                    NoteKind::Off => self.held.retain(|&p| p != e.pitch),
+            for e in cursor.due(i) {
+                let EventKind::Note(note) = e.kind;
+                match note.kind {
+                    NoteKind::On => self.held.push(note.key),
+                    NoteKind::Off | NoteKind::Choke => self.held.retain(|&k| k != note.key),
                 }
-                next += 1;
             }
             self.phase = self.phase.wrapping_add(1);
             let on = !self.held.is_empty() && self.surface.get("bypass") < 0.5;
@@ -362,11 +362,11 @@ impl Instance for Synth {
             }
         }
     }
-    fn controls(&self) -> Vec<Control> {
-        self.surface.controls.clone()
+    fn params(&self) -> Vec<Param> {
+        self.surface.params.clone()
     }
-    fn set_control(&mut self, name: &str, plain: f64) -> Result<(), ControlError> {
-        self.surface.set(name, plain)
+    fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {
+        self.surface.set(name, value)
     }
 }
 

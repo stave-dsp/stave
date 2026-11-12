@@ -7,20 +7,23 @@ use stave_dsp::{
     NonlinearRc, OpAmpClipper, OpAmpClipperConfig, PairSolver, RcClipperConfig, Shockley, Slew,
     Stage, Transformer, TransformerConfig, Tube,
 };
+use stave_core::params::{AnyParam, EnumParam, FloatParam, ParamEnum, ParamId, Range, Unit};
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
 
-use super::{BoxedStage, Configurable, StageSpec, Range, Setting, SettingValues};
+use super::{BoxedStage, Configurable, StageParams, StageSpec};
+
+
 
 /// A stage plus how its settings apply to it.
 struct CatalogStage<S> {
     stage: S,
-    configure: fn(&mut S, &SettingValues),
+    configure: fn(&mut S, &StageParams),
     solver: Option<fn(&S) -> NewtonStats>,
 }
 
 fn stage<S: Stage + Send + 'static>(
     stage: S,
-    configure: fn(&mut S, &SettingValues),
+    configure: fn(&mut S, &StageParams),
 ) -> BoxedStage {
     Box::new(CatalogStage {
         stage,
@@ -31,7 +34,7 @@ fn stage<S: Stage + Send + 'static>(
 
 fn stage_with_solver<S: Stage + Send + 'static>(
     stage: S,
-    configure: fn(&mut S, &SettingValues),
+    configure: fn(&mut S, &StageParams),
     solver: fn(&S) -> NewtonStats,
 ) -> BoxedStage {
     Box::new(CatalogStage {
@@ -63,7 +66,7 @@ impl<S: Stage + Send> Stage for CatalogStage<S> {
 }
 
 impl<S: Stage + Send> Configurable for CatalogStage<S> {
-    fn configure(&mut self, values: &SettingValues) {
+    fn configure(&mut self, values: &StageParams) {
         (self.configure)(&mut self.stage, values);
     }
 
@@ -72,7 +75,7 @@ impl<S: Stage + Send> Configurable for CatalogStage<S> {
     }
 }
 
-fn diode_clipper(v: &SettingValues) -> DiodeClipperConfig {
+fn diode_clipper(v: &StageParams) -> DiodeClipperConfig {
     DiodeClipperConfig {
         input_ohms: v.get("input") * 1e3,
         capacitor_farads: v.get("capacitor") * 1e-9,
@@ -82,7 +85,7 @@ fn diode_clipper(v: &SettingValues) -> DiodeClipperConfig {
 }
 
 /// The TS808 stage with its drive pot in series with the 51 kΩ.
-fn opamp_clipper(v: &SettingValues) -> OpAmpClipperConfig {
+fn opamp_clipper(v: &StageParams) -> OpAmpClipperConfig {
     OpAmpClipperConfig {
         feedback_ohms: OpAmpClipperConfig::TS808.feedback_ohms + v.get("drive") * 1e3,
         ..OpAmpClipperConfig::TS808
@@ -90,7 +93,7 @@ fn opamp_clipper(v: &SettingValues) -> OpAmpClipperConfig {
 }
 
 /// Jiles & Atherton's 1986 steel in a 2000-turn, 6 cm², 10 cm core.
-fn transformer(v: &SettingValues) -> TransformerConfig {
+fn transformer(v: &StageParams) -> TransformerConfig {
     TransformerConfig {
         core: JilesAtherton {
             saturation: 1.6e6,
@@ -108,7 +111,7 @@ fn transformer(v: &SettingValues) -> TransformerConfig {
     }
 }
 
-fn common_cathode(v: &SettingValues) -> CommonCathodeConfig<Tube> {
+fn common_cathode(v: &StageParams) -> CommonCathodeConfig<Tube> {
     CommonCathodeConfig {
         tube: Tube::ALL[v.choice("tube")],
         source_ohms: v.get("source") * 1e3,
@@ -120,14 +123,14 @@ fn common_cathode(v: &SettingValues) -> CommonCathodeConfig<Tube> {
     }
 }
 
-fn audio_port(v: &SettingValues) -> AudioAdapterConfig {
+fn audio_port(v: &StageParams) -> AudioAdapterConfig {
     AudioAdapterConfig {
         full_scale_in_volts: v.get("full_scale_in"),
         full_scale_out_volts: v.get("full_scale_out"),
     }
 }
 
-fn peak(v: &SettingValues) -> FilterSpec {
+fn peak(v: &StageParams) -> FilterSpec {
     FilterSpec::Peak {
         hz: v.f32("hz"),
         db: v.f32("db"),
@@ -135,106 +138,110 @@ fn peak(v: &SettingValues) -> FilterSpec {
     }
 }
 
-fn lowpass(v: &SettingValues) -> FilterSpec {
+fn lowpass(v: &StageParams) -> FilterSpec {
     FilterSpec::Lowpass {
         hz: v.f32("hz"),
         q: v.f32("q"),
     }
 }
 
+/// The bare-number unit of the catalog's dimensionless params.
+const PLAIN: Unit = Unit::Plain { decimals: 3 };
+
+/// A continuous param, linear across `min..=max`. A param change
+/// re-voices the stage between blocks, with no glide, so it is not
+/// offered for automation.
+fn float(
+    id: u32,
+    name: &'static str,
+    min: f64,
+    max: f64,
+    default: f64,
+    unit: Unit,
+) -> Box<dyn AnyParam> {
+    Box::new(
+        FloatParam::new(ParamId(id), name, Range::linear(min, max))
+            .unit(unit)
+            .default(default)
+            .not_automatable(),
+    )
+}
+
+/// A choice among `T`'s options, starting at the first.
+fn choice<T: ParamEnum>(id: u32, name: &'static str) -> Box<dyn AnyParam> {
+    Box::new(EnumParam::new(ParamId(id), name, T::from_index(0)))
+}
+
+/// A choice over a static list of option names.
+macro_rules! options {
+    ($(#[$doc:meta])* $name:ident = $names:expr) => {
+        $(#[$doc])*
+        #[derive(Copy, Clone)]
+        struct $name(u32);
+
+        impl ParamEnum for $name {
+            const COUNT: u32 = $names.len() as u32;
+            fn from_index(i: u32) -> Self {
+                Self(i.min(Self::COUNT - 1))
+            }
+            fn to_index(self) -> u32 {
+                self.0
+            }
+            fn name(i: u32) -> &'static str {
+                $names[(i as usize).min($names.len() - 1)]
+            }
+        }
+    };
+}
+
+options!(
+    /// The diode pair's solver.
+    Solver = PairSolver::NAMES
+);
+options!(
+    /// The triode model.
+    TubeChoice = Tube::NAMES
+);
+
 pub const CATALOG: &[StageSpec] = &[
     StageSpec {
         name: "filter/peak",
-        settings: &[
-            Setting {
-                name: "hz",
-                default: 1_000.0,
-                range: Range::Continuous {
-                    min: AUDIBLE_MIN_HZ,
-                    max: AUDIBLE_MAX_HZ,
-                    unit: "Hz",
-                },
-            },
-            Setting {
-                name: "db",
-                default: 6.0,
-                range: Range::Continuous {
-                    min: -24.0,
-                    max: 24.0,
-                    unit: "dB",
-                },
-            },
-            Setting {
-                name: "q",
-                default: 1.0,
-                range: Range::Continuous {
-                    min: 0.1,
-                    max: 10.0,
-                    unit: "",
-                },
-            },
-        ],
+        params: || {
+            StageParams::new(vec![
+                float(0, "hz", AUDIBLE_MIN_HZ, AUDIBLE_MAX_HZ, 1_000.0, Unit::Hz),
+                float(1, "db", -24.0, 24.0, 6.0, Unit::Db),
+                float(2, "q", 0.1, 10.0, 1.0, PLAIN),
+            ])
+        },
         build: |v| stage(Biquad::new(peak(v)), |f, v| f.set(peak(v))),
     },
     StageSpec {
         name: "filter/lowpass",
-        settings: &[
-            Setting {
-                name: "hz",
-                default: 5_000.0,
-                range: Range::Continuous {
-                    min: AUDIBLE_MIN_HZ,
-                    max: AUDIBLE_MAX_HZ,
-                    unit: "Hz",
-                },
-            },
-            Setting {
-                name: "q",
-                default: 0.707,
-                range: Range::Continuous {
-                    min: 0.1,
-                    max: 10.0,
-                    unit: "",
-                },
-            },
-        ],
+        params: || {
+            StageParams::new(vec![
+                float(0, "hz", AUDIBLE_MIN_HZ, AUDIBLE_MAX_HZ, 5_000.0, Unit::Hz),
+                float(1, "q", 0.1, 10.0, 0.707, PLAIN),
+            ])
+        },
         build: |v| stage(Biquad::new(lowpass(v)), |f, v| f.set(lowpass(v))),
     },
     StageSpec {
         name: "coupler",
-        settings: &[Setting {
-            name: "hz",
-            default: 20.0,
-            range: Range::Continuous {
-                min: 0.1,
-                max: 500.0,
-                unit: "Hz",
-            },
-        }],
+        params: || {
+            StageParams::new(vec![
+                float(0, "hz", 0.1, 500.0, 20.0, Unit::Hz),
+            ])
+        },
         build: |v| stage(Coupler::new(v.f32("hz")), |c, v| c.set_hz(v.f32("hz"))),
     },
     StageSpec {
         name: "slew",
-        settings: &[
-            Setting {
-                name: "rise",
-                default: 2.0,
-                range: Range::Continuous {
-                    min: 0.01,
-                    max: 100.0,
-                    unit: "/ms",
-                },
-            },
-            Setting {
-                name: "fall",
-                default: 2.0,
-                range: Range::Continuous {
-                    min: 0.01,
-                    max: 100.0,
-                    unit: "/ms",
-                },
-            },
-        ],
+        params: || {
+            StageParams::new(vec![
+                float(0, "rise", 0.01, 100.0, 2.0, Unit::Custom { label: "/ms", decimals: 2 }),
+                float(1, "fall", 0.01, 100.0, 2.0, Unit::Custom { label: "/ms", decimals: 2 }),
+            ])
+        },
         build: |v| {
             stage(Slew::new(v.f32("rise"), v.f32("fall")), |s, v| {
                 s.set_rates(v.f32("rise"), v.f32("fall"))
@@ -243,35 +250,13 @@ pub const CATALOG: &[StageSpec] = &[
     },
     StageSpec {
         name: "clipper/diode",
-        settings: &[
-            Setting {
-                name: "tau",
-                default: 0.5,
-                range: Range::Continuous {
-                    min: 0.01,
-                    max: 10.0,
-                    unit: "ms",
-                },
-            },
-            Setting {
-                name: "threshold",
-                default: 0.3,
-                range: Range::Continuous {
-                    min: 0.01,
-                    max: 2.0,
-                    unit: "",
-                },
-            },
-            Setting {
-                name: "hardness",
-                default: 3.0,
-                range: Range::Continuous {
-                    min: 1.0,
-                    max: 8.0,
-                    unit: "",
-                },
-            },
-        ],
+        params: || {
+            StageParams::new(vec![
+                float(0, "tau", 0.01, 10.0, 0.5, Unit::Ms),
+                float(1, "threshold", 0.01, 2.0, 0.3, PLAIN),
+                float(2, "hardness", 1.0, 8.0, 3.0, PLAIN),
+            ])
+        },
         build: |v| {
             stage_with_solver(
                 NonlinearRc::diode_clipper(&RcClipperConfig {
@@ -292,31 +277,13 @@ pub const CATALOG: &[StageSpec] = &[
     },
     StageSpec {
         name: "circuit/diode_clipper",
-        settings: &[
-            Setting {
-                name: "solver",
-                default: 0.0,
-                range: Range::Choice(&PairSolver::NAMES),
-            },
-            Setting {
-                name: "input",
-                default: 2.2,
-                range: Range::Continuous {
-                    min: 0.1,
-                    max: 100.0,
-                    unit: "kΩ",
-                },
-            },
-            Setting {
-                name: "capacitor",
-                default: 10.0,
-                range: Range::Continuous {
-                    min: 0.1,
-                    max: 1_000.0,
-                    unit: "nF",
-                },
-            },
-        ],
+        params: || {
+            StageParams::new(vec![
+                choice::<Solver>(0, "solver"),
+                float(1, "input", 0.1, 100.0, 2.2, Unit::Custom { label: "kΩ", decimals: 2 }),
+                float(2, "capacitor", 0.1, 1_000.0, 10.0, Unit::Custom { label: "nF", decimals: 2 }),
+            ])
+        },
         build: |v| {
             stage_with_solver(
                 DiodeClipper::new(diode_clipper(v)),
@@ -327,15 +294,11 @@ pub const CATALOG: &[StageSpec] = &[
     },
     StageSpec {
         name: "circuit/opamp_clipper",
-        settings: &[Setting {
-            name: "drive",
-            default: 0.0,
-            range: Range::Continuous {
-                min: 0.0,
-                max: 500.0,
-                unit: "kΩ",
-            },
-        }],
+        params: || {
+            StageParams::new(vec![
+                float(0, "drive", 0.0, 500.0, 0.0, Unit::Custom { label: "kΩ", decimals: 2 }),
+            ])
+        },
         build: |v| {
             stage_with_solver(
                 OpAmpClipper::new(opamp_clipper(v)),
@@ -346,15 +309,11 @@ pub const CATALOG: &[StageSpec] = &[
     },
     StageSpec {
         name: "circuit/transformer",
-        settings: &[Setting {
-            name: "source",
-            default: 1.0,
-            range: Range::Continuous {
-                min: 0.01,
-                max: 10.0,
-                unit: "kΩ",
-            },
-        }],
+        params: || {
+            StageParams::new(vec![
+                float(0, "source", 0.01, 10.0, 1.0, Unit::Custom { label: "kΩ", decimals: 2 }),
+            ])
+        },
         build: |v| {
             stage_with_solver(
                 Transformer::new(transformer(v)),
@@ -365,76 +324,18 @@ pub const CATALOG: &[StageSpec] = &[
     },
     StageSpec {
         name: "circuit/common_cathode",
-        settings: &[
-            Setting {
-                name: "tube",
-                default: 0.0,
-                range: Range::Choice(&Tube::NAMES),
-            },
-            Setting {
-                name: "source",
-                default: 1.0,
-                range: Range::Continuous {
-                    min: 0.0,
-                    max: 220.0,
-                    unit: "kΩ",
-                },
-            },
-            Setting {
-                name: "full_scale_in",
-                default: 1.0,
-                range: Range::Continuous {
-                    min: 0.01,
-                    max: 20.0,
-                    unit: "V/FS",
-                },
-            },
-            Setting {
-                name: "full_scale_out",
-                default: 100.0,
-                range: Range::Continuous {
-                    min: 10.0,
-                    max: 300.0,
-                    unit: "V/FS",
-                },
-            },
-            Setting {
-                name: "supply",
-                default: 300.0,
-                range: Range::Continuous {
-                    min: 100.0,
-                    max: 450.0,
-                    unit: "V",
-                },
-            },
-            Setting {
-                name: "plate_load",
-                default: 100.0,
-                range: Range::Continuous {
-                    min: 10.0,
-                    max: 470.0,
-                    unit: "kΩ",
-                },
-            },
-            Setting {
-                name: "cathode",
-                default: 1.5,
-                range: Range::Continuous {
-                    min: 0.1,
-                    max: 10.0,
-                    unit: "kΩ",
-                },
-            },
-            Setting {
-                name: "cathode_cap",
-                default: 22.0,
-                range: Range::Continuous {
-                    min: 0.1,
-                    max: 100.0,
-                    unit: "µF",
-                },
-            },
-        ],
+        params: || {
+            StageParams::new(vec![
+                choice::<TubeChoice>(0, "tube"),
+                float(1, "source", 0.0, 220.0, 1.0, Unit::Custom { label: "kΩ", decimals: 2 }),
+                float(2, "full_scale_in", 0.01, 20.0, 1.0, Unit::Custom { label: "V/FS", decimals: 2 }),
+                float(3, "full_scale_out", 10.0, 300.0, 100.0, Unit::Custom { label: "V/FS", decimals: 2 }),
+                float(4, "supply", 100.0, 450.0, 300.0, Unit::Custom { label: "V", decimals: 2 }),
+                float(5, "plate_load", 10.0, 470.0, 100.0, Unit::Custom { label: "kΩ", decimals: 2 }),
+                float(6, "cathode", 0.1, 10.0, 1.5, Unit::Custom { label: "kΩ", decimals: 2 }),
+                float(7, "cathode_cap", 0.1, 100.0, 22.0, Unit::Custom { label: "µF", decimals: 2 }),
+            ])
+        },
         build: |v| {
             stage_with_solver(
                 AudioAdapter::new(CommonCathode::new(common_cathode(v)), audio_port(v)),
@@ -448,26 +349,12 @@ pub const CATALOG: &[StageSpec] = &[
     },
     StageSpec {
         name: "hysteresis",
-        settings: &[
-            Setting {
-                name: "drive",
-                default: 1.0,
-                range: Range::Continuous {
-                    min: 0.01,
-                    max: 10.0,
-                    unit: "",
-                },
-            },
-            Setting {
-                name: "depth",
-                default: 0.5,
-                range: Range::Continuous {
-                    min: 0.0,
-                    max: 1.0,
-                    unit: "",
-                },
-            },
-        ],
+        params: || {
+            StageParams::new(vec![
+                float(0, "drive", 0.01, 10.0, 1.0, PLAIN),
+                float(1, "depth", 0.0, 1.0, 0.5, PLAIN),
+            ])
+        },
         build: |v| {
             stage(Hysteresis::new(v.f32("drive"), v.f32("depth")), |h, v| {
                 h.set_drive(v.f32("drive"));

@@ -4,7 +4,7 @@
 //! mod.rs         state + the per-frame layout
 //! session.rs     one live plugin (teardown order by construction)
 //! library.rs     plugin + project locations on disk
-//! panels.rs      top bar, project sidebar, controls, status bar
+//! panels.rs      top bar, project sidebar, params, status bar
 //! central.rs     the view tabs and the active view
 //! keyboard.rs    piano + sample pads; held-note bookkeeping
 //! screenshot.rs  headless --screenshot capture
@@ -210,11 +210,11 @@ impl eframe::App for HostApp {
         egui::SidePanel::left("sidebar")
             .default_width(170.0)
             .show(ctx, |ui| self.draw_sidebar(ui));
-        egui::SidePanel::right("controls")
+        egui::SidePanel::right("params")
             .resizable(true)
             .default_width(300.0)
             .min_width(220.0)
-            .show(ctx, |ui| self.draw_controls(ui));
+            .show(ctx, |ui| self.draw_params(ui));
         egui::CentralPanel::default().show(ctx, |ui| {
             self.draw_view_tabs(ui);
             self.draw_central(ui, dt);

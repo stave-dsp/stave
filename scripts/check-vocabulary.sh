@@ -34,7 +34,7 @@ report() {
 }
 
 # Retired names: gone from the API, and from every word about it.
-RETIRED='\b(DebugBus|debug_bus|stave_debug|FaceSpec|HasFace|StavePlugin|ProcessCtx|PluginDescriptor|PluginFeature|PortConfig|AuxIn|AudioBuffer|ContinuousControl|ContinuousBlock|DiscreteControl|ReconfigureControl|continuous_controls|attach_telemetry|debug_attach|param_table|save_extra|load_extra|stave_vst3_export|stave_clap_export|EditorHost|editor_face|editor_ui|UiNode|latency_samples|tail_samples)\b'
+RETIRED='\b(DebugBus|debug_bus|stave_debug|FaceSpec|HasFace|StavePlugin|ProcessCtx|PluginDescriptor|PluginFeature|PortConfig|AuxIn|AudioBuffer|ContinuousControl|ContinuousBlock|DiscreteControl|ReconfigureControl|continuous_controls|attach_telemetry|debug_attach|param_table|save_extra|load_extra|stave_vst3_export|stave_clap_export|EditorHost|editor_face|editor_ui|UiNode|latency_samples|tail_samples|ControlFlags|ControlError|set_control|SettingValues|control_of|event_of)\b'
 report "a retired name (see the glossary for its replacement)" \
   "$RETIRED" -- ':!docs/overhaul.md' ':!scripts/check-vocabulary.sh' ':!*.lock'
 

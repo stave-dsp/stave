@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use crossbeam_queue::ArrayQueue;
 use stave_host::instance::Instance;
-use stave_host::note::NoteEvent;
+use stave_host::note::{Event, NoteEvent};
 
 use crate::analysis::{AnalysisRing, MAX_CHANNELS};
 use crate::debug_log::DebugLog;
@@ -58,7 +58,7 @@ pub struct Engine<P: Instance> {
     shared: Shared,
     ins: Vec<Vec<f32>>,
     outs: Vec<Vec<f32>>,
-    notes: Vec<NoteEvent>,
+    events: Vec<Event>,
     sines: SineBank,
     voice: Option<Voice>,
     rate: f64,
@@ -76,7 +76,7 @@ impl<P: Instance> Engine<P> {
         Self {
             ins: vec![vec![0.0; l.max_block]; l.inputs.min(MAX_IO)],
             outs: vec![vec![0.0; l.max_block]; l.outputs.clamp(1, MAX_IO)],
-            notes: Vec::with_capacity(MAX_EVENTS),
+            events: Vec::with_capacity(MAX_EVENTS),
             sines: SineBank::new(l.sample_rate as f32),
             voice: None,
             rate: l.sample_rate,
@@ -105,7 +105,7 @@ impl<P: Instance> Engine<P> {
                 channels,
                 n,
             );
-            self.notes.clear(); // events land in the first block only
+            self.events.clear(); // events land in the first block only
             done += n;
         }
         if self.plugin.layout().is_instrument() {
@@ -115,15 +115,15 @@ impl<P: Instance> Engine<P> {
     }
 
     fn drain_events(&mut self) {
-        self.notes.clear();
-        while self.notes.len() < MAX_EVENTS {
+        self.events.clear();
+        while self.events.len() < MAX_EVENTS {
             let Some(e) = self.shared.events.pop() else {
                 break;
             };
             self.sines.handle(&e);
-            self.notes.push(NoteEvent { offset: 0, ..e });
+            self.events.push(Event::note(0, e));
         }
-        let n = self.notes.len() as u64;
+        let n = self.events.len() as u64;
         self.shared
             .log
             .consumed_events
@@ -166,7 +166,7 @@ impl<P: Instance> Engine<P> {
         let mut outs: [&mut [f32]; MAX_IO] =
             std::array::from_fn(|_| it.next().map_or(&mut [][..], |b| &mut b[..n]));
         self.plugin
-            .process(&ins[..ni], &mut outs[..no], &self.notes);
+            .process(&ins[..ni], &mut outs[..no], &self.events);
         let tap: [&[f32]; MAX_CHANNELS] =
             std::array::from_fn(|c| self.outs.get(c).map_or(&[][..], |b| &b[..n]));
         self.shared
@@ -219,7 +219,7 @@ impl<P: Instance> Engine<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stave_host::control::Control;
+    use stave_host::param::Param;
     use stave_host::instance::Layout;
 
     /// A minimal instance: out = in (or a constant for instruments).
@@ -228,7 +228,7 @@ mod tests {
         fn layout(&self) -> Layout {
             self.0
         }
-        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[NoteEvent]) {
+        fn process(&mut self, i: &[&[f32]], o: &mut [&mut [f32]], _: &[Event]) {
             for (c, out) in o.iter_mut().enumerate() {
                 match i.get(c) {
                     Some(inp) => out.copy_from_slice(inp),
@@ -236,7 +236,7 @@ mod tests {
                 }
             }
         }
-        fn controls(&self) -> Vec<Control> {
+        fn params(&self) -> Vec<Param> {
             vec![]
         }
     }
@@ -265,12 +265,7 @@ mod tests {
     fn a_held_key_is_audible_through_an_effect() {
         let sh = shared();
         let mut e = Engine::new(Pass(layout(2, 2)), sh.clone());
-        let a4 = NoteEvent {
-            offset: 0,
-            pitch: 69,
-            velocity: 1.0,
-            kind: stave_host::note::NoteKind::On,
-        };
+        let a4 = NoteEvent::on(69, 1.0);
         sh.events.push(a4).unwrap();
         let mut out = vec![0.0; 2 * 1000]; // not a multiple of the block
         e.fill(&mut out, 2);

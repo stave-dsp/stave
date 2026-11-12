@@ -6,6 +6,9 @@
 //!   stave-storybook                                # live: drag everything; ←/→ change theme, Esc quits
 //!   stave-storybook --screenshot DIR [--scale 2]   # one PNG per theme
 //!
+//! `STAVE_TEXT=embedded` sets text in the embedded fonts on macOS too
+//! (how Windows and Linux show it).
+//!
 //! Screenshots are rendered offscreen through the real face runtime and
 //! the platform's text, so they show exactly what a plugin window shows.
 
@@ -13,14 +16,29 @@
 
 mod live;
 
-/// The platform's text: CoreText on macOS, the embedded fonts elsewhere.
+/// The platform's text: CoreText on macOS, the embedded fonts elsewhere
+/// (and on macOS with `STAVE_TEXT=embedded`, to see a face as Windows and
+/// Linux show it). Layout measures with the fonts that paint.
 #[cfg(target_os = "macos")]
-fn text(scale: f64) -> stave_ui_cocoa::offscreen::CoreText {
-    stave_ui_cocoa::offscreen::CoreText::new(scale)
+fn embedded() -> bool {
+    std::env::var_os("STAVE_TEXT").is_some_and(|v| v == "embedded")
 }
-#[cfg(not(target_os = "macos"))]
-fn text(_scale: f64) -> stave_font::FontText {
-    stave_font::FontText
+
+fn fonts() -> Box<dyn stave_ui::Fonts> {
+    #[cfg(target_os = "macos")]
+    if !embedded() {
+        return Box::new(stave_ui_cocoa::text::SystemFonts);
+    }
+    Box::new(stave_font::FontText)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+fn text(scale: f64) -> Box<dyn stave_raster::TextPainter> {
+    #[cfg(target_os = "macos")]
+    if !embedded() {
+        return Box::new(stave_ui_cocoa::offscreen::CoreText::new(scale));
+    }
+    Box::new(stave_font::FontText)
 }
 
 use std::path::PathBuf;
@@ -37,7 +55,7 @@ fn screenshot(dir: PathBuf, scale: f64) {
         let controller = StoryController::new();
         controller.freeze(1.7);
         let face = stories::all(&controller.params).swap_remove(i).1;
-        let mut rt = Runtime::new(face);
+        let mut rt = Runtime::new(face, &*fonts());
         if std::env::var_os("STAVE_FACE_DEBUG").is_some() {
             for r in rt.rects() {
                 println!("  {:7.1} {:7.1} {:7.1} {:7.1}", r.x, r.y, r.w, r.h);
@@ -45,10 +63,10 @@ fn screenshot(dir: PathBuf, scale: f64) {
         }
         let mut canvas = stave_raster::Canvas::new(0, 0);
         let t0 = std::time::Instant::now();
-        rt.render(&controller, scale, controller.time(), &mut canvas, &mut text(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut *text(scale));
         let first = t0.elapsed();
         let t1 = std::time::Instant::now();
-        rt.render(&controller, scale, controller.time(), &mut canvas, &mut text(scale));
+        rt.render(&controller, scale, controller.time(), &mut canvas, &mut *text(scale));
         let frame = t1.elapsed();
         let path = dir.join(format!("story_{name}.png"));
         std::fs::write(&path, stave_raster::png::encode(&canvas)).expect("write png");

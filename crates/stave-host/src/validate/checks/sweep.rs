@@ -6,9 +6,9 @@ use stave_measure::level::{db, Meter};
 
 #[derive(Copy, Clone, Debug)]
 pub struct SweepConfig {
-    /// Values per continuous control (see [`Control::sweep_values`]).
+    /// Values per continuous param (see [`Param::sweep_values`]).
     ///
-    /// [`Control::sweep_values`]: crate::control::Control::sweep_values
+    /// [`Param::sweep_values`]: crate::param::Param::sweep_values
     pub points: usize,
     pub settle_seconds: f64,
     pub hold_seconds: f64,
@@ -36,21 +36,21 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
     let (excitation, config) = (&ctx.config.excitation, ctx.config.sweep);
     let mut inst = ctx.fresh()?;
     let (signal, notes) = excitation.for_instance(inst.as_ref());
-    let controls: Vec<_> = inst
-        .controls()
+    let params: Vec<_> = inst
+        .params()
         .into_iter()
         .filter(|c| c.sweepable())
         .collect();
     let mut d = Driver::new(inst.as_mut());
     d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
-    if controls.is_empty() {
-        return Ok(Outcome::not_applicable("no sweepable controls"));
+    if params.is_empty() {
+        return Ok(Outcome::not_applicable("no sweepable params"));
     }
     let mut offenders = vec![];
     let mut loudest = (f64::NEG_INFINITY, json!(null));
-    for c in &controls {
+    for c in &params {
         for v in c.sweep_values(config.points) {
-            d.instance().set_control(&c.name, v)?;
+            d.instance().set_param(&c.name, v)?;
             let n = d.frames_for(config.hold_seconds) / config.windows as u64;
             let windows: Vec<Meter> = (0..config.windows)
                 .map(|_| {
@@ -68,24 +68,24 @@ pub fn param_sweep(ctx: &mut Ctx) -> Result<Outcome, CheckError> {
             if peak_dbfs > loudest.0 {
                 loudest = (
                     peak_dbfs,
-                    json!({ "control": c.name, "value": v, "peak_dbfs": peak_dbfs }),
+                    json!({ "param": c.name, "value": v, "peak_dbfs": peak_dbfs }),
                 );
             }
             if non_finite > 0 || growth_db > config.runaway_growth_db {
                 offenders.push(json!({
-                    "control": c.name, "value": v,
+                    "param": c.name, "value": v,
                     "non_finite_samples": non_finite, "growth_db": growth_db,
                 }));
             }
         }
-        d.instance().set_control(&c.name, c.default)?;
+        d.instance().set_param(&c.name, c.default)?;
         d.skip(d.frames_for(config.settle_seconds), signal.as_ref(), &notes);
     }
-    let swept = controls.len();
+    let swept = params.len();
     Ok(if offenders.is_empty() {
-        Outcome::pass(json!({ "controls_swept": swept, "loudest": loudest.1 }))
+        Outcome::pass(json!({ "params_swept": swept, "loudest": loudest.1 }))
     } else {
-        Outcome::fail(json!({ "controls_swept": swept, "offenders": offenders }))
+        Outcome::fail(json!({ "params_swept": swept, "offenders": offenders }))
     })
 }
 
@@ -97,10 +97,10 @@ mod tests {
     use crate::validate::Status;
 
     #[test]
-    fn sane_ranges_pass_and_count_controls() {
+    fn sane_ranges_pass_and_count_params() {
         let v = outcome(param_sweep, || Box::new(Gain::new(1, 1)));
         assert_eq!(
-            (v.status, v.details["controls_swept"].as_u64()),
+            (v.status, v.details["params_swept"].as_u64()),
             (Status::Pass, Some(2))
         );
     }
@@ -113,11 +113,11 @@ mod tests {
     }
 
     #[test]
-    fn growth_is_runaway_and_names_the_control_and_value() {
+    fn growth_is_runaway_and_names_the_param_and_value() {
         let v = outcome(param_sweep, || Box::new(Feedback::new(1)));
         assert_eq!(v.status, Status::Fail);
         let offenders = v.details["offenders"].as_array().unwrap();
-        assert!(offenders.iter().all(|o| o["control"] == "feedback"));
+        assert!(offenders.iter().all(|o| o["param"] == "feedback"));
         let values: Vec<f64> = offenders
             .iter()
             .map(|o| o["value"].as_f64().unwrap())

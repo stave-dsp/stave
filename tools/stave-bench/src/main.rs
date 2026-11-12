@@ -109,7 +109,7 @@ fn run(cli: &Cli, out: &mut File) -> Result<ExitCode, Box<dyn Error>> {
             }
             for (name, value) in &cli.sets {
                 plugin
-                    .set_control(name, *value)
+                    .set_param(name, *value)
                     .map_err(|e| format!("--set {name}: {e} (see --list)"))?;
             }
             let run = bench::run(plugin, &cli.bench)?;

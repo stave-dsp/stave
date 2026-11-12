@@ -8,10 +8,10 @@ use std::vec::Vec;
 
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke, TextAlign};
-use stave_ui::Dim;
+use stave_ui::Fonts;
 
 use crate::material::{self, Occluder};
-use crate::part::{leaf, step_of, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, PartId, Reads};
+use crate::part::{measured, step_of, Area, Bake, Bind, FaceNode, Frame, Gesture, Grab, Part, PartId, Reads};
 use crate::parts::display::{bake_window, glass_over};
 use crate::parts::switch::lamp;
 use crate::theme::{CapStyle, Theme};
@@ -31,8 +31,26 @@ pub struct Selector {
 }
 
 const SEL_R: f64 = 15.0;
+/// The least width: the options print around the knob, out to here.
 const SEL_W: f64 = 132.0;
-const SEL_H: f64 = 112.0;
+/// From the knob's centre to the bottom edge (the lowest options).
+const SEL_BELOW: f64 = 52.0;
+
+/// A legend's row at the top of a part, and the room under it.
+fn head(th: &Theme) -> f64 {
+    th.line(th.typography.legend_size) + th.space(0) + 2.0
+}
+
+/// The legend's baseline in a part's head.
+fn legend_y(r: Rect, th: &Theme) -> f64 {
+    r.y + th.line(th.typography.legend_size) * 0.65
+}
+
+/// A head's legend is never wider than its part.
+fn legend_w(th: &Theme, fonts: &dyn Fonts, legend: &str) -> f64 {
+    let ty = &th.typography;
+    fonts.width(legend, ty.legend_size, &ty.legend) + 2.0 * th.space(1)
+}
 /// Detents sweep this arc (degrees, y-down, centred on straight up).
 const SEL_SWEEP: f64 = 240.0;
 
@@ -45,10 +63,12 @@ impl Selector {
         self
     }
     pub fn node(self) -> FaceNode {
-        leaf(self, SEL_W, SEL_H)
+        measured(self)
     }
-    fn centre(r: Rect) -> Pt {
-        pt(r.x + r.w / 2.0, r.y + 24.0 + 36.0)
+    /// The knob's centre: under the legend's row, with the options'
+    /// arc above it.
+    fn centre(r: Rect, th: &Theme) -> Pt {
+        pt(r.x + r.w / 2.0, r.y + head(th) + 36.0)
     }
     fn angle(i: u32, n: u32) -> f64 {
         let t = if n <= 1 { 0.5 } else { f64::from(i) / f64::from(n - 1) };
@@ -57,8 +77,12 @@ impl Selector {
 }
 
 impl Part for Selector {
-    fn occluders(&self, r: Rect, _theme: &Theme, out: &mut Vec<Occluder>) {
-        let c = Self::centre(r);
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        (SEL_W.max(legend_w(th, fonts, &legend_of(self.label, self.bind))), head(th) + 36.0 + SEL_BELOW)
+    }
+
+    fn occluders(&self, r: Rect, theme: &Theme, out: &mut Vec<Occluder>) {
+        let c = Self::centre(r, theme);
         out.push(Occluder::Disc {
             cx: c.x,
             cy: c.y,
@@ -70,12 +94,12 @@ impl Part for Selector {
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let ty = &th.typography;
-        let c = Self::centre(r);
+        let c = Self::centre(r, th);
         let (style, tint, scale) = (th.hardware.caps, th.hardware.cap, cx.scale);
         let size = 2.0 * SEL_R + 2.0;
         let cap = material::sprite(size, scale, |dx, dy| material::knob(style, tint, dx, dy, SEL_R, scale));
         cx.image(c.x - size / 2.0, c.y - size / 2.0, size, size, cap);
-        cx.scene.text_in(pt(c.x, r.y + 11.0), legend_of(self.label, self.bind), ty.legend_size, th.palette.ink, ty.legend);
+        cx.scene.text_in(pt(c.x, legend_y(r, th) - 1.0), legend_of(self.label, self.bind), ty.legend_size, th.palette.ink, ty.legend);
         let n = cx.controller.steps(self.bind.id).max(2);
         for i in 0..n {
             let a = Self::angle(i, n);
@@ -87,7 +111,7 @@ impl Part for Selector {
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
         let th = f.theme;
         let ty = &th.typography;
-        let c = Self::centre(r);
+        let c = Self::centre(r, th);
         let n = f.controller.steps(self.bind.id).max(2);
         let cur = step_of(f.value(self.bind), n);
         let a = Self::angle(cur, n);
@@ -129,10 +153,10 @@ impl Part for Selector {
         }
     }
 
-    fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
+    fn grabs(&self, r: Rect, f: &Frame<'_>, out: &mut Vec<Grab>) {
         out.push(Grab {
             area: Area::Circle {
-                c: Self::centre(r),
+                c: Self::centre(r, f.theme),
                 r: SEL_R + 10.0,
             },
             gesture: Gesture::Stepped {
@@ -177,8 +201,14 @@ impl Stepper {
         self
     }
     pub fn node(self) -> FaceNode {
-        leaf(self, self.width, 24.0 + READOUT_H + 8.0)
+        measured(self)
     }
+}
+
+/// A readout cell's size: at least `width`, as wide as its legend, a
+/// head over the window.
+fn readout_size(th: &Theme, fonts: &dyn Fonts, width: f64, legend: &str) -> (f64, f64) {
+    (width.max(legend_w(th, fonts, legend)), head(th) + READOUT_H + 8.0)
 }
 
 /// The readout window inside a stepper-like cell, and its arrow hits.
@@ -214,12 +244,16 @@ fn readout_text(th: &Theme, s: &mut Scene, win: Rect, text: &str) {
 }
 
 impl Part for Stepper {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        readout_size(th, fonts, self.width, &legend_of(self.label, self.bind))
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let ty = &th.typography;
         let (win, _, _) = readout(r);
         bake_window(cx, win, 5.0, 3.0);
-        cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + 12.0), legend_of(self.label, self.bind), ty.legend_size, th.palette.ink, ty.legend);
+        cx.scene.text_in(pt(r.x + r.w / 2.0, legend_y(r, th)), legend_of(self.label, self.bind), ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
@@ -268,17 +302,21 @@ impl Default for Presets {
 
 impl Presets {
     pub fn node(self) -> FaceNode {
-        leaf(self, self.width, 24.0 + READOUT_H + 8.0)
+        measured(self)
     }
 }
 
 impl Part for Presets {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        readout_size(th, fonts, self.width, "PRESET")
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let ty = &th.typography;
         let (win, _, _) = readout(r);
         bake_window(cx, win, 5.0, 3.0);
-        cx.scene.text_in(pt(r.x + r.w / 2.0, r.y + 12.0), "PRESET", ty.legend_size, th.palette.ink, ty.legend);
+        cx.scene.text_in(pt(r.x + r.w / 2.0, legend_y(r, th)), "PRESET", ty.legend_size, th.palette.ink, ty.legend);
     }
 
     fn paint(&self, r: Rect, f: &Frame<'_>, s: &mut Scene) {
@@ -318,8 +356,10 @@ pub struct Pager {
     pub labels: Vec<&'static str>,
 }
 
+/// The least width of one page's button.
 const PAGE_W: f64 = 72.0;
-const PAGE_H: f64 = 40.0;
+/// A page button's lamp seat, from the top.
+const PAGE_SEAT: f64 = 20.0;
 
 impl Pager {
     pub fn new(key: u32, labels: &[&'static str]) -> Self {
@@ -329,24 +369,35 @@ impl Pager {
         }
     }
     pub fn node(self) -> FaceNode {
-        let w = PAGE_W * self.labels.len() as f64;
-        leaf(self, w, PAGE_H).width(Dim::Px(w))
+        measured(self)
     }
-    fn cell(r: Rect, i: usize) -> Rect {
-        Rect { x: r.x + PAGE_W * i as f64, y: r.y, w: PAGE_W, h: PAGE_H }
+    /// Page `i`'s button: the part split evenly.
+    fn cell(&self, r: Rect, i: usize) -> Rect {
+        let w = r.w / self.labels.len().max(1) as f64;
+        Rect { x: r.x + w * i as f64, y: r.y, w, h: r.h }
+    }
+    fn label_y(c: Rect, th: &Theme) -> f64 {
+        c.y + PAGE_SEAT + th.typography.caption_size * 1.75
     }
 }
 
 impl Part for Pager {
+    fn size(&self, th: &Theme, fonts: &dyn Fonts) -> (f64, f64) {
+        let ty = &th.typography;
+        let widest = self.labels.iter().map(|l| fonts.width(&l.to_uppercase(), ty.caption_size, &ty.caption)).fold(0.0, f64::max);
+        let cell = PAGE_W.max(widest + 2.0 * th.space(1));
+        (cell * self.labels.len() as f64, PAGE_SEAT + ty.caption_size * 2.75)
+    }
+
     fn bake(&self, r: Rect, cx: &mut Bake<'_>) {
         let th = cx.theme;
         let ty = &th.typography;
         let scale = cx.scale;
         let seat = material::sprite(14.0, scale, |dx, dy| material::lamp_seat(dx, dy, 6.0, scale));
         for (i, l) in self.labels.iter().enumerate() {
-            let c = Self::cell(r, i);
+            let c = self.cell(r, i);
             cx.image(c.x + c.w / 2.0 - 7.0, c.y + 3.0, 14.0, 14.0, seat.clone());
-            cx.scene.text_in(pt(c.x + c.w / 2.0, c.y + 33.0), l.to_uppercase(), ty.caption_size, th.palette.ink_soft, ty.caption);
+            cx.scene.text_in(pt(c.x + c.w / 2.0, Self::label_y(c, th)), l.to_uppercase(), ty.caption_size, th.palette.ink_soft, ty.caption);
         }
     }
 
@@ -355,17 +406,17 @@ impl Part for Pager {
         let ty = &th.typography;
         let at = f.page(self.key) as usize;
         if let Some(l) = self.labels.get(at) {
-            let c = Self::cell(r, at);
+            let c = self.cell(r, at);
             lamp(f, s, pt(c.x + c.w / 2.0, c.y + 10.0));
             let mut font = ty.caption;
             font.weight = 750;
-            s.text_in(pt(c.x + c.w / 2.0, c.y + 33.0), l.to_uppercase(), ty.caption_size, th.palette.accent, font);
+            s.text_in(pt(c.x + c.w / 2.0, Self::label_y(c, th)), l.to_uppercase(), ty.caption_size, th.palette.accent, font);
         }
     }
 
     fn grabs(&self, r: Rect, _f: &Frame<'_>, out: &mut Vec<Grab>) {
         out.extend((0..self.labels.len()).map(|i| Grab {
-            area: Area::Rect(Self::cell(r, i)),
+            area: Area::Rect(self.cell(r, i)),
             gesture: Gesture::Page { key: self.key, page: i as u32 },
         }));
     }

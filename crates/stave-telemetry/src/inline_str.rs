@@ -1,8 +1,7 @@
 //! Write-once, atomically-published inline strings — the slot-name
 //! primitive behind every telemetry registry (tap and breakpoint names).
 
-use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, Ordering};
+use crate::sync::{zeroed, AtomicBool, Ordering, UnsafeCell};
 
 /// A fixed-capacity, write-once string slot with its own publication flag.
 ///
@@ -19,7 +18,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// the single init thread). Enforced by a debug assertion, relied on by
 /// the SAFETY argument in `as_str`.
 #[repr(C)]
-pub(crate) struct InlineStr<const N: usize> {
+pub struct InlineStr<const N: usize> {
     ready: AtomicBool,
     bytes: UnsafeCell<[u8; N]>,
 }
@@ -31,10 +30,12 @@ pub(crate) struct InlineStr<const N: usize> {
 unsafe impl<const N: usize> Sync for InlineStr<N> {}
 
 impl<const N: usize> InlineStr<N> {
-    pub const fn zeroed() -> Self {
-        Self {
-            ready: AtomicBool::new(false),
-            bytes: UnsafeCell::new([0; N]),
+    zeroed! {
+        pub fn zeroed() -> Self {
+            Self {
+                ready: AtomicBool::new(false),
+                bytes: UnsafeCell::new([0; N]),
+            }
         }
     }
 
@@ -71,9 +72,12 @@ impl<const N: usize> InlineStr<N> {
         let take = s.len();
         // SAFETY: exclusive ownership per the write protocol — no other
         // thread writes, and no reader dereferences until `ready` below.
-        let dst = unsafe { &mut *self.bytes.get() };
-        dst[..take].copy_from_slice(&s.as_bytes()[..take]);
-        dst[take] = 0;
+        unsafe {
+            self.bytes.write(|dst| {
+                dst[..take].copy_from_slice(&s.as_bytes()[..take]);
+                dst[take] = 0;
+            });
+        }
         self.ready.store(true, Ordering::Release);
     }
 
@@ -91,7 +95,7 @@ impl<const N: usize> InlineStr<N> {
         // SAFETY: `ready` was observed with Acquire, so the Release store
         // in `set` — and every byte written before it — happens-before
         // this read, and the bytes are immutable from then on.
-        let bytes = unsafe { &*self.bytes.get() };
+        let bytes = unsafe { self.bytes.read() };
         let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
         core::str::from_utf8(&bytes[..end]).unwrap_or("")
     }

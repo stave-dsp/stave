@@ -5,14 +5,17 @@
 //! was that index's, unchanged across the read.
 
 use alloc::string::String;
-use core::sync::atomic::{fence, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::AtomicU32;
 
+use crate::sync::{fence, zeroed, zeroed_array, AtomicU16, AtomicU64, AtomicU8, Ordering};
 use crate::{MESSAGE_BYTES, MESSAGE_SLOTS};
 
 const WORDS: usize = MESSAGE_BYTES / 8;
 
+/// One slot of the ring, seqlocked: odd while a writer holds it, then
+/// the even sequence of the message it holds.
 #[repr(C)]
-pub(crate) struct Message {
+pub struct Message {
     sequence: AtomicU64,
     severity: AtomicU8,
     len: AtomicU16,
@@ -20,13 +23,66 @@ pub(crate) struct Message {
 }
 
 impl Message {
-    const fn zeroed() -> Self {
-        Self {
-            sequence: AtomicU64::new(0),
-            severity: AtomicU8::new(0),
-            len: AtomicU16::new(0),
-            text: [const { AtomicU64::new(0) }; WORDS],
+    zeroed! {
+        pub fn zeroed() -> Self {
+            Self {
+                sequence: AtomicU64::new(0),
+                severity: AtomicU8::new(0),
+                len: AtomicU16::new(0),
+                #[cfg(not(loom))]
+                text: [const { AtomicU64::new(0) }; WORDS],
+                #[cfg(loom)]
+                text: core::array::from_fn(|_| AtomicU64::new(0)),
+            }
         }
+    }
+
+    /// Write message `index` here; `false` (nothing written) when
+    /// another writer holds the slot. `text` past `MESSAGE_BYTES` is cut
+    /// at a character boundary.
+    pub fn write(&self, index: u64, severity: u8, text: &str) -> bool {
+        let current = self.sequence.load(Ordering::Relaxed);
+        if current % 2 == 1
+            || self
+                .sequence
+                .compare_exchange(current, current | 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+        {
+            return false;
+        }
+        fence(Ordering::Release);
+        let mut end = text.len().min(MESSAGE_BYTES);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        let bytes = &text.as_bytes()[..end];
+        for (word, chunk) in self.text.iter().zip(bytes.chunks(8)) {
+            let mut le = [0u8; 8];
+            le[..chunk.len()].copy_from_slice(chunk);
+            word.store(u64::from_le_bytes(le), Ordering::Relaxed);
+        }
+        self.severity.store(severity, Ordering::Relaxed);
+        self.len.store(end as u16, Ordering::Relaxed);
+        self.sequence.store(published(index), Ordering::Release);
+        true
+    }
+
+    /// Message `index` as (severity, text), if this slot holds it and no
+    /// writer moved it during the read (never a torn message).
+    pub fn read(&self, index: u64) -> Option<(u8, String)> {
+        let before = self.sequence.load(Ordering::Acquire);
+        if before != published(index) {
+            return None;
+        }
+        let severity = self.severity.load(Ordering::Relaxed);
+        let len = (self.len.load(Ordering::Relaxed) as usize).min(MESSAGE_BYTES);
+        let mut bytes = [0u8; MESSAGE_BYTES];
+        for (word, chunk) in self.text.iter().zip(bytes.chunks_mut(8)) {
+            chunk.copy_from_slice(&word.load(Ordering::Relaxed).to_le_bytes());
+        }
+        fence(Ordering::Acquire);
+        (self.sequence.load(Ordering::Relaxed) == before)
+            .then(|| (severity, String::from_utf8_lossy(&bytes[..len]).into_owned()))
     }
 }
 
@@ -39,11 +95,13 @@ pub struct Messages {
 }
 
 impl Messages {
-    pub const fn zeroed() -> Self {
-        Self {
-            written: AtomicU64::new(0),
-            dropped: AtomicU32::new(0),
-            slots: [const { Message::zeroed() }; MESSAGE_SLOTS],
+    zeroed! {
+        pub fn zeroed() -> Self {
+            Self {
+                written: AtomicU64::new(0),
+                dropped: AtomicU32::new(0),
+                slots: zeroed_array![Message; MESSAGE_SLOTS],
+            }
         }
     }
 
@@ -51,31 +109,9 @@ impl Messages {
     /// boundary.
     pub fn push(&self, severity: u8, text: &str) {
         let index = self.written.fetch_add(1, Ordering::Relaxed);
-        let slot = &self.slots[index as usize % MESSAGE_SLOTS];
-        let current = slot.sequence.load(Ordering::Relaxed);
-        if current % 2 == 1
-            || slot
-                .sequence
-                .compare_exchange(current, current | 1, Ordering::Acquire, Ordering::Relaxed)
-                .is_err()
-        {
+        if !self.slots[index as usize % MESSAGE_SLOTS].write(index, severity, text) {
             self.dropped.fetch_add(1, Ordering::Relaxed);
-            return;
         }
-        fence(Ordering::Release);
-        let mut end = text.len().min(MESSAGE_BYTES);
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        let bytes = &text.as_bytes()[..end];
-        for (word, chunk) in slot.text.iter().zip(bytes.chunks(8)) {
-            let mut le = [0u8; 8];
-            le[..chunk.len()].copy_from_slice(chunk);
-            word.store(u64::from_le_bytes(le), Ordering::Relaxed);
-        }
-        slot.severity.store(severity, Ordering::Relaxed);
-        slot.len.store(end as u16, Ordering::Relaxed);
-        slot.sequence.store(published(index), Ordering::Release);
     }
 
     /// Messages with index ≥ `from` still in the ring, oldest first, as
@@ -83,30 +119,14 @@ impl Messages {
     pub fn read_from(&self, from: u64) -> impl Iterator<Item = (u64, u8, String)> + '_ {
         let written = self.written.load(Ordering::Acquire);
         let oldest = written.saturating_sub(MESSAGE_SLOTS as u64).max(from);
-        (oldest..written).filter_map(move |index| self.read(index))
+        (oldest..written).filter_map(move |index| {
+            let (severity, text) = self.slots[index as usize % MESSAGE_SLOTS].read(index)?;
+            Some((index, severity, text))
+        })
     }
 
     pub fn dropped(&self) -> u32 {
         self.dropped.load(Ordering::Relaxed)
-    }
-
-    fn read(&self, index: u64) -> Option<(u64, u8, String)> {
-        let slot = &self.slots[index as usize % MESSAGE_SLOTS];
-        let before = slot.sequence.load(Ordering::Acquire);
-        if before != published(index) {
-            return None;
-        }
-        let severity = slot.severity.load(Ordering::Relaxed);
-        let len = (slot.len.load(Ordering::Relaxed) as usize).min(MESSAGE_BYTES);
-        let mut bytes = [0u8; MESSAGE_BYTES];
-        for (word, chunk) in slot.text.iter().zip(bytes.chunks_mut(8)) {
-            chunk.copy_from_slice(&word.load(Ordering::Relaxed).to_le_bytes());
-        }
-        fence(Ordering::Acquire);
-        (slot.sequence.load(Ordering::Relaxed) == before).then(|| {
-            let text = String::from_utf8_lossy(&bytes[..len]).into_owned();
-            (index, severity, text)
-        })
     }
 }
 

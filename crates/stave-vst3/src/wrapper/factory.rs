@@ -216,6 +216,7 @@ unsafe fn create_instance<P: Vst3Export>(iid: FidString, obj: *mut *mut c_void) 
     let plugin_obj = P::new(&telemetry);
     let diagnostics = Diagnostics::new(&P::INFO);
     diagnostics.log.add(Box::new(TelemetrySink(telemetry.clone())));
+    diagnostics.watch(&telemetry);
     let (params, face) = (plugin_obj.params(), plugin_obj.face());
     if let Err(e) = params.validate() {
         // Author bug (duplicate or reserved ids): refuse the instance

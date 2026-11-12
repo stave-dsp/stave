@@ -206,6 +206,17 @@ pub fn measure(text: &str, size: f64, font: &Font) -> f64 {
     line(text, size, &Color::rgba(0.0, 0.0, 0.0, 1.0), font).map_or(0.0, |l| l.width)
 }
 
+/// The system's fonts (CoreText), as a face's layout measures them: the
+/// same lines this module draws.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct SystemFonts;
+
+impl stave_ui::Fonts for SystemFonts {
+    fn width(&self, text: &str, size: f64, font: &Font) -> f64 {
+        measure(text, size, font)
+    }
+}
+
 /// One line into a y-UP CG context: baseline at `y`, aligned on `x`.
 ///
 /// # Safety
