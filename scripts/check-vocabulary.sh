@@ -49,7 +49,7 @@ AUTHOR=(crates/stave/ crates/stave-core/src/ examples/ ':!crates/stave-core/src/
 PIXELS=(':!crates/stave-raster/' ':!crates/stave-face/' ':!crates/stave-ui/' ':!crates/stave-ui-cocoa/'
   ':!crates/stave-ui-win32/' ':!crates/stave-ui-x11/' ':!crates/stave-ui-shell/' ':!crates/stave-font/'
   ':!tools/storybook/' ':!crates/stave-test/src/face/' ':!crates/stave-test/src/image.rs' ':!*/tests/golden.rs'
-  ':!scripts/plot_silk_atlas.py' ':!docs/overhaul.md' ':!scripts/check-vocabulary.sh' ':!*.lock')
+  ':!scripts/plot_silk_atlas.py' ':!fuzz/fuzz_targets/raster.rs' ':!docs/overhaul.md' ':!scripts/check-vocabulary.sh' ':!*.lock')
 report "\"render\" means pixels; audio is processed (process, run)" \
   -i '(?<!")\brender(s|ed|ing)?\b(?!")' -- . "${PIXELS[@]}"
 # (diagnostics report what a host did, in the host ABI's words.)

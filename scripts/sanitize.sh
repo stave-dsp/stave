@@ -28,7 +28,7 @@ BUILD_STD=()
 [[ "$SANITIZER" == thread ]] && BUILD_STD=(-Zbuild-std)
 
 # --target: build scripts and proc macros stay uninstrumented.
-run() { cargo +"$NIGHTLY" test "${BUILD_STD[@]}" --target "$TARGET" --locked "$@"; }
+run() { cargo +"$NIGHTLY" test ${BUILD_STD[@]+"${BUILD_STD[@]}"} --target "$TARGET" --locked "$@"; }
 
 run -p stave-vst3 --test wrapper_abi --test table_abi --test negotiation_abi --test panic_abi
 run -p stave-clap --test wrapper_abi --test table_abi --test diagnostics_abi --test panic_abi --test realtime_abi

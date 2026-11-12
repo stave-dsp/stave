@@ -18,7 +18,7 @@ use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::{FontRef, MetadataProvider};
 use stave_raster::{Canvas, TextPainter};
-use stave_ui::scene::{Brush, Family, Font, Op, Path, Pt, Scene, Seg, TextAlign};
+use stave_ui::scene::{Brush, Family, FillRule, Font, Op, Path, Pt, Scene, Seg, TextAlign};
 use stave_ui::style::Color;
 
 const SANS: &[u8] = include_bytes!("../fonts/IBMPlexSans-SemiBold.ttf");
@@ -130,7 +130,7 @@ impl TextPainter for FontText {
         if text.is_empty() || size.is_nan() || size <= 0.0 {
             return;
         }
-        let scene = Scene { ops: vec![Op::Fill { path: Self::outline(at, text, size, font), brush: Brush::Solid(color) }] };
+        let scene = Scene { ops: vec![Op::Fill { path: Self::outline(at, text, size, font), brush: Brush::Solid(color), rule: FillRule::NonZero }] };
         stave_raster::render(&scene, 1.0, canvas, &mut stave_raster::NoText);
     }
 }

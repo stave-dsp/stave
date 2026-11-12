@@ -16,12 +16,15 @@ cd "$ROOT"
 SECONDS_EACH="${1:-30}"
 shift || true
 NIGHTLY="${NIGHTLY:-nightly-2026-11-01}"
+TARGET="$(rustc +"$NIGHTLY" -vV | sed -n 's/^host: //p')"
 TARGETS=("$@")
-[[ ${#TARGETS[@]} -gt 0 ]] || TARGETS=(state_load param_text vst3_host raster)
+[[ $# -gt 0 ]] || TARGETS=(state_load param_text vst3_host raster)
 mkdir -p fuzz/corpus/state_load
 cp crates/stave-core/tests/fixtures/*.stve fuzz/corpus/state_load/ 2>/dev/null || true
-for target in "${TARGETS[@]}"; do
+for target in ${TARGETS[@]+"${TARGETS[@]}"}; do
   echo "== fuzz: ${target} (${SECONDS_EACH}s)"
-  cargo +"$NIGHTLY" fuzz run --fuzz-dir fuzz "$target" -- \
+  # --target: a cargo-fuzz built for another arch (Rosetta) would
+  # otherwise default to its own.
+  cargo +"$NIGHTLY" fuzz run --fuzz-dir fuzz --target "$TARGET" "$target" -- \
     -max_total_time="$SECONDS_EACH" -rss_limit_mb=4096 -max_len=4096
 done

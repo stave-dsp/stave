@@ -28,9 +28,9 @@ ALLOWED=(
   'crates/stave-face/src/material.rs:std::thread'
   # Memoised bakes: a cache hit returns the image a miss would compute.
   'crates/stave-face/src/part.rs:RefCell'
-  # OPEN (V6): Trace's scrolling history lives in the part, so a paint
-  # depends on how many paints came before. It belongs in the runtime
-  # (the shell), handed to paint through the Frame.
+  # Trace's scrolling history: one sample per frame time (6e07cd1), so a
+  # frame painted twice paints the same, and a replayed frame sequence
+  # paints the same pictures.
   'crates/stave-face/src/parts/meter.rs:Mutex'
 )
 

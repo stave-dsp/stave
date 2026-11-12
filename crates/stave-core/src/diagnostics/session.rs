@@ -64,6 +64,7 @@ mod tests {
     use stave_telemetry::{Event, Telemetry};
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri isolates the file system")]
     fn a_session_file_reads_back_as_the_trace_it_wrote() {
         let dir = std::env::temp_dir().join(format!("stave-session-{}", std::process::id()));
         let path = dir.join("one.events");

@@ -11,7 +11,8 @@
 pub enum HostCall {
     /// `setupProcessing`: legal only while inactive.
     Setup { sample_rate: f64, max_block: usize },
-    /// `setActive`: legal as a toggle (on while off, off while on).
+    /// `setActive`: legal as a toggle (on while off, off while on), on
+    /// only after a setup.
     SetActive(bool),
     /// `setProcessing`: legal only while active.
     SetProcessing(bool),
@@ -132,7 +133,8 @@ impl Lifecycle {
     pub fn allows(&self, call: &HostCall) -> bool {
         match *call {
             HostCall::Setup { .. } => !self.active,
-            HostCall::SetActive(on) => on != self.active,
+            // Activation needs a setup first (VST3: setupProcessing).
+            HostCall::SetActive(on) => on != self.active && (!on || self.max_block > 0),
             HostCall::SetProcessing(on) => self.active && on != self.processing,
             HostCall::Process { frames, shape, .. } => {
                 self.processing && frames <= self.max_block && shape.legal()
@@ -209,5 +211,131 @@ impl Lifecycle {
     /// Two saves now and at the last save must be byte-identical.
     pub fn state_unchanged_since_save(&self) -> bool {
         !self.dirty
+    }
+}
+
+/// The lifecycle as a [`Model`](crate::check::Model) over a compliant
+/// host: a small call alphabet (two setups, toggles, blocks of 0, 1 and
+/// the maximum frames, a save), so [`check`](crate::check::check)
+/// explores every reachable state and [`validate`](crate::check::validate)
+/// checks a recorded run's calls (the simulated host's) against it.
+pub struct Compliant;
+
+/// `Lifecycle` without its float, for hashing: the model's state.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Abstract {
+    pub max_block: usize,
+    pub active: bool,
+    pub processing: bool,
+}
+
+impl From<&Lifecycle> for Abstract {
+    fn from(l: &Lifecycle) -> Self {
+        Self {
+            max_block: l.max_block,
+            active: l.active,
+            processing: l.processing,
+        }
+    }
+}
+
+fn concrete(s: &Abstract) -> Lifecycle {
+    Lifecycle {
+        sample_rate: 48_000.0,
+        max_block: s.max_block,
+        active: s.active,
+        processing: s.processing,
+        dirty: true,
+    }
+}
+
+impl crate::check::Model for Compliant {
+    type State = Abstract;
+    type Action = HostCall;
+
+    fn init(&self) -> Vec<Abstract> {
+        vec![Abstract::from(&Lifecycle::created())]
+    }
+
+    fn actions(&self, s: &Abstract, out: &mut Vec<HostCall>) {
+        for max_block in [64, 512] {
+            out.push(HostCall::Setup {
+                sample_rate: 48_000.0,
+                max_block,
+            });
+        }
+        out.extend([
+            HostCall::SetActive(!s.active),
+            HostCall::SetProcessing(!s.processing),
+            HostCall::SaveState,
+        ]);
+        for frames in [0, 1, s.max_block] {
+            out.push(HostCall::Process {
+                frames,
+                shape: BufferShape::InPlace,
+                changes: 0,
+                change_seed: 0,
+            });
+        }
+    }
+
+    /// Only the calls the format allows here; any of them is one step.
+    fn next(&self, s: &Abstract, call: &HostCall) -> Option<Abstract> {
+        let mut l = concrete(s);
+        if !l.allows(call) {
+            return None;
+        }
+        l.apply(call);
+        Some(Abstract::from(&l))
+    }
+
+    fn invariant(&self, s: &Abstract) -> Result<(), String> {
+        if s.processing && !s.active {
+            return Err("processing while inactive".into());
+        }
+        let l = concrete(s);
+        // A compliant block always runs (or is empty) once processing.
+        if s.processing {
+            for frames in [1, s.max_block] {
+                let call = HostCall::Process {
+                    frames,
+                    shape: BufferShape::Separate,
+                    changes: 0,
+                    change_seed: 0,
+                };
+                if l.allows(&call) && l.expect(&call).block != BlockExpect::Ran {
+                    return Err(format!("a legal {frames}-frame block would not run"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The host can always get the plugin back to inactive.
+    fn quiescent(&self, s: &Abstract) -> Option<bool> {
+        Some(!s.active)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::check::{check, validate};
+
+    #[test]
+    fn every_compliant_state_keeps_the_laws_and_can_return_to_inactive() {
+        let stats = check(&Compliant, 10_000).expect("the lifecycle");
+        assert!(stats.states >= 6, "{stats:?}");
+    }
+
+    #[test]
+    fn a_trace_out_of_order_is_caught() {
+        let setup = HostCall::Setup { sample_rate: 48_000.0, max_block: 64 };
+        let block = HostCall::Process { frames: 64, shape: BufferShape::Separate, changes: 0, change_seed: 0 };
+        let ok = [setup.clone(), HostCall::SetActive(true), HostCall::SetProcessing(true), block.clone()];
+        assert!(validate(&Compliant, Abstract::from(&Lifecycle::created()), &ok).is_ok());
+        let early = [setup, block];
+        let d = validate(&Compliant, Abstract::from(&Lifecycle::created()), &early).unwrap_err();
+        assert_eq!(d.step, 1);
     }
 }

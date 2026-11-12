@@ -9,6 +9,8 @@
 //! (CI's nightly runs more).
 
 use stave_host::plugin::sim::{simulate, SimConfig};
+use stave_model::check::validate;
+use stave_model::lifecycle::{Abstract, Compliant, Lifecycle};
 
 fn tilt() -> stave_host::plugin::EntryPoints {
     stave_host::entry_points!(stave_tilt_vst3)
@@ -40,8 +42,11 @@ fn a_compliant_host_keeps_every_law() {
         ..SimConfig::default()
     };
     for seed in 0..16 {
-        if let Err(failure) = simulate(tilt(), seed, config) {
-            panic!("{failure}");
+        let report = simulate(tilt(), seed, config).unwrap_or_else(|f| panic!("{f}"));
+        // Trace validation: the run is a behaviour of the lifecycle model.
+        let start = Abstract::from(&Lifecycle::active(48_000.0, 512));
+        if let Err(d) = validate(&Compliant, start, &report.calls) {
+            panic!("seed {seed}: the host's own trace left the model: {d:?}");
         }
     }
 }

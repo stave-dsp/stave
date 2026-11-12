@@ -14,7 +14,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-CRATES=(stave-core stave-telemetry stave-dsp stave-raster)
+CRATES=(stave-core stave-telemetry stave-dsp)
 if [[ $# -gt 0 ]]; then
   exec cargo kani "$@"
 fi

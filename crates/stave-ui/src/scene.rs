@@ -177,6 +177,16 @@ impl Stroke {
     }
 }
 
+/// Which points a fill covers when its outline winds over itself: the
+/// nonzero rule (any winding — overlaps union) or the even-odd rule
+/// (an odd number of crossings — overlaps cut holes, as in a pentagram).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum FillRule {
+    #[default]
+    NonZero,
+    EvenOdd,
+}
+
 /// One draw operation. Text is part of the vocabulary (displays
 /// label their axes); the cocoa renderer implements it
 /// with its first consumer — the knob draws no text.
@@ -185,6 +195,7 @@ pub enum Op {
     Fill {
         path: Path,
         brush: Brush,
+        rule: FillRule,
     },
     Stroke {
         path: Path,
@@ -301,13 +312,14 @@ impl Scene {
         Self::default()
     }
     pub fn fill(&mut self, path: Path, brush: Brush) {
-        self.ops.push(Op::Fill { path, brush });
+        self.fill_with(path, brush, FillRule::NonZero);
+    }
+    /// A fill under an explicit [`FillRule`].
+    pub fn fill_with(&mut self, path: Path, brush: Brush, rule: FillRule) {
+        self.ops.push(Op::Fill { path, brush, rule });
     }
     pub fn solid(&mut self, path: Path, color: Color) {
-        self.ops.push(Op::Fill {
-            path,
-            brush: Brush::Solid(color),
-        });
+        self.fill(path, Brush::Solid(color));
     }
     pub fn stroke(&mut self, path: Path, stroke: Stroke) {
         self.ops.push(Op::Stroke { path, stroke });

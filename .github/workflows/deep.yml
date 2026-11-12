@@ -26,13 +26,29 @@ env:
 
 jobs:
   kani:
-    name: kani (${{ matrix.crate }})
+    # One job per harness: each one's time is visible, and one that blows
+    # its bounds cannot hold the rest (30 min cap).
+    name: kani (${{ matrix.harness }})
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        crate: [stave-core, stave-telemetry, stave-dsp, stave-raster]
+        include:
+          - { crate: stave-core, harness: ranges_alias_is_interval_overlap }
+          - { crate: stave-core, harness: param_changes_sort_stably_by_frame }
+          - { crate: stave-core, harness: split_for_block_hands_the_plugin_sound_buffers }
+          - { crate: stave-core, harness: lanes_stay_inside_the_block }
+          - { crate: stave-core, harness: an_unprepared_state_never_splits }
+          - { crate: stave-core, harness: lookup_finds_the_first_declaration_of_every_id }
+          - { crate: stave-core, harness: normalize_lands_in_the_unit_interval }
+          - { crate: stave-core, harness: denormalize_lands_in_the_range_and_is_monotone }
+          - { crate: stave-core, harness: delivers_in_order_across_the_counter_wrap }
+          - { crate: stave-core, harness: a_full_ring_refuses_a_new_gesture_and_counts_it }
+          - { crate: stave-core, harness: an_admitted_begin_always_gets_its_end }
+          - { crate: stave-telemetry, harness: truncation_is_the_longest_fitting_prefix_and_round_trips }
+          - { crate: stave-dsp, harness: delays_by_exactly_its_length }
     steps:
       - uses: actions/checkout@v4
       - name: Cache Kani
@@ -46,7 +62,7 @@ jobs:
           key: kani-0.68.0-${{ runner.os }}
       - if: steps.kani-cache.outputs.cache-hit != 'true'
         run: cargo install --locked kani-verifier@0.68.0 && cargo kani setup
-      - run: scripts/kani.sh -p ${{ matrix.crate }}
+      - run: scripts/kani.sh -p ${{ matrix.crate }} --harness ${{ matrix.harness }}
 
   sanitizers:
     # macOS: stave-host hosts bundles through CoreFoundation.

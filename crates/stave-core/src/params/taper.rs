@@ -137,7 +137,7 @@ impl Range {
             return 1.0;
         }
         let n = match self.taper {
-            Taper::Linear => (v - self.min) / (self.max - self.min),
+            Taper::Linear => linear_fraction(v, self.min, self.max),
             Taper::Skewed { midpoint } => {
                 let frac = (v - self.min) / (self.max - self.min);
                 frac.powf(1.0 / skew_exponent(self.min, self.max, midpoint))
@@ -163,7 +163,7 @@ impl Range {
             return self.max;
         }
         let v = match self.taper {
-            Taper::Linear => self.min + n * (self.max - self.min),
+            Taper::Linear => linear_point(n, self.min, self.max),
             Taper::Skewed { midpoint } => {
                 let frac = n.powf(skew_exponent(self.min, self.max, midpoint));
                 self.min + frac * (self.max - self.min)
@@ -171,6 +171,29 @@ impl Range {
             Taper::Log => self.min * (self.max / self.min).powf(n),
         };
         v.clamp(self.min, self.max)
+    }
+}
+
+/// Where `v` sits between `min` and `max`, 0–1. A span wider than f64
+/// holds (−1e308..1e308) is taken at half scale: the plain difference
+/// overflows to infinity and inf/inf is NaN (found by Kani).
+fn linear_fraction(v: f64, min: f64, max: f64) -> f64 {
+    let span = max - min;
+    if span.is_finite() {
+        (v - min) / span
+    } else {
+        (v * 0.5 - min * 0.5) / (max * 0.5 - min * 0.5)
+    }
+}
+
+/// The point `n` (0–1) of the way from `min` to `max`, with the same
+/// care for a span past f64's range.
+fn linear_point(n: f64, min: f64, max: f64) -> f64 {
+    let span = max - min;
+    if span.is_finite() {
+        min + n * span
+    } else {
+        min * (1.0 - n) + max * n
     }
 }
 
@@ -288,6 +311,20 @@ mod tests {
         for &n in &[1e-5, 1e-9, 1.0 - 1e-9, 0.0627, 0.5] {
             orbit(n);
         }
+    }
+
+    /// Found by Kani: a span past f64's range made the linear fraction
+    /// inf/inf — NaN, which must never reach a host.
+    #[test]
+    fn a_range_wider_than_f64_normalizes_finitely() {
+        let r = Range::linear(-1e308, 1e308);
+        for v in [-1e308, -1.0, 0.0, 3e307, 1e308, f64::INFINITY] {
+            let n = r.normalize(v);
+            assert!((0.0..=1.0).contains(&n), "{v} → {n}");
+        }
+        assert_eq!(r.normalize(0.0), 0.5);
+        assert_eq!(r.denormalize(0.5), 0.0);
+        assert!(r.denormalize(0.75).is_finite());
     }
 
     #[test]

@@ -25,7 +25,7 @@
 use std::vec;
 use std::vec::Vec;
 
-use stave_ui::scene::{Brush, Font, Image, Op, Pt, Scene};
+use stave_ui::scene::{Brush, FillRule, Font, Image, Op, Pt, Scene};
 use stave_ui::style::Color;
 
 pub mod png;
@@ -136,13 +136,13 @@ pub fn render(scene: &Scene, scale: f64, canvas: &mut Canvas, text: &mut dyn Tex
 /// One drawing op (not a clip) into `canvas`.
 fn draw(op: &Op, scale: f64, canvas: &mut Canvas, text: &mut dyn TextPainter) {
     match op {
-        Op::Fill { path, brush } => {
+        Op::Fill { path, brush, rule } => {
             let polys: Vec<Vec<Pt>> = path::flatten(path, scale).into_iter().map(|p| p.pts).collect();
-            fill(canvas, &polys, brush, scale);
+            fill(canvas, &polys, brush, scale, *rule);
         }
         Op::Stroke { path, stroke } => {
             let polys = stroke::stroke(&path::flatten(path, scale), stroke.width * scale, stroke.cap);
-            fill(canvas, &polys, &Brush::Solid(stroke.color), scale);
+            fill(canvas, &polys, &Brush::Solid(stroke.color), scale, FillRule::NonZero);
         }
         Op::Text { at, text: s, size, color, font } => {
             text.text(canvas, Pt { x: at.x * scale, y: at.y * scale }, s, size * scale, *color, font);
@@ -235,13 +235,13 @@ fn gradient_at(stops: &[(f64, Color)], t: f64) -> Color {
 }
 
 /// Fill polygons (device px) with a brush (gradient ends in points).
-fn fill(canvas: &mut Canvas, polys: &[Vec<Pt>], brush: &Brush, scale: f64) {
+fn fill(canvas: &mut Canvas, polys: &[Vec<Pt>], brush: &Brush, scale: f64, rule: FillRule) {
     let Some(b) = coverage::bounds(polys) else { return };
     let Some(mut mask) = Mask::new(b, canvas.w, canvas.h) else { return };
     for p in polys {
         mask.polygon(p);
     }
-    mask.finish();
+    mask.finish_with(rule);
     let (cw, x0, y0) = (canvas.w, mask.x0 as usize, mask.y0 as usize);
     match brush {
         Brush::Solid(c) => {

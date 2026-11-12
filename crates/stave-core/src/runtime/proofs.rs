@@ -81,10 +81,10 @@ fn param_changes_sort_stably_by_frame() {
     assert_eq!(seen, (1 << N) - 1, "a permutation");
 }
 
-/// A host channel list: up to two channels, each null or one of the
-/// host buffer's channels.
-fn host_list(base: *mut f32, out: &mut [*mut f32; 2]) -> usize {
-    let n: usize = kani::any_where(|n: &usize| *n <= 2);
+/// A host channel list: up to `max` (≤ 2) channels, each null or one of
+/// the host buffer's channels.
+fn host_list(base: *mut f32, out: &mut [*mut f32; 2], max: usize) -> usize {
+    let n: usize = kani::any_where(|n: &usize| *n <= max);
     for slot in out.iter_mut().take(n) {
         let c: usize = kani::any_where(|c: &usize| *c < CHANNELS);
         *slot = if kani::any() {
@@ -113,15 +113,17 @@ fn split_for_block_hands_the_plugin_sound_buffers() {
     let base = host.as_mut_ptr();
     let mut input = [core::ptr::null_mut(); 2];
     let mut output = [core::ptr::null_mut(); 2];
-    let n_in = host_list(base, &mut input);
-    let n_out = host_list(base, &mut output);
+    // One input is enough to alias any output (in place) or be null.
+    let n_in = host_list(base, &mut input, 1);
+    let n_out = host_list(base, &mut output, 2);
     let (input, output) = (&input[..n_in], &output[..n_out]);
     // The host's contract: no two outputs overlap.
     if n_out == 2 && !output[0].is_null() {
         kani::assume(output[0] != output[1]);
     }
     let frames: usize = kani::any_where(|f: &usize| *f <= HOST);
-    let max_frames: usize = kani::any_where(|f: &usize| (1..HOST).contains(f));
+    // Prepared for 2 frames: blocks of 0–3 frames fit or are cut.
+    let max_frames = 2;
 
     let mut state = ProcessorState::new(Stereo);
     // `prepare` without the plugin's own work: the scratch is what is
@@ -192,7 +194,7 @@ fn an_unprepared_state_never_splits() {
     let mut host = [0.0f32; CHANNELS * HOST];
     let base = host.as_mut_ptr();
     let mut output = [core::ptr::null_mut(); 2];
-    let n_out = host_list(base, &mut output);
+    let n_out = host_list(base, &mut output, 2);
     let frames: usize = kani::any_where(|f: &usize| *f <= HOST);
     let mut state = ProcessorState::new(Stereo);
     if kani::any() {

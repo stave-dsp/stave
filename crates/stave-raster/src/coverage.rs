@@ -11,7 +11,7 @@
 use std::vec;
 use std::vec::Vec;
 
-use stave_ui::scene::Pt;
+use stave_ui::scene::{FillRule, Pt};
 
 /// A coverage mask over the pixel rect `x0..x0+w`, `y0..y0+h`.
 pub struct Mask {
@@ -31,8 +31,11 @@ impl Mask {
     pub fn new(bounds: (f64, f64, f64, f64), cw: usize, ch: usize) -> Option<Self> {
         let x0 = (bounds.0.floor() as i64).max(0);
         let y0 = (bounds.1.floor() as i64).max(0);
-        let x1 = (bounds.2.ceil() as i64 + 1).min(cw as i64);
-        let y1 = (bounds.3.ceil() as i64 + 1).min(ch as i64);
+        // Saturating: an extent at infinity (`as` saturates it to
+        // i64::MAX) covers the canvas, it does not wrap to nothing.
+        // Found by the `raster` fuzz target.
+        let x1 = (bounds.2.ceil() as i64).saturating_add(1).min(cw as i64);
+        let y1 = (bounds.3.ceil() as i64).saturating_add(1).min(ch as i64);
         if x1 <= x0 || y1 <= y0 {
             return None;
         }
@@ -119,14 +122,35 @@ impl Mask {
         self.acc[base + ri + 1] += d * (1.0 - prev) as f32;
     }
 
-    /// Prefix-sum every row into coverage (|winding| clamped to 1).
+    /// Prefix-sum every row into coverage under the nonzero rule.
     pub fn finish(&mut self) {
+        self.finish_with(FillRule::NonZero);
+    }
+
+    /// Prefix-sum every row into coverage: the row's running sum is the
+    /// pixel's (area-weighted) winding. Nonzero clamps |winding| to one;
+    /// even-odd folds it onto a triangle wave, 0 at even windings and 1
+    /// at odd ones, so an area wound twice is a hole.
+    pub fn finish_with(&mut self, rule: FillRule) {
         self.cov = vec![0.0; self.w * self.h];
         for row in 0..self.h {
             let mut s = 0.0f32;
             for x in 0..self.w {
                 s += self.acc[row * self.stride + x];
-                self.cov[row * self.w + x] = s.abs().min(1.0);
+                let w = s.abs();
+                self.cov[row * self.w + x] = match rule {
+                    FillRule::NonZero => w.min(1.0),
+                    FillRule::EvenOdd => {
+                        let m = w % 2.0;
+                        if m.is_nan() {
+                            1.0
+                        } else if m > 1.0 {
+                            2.0 - m
+                        } else {
+                            m
+                        }
+                    }
+                };
             }
         }
     }
@@ -209,30 +233,81 @@ mod tests {
     }
 }
 
-/// Kani: on any canvas up to 3×3, an edge between ANY two points (NaN,
-/// the infinities and points far off the canvas included) deposits only
-/// inside the mask's accumulator — no index past it, no panic — and
-/// every finished pixel's coverage is in [0, 1].
-#[cfg(kani)]
-mod proofs {
+/// T9: a self-overlapping star (a pentagram) has a hole under the
+/// even-odd rule — its pentagon centre is wound twice — and none under
+/// nonzero.
+#[cfg(test)]
+mod fill_rule {
     use super::*;
 
-    #[kani::proof]
-    #[kani::unwind(8)]
-    fn any_edge_stays_inside_the_mask() {
-        let (cw, ch): (usize, usize) = (kani::any(), kani::any());
-        kani::assume(cw <= 3 && ch <= 3);
-        let a = Pt { x: kani::any(), y: kani::any() };
-        let b = Pt { x: kani::any(), y: kani::any() };
-        let pts = [a, b];
-        let Some(bounds) = bounds(&[pts.to_vec()]) else {
-            unreachable!("two points have bounds");
-        };
-        let Some(mut mask) = Mask::new(bounds, cw, ch) else {
-            return;
-        };
+    fn star_centre(rule: FillRule) -> f32 {
+        let pts: Vec<Pt> = (0..5)
+            .map(|k| {
+                let a = -std::f64::consts::FRAC_PI_2 + f64::from(k * 2) * std::f64::consts::TAU / 5.0;
+                Pt { x: 20.0 + 18.0 * a.cos(), y: 20.0 + 18.0 * a.sin() }
+            })
+            .collect();
+        let mut mask = Mask::new(bounds(std::slice::from_ref(&pts)).unwrap(), 40, 40).unwrap();
+        mask.polygon(&pts);
+        mask.finish_with(rule);
+        let (x, y) = (20 - mask.x0 as usize, 20 - mask.y0 as usize);
+        mask.cov[y * mask.w + x]
+    }
+
+    #[test]
+    fn a_pentagram_has_a_hole_under_even_odd() {
+        assert_eq!(star_centre(FillRule::NonZero), 1.0);
+        assert!(star_centre(FillRule::EvenOdd) < 1e-3);
+    }
+}
+
+/// Found by the `raster` fuzz target: a shape reaching infinity covered
+/// nothing (its extent wrapped past i64::MAX) instead of the canvas.
+#[cfg(test)]
+mod infinite_extent {
+    use super::*;
+
+    #[test]
+    fn a_shape_reaching_infinity_still_covers_the_canvas() {
+        let pts = [Pt { x: 0.0, y: 0.0 }, Pt { x: f64::INFINITY, y: 0.0 }, Pt { x: f64::INFINITY, y: f64::INFINITY }, Pt { x: 0.0, y: f64::INFINITY }];
+        let mut mask = Mask::new(bounds(&[pts.to_vec()]).unwrap(), 4, 4).expect("on the canvas");
+        assert_eq!((mask.w, mask.h), (4, 4));
         mask.polygon(&pts);
         mask.finish();
-        assert!(mask.cov.iter().all(|c| (0.0..=1.0).contains(c)));
+    }
+}
+
+/// Every edge on a grid of representative coordinates — NaN, the
+/// infinities, off-canvas, on and between pixel boundaries — on every
+/// canvas up to 3×3, exhaustively (a few thousand cases, milliseconds):
+/// deposits stay inside the mask (an index past it panics), and every
+/// finished pixel's coverage is in [0, 1]. Arbitrary f64s are the
+/// `raster` fuzz target's; Kani's float encoding does not finish here.
+#[cfg(test)]
+mod exhaustive {
+    use super::*;
+
+    const COORDS: [f64; 9] = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -2.5, -0.25, 0.0, 1.0, 1.75, 4.5];
+
+    #[test]
+    #[cfg_attr(miri, ignore = "safe code: the native run covers it")]
+    fn every_grid_edge_stays_inside_the_mask() {
+        for (cw, ch) in (0..=3).flat_map(|w| (0..=3).map(move |h| (w, h))) {
+            for &ax in &COORDS {
+                for &ay in &COORDS {
+                    for &bx in &COORDS {
+                        for &by in &COORDS {
+                            let pts = [Pt { x: ax, y: ay }, Pt { x: bx, y: by }, Pt { x: ax, y: by }];
+                            let Some(mut mask) = Mask::new(bounds(&[pts.to_vec()]).unwrap(), cw, ch) else {
+                                continue;
+                            };
+                            mask.polygon(&pts);
+                            mask.finish();
+                            assert!(mask.cov.iter().all(|c| (0.0..=1.0).contains(c)), "{pts:?}");
+                        }
+                    }
+                }
+            }
+        }
     }
 }
