@@ -1,0 +1,4 @@
+# Characterisation plans and tables (DSP.md R17) are compared as text by
+# the tests and by scripts/ngspice-simulate.py: LF on every checkout.
+crates/stave-test/spice/*.plan text eol=lf
+crates/stave-test/spice/*.table text eol=lf

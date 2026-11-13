@@ -64,7 +64,8 @@ fn plans_are_current() {
         } else {
             Plan::circuit(c.name, old.input, old.knee.unwrap(), old.settle_seconds)
         };
-        if text != &now.describe() {
+        // Line endings as committed: a Windows checkout may hand back CRLF.
+        if text.replace("\r\n", "\n") != now.describe() {
             stale.push(c.name.to_string());
         }
     }
