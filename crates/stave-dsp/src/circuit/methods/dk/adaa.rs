@@ -31,9 +31,11 @@ pub enum Mean {
     /// device with a closed-form antiderivative (diodes, a single one
     /// behind its series resistance included): exact, one solve a sample.
     ClosedForm,
-    /// Anything else: the line integral by Gauss–Lobatto quadrature on
-    /// `nodes` points, the two ends being this sample's and the last
-    /// sample's solves, so `nodes − 1` solves a sample.
+    /// Anything else, a junction with stored charge included (held to
+    /// ngspice: `methods::adaa`'s Measured): the line integral by
+    /// Gauss–Lobatto quadrature on `nodes` points, the two ends being
+    /// this sample's and the last sample's solves, so `nodes − 1` solves
+    /// a sample.
     Quadrature { nodes: usize },
 }
 

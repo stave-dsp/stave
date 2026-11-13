@@ -129,6 +129,17 @@
 //! 10 kHz at 48 kHz, −0.5 dB at 2×); `crates/stave-test/tests/adaa_matches_ngspice.rs`
 //! holds the in-band error against ngspice.
 //!
+//! A junction with stored charge (DSP.md R11: depletion `Cjo`, transit
+//! time `TT`) has no closed-form mean and always takes the quadrature.
+//! `crates/stave-test/tests/adaa_matches_ngspice.rs::charged_junction_with_adaa_matches_ngspice`
+//! holds it to ngspice on the 1N4148 pair at 10 kHz with no shunt
+//! capacitor, where the charge alone stores: ADAA's error is 5.4e-2,
+//! 9.1e-4 and 2.3e-4 at 4×, 16× and 32× (plain: 3.5e-3, 3.7e-4,
+//! 5.3e-6), within 1.41× of ADAA's own error on the same pair with its
+//! charge removed (memoryless, so exactly solvable): the quadrature
+//! carries the charge without adding error of its own, and what ADAA
+//! costs in-band is its averaging filter's, falling as h².
+//!
 //! ```
 //! use stave_dsp::circuit::methods::adaa::one_port_mean;
 //!
