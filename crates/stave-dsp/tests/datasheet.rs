@@ -100,6 +100,14 @@
 //! microphones of 8192-tap captures at zero latency 95; a close
 //! microphone on the linear driver with its breakup 54; the live room's
 //! six reflections and its late network 278.
+//!
+//! H10 (the reference machine, 2026-11-13, load 2.6): a string is its two
+//! interpolated reads and its loss filter, 16 ns/sample plucked, 41 with
+//! eight dispersion sections, 18 bowed (the friction curve is a closed-form
+//! quadratic); a tube 98 with a reed (a bracketed Newton solve each
+//! sample), 105 conical, 38 with lips (closed form); a 100 Hz drumhead to
+//! 5 kHz (1799 modes) 747, the plate's ~0.42 ns a mode; a free bar at
+//! 100 Hz (19 modes) 11.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
@@ -487,6 +495,66 @@ fn primitive_datasheet() {
     let mut room = Room::new(Shoebox::LIVE_ROOM);
     room.prepare(sr);
     bench("Room (live room, early + late)", &input, |x| room.tick(x));
+
+    // H10: instruments. Strings (two interpolated reads, the loss
+    // filter, the dispersion sections; the bow's quadratic), tubes (the
+    // valve's solve per sample), a drumhead and a bar as their modes.
+    {
+        use stave_dsp::physical::bar::{Bar, Beam, Boundary, Material};
+        use stave_dsp::physical::membrane::{Drumhead, Loss, Membrane};
+        use stave_dsp::physical::string::{self, Bow};
+        use stave_dsp::physical::tube::{self, Bore, Shape, Valve};
+        let mut plucked: string::Waveguide = string::Waveguide::new(units::hz(40.0), units::hz(110.0));
+        plucked.prepare(sr);
+        plucked.pluck(0.5, units::seconds(0.001));
+        bench("String (plucked, Lagrange3)", &input, |x| plucked.tick(0.01 * x));
+        let mut stiff: string::Waveguide = string::Waveguide::new(units::hz(40.0), units::hz(110.0));
+        stiff.set_inharmonicity(4e-4);
+        stiff.prepare(sr);
+        bench("String (stiff, 8 sections)", &input, |x| stiff.tick(0.01 * x));
+        let mut bowed: string::Waveguide = string::Waveguide::new(units::hz(40.0), units::hz(196.0));
+        bowed.set_position(0.1);
+        bowed.prepare(sr);
+        bowed.set_bow(Some(Bow { force: 0.5, velocity: 0.2 }));
+        bench("String (bowed)", &input, |_| bowed.tick(0.0));
+        for (name, bore, valve) in [
+            ("Tube (clarinet, reed)", Bore { length: 0.6, radius: 0.0075, shape: Shape::Cylinder }, Valve::Reed),
+            ("Tube (cone, reed)", Bore { length: 0.6, radius: 0.02, shape: Shape::Cone { apex: 0.05 } }, Valve::Reed),
+            (
+                "Tube (brass, lips)",
+                Bore { length: 1.4, radius: 0.006, shape: Shape::Cylinder },
+                Valve::Lip { frequency: units::hz(275.0), q: 20.0 },
+            ),
+        ] {
+            let mut t: tube::Waveguide = tube::Waveguide::new(bore, valve);
+            t.set_embouchure(if matches!(valve, Valve::Reed) { 0.3 } else { 0.1 });
+            t.set_blow(0.6);
+            t.prepare(sr);
+            bench(name, &input, |_| t.tick(0.0));
+        }
+        let loss = Loss::two_point(units::hz(100.0), units::seconds(1.5), units::hz(2_000.0), units::seconds(0.4)).unwrap();
+        let mut tom = Membrane::new(Drumhead::tuned(0.18, 0.26, units::hz(100.0)), loss);
+        tom.prepare(sr);
+        if sheet::timed() {
+            println!("  Membrane (to 5 kHz): {} modes", tom.modes().len());
+        }
+        let block: Vec<f32> = input[..512].to_vec();
+        let mut buf = block.clone();
+        bench_points("Membrane (to 5 kHz)", block.len(), || {
+            buf.copy_from_slice(&block);
+            tom.process(&mut buf);
+        });
+        let key = Beam::tuned(Material::ALUMINIUM, 0.01, Boundary::Free, units::hz(100.0));
+        let mut bar = Bar::new(key, Boundary::Free, loss);
+        bar.prepare(sr);
+        if sheet::timed() {
+            println!("  Bar (free, 100 Hz): {} modes", bar.modes().len());
+        }
+        bench_points("Bar (free, 100 Hz)", block.len(), || {
+            buf.copy_from_slice(&block);
+            bar.process(&mut buf);
+        });
+    }
 
     // E7: photocells. The cell's TR-BDF2 step under a held LED current,
     // and under a 5 Hz tremolo's sweep (the Newton iterations move).

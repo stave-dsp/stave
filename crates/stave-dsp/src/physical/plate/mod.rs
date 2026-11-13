@@ -22,12 +22,11 @@
 //! decay above 500 Hz is therefore a stated voicing choice.
 
 mod geometry;
-mod lanes;
 
 pub use geometry::{Geometry, Loss, Material, Output, Point};
 
+use crate::physical::lanes::{self, Lanes};
 use geometry::LN_1000;
-use lanes::Lanes;
 
 use crate::kernel::node::{Stage, Tail};
 use crate::units::{Hz, Seconds};
@@ -89,7 +88,7 @@ impl Mode {
 /// `(σ² − ω²) Im z − 2σω Re z` (the derivatives, exact; the Dirac at
 /// `t = 0` they carry sums over modes to the drive point's delta, zero
 /// at a pickup elsewhere). The bank runs eight modes to a group in f32,
-/// block by block (lanes.rs). Each pickup's output is scaled so its
+/// block by block (`physical/lanes.rs`, shared with the membrane and the bar). Each pickup's output is scaled so its
 /// impulse response carries unit energy (the modes' energies
 /// `|w|²/2(1 − r²)` summed; [`scale`](Self::scale) is that factor, to
 /// recover SI units).

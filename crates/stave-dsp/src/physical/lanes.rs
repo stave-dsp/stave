@@ -3,16 +3,16 @@
 //! coefficients and state stay in registers.
 
 /// Modes per group: one AVX register of `f32`, two NEON ones.
-pub(super) const LANES: usize = 8;
+pub(in crate::physical) const LANES: usize = 8;
 /// Samples between denormal flushes of the state, and the longest run.
-pub(super) const BLOCK: usize = 64;
+pub(in crate::physical) const BLOCK: usize = 64;
 
 type V = [f32; LANES];
 
 /// Per group: the rotation `r·e^(jωT)`, two pickups' output weights on
 /// the state's real and imaginary parts, and the state.
 #[derive(Clone, Debug, Default)]
-pub(super) struct Lanes {
+pub(in crate::physical) struct Lanes {
     rot_re: Vec<V>,
     rot_im: Vec<V>,
     /// Left real, left imaginary, right real, right imaginary.
@@ -25,7 +25,7 @@ pub(super) struct Lanes {
 
 impl Lanes {
     /// Room for `modes` modes, all silent (allocates).
-    pub(super) fn allocate(&mut self, modes: usize) {
+    pub(in crate::physical) fn allocate(&mut self, modes: usize) {
         let groups = modes.div_ceil(LANES);
         let zero = || vec![[0.0f32; LANES]; groups];
         self.rot_re = zero();
@@ -37,28 +37,28 @@ impl Lanes {
     }
 
     /// Mode `i`'s rotation (`r cos ωT`, `r sin ωT`).
-    pub(super) fn set_rotation(&mut self, i: usize, re: f32, im: f32) {
+    pub(in crate::physical) fn set_rotation(&mut self, i: usize, re: f32, im: f32) {
         let (g, l) = (i / LANES, i % LANES);
         self.rot_re[g][l] = re;
         self.rot_im[g][l] = im;
     }
 
     /// Mode `i`'s output weights on `Re z` and `Im z`, left and right.
-    pub(super) fn set_weights(&mut self, i: usize, w: [f32; 4]) {
+    pub(in crate::physical) fn set_weights(&mut self, i: usize, w: [f32; 4]) {
         let (g, l) = (i / LANES, i % LANES);
         for (k, v) in w.into_iter().enumerate() {
             self.weights[k][g][l] = v;
         }
     }
 
-    pub(super) fn reset(&mut self) {
+    pub(in crate::physical) fn reset(&mut self) {
         self.z_re.fill([0.0; LANES]);
         self.z_im.fill([0.0; LANES]);
         self.since_flush = 0;
     }
 
     /// How many samples the next run may take before a flush.
-    pub(super) fn room(&self) -> usize {
+    pub(in crate::physical) fn room(&self) -> usize {
         BLOCK - self.since_flush
     }
 
@@ -68,7 +68,7 @@ impl Lanes {
     /// sample at a time and a block at a time give the same bits: every
     /// lane's operations run in the same order either way.
     #[inline]
-    pub(super) fn run<const STEREO: bool>(&mut self, input: &[f32], left: &mut [f32], right: &mut [f32]) {
+    pub(in crate::physical) fn run<const STEREO: bool>(&mut self, input: &[f32], left: &mut [f32], right: &mut [f32]) {
         let n = input.len();
         debug_assert!(n <= self.room() && left.len() >= n && (!STEREO || right.len() >= n));
         let mut acc_l = [[0.0f32; LANES]; BLOCK];
