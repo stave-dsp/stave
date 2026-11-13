@@ -157,7 +157,10 @@ use stave_dsp::physical::plate::Plate;
 use stave_dsp::physical::speaker::{Driver, LargeSignal, ThieleSmall};
 use stave_dsp::physical::rotary::{Cabinet, Directivity, Radiator, Rotor, Speed, Wall};
 use stave_dsp::physical::spring::{Chirp, Spring, Tank};
-use stave_dsp::physical::tape::{Chowdhury, Flutter, Formulation, Machine, Phase, Playback, Transport};
+use stave_dsp::physical::tape::{
+    Capstan, Chowdhury, Condition, Drift, Flutter, Formulation, Machine, Motor, Phase, Playback, Spacing, Splices,
+    Transport,
+};
 use stave_dsp::circuit::devices::photocell::{Najnudel, Vactrol};
 use stave_dsp::circuit::topologies::opto_compressor::OptoCompressor;
 use stave_dsp::units;
@@ -593,6 +596,29 @@ fn primitive_datasheet() {
     let mut flutter = Flutter::new(Transport::AKAI_4000D);
     flutter.prepare(sr);
     bench("Flutter (Akai 4000D)", &input, |x| flutter.tick(x));
+
+    // H5: the transport. The capstan with every process on; the spacing
+    // of a used tape (wear's filter always, dropouts as they come), and
+    // inside a dropout that never ends (the crossfaded redesign every
+    // period: the worst case).
+    let mut capstan = Capstan::new(1)
+        .with_drift(Drift::STEADY)
+        .with_motor(Motor::STUDIO)
+        .with_splices(Splices::EDITED);
+    capstan.prepare(sr);
+    bench("Capstan (steady, studio motor, edited)", &input, |x| capstan.tick(x));
+    let mut used = Spacing::new(Condition::USED, 1);
+    used.prepare(sr);
+    bench("Spacing (used tape)", &input, |x| used.tick(x));
+    let busy = Condition {
+        dropouts_per_minute: 6.0e4,
+        depth_um: 2.0,
+        duration_ms: 3.0,
+        ..Condition::NONE
+    };
+    let mut dropping = Spacing::new(busy, 1);
+    dropping.prepare(sr);
+    bench("Spacing (in a dropout)", &input, |x| dropping.tick(x));
 
     // H8: vintage digital. A word-length reduction with TPDF dither,
     // and shaped; a sampler's converters at its own clock; an early

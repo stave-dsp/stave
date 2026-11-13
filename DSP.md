@@ -56,7 +56,8 @@ commit hashes never reach main: cite the PR, never a branch commit.
   - Every Newton topology converges under its cap at the host rate
     (`solver_conformance.rs`).
 - **Physical** (`physical/`): spring tank (H2), modal plate (H3), rotary
-  speaker (H4), tape record/playback/flutter (E8); instruments (H10):
+  speaker (H4), tape record/playback/flutter (E8) and its transport's
+  drift, start and stop, splices, dropouts and wear (H5); instruments (H10):
   stiff strings plucked, struck and bowed, and reed and lip tubes, as
   waveguides; drumheads and bars as modes.
 - **Effects** (`effects/`): reverbs (FDN with per-band T60, Dattorro,

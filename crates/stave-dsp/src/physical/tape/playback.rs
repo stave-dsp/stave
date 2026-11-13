@@ -177,7 +177,7 @@ impl Playback {
 /// `Σ a[k]·b[k]` in eight running sums: a fixed order the compiler
 /// vectorises (one sum is a chain of 1029 dependent adds).
 #[inline]
-fn dot(a: &[f64], b: &[f64]) -> f64 {
+pub(super) fn dot(a: &[f64], b: &[f64]) -> f64 {
     let mut sums = [0.0f64; 8];
     let (ca, cb) = (a.chunks_exact(8), b.chunks_exact(8));
     let (ra, rb) = (ca.remainder(), cb.remainder());
