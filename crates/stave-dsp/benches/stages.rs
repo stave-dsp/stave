@@ -1,9 +1,10 @@
 //! A representative set of stave-dsp stages as one runnable harness
-//! (DSP.md P2, P3): a filter, the SVF, the oversampler, the FFT and the
-//! convolver, the triode stage and the diode clipper, one plugin-sized
-//! chain, and the expensive models — the tape machine and the two
-//! op-amp pedals solved whole by `Circuit<Dk>` — each run block by block
-//! over the same seeded noise.
+//! (DSP.md P2, P3): a filter, the SVF, the oversampler (2× to 16×, the
+//! factors circuits ship at), the FFT and the convolver, the triode
+//! stage and the diode clipper, one plugin-sized chain, the expensive
+//! models — the tape machine and the two op-amp pedals solved whole by
+//! `Circuit<Dk>` — and Neural Amp Modeler's standard WaveNet, each run
+//! block by block over the same seeded noise.
 //!
 //! ```text
 //! stages list                   the stage ids, one per line, with what each is
@@ -25,10 +26,11 @@ use std::time::{Duration, Instant};
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::{topologies, Circuit, Netlist};
 use stave_dsp::physical::tape::{Chowdhury, Machine};
+use stave_dsp::learned::nam;
 use stave_dsp::primitives::spectral::{Complex, Head};
 use stave_dsp::{
     Biquad, Convolver, DiodeClipper, DiodeClipperConfig, FilterSpec, Fft, ImpulseResponse,
-    Oversampled2x, PairSolver, PassiveToneControlPositions, PassiveToneStack,
+    Oversampled, Oversampled2x, PairSolver, PassiveToneControlPositions, PassiveToneStack,
     PassiveToneStackComponents, Serial, Shockley, Stage, Svf, Triode,
 };
 
@@ -113,6 +115,37 @@ fn driven(netlist: Netlist) -> Process {
     stage(c)
 }
 
+/// Neural Amp Modeler's standard WaveNet (16 + 8 channels, 2 × 10
+/// layers, kernel 3, dilations 1..512), weights in ±0.5 from an LCG —
+/// the datasheet's "WaveNet (NAM standard)".
+fn wavenet() -> Process {
+    let array = |input: u32, channels: u32, head: u32, bias: bool| {
+        format!(
+            r#"{{"input_size":{input},"condition_size":1,"channels":{channels},"head_size":{head},
+            "kernel_size":3,"dilations":[1,2,4,8,16,32,64,128,256,512],"activation":"Tanh","gated":false,"head_bias":{bias}}}"#
+        )
+    };
+    let template = format!(
+        r#"{{"version":"0.5.4","architecture":"WaveNet","sample_rate":48000,
+        "config":{{"layers":[{},{}],"head":null,"head_scale":0.02}},"weights":WEIGHTS}}"#,
+        array(1, 16, 8, false),
+        array(16, 8, 1, true)
+    );
+    let expected = match nam::parse(&template.replace("WEIGHTS", "[]")) {
+        Err(stave_dsp::learned::LoadError::Weights { expected, .. }) => expected,
+        other => panic!("{other:?}"),
+    };
+    let mut lcg: u32 = 11;
+    let w: Vec<String> = (0..expected)
+        .map(|_| {
+            lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
+            format!("{:.3}", (lcg >> 8) as f32 / (1u32 << 24) as f32 - 0.5)
+        })
+        .collect();
+    let file = template.replace("WEIGHTS", &format!("[{}]", w.join(",")));
+    stage(nam::parse(&file).expect("the network loads").network)
+}
+
 const STAGES: &[Entry] = &[
     Entry {
         id: "biquad",
@@ -137,6 +170,37 @@ const STAGES: &[Entry] = &[
         what: "Oversampled2x::front(nested(..)) around nothing",
         block: BLOCK,
         build: || stage(Oversampled2x::front(Oversampled2x::nested(Wire))),
+    },
+    Entry {
+        id: "oversampled8x",
+        what: "Oversampled::linear(.., 8) around nothing (three half-band pairs)",
+        block: BLOCK,
+        build: || stage(Oversampled::linear(Wire, 8)),
+    },
+    Entry {
+        id: "oversampled16x",
+        what: "Oversampled::linear(.., 16) around nothing (four half-band pairs)",
+        block: BLOCK,
+        build: || stage(Oversampled::linear(Wire, 16)),
+    },
+    Entry {
+        id: "fft-complex-1024",
+        what: "Fft<f32> complex 1024, forward and inverse (per point)",
+        block: 1024,
+        build: || {
+            let fft = Fft::<f32>::new(1024);
+            let mut data = vec![Complex::default(); 1024];
+            Box::new(move |b| {
+                for (z, &x) in data.iter_mut().zip(b.iter()) {
+                    *z = Complex::new(x, 0.0);
+                }
+                fft.forward(&mut data);
+                fft.inverse(&mut data);
+                for (x, z) in b.iter_mut().zip(&data) {
+                    *x = z.re * (1.0 / 1024.0);
+                }
+            })
+        },
     },
     Entry {
         id: "fft-real-4096",
@@ -168,6 +232,12 @@ const STAGES: &[Entry] = &[
         what: "Convolver::uniform, 1024 taps, B=64, direct head (zero latency)",
         block: BLOCK,
         build: || convolver(1_024, 64, Head::Direct),
+    },
+    Entry {
+        id: "convolver-96k",
+        what: "Convolver::uniform, 96000 taps, B=256 (two seconds of hall)",
+        block: BLOCK,
+        build: || convolver(96_000, 256, Head::Partitioned),
     },
     Entry {
         id: "triode",
@@ -218,6 +288,12 @@ const STAGES: &[Entry] = &[
         what: "Circuit<Dk> MXR Phase 90 (LM741) at 3.4 V gates, the whole netlist",
         block: BLOCK,
         build: || driven(topologies::mxr_phase90(3.4)),
+    },
+    Entry {
+        id: "wavenet",
+        what: "WaveNet, Neural Amp Modeler's standard size (16 + 8 channels, 2 x 10 layers)",
+        block: BLOCK,
+        build: wavenet,
     },
 ];
 

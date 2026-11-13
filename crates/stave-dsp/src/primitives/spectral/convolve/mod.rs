@@ -36,6 +36,7 @@ pub use worker::{Inline, Worker};
 
 use super::impulse_response::ImpulseResponse;
 use crate::kernel::node::{Stage, Tail};
+use crate::kernel::simd::Lanes;
 use crate::units::SampleRate;
 use schedule::schedule;
 use segment::{Segment, SegmentPath, Split};
@@ -61,20 +62,21 @@ struct HeadPath {
     taps: Vec<f32>,
 }
 
-/// `Σ a[k]·b[k]` in eight running sums (a fixed order, so the tick and
-/// block paths agree bit for bit, and one the compiler vectorises).
+/// `Σ a[k]·b[k]` in eight running sums on [`Lanes`] (a fixed order, so
+/// the tick and block paths agree bit for bit): the lanes folded in half,
+/// `((s0 + s4) + (s1 + s5)) + ((s2 + s6) + (s3 + s7))`, then the tail.
 #[inline]
 fn dot(a: &[f32], b: &[f32]) -> f32 {
-    let mut sums = [0.0f32; 8];
+    let mut sums = Lanes::<f32, 8>::default();
     let (ca, cb) = (a.chunks_exact(8), b.chunks_exact(8));
     let (ra, rb) = (ca.remainder(), cb.remainder());
     for (x, y) in ca.zip(cb) {
-        for k in 0..8 {
-            sums[k] += x[k] * y[k];
-        }
+        sums = sums.mul_add(Lanes::load(x), Lanes::load(y));
     }
     let tail: f32 = ra.iter().zip(rb).map(|(x, y)| x * y).sum();
-    ((sums[0] + sums[4]) + (sums[1] + sums[5])) + ((sums[2] + sums[6]) + (sums[3] + sums[7])) + tail
+    let s = sums.0;
+    let folded = Lanes::<f32, 4>([s[0], s[1], s[2], s[3]]) + Lanes([s[4], s[5], s[6], s[7]]);
+    folded.sum() + tail
 }
 
 /// Convolution with an [`ImpulseResponse`] of any length, in blocks of a
@@ -119,11 +121,11 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
 /// # Cost
 ///
 /// `tests/datasheet.rs`, "Convolver", per sample of mono audio on an
-/// Apple M-series core: at a 256-sample partition about 15 ns for 1 k
-/// taps, 34 for 16 k and 146 for 96 k (two seconds at 48 kHz); the
-/// direct head at a 64-sample partition about 30 ns for 1 k taps and 149
+/// Apple M-series core: at a 256-sample partition about 14 ns for 1 k
+/// taps, 32 for 16 k and 120 for 96 k (two seconds at 48 kHz); the
+/// direct head at a 64-sample partition about 27 ns for 1 k taps and 106
 /// for 16 k. Non-uniform with the direct head at a 64-sample partition:
-/// about 53 ns for 16 k taps (largest 4096) and 68 for 96 k (largest
+/// about 43 ns for 16 k taps (largest 4096) and 57 for 96 k (largest
 /// 8192), with a worst 64-sample block of about 0.36 and 1.2 µs per
 /// sample. A true-stereo response costs four paths, two
 /// transforms each way. The non-uniform schedule runs every size's step

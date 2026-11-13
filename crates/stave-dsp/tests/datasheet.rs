@@ -108,6 +108,16 @@
 //! sample), 105 conical, 38 with lips (closed form); a 100 Hz drumhead to
 //! 5 kHz (1799 modes) 747, the plate's ~0.42 ns a mode; a free bar at
 //! 100 Hz (19 modes) 11.
+//!
+//! P4 (the reference machine, 2026-11-13, load 6.7 before, 2.4 after;
+//! every output bit for bit as before): the linear half-bands eight
+//! outputs to a lane group, the FFT's radix-4 passes four butterflies at
+//! a time, WaveNet's `process` four frames a layer. Oversampled linear
+//! (wire) 2× 42.3 → 16.3, 4× 87.4 → 34.9, 8× 131.1 → 52.6, 16× 73.9;
+//! Fft f32 complex 4096 6.2 → 4.6, real 4096 3.3 → 2.6; through the FFT,
+//! Convolver 96000 taps B=256 184 → 120, Fir 127 taps B=64 direct 28.2 →
+//! 23.0, Stft 4096/1024 29.1 → 22.9; WaveNet (NAM standard) 3038 → 2658
+//! by tick, 1891 through `process`.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
@@ -715,6 +725,7 @@ fn primitive_datasheet() {
         ("linear", 4),
         ("linear", 6),
         ("linear", 8),
+        ("linear", 16),
         ("minimum", 2),
         ("minimum", 4),
         ("minimum", 8),
@@ -927,6 +938,12 @@ fn primitive_datasheet() {
     ]));
     standard.prepare(sr);
     bench("WaveNet (NAM standard)", &input, |x| standard.tick(x));
+    // The same network through `process`: four frames a layer at a time
+    // (DSP.md P4), the tick loop's samples bit for bit.
+    let mut block = input[..4_096].to_vec();
+    bench_points("WaveNet (NAM standard, process)", block.len(), || {
+        standard.process(black_box(&mut block))
+    });
     let mut lite = network(&wavenet(vec![
         array(1, 12, 6, "[1,2,4,8,16,32,64]", false),
         array(12, 6, 1, "[128,256,512,1,2,4,8,16,32,64,128,256,512]", true),

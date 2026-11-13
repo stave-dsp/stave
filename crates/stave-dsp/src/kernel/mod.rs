@@ -30,4 +30,5 @@ pub mod parallel;
 pub(crate) mod resample;
 pub(crate) mod ring;
 pub mod sequence;
+pub(crate) mod simd;
 pub mod voices;

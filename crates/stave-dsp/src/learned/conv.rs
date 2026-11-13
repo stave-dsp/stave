@@ -5,17 +5,24 @@
 //! PyTorch's `Conv1d` (valid, stride 1) with output aligned to the last
 //! input: `y[t][o] = b[o] + Σ_k Σ_i w[o][i][k] · x[t − (K−1−k)·d][i]`.
 //!
-//! Outputs are computed [`LANES`] at a time into a fixed-size
-//! accumulator that stays in registers; weights are stored in that
-//! order, `[group][tap][input][lane]` (zero-padded past the last output),
-//! so the loop streams them once and the compiler vectorises the lanes
-//! without reassociating any sum. Each output still accumulates
-//! `bias + Σ_k Σ_i` in the same order, whatever the width.
+//! Outputs are computed [`LANES`] at a time into [`Lanes`] accumulators
+//! that stay in registers; weights are stored in that order,
+//! `[group][tap][input][lane]` (zero-padded past the last output), so the
+//! loop streams them once and the lanes vectorise without reassociating
+//! any sum. Up to [`FRAMES`] consecutive frames run at once (DSP.md
+//! P4): each weight lane group is loaded once and multiplied into every
+//! frame's accumulator, which also gives the core that many independent
+//! sums to overlap. Each output still accumulates `bias + Σ_k Σ_i` in
+//! the same order, whatever the width or the frame count.
 
 use super::error::Weights;
+use crate::kernel::simd::Lanes;
 
 /// Outputs per accumulator block: two 128-bit or one 256-bit vector.
 pub(crate) const LANES: usize = 8;
+/// Frames a block runs through a convolution at once.
+pub(crate) const FRAMES: usize = 4;
+type F32s = Lanes<f32, LANES>;
 
 /// A convolution's weights: `taps` kernel taps `dilation` frames apart,
 /// `inputs` → `outputs` channels, an optional bias.
@@ -82,46 +89,50 @@ impl Conv {
     }
 
     /// `out = bias + conv(history)` at the newest frame.
-    #[inline]
+    #[cfg(test)]
     pub(crate) fn apply(&self, history: &History, out: &mut [f32]) {
         let (taps, d) = (self.taps, self.dilation);
-        self.run(|k| history.ago((taps - 1 - k) * d), out, true);
+        self.run_frames::<1>(|_, k| history.ago((taps - 1 - k) * d), out, 0, true);
     }
 
-    /// `out = bias + W · x` for a one-tap convolution (a 1×1).
+    /// For each of `F` frames `f`, `out[f·stride..] = (bias or itself) +
+    /// Σ_k W_k · frame(f, k)`, `LANES` outputs at a time. Each frame of
+    /// `out` is [`padded`] (whole lane groups), so every group is read
+    /// and written whole; lanes past `outputs` hold zeros.
     #[inline]
-    pub(crate) fn apply_now(&self, x: &[f32], out: &mut [f32]) {
-        self.run(|_| x, out, true);
-    }
-
-    /// `out += W · x` for a one-tap convolution, bias ignored.
-    #[inline]
-    pub(crate) fn add_now(&self, x: &[f32], out: &mut [f32]) {
-        self.run(|_| x, out, false);
-    }
-
-    /// `out = (bias or out) + Σ_k W_k · frame(k)`, `LANES` outputs at a
-    /// time. `out` is [`padded`] (whole lane groups), so every group is
-    /// read and written whole; lanes past `outputs` hold zeros.
-    #[inline]
-    fn run<'a>(&self, frame: impl Fn(usize) -> &'a [f32], out: &mut [f32], from_bias: bool) {
+    pub(crate) fn run_frames<'a, const F: usize>(
+        &self,
+        frame: impl Fn(usize, usize) -> &'a [f32],
+        out: &mut [f32],
+        stride: usize,
+        from_bias: bool,
+    ) {
         let per_tap = self.inputs * LANES;
-        let groups = self.bias.len() / LANES;
-        let out = &mut out[..groups * LANES];
-        for ((weights, bias), out) in self
+        for (g, (weights, bias)) in self
             .weights
             .chunks_exact(self.taps * per_tap)
             .zip(self.bias.chunks_exact(LANES))
-            .zip(out.chunks_exact_mut(LANES))
+            .enumerate()
         {
-            let mut acc = lanes(if from_bias { bias } else { out });
-            for (k, tap) in weights.chunks_exact(per_tap).enumerate() {
-                let x = &frame(k)[..self.inputs];
-                for (column, &xi) in tap.chunks_exact(LANES).zip(x) {
-                    acc = axpy(acc, lanes(column), xi);
+            let at = |f: usize| f * stride + g * LANES;
+            let mut acc = [F32s::load(bias); F];
+            if !from_bias {
+                for (f, acc) in acc.iter_mut().enumerate() {
+                    *acc = F32s::load(&out[at(f)..]);
                 }
             }
-            out.copy_from_slice(&acc);
+            for (k, tap) in weights.chunks_exact(per_tap).enumerate() {
+                let x: [&[f32]; F] = core::array::from_fn(|f| &frame(f, k)[..self.inputs]);
+                for (i, column) in tap.chunks_exact(LANES).enumerate() {
+                    let column = F32s::load(column);
+                    for f in 0..F {
+                        acc[f] = acc[f].mul_add(column, F32s::splat(x[f][i]));
+                    }
+                }
+            }
+            for (f, acc) in acc.iter().enumerate() {
+                acc.store(&mut out[at(f)..]);
+            }
         }
     }
 }
@@ -130,24 +141,6 @@ impl Conv {
 /// rounded up to whole lane groups.
 pub(crate) fn padded(n: usize) -> usize {
     n.div_ceil(LANES) * LANES
-}
-
-/// A lane group by value.
-#[inline(always)]
-fn lanes(s: &[f32]) -> [f32; LANES] {
-    let mut v = [0.0; LANES];
-    v.copy_from_slice(&s[..LANES]);
-    v
-}
-
-/// `acc + column · x`, lane by lane, on values (so the accumulator
-/// lives in registers and the lanes vectorise).
-#[inline(always)]
-fn axpy(mut acc: [f32; LANES], column: [f32; LANES], x: f32) -> [f32; LANES] {
-    for j in 0..LANES {
-        acc[j] += column[j] * x;
-    }
-    acc
 }
 
 /// The last `frames` frames of a `width`-channel signal, newest last.
@@ -164,6 +157,11 @@ pub(crate) struct History {
 }
 
 impl History {
+    /// The channels a frame holds.
+    pub(crate) fn width(&self) -> usize {
+        self.width
+    }
+
     pub(crate) fn new(width: usize, frames: usize) -> Self {
         let frames = frames.max(1);
         Self {

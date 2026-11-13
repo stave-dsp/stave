@@ -22,11 +22,23 @@
 //! is 10–50× better" rule): measured against rustfft 6.4 / realfft 3.5
 //! (with their NEON kernels) on an Apple M-series core, rustfft is
 //! 1.6–2.0× faster in `f64` and 2.6–3.3× in `f32` from 64 to 65 536
-//! points — far from the 10–50× that would pay for a dependency. SIMD
-//! for this transform is DSP.md P4.
+//! points — far from the 10–50× that would pay for a dependency.
+//!
+//! SIMD (DSP.md P4): every radix-4 pass of a quarter length of at least
+//! four runs four butterflies at once on the crate's lanes, real and
+//! imaginary parts in separate lanes and the twiddles stored split to
+//! match. Each lane is one butterfly computed exactly as the scalar one
+//! is, so the transform's output is bit for bit what it was.
 
 use core::fmt::Debug;
 use core::ops::{Add, Mul, Neg, Sub};
+
+use crate::kernel::simd::Lanes;
+
+/// Butterflies a radix-4 pass computes at once: one 128-bit register a
+/// part in `f32`, two in `f64`.
+const WIDTH: usize = 4;
+type V<T> = Lanes<T, WIDTH>;
 
 mod sealed {
     pub trait Sealed {}
@@ -203,8 +215,8 @@ pub(crate) fn reverse_bits(i: usize, bits: u32) -> usize {
 ///
 /// # Cost
 ///
-/// `tests/datasheet.rs`, "Fft": the `f32` real transform about 2.6 ns
-/// per point at 512 points and 3.2 at 4096 (complex: twice that), on an
+/// `tests/datasheet.rs`, "Fft": the `f32` real transform about 2.1 ns
+/// per point at 512 points and 2.6 at 4096 (complex: 3.5 and 4.6), on an
 /// Apple M-series core.
 ///
 /// # Aliasing
@@ -247,11 +259,13 @@ pub struct Fft<T> {
     /// `reverse_bits(i, bits)` for every `i < len`; a shorter transform
     /// of `2^b` points reads `rev[i] >> (bits − b)`.
     rev: Vec<u32>,
-    /// Radix-4 twiddles: for each quarter length `L` (1, 2, 4, …,
-    /// `len/4`), `[w^k, w^2k, w^3k]` for `k < L`, `w = e^(−2πi/4L)`,
-    /// starting at `3·(L − 1)`. A pass's table depends only on `L`, so
-    /// the half-length transform the real FFT runs uses the same one.
-    stages: Vec<Complex<T>>,
+    /// Radix-4 twiddles, split into parts: for each quarter length `L`
+    /// (1, 2, 4, …, `len/4`), starting at `6·(L − 1)`, six rows of `L`:
+    /// the real parts of `w^k`, then the imaginary parts, then `w^2k`'s
+    /// and `w^3k`'s, `k < L`, `w = e^(−2πi/4L)`. A pass's table depends
+    /// only on `L`, so the half-length transform the real FFT runs uses
+    /// the same one.
+    stages: Vec<T>,
     /// The real transform's post-processing twiddles `e^(−2πi·k/len)`
     /// for `k ≤ len/4`.
     real: Vec<Complex<T>>,
@@ -274,13 +288,13 @@ impl<T: FftFloat> Fft<T> {
             let a = -core::f64::consts::TAU * k as f64 / period as f64;
             Complex::new(T::from_f64(a.cos()), T::from_f64(a.sin()))
         };
-        let mut stages = Vec::with_capacity(3 * (len / 4).max(1));
+        let mut stages = Vec::with_capacity(6 * (len / 4).max(1));
         let mut quarter = 1;
         while quarter * 4 <= len {
-            for k in 0..quarter {
-                for m in 1..=3 {
-                    stages.push(twiddle(m * k, 4 * quarter));
-                }
+            for m in 1..=3 {
+                let row: Vec<Complex<T>> = (0..quarter).map(|k| twiddle(m * k, 4 * quarter)).collect();
+                stages.extend(row.iter().map(|w| w.re));
+                stages.extend(row.iter().map(|w| w.im));
             }
             quarter *= 2;
         }
@@ -429,17 +443,24 @@ impl<T: FftFloat> Fft<T> {
     /// transform of `4·quarter`.
     #[inline]
     fn radix4<const INVERSE: bool>(&self, data: &mut [Complex<T>], quarter: usize) {
-        let table = &self.stages[3 * (quarter - 1)..3 * (quarter - 1) + 3 * quarter];
+        let table = &self.stages[6 * (quarter - 1)..6 * (quarter - 1) + 6 * quarter];
+        if quarter >= WIDTH {
+            return Self::radix4_lanes::<INVERSE>(data, quarter, table);
+        }
+        let w = |m: usize, k: usize| {
+            let row = 2 * (m - 1) * quarter;
+            Complex::new(table[row + k], table[row + quarter + k])
+        };
         for run in data.chunks_exact_mut(4 * quarter) {
             let (a, rest) = run.split_at_mut(quarter);
             let (b, rest) = rest.split_at_mut(quarter);
             let (c, d) = rest.split_at_mut(quarter);
             let lanes = a.iter_mut().zip(b.iter_mut()).zip(c.iter_mut()).zip(d);
-            for ((((a, b), c), d), w) in lanes.zip(table.chunks_exact(3)) {
+            for (k, (((a, b), c), d)) in lanes.enumerate() {
                 let (w1, w2, w3) = if INVERSE {
-                    (w[0].conj(), w[1].conj(), w[2].conj())
+                    (w(1, k).conj(), w(2, k).conj(), w(3, k).conj())
                 } else {
-                    (w[0], w[1], w[2])
+                    (w(1, k), w(2, k), w(3, k))
                 };
                 // b holds the sub-transform of the residue-2 samples,
                 // c of residue 1 (bit-reversed order).
@@ -460,6 +481,61 @@ impl<T: FftFloat> Fft<T> {
                 *d = u1 - rot;
             }
         }
+    }
+
+    /// [`radix4`](Self::radix4) [`WIDTH`] butterflies at a time
+    /// (`quarter` a multiple of it): the same expressions, lane by lane,
+    /// on the real and imaginary parts apart — a conjugate twiddle is its
+    /// imaginary part negated, as `conj` does it.
+    #[inline]
+    fn radix4_lanes<const INVERSE: bool>(data: &mut [Complex<T>], quarter: usize, table: &[T]) {
+        // `(w·z)` exactly as `Complex`'s `Mul` computes it.
+        let mul = |wr: V<T>, wi: V<T>, (zr, zi): (V<T>, V<T>)| (wr * zr - wi * zi, wr * zi + wi * zr);
+        let twiddle = |m: usize, k: usize| {
+            let row = 2 * (m - 1) * quarter;
+            let (re, im) = (V::load(&table[row + k..]), V::load(&table[row + quarter + k..]));
+            (re, if INVERSE { -im } else { im })
+        };
+        for run in data.chunks_exact_mut(4 * quarter) {
+            for k in (0..quarter).step_by(WIDTH) {
+                let (w1r, w1i) = twiddle(1, k);
+                let (w2r, w2i) = twiddle(2, k);
+                let (w3r, w3i) = twiddle(3, k);
+                let t0 = split(&run[k..]);
+                let t2 = mul(w2r, w2i, split(&run[quarter + k..]));
+                let t1 = mul(w1r, w1i, split(&run[2 * quarter + k..]));
+                let t3 = mul(w3r, w3i, split(&run[3 * quarter + k..]));
+                let (u0, u1) = ((t0.0 + t2.0, t0.1 + t2.1), (t0.0 - t2.0, t0.1 - t2.1));
+                let (v0, v1) = ((t1.0 + t3.0, t1.1 + t3.1), (t1.0 - t3.0, t1.1 - t3.1));
+                // v1·i = (−im, re); v1·(−i) = (im, −re).
+                let rot = if INVERSE { (-v1.1, v1.0) } else { (v1.1, -v1.0) };
+                join(&mut run[k..], (u0.0 + v0.0, u0.1 + v0.1));
+                join(&mut run[quarter + k..], (u1.0 + rot.0, u1.1 + rot.1));
+                join(&mut run[2 * quarter + k..], (u0.0 - v0.0, u0.1 - v0.1));
+                join(&mut run[3 * quarter + k..], (u1.0 - rot.0, u1.1 - rot.1));
+            }
+        }
+    }
+}
+
+/// The first [`WIDTH`] points of `z` as (real lanes, imaginary lanes).
+#[inline(always)]
+fn split<T: FftFloat>(z: &[Complex<T>]) -> (V<T>, V<T>) {
+    let z = &z[..WIDTH];
+    let (mut re, mut im) = (V::default(), V::default());
+    for l in 0..WIDTH {
+        re.0[l] = z[l].re;
+        im.0[l] = z[l].im;
+    }
+    (re, im)
+}
+
+/// (real lanes, imaginary lanes) into the first [`WIDTH`] points of `z`.
+#[inline(always)]
+fn join<T: FftFloat>(z: &mut [Complex<T>], (re, im): (V<T>, V<T>)) {
+    let z = &mut z[..WIDTH];
+    for l in 0..WIDTH {
+        z[l] = Complex::new(re.0[l], im.0[l]);
     }
 }
 

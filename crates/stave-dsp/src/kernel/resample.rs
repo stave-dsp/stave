@@ -9,6 +9,8 @@
 pub(crate) mod allpass;
 pub(crate) mod polyphase;
 
+use crate::kernel::simd::Lanes;
+
 // ===== Linear-phase FIR half-band oversampler =====
 //
 // A Butterworth IIR cascade is phase-benign and latency-free, but its
@@ -47,7 +49,8 @@ const HB_M: usize = (HB_TAPS - 1) / 2; // 66
 /// Number of distinct nonzero off-center coefficients (odd offsets 1..=65,
 /// symmetric pairs share one coefficient).
 const HB_HALF: usize = (HB_TAPS - 1) / 4; // 33
-/// Ring size (power of two ≥ HB_TAPS).
+/// The reference filter's ring size (power of two ≥ HB_TAPS).
+#[cfg(test)]
 const HB_RING: usize = 256;
 /// Kaiser β for ~96 dB stopband: β = 0.1102·(A − 8.7), A = 96.
 pub(crate) const HB_BETA: f64 = 9.62;
@@ -76,8 +79,6 @@ pub(crate) fn bessel_i0(x: f64) -> f64 {
 /// exactly integer) delivers the same ~96 dB stopband there at 45 % of
 /// the outer filter's cost.
 pub(crate) const HB_TAPS_INNER: usize = 73;
-const HB_M_INNER: usize = (HB_TAPS_INNER - 1) / 2; // 36
-const HB_HALF_INNER: usize = (HB_TAPS_INNER - 1) / 4; // 18
 
 /// The same taps as `primitives::spectral::Fir::windowed_sinc` with a
 /// quarter-rate lowpass and `Window::Kaiser { beta: HB_BETA }`, bit for
@@ -110,13 +111,288 @@ pub(crate) fn halfband_coeffs_n(taps: usize) -> (f64, [f64; HB_HALF]) {
     (center, side)
 }
 
-fn halfband_coeffs() -> (f64, [f64; HB_HALF]) {
-    halfband_coeffs_n(HB_TAPS)
+/// Outputs a half-band computes at once in a block: eight `f64`
+/// accumulators, four NEON (or SSE2) registers, each output's sum in its
+/// own lane in the scalar order — so a block is bit-identical to the
+/// tick loop (DSP.md P4).
+const LANES: usize = 8;
+type F64s<const N: usize> = Lanes<f64, N>;
+
+/// Look-back every design needs: the upsampler reads `2·half − 1`
+/// samples behind the newest, the decimator's odd phase `2·half`.
+const KEEP: usize = 2 * HB_HALF;
+/// A history line's length; a block is cut into runs of at most
+/// [`RUN`] samples so each fits after the kept look-back.
+const LINE: usize = 256;
+const RUN: usize = 128;
+
+/// `acc + Σ_j side[j]·(w[h+j] + w[h−1−j])` for `N` outputs, `h` the
+/// side taps: the symmetric pairs around a window's middle, newer first,
+/// in the scalar order. `w` is cut to exactly the window first, so the
+/// tap loads carry no bounds checks of their own.
+#[inline(always)]
+fn side_taps<const N: usize>(mut acc: F64s<N>, side: &[f64], w: &[f32]) -> F64s<N> {
+    let h = side.len();
+    let w = &w[..2 * h - 1 + N];
+    for (j, &c) in side.iter().enumerate() {
+        let pair = F64s::<N>::widen(&w[h + j..]) + F64s::widen(&w[h - 1 - j..]);
+        acc = acc.mul_add(F64s::splat(c), pair);
+    }
+    acc
 }
 
-/// One half-band FIR (running at the 2× rate). Exploits the half-band
-/// zeros: only (taps−1)/4 + 1 multiplies per sample. `m`/`n_side` select
-/// the outer (133-tap) or relaxed inner (73-tap) design.
+/// A sample history kept contiguous: the newest samples end at `end`,
+/// the [`KEEP`] before them are the look-back, and when the line is full
+/// the look-back moves to the front (one copy every few hundred
+/// samples). Unlike a ring, any window of it is one slice, so a run of
+/// outputs reads its taps as lanes.
+#[derive(Clone)]
+struct Line {
+    buf: [f32; LINE],
+    end: usize,
+}
+
+impl Line {
+    fn new() -> Self {
+        Self {
+            buf: [0.0; LINE],
+            end: KEEP,
+        }
+    }
+
+    /// Room for `n ≤ RUN` more samples after `end`.
+    #[inline]
+    fn room(&mut self, n: usize) {
+        debug_assert!(n <= RUN);
+        if self.end + n > LINE {
+            self.buf.copy_within(self.end - KEEP..self.end, 0);
+            self.end = KEEP;
+        }
+    }
+}
+
+/// Polyphase half-band UPSAMPLER. The zero-stuffed formulation ran
+/// the full tap loop twice per input sample with half the reads landing
+/// on inserted zeros; here the history holds only real samples and each
+/// output phase touches exactly the taps that see signal:
+/// even phase = `center · sig[n−half]`, odd phase = the side-tap sum.
+/// Product ORDER matches the zero-stuffed reference per output, and the
+/// skipped terms were exact zeros — outputs are bit-identical (proven
+/// by `polyphase_outer_is_bit_identical_to_zero_stuffed`). A block
+/// computes [`LANES`] outputs at a time, each in its own lane.
+#[derive(Clone)]
+pub(crate) struct HalfbandUp {
+    sig: Line,
+    center: f64,
+    side: [f64; HB_HALF],
+    half: usize,
+}
+
+impl HalfbandUp {
+    pub fn new() -> Self {
+        Self::with_taps(HB_TAPS)
+    }
+
+    pub fn inner() -> Self {
+        Self::with_taps(HB_TAPS_INNER)
+    }
+
+    /// The Kaiser half-band at any length `taps ≡ 1 (mod 4)`, up to
+    /// [`HB_TAPS`] (the deeper levels of an
+    /// [`Oversampled`](crate::Oversampled) stack).
+    pub fn with_taps(taps: usize) -> Self {
+        debug_assert!(taps % 4 == 1 && taps <= HB_TAPS);
+        let (center, side) = halfband_coeffs_n(taps);
+        Self {
+            sig: Line::new(),
+            center,
+            side,
+            half: (taps - 1) / 4,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.sig = Line::new();
+    }
+
+    /// The `(even, odd)` outputs of the `N` inputs at `p..p + N`.
+    /// Index map (from the zero-stuffed offsets m∓d, d = 2j+1): newer =
+    /// sig[p−half+j+1], older = sig[p−half−j].
+    #[inline(always)]
+    fn outputs<const N: usize>(&self, p: usize) -> (F64s<N>, F64s<N>) {
+        let (buf, h) = (&self.sig.buf, self.half);
+        // Even phase: the center tap is the only one that sees signal.
+        let even = F64s::<N>::widen(&buf[p - h..]) * self.center;
+        // Odd phase: every side tap sees signal; center sees a zero.
+        let odd = side_taps(F64s::default(), &self.side[..h], &buf[p + 1 - 2 * h..]);
+        (even, odd)
+    }
+
+    /// Push one input sample (pre-scaled by the caller, matching the
+    /// `2·x` of the zero-stuffed path) and return the two upsampled
+    /// outputs `(even, odd)` in stream order.
+    #[inline]
+    pub fn process_pair(&mut self, x2: f32) -> (f32, f32) {
+        self.sig.room(1);
+        let p = self.sig.end;
+        self.sig.buf[p] = x2;
+        self.sig.end += 1;
+        let (even, odd) = self.outputs::<1>(p);
+        (even.0[0] as f32, odd.0[0] as f32)
+    }
+
+    /// Block interpolation: consume N input samples (unscaled — the 2×
+    /// zero-insertion compensation is applied here), write 2N upsampled
+    /// samples in stream order. Per input this is exactly
+    /// `process_pair(2·x)` — bit-identical to the per-sample path.
+    pub fn process_block(&mut self, input: &[f32], out: &mut [f32]) {
+        debug_assert_eq!(out.len(), 2 * input.len());
+        for (input, out) in input.chunks(RUN).zip(out.chunks_mut(2 * RUN)) {
+            let n = input.len();
+            self.sig.room(n);
+            let p0 = self.sig.end;
+            for (s, &x) in self.sig.buf[p0..p0 + n].iter_mut().zip(input) {
+                *s = 2.0 * x;
+            }
+            self.sig.end += n;
+            let mut i = 0;
+            while i + LANES <= n {
+                let (even, odd) = self.outputs::<LANES>(p0 + i);
+                let (even, odd) = (even.narrow(), odd.narrow());
+                for (l, pair) in out[2 * i..2 * (i + LANES)].chunks_exact_mut(2).enumerate() {
+                    pair[0] = even.0[l];
+                    pair[1] = odd.0[l];
+                }
+                i += LANES;
+            }
+            for i in i..n {
+                let (even, odd) = self.outputs::<1>(p0 + i);
+                out[2 * i] = even.0[0] as f32;
+                out[2 * i + 1] = odd.0[0] as f32;
+            }
+        }
+    }
+}
+
+impl Default for HalfbandUp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Polyphase half-band DECIMATOR: of each inner pair it keeps the even
+/// phase's output and never computes the odd one. Its even and odd
+/// samples live in two histories, so the centre tap reads the even line
+/// and every side tap the odd one, contiguously: a block computes
+/// [`LANES`] outputs at a time, each in its own lane, in the order the
+/// full-rate filter sums them (`center·x[n−m] + Σ c·(newer + older)`) —
+/// bit-identical to the full-rate filter's every other output (pinned by
+/// `polyphase_outer_is_bit_identical_to_zero_stuffed`).
+#[derive(Clone)]
+pub(crate) struct HalfbandDown {
+    even: Line,
+    odd: Line,
+    center: f64,
+    side: [f64; HB_HALF],
+    half: usize,
+}
+
+impl Default for HalfbandDown {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HalfbandDown {
+    pub fn new() -> Self {
+        Self::with_taps(HB_TAPS)
+    }
+
+    /// The relaxed inner-stage design (73 taps — see `HB_TAPS_INNER`).
+    pub fn inner() -> Self {
+        Self::with_taps(HB_TAPS_INNER)
+    }
+
+    /// See [`HalfbandUp::with_taps`].
+    pub fn with_taps(taps: usize) -> Self {
+        debug_assert!(taps % 4 == 1 && taps <= HB_TAPS);
+        let (center, side) = halfband_coeffs_n(taps);
+        Self {
+            even: Line::new(),
+            odd: Line::new(),
+            center,
+            side,
+            half: (taps - 1) / 4,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.even = Line::new();
+        self.odd = Line::new();
+    }
+
+    /// The outputs of the `N` pairs whose samples sit at `q..q + N`
+    /// (f64 accumulation for a deep artifact floor). With m = 2·half and
+    /// d = 2j+1, the full-rate filter's x[n−m] is even[q−half], its
+    /// newer x[n−m+d] odd[q−half+j] and its older x[n−m−d]
+    /// odd[q−half−j−1].
+    #[inline(always)]
+    fn outputs<const N: usize>(&self, q: usize) -> F64s<N> {
+        let (even, odd, h) = (&self.even.buf, &self.odd.buf, self.half);
+        let centre = F64s::<N>::widen(&even[q - h..]) * self.center;
+        side_taps(centre, &self.side[..h], &odd[q - 2 * h..])
+    }
+
+    #[inline]
+    fn room(&mut self, n: usize) {
+        self.even.room(n);
+        self.odd.room(n);
+    }
+
+    /// One inner pair in, the kept (even-phase) output out.
+    #[inline]
+    pub fn pair(&mut self, even: f32, odd: f32) -> f32 {
+        self.room(1);
+        let q = self.even.end;
+        self.even.buf[q] = even;
+        self.odd.buf[q] = odd;
+        self.even.end += 1;
+        self.odd.end += 1;
+        self.outputs::<1>(q).0[0] as f32
+    }
+
+    /// Block decimation: consume `up` (2N samples at the inner rate),
+    /// write N outputs; per pair exactly [`pair`](Self::pair).
+    pub fn process_block(&mut self, up: &[f32], out: &mut [f32]) {
+        debug_assert_eq!(up.len(), 2 * out.len());
+        for (up, out) in up.chunks(2 * RUN).zip(out.chunks_mut(RUN)) {
+            let n = out.len();
+            self.room(n);
+            let q0 = self.even.end;
+            let lines = self.even.buf[q0..q0 + n].iter_mut().zip(&mut self.odd.buf[q0..q0 + n]);
+            for ((e, o), pair) in lines.zip(up.chunks_exact(2)) {
+                *e = pair[0];
+                *o = pair[1];
+            }
+            self.even.end += n;
+            self.odd.end += n;
+            let mut i = 0;
+            while i + LANES <= n {
+                self.outputs::<LANES>(q0 + i).narrow().store(&mut out[i..]);
+                i += LANES;
+            }
+            for i in i..n {
+                out[i] = self.outputs::<1>(q0 + i).0[0] as f32;
+            }
+        }
+    }
+}
+
+/// One half-band FIR at the full 2× rate, every output computed: the
+/// zero-stuffed reference the polyphase pair is pinned against, and the
+/// filter whose design spec the tests measure. Exploits the half-band
+/// zeros: only (taps−1)/4 + 1 multiplies per sample.
+#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct HalfbandFir {
     buf: [f32; HB_RING],
@@ -127,43 +403,18 @@ pub(crate) struct HalfbandFir {
     n_side: usize,
 }
 
-impl Default for HalfbandFir {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
+#[cfg(test)]
 impl HalfbandFir {
     pub fn new() -> Self {
-        let (center, side) = halfband_coeffs();
-        Self {
-            buf: [0.0; HB_RING],
-            idx: 0,
-            center,
-            side,
-            m: HB_M,
-            n_side: HB_HALF,
-        }
+        Self::with_taps(HB_TAPS)
     }
 
     /// The relaxed inner-stage design (73 taps — see `HB_TAPS_INNER`).
     pub fn inner() -> Self {
-        let (center, side) = halfband_coeffs_n(HB_TAPS_INNER);
-        Self {
-            buf: [0.0; HB_RING],
-            idx: 0,
-            center,
-            side,
-            m: HB_M_INNER,
-            n_side: HB_HALF_INNER,
-        }
+        Self::with_taps(HB_TAPS_INNER)
     }
 
-    /// The same Kaiser design at any length `taps ≡ 1 (mod 4)`, up to
-    /// [`HB_TAPS`] (the deeper levels of an
-    /// [`Oversampled`](crate::Oversampled) stack).
     pub fn with_taps(taps: usize) -> Self {
-        debug_assert!(taps % 4 == 1 && taps <= HB_TAPS);
         let (center, side) = halfband_coeffs_n(taps);
         Self {
             buf: [0.0; HB_RING],
@@ -175,13 +426,7 @@ impl HalfbandFir {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.buf = [0.0; HB_RING];
-        self.idx = 0;
-    }
-
     /// Filter one sample (f64 accumulation for a deep artifact floor).
-    #[inline]
     pub fn tick(&mut self, x: f32) -> f32 {
         self.idx = (self.idx + 1) & (HB_RING - 1);
         self.buf[self.idx] = x;
@@ -195,128 +440,6 @@ impl HalfbandFir {
         }
         acc as f32
     }
-
-    /// Advance filter STATE without computing an output — the polyphase
-    /// decimation trick: the discarded odd-phase output cost a full
-    /// dot product; its only real effect was this ring write.
-    #[inline]
-    pub fn push(&mut self, x: f32) {
-        self.idx = (self.idx + 1) & (HB_RING - 1);
-        self.buf[self.idx] = x;
-    }
-
-    /// Block decimation: consume `up` (2N samples at the inner rate),
-    /// write N outputs. Per pair this is exactly `tick(even)` then
-    /// `push(odd)` — same ring, same accumulation order, bit-identical
-    /// to the per-sample path (the block win is the hoisted dispatch,
-    /// not a different algorithm).
-    pub fn process_block_decim(&mut self, up: &[f32], out: &mut [f32]) {
-        debug_assert_eq!(up.len(), 2 * out.len());
-        for (i, y) in out.iter_mut().enumerate() {
-            *y = self.tick(up[2 * i]);
-            self.push(up[2 * i + 1]);
-        }
-    }
-}
-
-/// Polyphase half-band UPSAMPLER. The zero-stuffed formulation ran
-/// the full tap loop twice per input sample with half the reads landing
-/// on inserted zeros; here the ring holds only real samples and each
-/// output phase touches exactly the taps that see signal:
-/// even phase = `center · sig[n−half]`, odd phase = the side-tap sum.
-/// Product ORDER matches the zero-stuffed reference per output, and the
-/// skipped terms were exact zeros — outputs are bit-identical (proven
-/// by `polyphase_up_is_bit_identical_to_zero_stuffed`).
-#[derive(Clone)]
-pub(crate) struct HalfbandUp {
-    sig: [f32; 128],
-    n: usize,
-    center: f64,
-    side: [f64; HB_HALF],
-    half: usize,
-}
-
-impl HalfbandUp {
-    pub fn new() -> Self {
-        let (center, side) = halfband_coeffs();
-        Self {
-            sig: [0.0; 128],
-            n: 0,
-            center,
-            side,
-            half: HB_HALF,
-        }
-    }
-
-    pub fn inner() -> Self {
-        let (center, side) = halfband_coeffs_n(HB_TAPS_INNER);
-        Self {
-            sig: [0.0; 128],
-            n: 0,
-            center,
-            side,
-            half: HB_HALF_INNER,
-        }
-    }
-
-    /// See [`HalfbandFir::with_taps`].
-    pub fn with_taps(taps: usize) -> Self {
-        debug_assert!(taps % 4 == 1 && taps <= HB_TAPS);
-        let (center, side) = halfband_coeffs_n(taps);
-        Self {
-            sig: [0.0; 128],
-            n: 0,
-            center,
-            side,
-            half: (taps - 1) / 4,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.sig = [0.0; 128];
-        self.n = 0;
-    }
-
-    /// Push one input sample (pre-scaled by the caller, matching the
-    /// `2·x` of the zero-stuffed path) and return the two upsampled
-    /// outputs `(even, odd)` in stream order.
-    #[inline]
-    pub fn process_pair(&mut self, x2: f32) -> (f32, f32) {
-        self.n = (self.n + 1) & 127;
-        self.sig[self.n] = x2;
-        let sig = &self.sig;
-        let at = |back: usize| sig[(self.n + 128 - back) & 127] as f64;
-        let half = self.half;
-        // Even phase: the center tap is the only one that sees signal.
-        let even = self.center * at(half);
-        // Odd phase: every side tap sees signal; center sees a zero.
-        // Index map (derived from the zero-stuffed offsets m∓d,
-        // d = 2j+1): newer = sig[n−half+j+1], older = sig[n−half−j].
-        let mut odd = 0.0f64;
-        for (j, &c) in self.side[..half].iter().enumerate() {
-            odd += c * (at(half - j - 1) + at(half + j));
-        }
-        (even as f32, odd as f32)
-    }
-
-    /// Block interpolation: consume N input samples (unscaled — the 2×
-    /// zero-insertion compensation is applied here), write 2N upsampled
-    /// samples in stream order. Per input this is exactly
-    /// `process_pair(2·x)` — bit-identical to the per-sample path.
-    pub fn process_block(&mut self, input: &[f32], out: &mut [f32]) {
-        debug_assert_eq!(out.len(), 2 * input.len());
-        for (i, &x) in input.iter().enumerate() {
-            let (e, o) = self.process_pair(2.0 * x);
-            out[2 * i] = e;
-            out[2 * i + 1] = o;
-        }
-    }
-}
-
-impl Default for HalfbandUp {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// 2× oversampling around a linear-phase FIR half-band pair: `latency()`
@@ -325,7 +448,7 @@ impl Default for HalfbandUp {
 #[derive(Clone)]
 pub(crate) struct Oversampler2xFir {
     up: HalfbandUp,
-    down: HalfbandFir,
+    down: HalfbandDown,
 }
 
 impl Default for Oversampler2xFir {
@@ -338,7 +461,7 @@ impl Oversampler2xFir {
     pub fn new() -> Self {
         Self {
             up: HalfbandUp::new(),
-            down: HalfbandFir::new(),
+            down: HalfbandDown::new(),
         }
     }
 
@@ -374,9 +497,9 @@ impl Oversampler2xFir {
         // Keep the EVEN decimation phase (return the first of the pair):
         // the impulse peak of the 132-sample round trip lands on an even
         // inner index, so the outer-rate latency is exactly 66 samples.
-        let y = self.down.tick(inner(u0));
-        self.down.push(inner(u1));
-        y
+        let even = inner(u0);
+        let odd = inner(u1);
+        self.down.pair(even, odd)
     }
 
     /// Block form of [`tick_with`](Self::tick_with): upsample the
@@ -394,7 +517,7 @@ impl Oversampler2xFir {
         let up = &mut up_scratch[..2 * io.len()];
         self.up.process_block(io, up);
         inner(up);
-        self.down.process_block_decim(up, io);
+        self.down.process_block(up, io);
     }
 }
 
@@ -404,7 +527,7 @@ impl Oversampler2xFir {
 #[derive(Clone)]
 pub(crate) struct Oversampler2xFirInner {
     up: HalfbandUp,
-    down: HalfbandFir,
+    down: HalfbandDown,
 }
 
 impl Default for Oversampler2xFirInner {
@@ -417,7 +540,7 @@ impl Oversampler2xFirInner {
     pub fn new() -> Self {
         Self {
             up: HalfbandUp::inner(),
-            down: HalfbandFir::inner(),
+            down: HalfbandDown::inner(),
         }
     }
     pub fn reset(&mut self) {
@@ -432,9 +555,9 @@ impl Oversampler2xFirInner {
     #[inline]
     pub fn tick_with<F: FnMut(f32) -> f32>(&mut self, x: f32, mut inner: F) -> f32 {
         let (u0, u1) = self.up.process_pair(2.0 * x);
-        let y = self.down.tick(inner(u0));
-        self.down.push(inner(u1));
-        y
+        let even = inner(u0);
+        let odd = inner(u1);
+        self.down.pair(even, odd)
     }
 
     /// Block form — see [`Oversampler2xFir::process_with`]; same
@@ -448,7 +571,7 @@ impl Oversampler2xFirInner {
         let up = &mut up_scratch[..2 * io.len()];
         self.up.process_block(io, up);
         inner(up);
-        self.down.process_block_decim(up, io);
+        self.down.process_block(up, io);
     }
 }
 
@@ -532,6 +655,42 @@ mod polyphase_bitexact {
             let a = new.tick_with(x, &mut inner_new);
             let b = old.tick_with(x, &mut inner_old);
             assert_eq!(a.to_bits(), b.to_bits(), "sample {i}: {a} vs {b}");
+        }
+    }
+
+    /// The lanes (DSP.md P4): blocks of every length, cut so runs end
+    /// mid-lane-group and the history lines compact mid-block, at every
+    /// half-band length an `Oversampled` stack builds, are the
+    /// zero-stuffed reference sample for sample, bit for bit.
+    #[test]
+    fn lane_blocks_are_bit_identical_to_zero_stuffed() {
+        let noise = lcg_noise(20_000, 11);
+        for taps in [HB_TAPS, HB_TAPS_INNER, 41, 49, 17] {
+            let mut up = HalfbandUp::with_taps(taps);
+            let mut down = HalfbandDown::with_taps(taps);
+            let mut old = RefFir {
+                up: HalfbandFir::with_taps(taps),
+                down: HalfbandFir::with_taps(taps),
+            };
+            let mut inner_new = make_inner();
+            let mut inner_old = make_inner();
+            let mut scratch = vec![0.0f32; 2 * 310];
+            let (mut at, mut len) = (0, 1);
+            while at + len <= noise.len() {
+                let mut block = noise[at..at + len].to_vec();
+                let inner = &mut scratch[..2 * len];
+                up.process_block(&block, inner);
+                for s in inner.iter_mut() {
+                    *s = inner_new(*s);
+                }
+                down.process_block(inner, &mut block);
+                for (i, &y) in block.iter().enumerate() {
+                    let r = old.tick_with(noise[at + i], &mut inner_old);
+                    assert_eq!(y.to_bits(), r.to_bits(), "{taps} taps, sample {}", at + i);
+                }
+                at += len;
+                len = len % 299 + 7;
+            }
         }
     }
 }
