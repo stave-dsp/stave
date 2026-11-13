@@ -240,10 +240,9 @@ impl Osc {
 
     /// minBLEP and minBLAMP: a tabulated minimum-phase residual after
     /// each edge, cleaner near Nyquist; the output lags the phase by the
-    /// residual's delay (3 samples). The first call builds the shared
-    /// tables (it allocates once, for every oscillator after it).
+    /// residual's delay (3 samples). The tables are compile-time
+    /// constants: nothing is built or allocated.
     pub fn min_blep(waveform: Waveform) -> Self {
-        let _ = MinBlep::get();
         Self::with_edges(waveform, Edges::MinBlep)
     }
 
@@ -472,3 +471,10 @@ impl Generator for Osc {}
 
 #[cfg(test)]
 mod tests;
+
+/// The minBLEP table design, for `tests/minblep_tables.rs`, which writes
+/// the committed constants. Not API.
+#[doc(hidden)]
+pub fn __minblep_design() -> (Vec<f64>, Vec<f64>, usize, usize) {
+    blep::MinBlep::design()
+}

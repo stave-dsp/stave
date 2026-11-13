@@ -9,9 +9,11 @@
 //! `ds`); an edge at fraction `f` of the interval between samples `n`
 //! and `n + 1`.
 
-use std::sync::OnceLock;
-
 use crate::primitives::spectral::{Fir, Passband, Window};
+
+/// The tables, generated from the design in [`MinBlep::design`] and held
+/// to it by `tables_match_their_design` (`STAVE_BLESS=1` rewrites them).
+mod tables;
 
 /// polyBLEP and polyBLAMP: the residuals of a jump `dv` and a slope
 /// change `ds` at fraction `f`, for the sample before the edge (`n`) and
@@ -52,9 +54,9 @@ const ATTENUATION_DB: f64 = 100.0;
 pub(super) struct MinBlep {
     /// The band-limited unit step at `i / OVERSAMPLE` samples after the
     /// edge, settled to 1 by the table's end.
-    step: Vec<f64>,
+    step: &'static [f64],
     /// Its integral: the band-limited unit ramp.
-    ramp: Vec<f64>,
+    ramp: &'static [f64],
     /// Whole samples the band-limited edge lags the naive one: the
     /// prototype is shifted so its group delay at DC is exactly this, so
     /// the ramp residual settles to zero against a naive waveform
@@ -65,7 +67,17 @@ pub(super) struct MinBlep {
 }
 
 impl MinBlep {
-    fn new() -> Self {
+    /// The tables, as compile-time constants: no allocation, no global
+    /// state, the same on every platform.
+    pub const TABLES: MinBlep = MinBlep {
+        step: tables::STEP,
+        ramp: tables::RAMP,
+        delay: tables::DELAY,
+        len: tables::LEN,
+    };
+
+    /// The design the tables come from: `(step, ramp, delay, len)`.
+    pub(crate) fn design() -> (Vec<f64>, Vec<f64>, usize, usize) {
         let taps = 2 * ZEROS * OVERSAMPLE + 1;
         let lowpass = Fir::windowed_sinc(
             Passband::Lowpass {
@@ -127,19 +139,12 @@ impl MinBlep {
         let len = (last / OVERSAMPLE + 2).min(len);
         step.truncate(len * OVERSAMPLE + 1);
         ramp.truncate(len * OVERSAMPLE + 1);
-        Self {
-            step,
-            ramp,
-            delay,
-            len,
-        }
+        (step, ramp, delay, len)
     }
 
-    /// The tables, built once (the first [`Osc::min_blep`](super::Osc::min_blep)
-    /// builds them, off the audio thread).
+    /// The tables.
     pub fn get() -> &'static Self {
-        static TABLES: OnceLock<MinBlep> = OnceLock::new();
-        TABLES.get_or_init(Self::new)
+        &Self::TABLES
     }
 
     /// `(step, ramp)` residuals at `tau ≥ 0` samples after the edge,
@@ -166,6 +171,19 @@ impl MinBlep {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The committed tables are the design's (to rounding across
+    /// platforms); `tests/minblep_tables.rs` regenerates them.
+    #[test]
+    #[cfg_attr(miri, ignore = "a minimum-phase FIR design: the native run covers it")]
+    fn tables_match_their_design() {
+        let (step, ramp, delay, len) = MinBlep::design();
+        let t = MinBlep::get();
+        assert_eq!((t.delay, t.len, t.step.len()), (delay, len, step.len()), "regenerate: STAVE_BLESS=1 cargo test -p stave-dsp --test minblep_tables");
+        for (i, (a, b)) in t.step.iter().zip(&step).chain(t.ramp.iter().zip(&ramp)).enumerate() {
+            assert!((a - b).abs() <= 1e-12 * (1.0 + b.abs()), "point {i}: {a} vs {b}; regenerate the tables");
+        }
+    }
 
     /// The residuals settle: by the table's end the band-limited step is
     /// 1 and the ramp has caught the delayed naive one.
