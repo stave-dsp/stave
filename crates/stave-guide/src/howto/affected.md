@@ -10,6 +10,7 @@ working, and the selector CI calls.
 scripts/affected.sh                 # the working tree vs where it left origin/main
 scripts/affected.sh --base REF      # vs another base (CI: the pull request's base)
 scripts/affected.sh --plan          # print the selected gate commands, run nothing
+scripts/affected.sh --outputs       # print the selection as AFFECTED_* lines, run nothing
 scripts/affected.sh --full          # every gate, whatever changed
 scripts/affected.sh --no-cache      # gate even a tree that already passed
 ```
@@ -34,8 +35,30 @@ gate:
 | `msrv` | `cargo +<rust-version> check --all-targets --locked …` (skipped where that toolchain is not installed) |
 | `site` | `scripts/docsite.sh` |
 
-`--plan` prints these commands, one per line, so CI can run them as its
-own steps.
+`--plan` prints these commands, one per line, to run them elsewhere.
+
+## In CI
+
+CI's jobs each run their own gates, so they ask for the selection
+itself: `--outputs` prints it as lines for `$GITHUB_ENV`, and a job's
+steps read them.
+
+| line | value |
+|---|---|
+| `AFFECTED_SCOPE` | `workspace`, `packages` or `none` |
+| `AFFECTED_PACKAGES` | cargo's selection: `--workspace`, or `-p a -p b` |
+| `AFFECTED_PACKAGE_NAMES` | the selected packages' names (empty for the workspace) |
+| `AFFECTED_LIB_PACKAGES` | the doctests' selection (packages with a library) |
+| `AFFECTED_DOC_PACKAGES` | `scripts/rustdoc.sh`'s selection (empty: every crate) |
+| `AFFECTED_SITE` | `1` if the docs site is built |
+
+A pull request is gated against its base branch, a merge group (main's
+merge queue) against the commit the group was built on, so a group of
+several pull requests is gated on what they change together; main itself
+and a dispatched run are gated in full (`--full`). A job the change
+cannot reach skips its gates and still reports success, so every
+required check reports on every change. CI never uses the pass cache:
+`--outputs` returns before it.
 
 ## The selection
 
