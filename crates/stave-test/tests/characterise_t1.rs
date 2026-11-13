@@ -189,4 +189,10 @@ const PIANO: &[(&str, f64, f64)] = &[
     ("jfet_booster_static", 36.0, 33.0), // -6.6 / 33.0 dB at +12 / +20
     ("mosfet_booster_static", 59.1, 56.1), // 42.5 / 56.1 dB at +12 / +20
     ("ota_vca", 40.2, 37.2), // -7.6 / 37.2 dB at +12 / +20
+    // R25, recorded after the list above: the same at both levels, so the
+    // stopband, not the drive — a 4.2 kHz tone lies in its sixth-order
+    // stopband, which bilinear warping without prewarp leaves 28 dB too
+    // shallow at the host rate (DSP.md R25; R12 owns the fix), and the
+    // followers' folded products stand above what is left of the tone.
+    ("boss_ce2_filters", 50.3, 47.3), // 47.2 / 47.3 dB at +12 / +20
 ];
