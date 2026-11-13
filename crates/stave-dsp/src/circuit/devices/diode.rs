@@ -50,8 +50,8 @@ impl Diode for Shockley {
 /// capacitance (`CJO`, `VJ`, `M`, `FC`, as [`Depletion`]) and the
 /// transit-time diffusion charge `TT·i(v)`, which a circuit method
 /// integrates ([`Junction::charge`]). Sidewall capacitance, recombination
-/// current (`ISR`), high injection (`IKF`) and temperature are not
-/// modelled: a netlist lists what its cards ask for in
+/// current (`ISR`) and high injection (`IKF`) are not modelled, and
+/// temperature moves only `Is` and `Vt` ([`at_celsius`](Self::at_celsius)): a netlist lists what its cards ask for in
 /// [`Netlist::unmodelled`](crate::circuit::netlist::Netlist::unmodelled).
 ///
 /// # Derivation
@@ -88,7 +88,10 @@ impl Diode for Shockley {
 /// known gap at 20 mA; [`Shockley::N4148_VISHAY`], fitted to it, 2.1 mV:
 /// `crates/stave-test/tests/matches_datasheet.rs::diodes::n4148_vishay`) and
 /// `crates/stave-test/tests/matches_datasheet.rs::diodes::n34a` (the
-/// 1N34A within MCC's 1.00 V maximum at 5 mA).
+/// 1N34A within MCC's 1.00 V maximum at 5 mA). Its temperature law:
+/// `crates/stave-dsp/src/circuit/devices/thermal/tests.rs::junctions_drift_as_spice_sets_their_temperature`
+/// (`diotemp.c`'s saturation current to 1e-12; −1.4 to −2.6 mV/K at a
+/// fixed forward current, a silicon junction's tempco).
 ///
 /// # Cost
 ///
@@ -313,6 +316,35 @@ impl Shockley {
     /// The SPICE card `D1N4007` under its old name.
     #[deprecated(note = "renamed N4007 (DSP.md naming rule 3)")]
     pub const D1N4007: Self = Self::N4007;
+
+    /// The silicon defaults of SPICE's temperature law: `EG` = 1.11 eV,
+    /// `XTI` = 3.
+    pub const SILICON_GAP_EV: f64 = 1.11;
+    pub const SILICON_XTI: f64 = 3.0;
+
+    /// The card at `celsius` (DSP.md H9), its own temperature being
+    /// whatever its `thermal_volts` says (27 °C for every part here):
+    /// [`at_celsius_with`](Self::at_celsius_with) silicon's `EG` and `XTI`.
+    pub fn at_celsius(self, celsius: f64) -> Self {
+        self.at_celsius_with(celsius, Self::SILICON_GAP_EV, Self::SILICON_XTI)
+    }
+
+    /// The card at `celsius` by SPICE's temperature law (ngspice's
+    /// `diotemp.c`): `Vt = kT/q` and
+    /// `Is(T) = Is·exp((T/T₀ − 1)·EG/(N·Vt(T)))·(T/T₀)^(XTI/N)`, the
+    /// gap `gap_ev` in eV (1.11 silicon, 0.67 germanium, 0.69 Schottky).
+    /// The depletion capacitance and breakdown keep their nominal values
+    /// (SPICE moves them too; a bias drift is the saturation current's).
+    pub fn at_celsius_with(mut self, celsius: f64, gap_ev: f64, xti: f64) -> Self {
+        let nominal = self.thermal_volts * 1.602_176_634e-19 / 1.380_649e-23;
+        let t = celsius + 273.15;
+        let ratio = t / nominal;
+        let vt = super::thermal_volts(celsius);
+        let n = self.emission;
+        self.saturation_amps *= ((ratio - 1.0) * gap_ev / (n * vt)).exp() * ratio.powf(xti / n);
+        self.thermal_volts = vt;
+        self
+    }
 
     pub fn knee_volts(&self) -> f64 {
         self.emission * self.thermal_volts

@@ -14,7 +14,7 @@
 use super::{Kind, NetlistError, Pin, Wdf};
 use crate::circuit::methods::woodbury::Woodbury;
 use crate::circuit::netlist::{Netlist, Variable};
-use crate::circuit::variable::{BranchKind, Pot, Smoothing, VariableCapacitor, VariableResistor, Variables};
+use crate::circuit::variable::{BranchKind, Pot, Smoothing, Switch, VariableCapacitor, VariableResistor, Variables};
 use crate::units::{Farads, Ohms};
 
 /// A wave digital filter's variable parts and their prepared update.
@@ -99,6 +99,19 @@ impl Wdf {
     /// The variable capacitor on the element called `name`.
     pub fn variable_capacitor(&self, name: &str) -> Result<VariableCapacitor, NetlistError> {
         self.varying.variables.find_capacitor(name)
+    }
+
+    /// The switch on the element called `name` (H6).
+    pub fn switch(&self, name: &str) -> Result<Switch, NetlistError> {
+        self.varying.variables.find_switch(name)
+    }
+
+    /// Throw `switch` closed or open (as [`Dk::set_closed`](crate::circuit::methods::dk::Dk::set_closed)).
+    /// Realtime.
+    pub fn set_closed(&mut self, switch: Switch, closed: bool) {
+        let value = if closed { 1.0 } else { 0.0 };
+        self.varying.variables.set(switch.0, value);
+        self.operating.varying.variables.set(switch.0, value);
     }
 
     /// Turn `pot` to `position` (0 to 1), gliding. Realtime.

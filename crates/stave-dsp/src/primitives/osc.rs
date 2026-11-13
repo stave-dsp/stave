@@ -20,7 +20,7 @@
 use crate::kernel::node::{Generator, Stage, Tail};
 use crate::units::Hz;
 
-mod blep;
+pub(crate) mod blep;
 mod wavetable;
 
 pub use wavetable::Wavetable;

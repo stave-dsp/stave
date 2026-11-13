@@ -22,7 +22,7 @@ mod tables;
 /// `(1 − |τ|)³/6` at `τ` samples from the edge (Esqueda, Välimäki and
 /// Bilbao, "Rounding corners with BLAMP", DAFx 2016).
 #[inline]
-pub(super) fn poly(f: f64, dv: f64, ds: f64) -> (f64, f64) {
+pub(crate) fn poly(f: f64, dv: f64, ds: f64) -> (f64, f64) {
     let g = 1.0 - f;
     let before = 0.5 * dv * g * g + ds * g * g * g / 6.0;
     let after = -0.5 * dv * f * f + ds * f * f * f / 6.0;
@@ -51,7 +51,7 @@ const CUTOFF: f64 = 0.46;
 const ATTENUATION_DB: f64 = 100.0;
 
 /// The minimum-phase band-limited step and ramp, tabulated.
-pub(super) struct MinBlep {
+pub(crate) struct MinBlep {
     /// The band-limited unit step at `i / OVERSAMPLE` samples after the
     /// edge, settled to 1 by the table's end.
     step: &'static [f64],

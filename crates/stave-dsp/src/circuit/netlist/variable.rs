@@ -28,6 +28,7 @@
 //! ```
 
 use super::{ElementKind, Netlist, NetlistError};
+use crate::circuit::devices::potentiometer::{Bounce, LinearCubic, Tracking, Wiper};
 
 /// How a pot's resistance follows its rotation: the fraction of the
 /// track between the first leg's ends at `position` (0 to 1).
@@ -37,8 +38,19 @@ pub enum Taper {
     Linear,
     /// `(b^x − 1)/(b − 1)` with `b = ((1 − m)/m)²`, so the fraction at
     /// half rotation is `midpoint`: 0.1 is the usual audio ("A") taper,
-    /// 0.9 the reverse ("C"); 0.5 is linear.
+    /// 0.9 the reverse ("C"); 0.5 is linear. An idealised law: real
+    /// tracks are [`Curve`](Self::Curve)s.
     Exponential { midpoint: f64 },
+    /// A manufacturer's law (H6): [`LinearCubic::ALPHA_15A`] and its
+    /// family, or its reverse.
+    Curve(LinearCubic),
+    /// An S-shaped law symmetric about half rotation (50 % there): each
+    /// half the [`Exponential`](Self::Exponential) law of `midpoint`
+    /// squeezed into it, `½·A(2x)` below and `1 − ½·A(2 − 2x)` above. A
+    /// `midpoint` below ½ turns slowly at both ends (the shape of Alpha's
+    /// B family, 4B being JIS W, and of balance and crossfade pots);
+    /// above ½, fast at the ends and slow through the middle.
+    Symmetric { midpoint: f64 },
 }
 
 impl Taper {
@@ -46,6 +58,16 @@ impl Taper {
     pub const AUDIO: Self = Self::Exponential { midpoint: 0.1 };
     /// The reverse audio ("C") taper: 90 % at half rotation.
     pub const REVERSE_AUDIO: Self = Self::Exponential { midpoint: 0.9 };
+
+    /// The law turned end for end, `1 − f(1 − x)`: an A taper's C.
+    pub fn reversed(self) -> Self {
+        match self {
+            Self::Linear => Self::Linear,
+            Self::Exponential { midpoint } => Self::Exponential { midpoint: 1.0 - midpoint },
+            Self::Curve(law) => Self::Curve(law.reversed()),
+            Self::Symmetric { midpoint } => Self::Symmetric { midpoint: 1.0 - midpoint },
+        }
+    }
 
     fn base(midpoint: f64) -> Option<f64> {
         let b = ((1.0 - midpoint) / midpoint).powi(2);
@@ -61,6 +83,15 @@ impl Taper {
                 Some(b) => (b.powf(x) - 1.0) / (b - 1.0),
                 None => x,
             },
+            Self::Curve(law) => law.fraction(x),
+            Self::Symmetric { midpoint } => {
+                let half = Self::Exponential { midpoint };
+                if x <= 0.5 {
+                    0.5 * half.fraction(2.0 * x)
+                } else {
+                    1.0 - 0.5 * half.fraction(2.0 - 2.0 * x)
+                }
+            }
         }
     }
 
@@ -74,6 +105,15 @@ impl Taper {
                 Some(b) => (1.0 + f * (b - 1.0)).ln() / b.ln(),
                 None => f,
             },
+            Self::Curve(law) => law.rotation(f),
+            Self::Symmetric { midpoint } => {
+                let half = Self::Exponential { midpoint };
+                if f <= 0.5 {
+                    0.5 * half.position(2.0 * f)
+                } else {
+                    1.0 - 0.5 * half.position(2.0 - 2.0 * f)
+                }
+            }
         }
     }
 }
@@ -95,6 +135,11 @@ pub enum Variable {
         /// contact and the track's termination). A wave digital filter
         /// needs it positive: a port's resistance must never reach zero.
         end_ohms: f64,
+        /// This gang's deviation from the law (H6; [`Tracking::EXACT`]
+        /// for a single pot or the reference gang).
+        tracking: Tracking,
+        /// A scratchy wiper, or none.
+        wiper: Option<Wiper>,
     },
     /// A pot wired as a variable resistor (its wiper tied to one end):
     /// `end_ohms + track_ohms · taper(position)`.
@@ -103,11 +148,25 @@ pub enum Variable {
         track_ohms: f64,
         taper: Taper,
         end_ohms: f64,
+        tracking: Tracking,
+        wiper: Option<Wiper>,
     },
     /// A resistor set in ohms.
     Resistor { element: String },
     /// A capacitor set in farads.
     Capacitor { element: String },
+    /// A switch (H6): a resistor at `on_ohms` closed and `off_ohms`
+    /// open, thrown at once — no glide — or moved in `ramp_seconds` from
+    /// one to the other along a straight line in log-resistance (a soft
+    /// switch's click suppression), its contacts bouncing on closing if
+    /// `bounce` says so.
+    Switch {
+        element: String,
+        on_ohms: f64,
+        off_ohms: f64,
+        ramp_seconds: f64,
+        bounce: Option<Bounce>,
+    },
 }
 
 impl Variable {
@@ -119,6 +178,8 @@ impl Variable {
             legs: legs.map(str::to_ascii_lowercase),
             taper,
             end_ohms: 0.0,
+            tracking: Tracking::EXACT,
+            wiper: None,
         }
     }
 
@@ -129,7 +190,55 @@ impl Variable {
             track_ohms,
             taper,
             end_ohms: 0.0,
+            tracking: Tracking::EXACT,
+            wiper: None,
         }
+    }
+
+    /// A switch on the resistor `element`: `on_ohms` closed, `off_ohms`
+    /// open, thrown at once, no bounce. The deck writes the element at
+    /// either value; the nearer (in log-resistance) is its position.
+    pub fn switch(element: &str, on_ohms: f64, off_ohms: f64) -> Self {
+        Self::Switch {
+            element: element.to_ascii_lowercase(),
+            on_ohms,
+            off_ohms,
+            ramp_seconds: 0.0,
+            bounce: None,
+        }
+    }
+
+    /// The same switch moving over `seconds` (H6's click suppression).
+    pub fn with_ramp(mut self, seconds: f64) -> Self {
+        if let Self::Switch { ramp_seconds, .. } = &mut self {
+            *ramp_seconds = seconds.max(0.0);
+        }
+        self
+    }
+
+    /// The same switch bouncing as it closes.
+    pub fn with_bounce(mut self, chatter: Bounce) -> Self {
+        if let Self::Switch { bounce, .. } = &mut self {
+            *bounce = Some(chatter);
+        }
+        self
+    }
+
+    /// The same pot or rheostat as a second gang that strays by
+    /// `gang` (H6).
+    pub fn with_tracking(mut self, gang: Tracking) -> Self {
+        if let Self::Pot { tracking, .. } | Self::Rheostat { tracking, .. } = &mut self {
+            *tracking = gang;
+        }
+        self
+    }
+
+    /// The same pot or rheostat with a scratchy wiper (H6).
+    pub fn with_wiper(mut self, scratch: Wiper) -> Self {
+        if let Self::Pot { wiper, .. } | Self::Rheostat { wiper, .. } = &mut self {
+            *wiper = Some(scratch);
+        }
+        self
     }
 
     pub fn resistor(element: &str) -> Self {
@@ -157,7 +266,10 @@ impl Variable {
     pub fn name(&self) -> &str {
         match self {
             Self::Pot { name, .. } => name,
-            Self::Rheostat { element, .. } | Self::Resistor { element } | Self::Capacitor { element } => element,
+            Self::Rheostat { element, .. }
+            | Self::Resistor { element }
+            | Self::Capacitor { element }
+            | Self::Switch { element, .. } => element,
         }
     }
 
@@ -165,9 +277,10 @@ impl Variable {
     pub fn elements(&self) -> Vec<&str> {
         match self {
             Self::Pot { legs, .. } => legs.iter().map(String::as_str).collect(),
-            Self::Rheostat { element, .. } | Self::Resistor { element } | Self::Capacitor { element } => {
-                vec![element.as_str()]
-            }
+            Self::Rheostat { element, .. }
+            | Self::Resistor { element }
+            | Self::Capacitor { element }
+            | Self::Switch { element, .. } => vec![element.as_str()],
         }
     }
 }
@@ -217,6 +330,11 @@ impl Netlist {
         if let Variable::Rheostat { track_ohms, .. } = &variable {
             if !(track_ohms.is_finite() && *track_ohms > 0.0) {
                 return Err(refuse(name, "a rheostat's track is positive and finite"));
+            }
+        }
+        if let Variable::Switch { on_ohms, off_ohms, .. } = &variable {
+            if !(on_ohms.is_finite() && off_ohms.is_finite() && *on_ohms > 0.0 && off_ohms > on_ohms) {
+                return Err(refuse(name, "a switch is a positive resistance, open above closed"));
             }
         }
         self.variables.push(variable);

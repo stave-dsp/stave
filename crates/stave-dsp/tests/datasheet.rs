@@ -465,6 +465,41 @@ fn primitive_datasheet() {
     flutter.prepare(sr);
     bench("Flutter (Akai 4000D)", &input, |x| flutter.tick(x));
 
+    // H8: vintage digital. A word-length reduction with TPDF dither,
+    // and shaped; a sampler's converters at its own clock; an early
+    // digital delay's fixed-point datapath.
+    {
+        use stave_dsp::circuit::devices::converter::{self, Converter};
+        use stave_dsp::primitives::fixed::Overflow;
+        use stave_dsp::primitives::quantise::{Dither, Quantiser, Shaping};
+        let mut tpdf = Quantiser::new(16).with_dither(Dither::Triangular, 1);
+        bench("Quantiser 16-bit TPDF", &input, |x| tpdf.tick(x));
+        let mut shaped = Quantiser::new(16)
+            .with_dither(Dither::Triangular, 1)
+            .with_shaping(Shaping::SECOND_ORDER)
+            .unwrap();
+        bench("Quantiser 16-bit TPDF 2nd-order shaped", &input, |x| shaped.tick(x));
+        let mut sp = Converter::new(converter::Machine::SP1200);
+        sp.prepare(sr);
+        bench("Converter SP-1200", &input, |x| sp.tick(x));
+        let mut delay = converter::Delay::new(converter::Machine::SP1200, 0.5, Overflow::Saturate, 8);
+        delay.set_seconds(0.3);
+        delay.set_feedback(0.6);
+        delay.prepare(sr);
+        bench("Digital delay 12-bit", &input, |x| delay.tick(x));
+    }
+
+    // H9: slow random processes.
+    {
+        use stave_dsp::primitives::control::drift::{OrnsteinUhlenbeck, Wiener};
+        let mut ou = OrnsteinUhlenbeck::new(25.0, 0.5, 30.0, 1);
+        ou.prepare(sr);
+        bench("OrnsteinUhlenbeck", &input, |x| ou.tick(x));
+        let mut wiener = Wiener::new(1.0, 1e-4, 1e-3, 1);
+        wiener.prepare(sr);
+        bench("Wiener", &input, |x| wiener.tick(x));
+    }
+
     // D1–D3: dynamics.
     let mut peak = Peak::new(5.0, 50.0);
     peak.prepare(sr);
@@ -1055,6 +1090,10 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     bench("PassiveToneStack", input, |x| stack.tick(x));
     let mut stack_dk = dk(TONE_STACK, sr);
     bench("Circuit<Dk> tone stack", input, |x| stack_dk.tick(x));
+    // H9: the same with its resistors' thermal noise, a column each.
+    let mut noisy = dk(TONE_STACK, sr);
+    noisy.set_noise(Some(stave_dsp::circuit::methods::dk::Noise::room(1)));
+    bench("Circuit<Dk> tone stack, thermal noise", input, |x| noisy.tick(x));
     let mut stack_wdf = wdf_deck(TONE_STACK, sr);
     bench("Circuit<Wdf> tone stack", input, |x| stack_wdf.tick(x));
 

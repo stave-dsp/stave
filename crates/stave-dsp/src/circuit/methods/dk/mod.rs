@@ -122,10 +122,14 @@
 pub mod adaa;
 pub mod devices;
 pub mod matrix;
+mod noise;
 pub mod solve;
 mod variable;
 
 pub use adaa::Mean;
+pub use noise::{Noise, Supply, BOLTZMANN, ELECTRON_CHARGE};
+pub(crate) use noise::{NoiseSite, Site};
+use noise::NoiseState;
 
 use devices::Nonlinear;
 pub use matrix::Phasor;
@@ -147,6 +151,9 @@ pub(crate) type Pin = Option<usize>;
 pub(crate) enum Input {
     Source(Source),
     Expression { tape: Tape, stack: Vec<Dual> },
+    /// A noise source ([`Dk::set_noise`]), by its index among the active
+    /// ones: zero at the operating point and in every other method.
+    Noise(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -240,6 +247,14 @@ pub struct Dk {
     earlier: Health,
     /// Variable parts (N6).
     pub(crate) varying: variable::Varying,
+    /// Where noise can enter (H9): every resistor and junction.
+    pub(crate) noise_sites: Vec<NoiseSite>,
+    /// The noise in effect, if any.
+    noise: Option<NoiseState>,
+    /// The netlist's own sources: the inputs before any noise columns.
+    pub(crate) base_inputs: usize,
+    /// Sources held from outside ([`Dk::set_supply`]).
+    held: Vec<Option<f64>>,
 }
 
 /// The conductance a DC solve adds from every node to ground when the
@@ -402,6 +417,9 @@ impl Dk {
         self.sample_rate = sample_rate;
         self.step = 1.0 / f64::from(sample_rate);
         self.varying.variables.prepare(sample_rate);
+        if let Some(noise) = self.noise.as_mut() {
+            noise.prepare(&self.noise_sites, f64::from(sample_rate));
+        }
         // Variable parts where they were set; a moved resistor moves the
         // operating point (kept as it was if the new one cannot be found).
         self.adopt_values();
@@ -423,6 +441,9 @@ impl Dk {
     /// Back to t = 0 at the operating point (or the initial conditions).
     pub fn reset(&mut self) {
         self.settle();
+        if let Some(noise) = self.noise.as_mut() {
+            noise.restart();
+        }
         let t = self.design_step();
         self.samples = 0;
         if self.uic {
@@ -455,15 +476,33 @@ impl Dk {
     }
 
     /// Every source's value at `time` into `u`, the driven one at 0
-    /// (its value is set by `step`).
+    /// (its value is set by `step`), a held one at its held value, the
+    /// noise sources' next draws.
     fn inputs_at(&mut self, time: f64) {
-        for (k, source) in self.inputs.iter_mut().enumerate() {
-            self.u[k] = if self.driven == Some(k) {
+        let Self {
+            inputs,
+            u,
+            driven,
+            held,
+            noise,
+            noise_sites,
+            varying,
+            work,
+            ..
+        } = self;
+        for (k, source) in inputs.iter_mut().enumerate() {
+            u[k] = if *driven == Some(k) {
                 0.0
+            } else if let Some(Some(volts)) = held.get(k) {
+                *volts
             } else {
                 match source {
                     Input::Source(s) => s.value_at(time),
                     Input::Expression { tape, stack } => tape.eval(&[], time, stack).value,
+                    Input::Noise(j) => match noise.as_mut() {
+                        Some(n) => n.draw(*j, noise_sites, &varying.variables.values, &work.q, &work.v),
+                        None => 0.0,
+                    },
                 }
             };
         }
