@@ -742,7 +742,7 @@ other references; a model with a capture is held to it within budget.
   and published responses as reference tables, sources cited, in the ngspice
   table format, so a model can be held to a target where no capture exists.
 
-- [ ] **R24** Classic circuits as verified decks and topologies: each unit's
+- [x] **R24** (0e436d5: Big Muff 6.7e-5 at 16×, its tone stack 3e-12 dB; TS-808 1.4e-5 at 16×; RAT 8.2e-6 at 64×; 5F6-A / AB763 / 2203 stacks 6e-12 dB, closed form too; JCM800 1.0e-4 at 16×; Moog 904-A 1.9e-5 dB AC, 7.2e-6 at 4× with k = 3; every one h²-converging, no cap hits at 48 kHz; parts `GummelPoon::N2N3392`, `ShichmanHodges::N2N5458`; `ngspice-simulate.py` fails a deck whose operating point fell back to ngspice's transient op) Classic circuits as verified decks and topologies: each unit's
   ngspice deck with its sources cited in the header, and a named netlist in
   `circuit::topologies` (stave's op-amp and triode elements where the deck
   writes behavioural sources) held to the same reference
