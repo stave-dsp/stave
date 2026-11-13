@@ -10,8 +10,9 @@
 #   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh macos -- scripts/profile.sh stage biquad
 #
 # HOST is `linux` or `macos` (the hosts named by STAVE_LINUX_HOST and
-# STAVE_MACOS_HOST in your local configuration — see stave.env.example), or
-# any ssh destination. The host needs rustup and cargo-nextest; the pinned
+# STAVE_MACOS_HOST in your local configuration — see stave.env.example),
+# `auto` (whichever of those two is less loaded per core), or any ssh
+# destination. The host needs rustup and cargo-nextest; the pinned
 # toolchain installs itself from rust-toolchain.toml. Each tree gets its own
 # directory and build cache on the host, named after the local directory
 # unless STAVE_OFFLOAD_NAME says otherwise, so parallel builds never share
@@ -30,9 +31,22 @@ shift
 
 source "$(dirname "$0")/lib/config.sh"
 stave_config_load "$(git rev-parse --show-toplevel)"
+# Load per core on a host (one-minute average), for `auto`.
+load_per_core() {
+  ssh "$1" 'l=$(uptime | sed -E "s/.*load averages?: *([0-9.]+).*/\1/"); \
+    n=$(nproc 2>/dev/null || sysctl -n hw.ncpu); awk -v l="$l" -v n="$n" "BEGIN{printf \"%.3f\", l/n}"' 2>/dev/null || echo 999
+}
 case "$HOST" in
   linux) HOST="$(stave_config_require STAVE_LINUX_HOST "offload.sh linux")" ;;
   macos) HOST="$(stave_config_require STAVE_MACOS_HOST "offload.sh macos")" ;;
+  auto)
+    # Whichever configured host is less loaded per core right now; for work
+    # that runs on either (builds, tests, gates).
+    L="$(stave_config_require STAVE_LINUX_HOST "offload.sh auto")"
+    M="$(stave_config_require STAVE_MACOS_HOST "offload.sh auto")"
+    if awk -v a="$(load_per_core "$L")" -v b="$(load_per_core "$M")" 'BEGIN{exit !(a <= b)}'; then HOST="$L"; else HOST="$M"; fi
+    echo "offload: auto chose $HOST" >&2
+    ;;
 esac
 SYNC="${STAVE_OFFLOAD_SYNC:-rsync}"
 for tar_host in ${STAVE_TAR_HOSTS:-}; do

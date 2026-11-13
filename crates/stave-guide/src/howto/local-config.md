@@ -35,6 +35,7 @@ can hand heavy builds to a faster machine:
 ```sh
 scripts/offload.sh linux -- cargo nextest run -p stave-dsp
 scripts/offload.sh macos -- scripts/gates.sh
+scripts/offload.sh auto -- cargo nextest run   # whichever host is less loaded per core
 ```
 
 The host needs rustup and `cargo-nextest`; the pinned toolchain installs
