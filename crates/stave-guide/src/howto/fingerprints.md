@@ -9,7 +9,8 @@ again on every commit and fails when anything moves beyond numerical
 noise, until someone re-blesses it on purpose. The **perceptual metrics**
 are the numbers that say whether a difference, or a model's own
 distortion, is something a listener would hear. This page covers both,
-and the aliasing budget that the metrics make audible.
+the budgets they state as audibility (the null test), and the aliasing
+budget that the metrics make audible.
 
 ## What a fingerprint holds
 
@@ -204,6 +205,54 @@ let gm = GedLee::of_curve(|x| x + x * x * x).gm;
 assert!((gm - (36.0 * (1.0 / 3.0 - 2.0 / std::f64::consts::PI.powi(2))).sqrt()).abs() < 1e-5);
 ```
 
+## Budgets by audibility: the null test
+
+Every model-vs-reference comparison carries a verdict on what a listener
+would hear (DSP.md R16). The model is matched to the reference in level
+and latency, the way a listening test lines two takes up. Then the
+residual, the reference minus the aligned model, is judged by its NMR
+with the reference as the masker. The model is **inaudible** when the
+total NMR and the worst band are both at −10 dB or less
+(`stave_measure::perceptual::null::INAUDIBLE_DB`). At 0 dB the residual
+sits at the masked threshold the ear model predicts. The 10 dB margin
+is the one perceptual coding keeps for transparency, and the one
+listening tests set for aliasing. It is a model's prediction, never a
+listening result.
+
+```rust
+use stave_measure::perceptual::{null, Playback};
+
+let rate = 48_000.0;
+let x: Vec<f64> = (0..24_000).map(|i| 0.5 * (std::f64::consts::TAU * 440.0 * i as f64 / rate).sin()).collect();
+// The same take, 1.5 dB quieter and three samples late: aligned out.
+let model: Vec<f64> = (0..24_000).map(|i| if i < 3 { 0.0 } else { x[i - 3] * 10f64.powf(-1.5 / 20.0) }).collect();
+let n = null::between(&x, &model, rate, Playback::default(), 1e-3);
+assert!((n.alignment.gain_db() - 1.5).abs() < 0.01 && n.inaudible());
+```
+
+Where it is reported:
+
+- **The characterisation** (`Check::Audibility`, "R16 null NMR"): each
+  tier's multisines, tones and two-tone pairs, resynthesised from the
+  lines both tables carry, one alignment over all of them, at the
+  fingerprint's playback level. Every case has a budget of −10 dB total
+  and worst band. A case over it is a finding, held at its measurement
+  plus 5 dB. The numeric budgets stay beside it as regression guards.
+- **Fingerprints**: `null_nmr_total_db` and `null_nmr_max_db` per run,
+  the alignment under the run `alignment`. The model catalogue prints
+  the verdict next to each fingerprint and its numbers. When a pinned
+  fingerprint moves, the failure also says how audible the move is.
+- **The reference harness** (`stave_test::reference::Case`): every
+  time-domain comparison at an audio rate prints an `audible` line next
+  to its numeric error.
+- **`stave-play --verify-blessed`**: the null of the build against its
+  blessed take.
+- **Program material** (T1, `null_on_program_material`): with the
+  reference corpus present, each circuit at the corpus's rate as it
+  ships, against itself at 16×, on its `guitar_di`, `vocal` and
+  `drums_loop` roles. C13's `stave_test::corpus::c13::NullNmr` prints
+  the aligned verdict beside its own figures.
+
 ## Aliasing budgets by audibility
 
 The anti-aliasing budgets (`crates/stave-dsp/tests/aliasing_budgets.rs`)
@@ -232,6 +281,7 @@ on the datasheet (the docs site's Cost page):
 `"Rnonlin (40 gammatone bands, 48 kHz)"` and `"GedLee (15 harmonics)"`.
 The per-commit fingerprint diff computes none of them. It compares
 tables, and the ANMR of a T0 tone run adds about 2 ms per run, so the
-T0 tier stays under half a second per circuit. Re-blessing and
+T0 tier stays under half a second per circuit. The null test adds
+about 25 ms to a T0 characterisation (both rates, six runs each). Re-blessing and
 `fingerprints_are_current` compute all of them: a few seconds for the
 whole tree.

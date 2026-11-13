@@ -7,7 +7,7 @@ knee 3.630780547701014e-2 distortion
 settle 5e-2
 reference none
 playback 92 1.86355228e-1
-versions nmr-bs1387-basic/1 anmr-kahles2019/1 erb-band-error/1 rnonlin-tan2004/1 gedlee-2003/1
+versions nmr-bs1387-basic/1 anmr-kahles2019/1 erb-band-error/1 rnonlin-tan2004/1 gedlee-2003/1 null-nmr/1
 metric 48000 multisine/-40/r1 rnonlin 9.92296206e-1
 metric 48000 multisine/+0/r1 rnonlin 9.92397813e-1
 metric 48000 multisine/+12/r1 rnonlin 9.87271752e-1

@@ -33,6 +33,8 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use stave_measure::perceptual::null::{self, Null};
+use stave_measure::perceptual::Playback;
 use stave_measure::waveform::Waveform;
 
 mod datasheet;
@@ -693,7 +695,9 @@ impl Case {
             Worst::Harmonic(k) => format!("at harmonic {k}"),
             Worst::Whole => "over the whole waveform".to_string(),
         };
+        let audibility = self.audibility(&reference, &model);
         let outcome = Outcome {
+            audibility,
             case: self.name.clone(),
             metric: self.metric,
             budget: self.budget,
@@ -733,6 +737,40 @@ impl Case {
     }
 }
 
+impl Case {
+    /// The audibility verdict of an audio-domain comparison (DSP.md R16):
+    /// a time-domain reference sampled uniformly at an audio rate (32 kHz
+    /// and up), its swing (about its mean) as the masker playing at
+    /// 92 dB SPL at its peak, the model level- and latency-aligned (±1 ms)
+    /// and its residual's NMR read. `Err` says why a comparison has none
+    /// (a static curve, a response, an irregular grid).
+    fn audibility(&self, reference: &[f64], model: &[f64]) -> Result<Null, String> {
+        if self.reference.axis() != Axis::Time {
+            return Err("not an audio-domain comparison (a static curve or a response)".into());
+        }
+        let t = self.reference.abscissa();
+        if t.len() < 2 {
+            return Err("a single point".into());
+        }
+        let step = (t[t.len() - 1] - t[0]) / (t.len() - 1) as f64;
+        if step.is_nan() || step <= 0.0 || t.windows(2).any(|w| ((w[1] - w[0]) / step - 1.0).abs() > 1e-3) {
+            return Err("the reference is not uniformly sampled".into());
+        }
+        let rate = 1.0 / step;
+        if rate < 32_000.0 {
+            return Err(format!("sampled at {rate:.0} Hz, under the ear model's 32 kHz"));
+        }
+        let mean = reference.iter().sum::<f64>() / reference.len() as f64;
+        let r: Vec<f64> = reference.iter().map(|v| v - mean).collect();
+        let m: Vec<f64> = model.iter().map(|v| v - mean).collect();
+        let peak = r.iter().fold(0.0f64, |p, v| p.max(v.abs()));
+        if peak.is_nan() || peak <= 0.0 || m.iter().any(|v| !v.is_finite()) {
+            return Err("a silent reference or a non-finite model".into());
+        }
+        Ok(null::between(&r, &m, rate, Playback::full_scale(peak), 1e-3))
+    }
+}
+
 // -------------------------------------------------------------- Outcome
 
 /// A case's result: the error against the budget, and where it is worst.
@@ -752,6 +790,10 @@ pub struct Outcome {
     /// The dump: written on a failure, or on every case when
     /// `STAVE_REFERENCE_DUMP` is set.
     pub dump: Option<PathBuf>,
+    /// The audibility verdict (DSP.md R16): the null residual's NMR under
+    /// the reference, or why the comparison has none. Reported beside
+    /// the numeric budget, which stays the regression guard.
+    pub audibility: Result<Null, String>,
 }
 
 impl Outcome {
@@ -791,6 +833,18 @@ impl fmt::Display for Outcome {
         writeln!(f, "  worst     {}", self.worst)?;
         if let Some(s) = self.scale {
             writeln!(f, "  scale     {s:.9e} (fitted)")?;
+        }
+        if let Ok(n) = &self.audibility {
+            writeln!(
+                f,
+                "  audible   {}: null NMR {:.1} dB total, {:.1} dB worst band ({:.0} Hz); aligned {:+.4} dB, {:+.3} µs",
+                null::verdict(n.nmr.total_db, n.nmr.max_db),
+                n.nmr.total_db,
+                n.nmr.max_db,
+                n.nmr.max_hz,
+                n.alignment.gain_db(),
+                n.alignment.delay * 1e6
+            )?;
         }
         write!(f, "  {}", self.setting)?;
         if let Some(path) = &self.dump {

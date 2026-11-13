@@ -53,10 +53,15 @@ pub enum Check {
     /// a shipping rate, dB (Kahles et al. 2019; audible above −10 dB) —
     /// its own, held to a ceiling.
     Anmr,
+    /// R16, the null by audibility: the residual (reference − model,
+    /// level and latency aligned) under the reference as its masker —
+    /// the worst run's total NMR, dB, and the worst band's
+    /// ([`super::audibility`]). Inaudible at −10 dB and below.
+    Audibility,
 }
 
 impl Check {
-    pub const ALL: [Check; 12] = [
+    pub const ALL: [Check; 13] = [
         Check::OperatingPoint,
         Check::Response,
         Check::GroupDelay,
@@ -69,6 +74,7 @@ impl Check {
         Check::Dynamics,
         Check::Aliasing,
         Check::Anmr,
+        Check::Audibility,
     ];
 
     pub fn name(self) -> &'static str {
@@ -85,17 +91,18 @@ impl Check {
             Check::Dynamics => "C8 dynamics",
             Check::Aliasing => "C10 aliasing",
             Check::Anmr => "C10 ANMR",
+            Check::Audibility => "R16 null NMR",
         }
     }
 
     /// The unit of the first error (the second, where there is one, is
-    /// degrees — or dB for dynamics).
+    /// degrees — or dB for dynamics, the worst band's NMR for audibility).
     pub fn unit(self) -> &'static str {
         match self {
             Check::OperatingPoint => "V",
             Check::Dynamics => "V",
             Check::Aliasing => "dBc",
-            Check::Anmr => "dB NMR",
+            Check::Anmr | Check::Audibility => "dB NMR",
             Check::GroupDelay => "s",
             _ => "dB",
         }
@@ -109,6 +116,7 @@ impl Check {
             | Check::Harmonics
             | Check::Intermodulation => Some("°"),
             Check::Dynamics => Some("dB"),
+            Check::Audibility => Some("dB NMR"),
             _ => None,
         }
     }
@@ -331,6 +339,22 @@ pub fn compare(
                 let Some(a) = md.anmr else { continue };
                 m.points += 1;
                 m.first.offer(a, || format!("{}: ANMR {a:.1} dB", run.id));
+            }
+        }
+        Check::Audibility => {
+            let playback = super::audibility::playback(plan, reference, super::audibility::ANALYSIS_RATE);
+            let a = super::audibility::Audibility::of(plan, tier, reference, model, playback)?;
+            let aligned = format!(
+                "aligned {:+.4} dB, {:+.3} µs",
+                a.alignment.gain_db(),
+                a.alignment.delay * 1e6
+            );
+            m.first.error = f64::NEG_INFINITY;
+            m.second.error = f64::NEG_INFINITY;
+            for r in &a.runs {
+                m.points += 1;
+                m.first.offer(r.nmr.total_db, || format!("{}: total {:.1} dB, {aligned}", r.run, r.nmr.total_db));
+                m.second.offer(r.nmr.max_db, || format!("{}: {:.1} dB at {:.0} Hz", r.run, r.nmr.max_db, r.nmr.max_hz));
             }
         }
         Check::Aliasing => {

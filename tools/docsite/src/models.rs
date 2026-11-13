@@ -278,7 +278,9 @@ pub fn catalogue(cx: &Ctx<'_>) -> Result<(Generated, usize)> {
                 if SECTIONS[k] == "Verified" {
                     // Each fingerprint that pins this model, as a link to its plots.
                     for f in prints.iter().filter(|f| f.catalogue.as_deref() == Some(m.item.path.as_str())) {
-                        let _ = write!(cell, " Fingerprint: <a href=\"#{}\"><code>{}</code></a>.", f.anchor(), esc(&f.case));
+                        // With its audibility verdict against the reference (R16), beside the numbers.
+                        let verdict = f.verdict().map(|v| format!(": {}", esc(&v))).unwrap_or_default();
+                        let _ = write!(cell, " Fingerprint: <a href=\"#{}\"><code>{}</code></a>{verdict}.", f.anchor(), esc(&f.case));
                     }
                 }
                 if SECTIONS[k] == "Cost" {
@@ -297,7 +299,7 @@ pub fn catalogue(cx: &Ctx<'_>) -> Result<(Generated, usize)> {
     }
     let _ = write!(
         body,
-        "<h2 id=\"fingerprints\">Fingerprints</h2><p>Each model's committed fingerprint (DSP.md R18): its T0 characterisation as data, which CI re-measures on every commit and fails when any characteristic moves beyond a numerical tolerance, until it is re-blessed on purpose (<code>STAVE_BLESS=1</code>). Drawn here at build time from the fingerprint files in <a href=\"{GITHUB}/tree/main/{}\"><code>{}</code></a>: the small-signal response, the harmonics of a 1 kHz tone at the two hottest levels, its compression and its aliasing (the inharmonic floor in dBc, dashed, and the A-weighted noise-to-mask ratio, audible above −10 dB), each against the reference where there is one (ngspice, dashed). The model at the shipping rate is the accent line; oversampled, grey. Below each, its perceptual metrics at the shipping rate (DSP.md R19): the NMR and ERB-band error against the reference, Rnonlin (1 is no distortion) and GedLee on its own; a guide section explains them: <a href=\"{}\">Fingerprints and perceptual metrics</a>.</p>",
+        "<h2 id=\"fingerprints\">Fingerprints</h2><p>Each model's committed fingerprint (DSP.md R18): its T0 characterisation as data, which CI re-measures on every commit and fails when any characteristic moves beyond a numerical tolerance, until it is re-blessed on purpose (<code>STAVE_BLESS=1</code>). Drawn here at build time from the fingerprint files in <a href=\"{GITHUB}/tree/main/{}\"><code>{}</code></a>: the small-signal response, the harmonics of a 1 kHz tone at the two hottest levels, its compression and its aliasing (the inharmonic floor in dBc, dashed, and the A-weighted noise-to-mask ratio, audible above −10 dB), each against the reference where there is one (ngspice, dashed). The model at the shipping rate is the accent line; oversampled, grey. Below each, its audibility verdict (DSP.md R16): the null residual against the reference — the reference minus the model, matched in level and latency — judged by its noise-to-mask ratio under the reference, inaudible at −10 dB or less in total and in its worst band, at each rate; then its perceptual metrics at the shipping rate (DSP.md R19): that null NMR per run, the NMR and ERB-band error of the magnitudes against the reference, Rnonlin (1 is no distortion) and GedLee on its own; a guide section explains them: <a href=\"{}\">Fingerprints and perceptual metrics</a>.</p>",
         fingerprints::DIR,
         fingerprints::DIR,
         rel(PATH, "howto/fingerprints/index.html")

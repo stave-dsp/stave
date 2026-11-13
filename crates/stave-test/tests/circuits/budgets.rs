@@ -1,4 +1,12 @@
-//! Every case's budgets, per tier: the measured error with a margin
+//! Every case's budgets, per tier. The primary one is audibility
+//! (DSP.md R16, `Audibility`): the null residual — reference minus the
+//! model, level and latency aligned — under the reference as its
+//! masker, at most −10 dB NMR in total and in its worst band (`(−10,
+//! −10)`: the residual at least 10 dB under BS.1387's masked threshold,
+//! the margin `stave_measure::perceptual::null` argues). A case over it
+//! is a finding, held at the measured NMR plus 5 dB rounded up to 5. The
+//! numeric budgets beside it are the regression guards: the measured
+//! error with a margin
 //! (three times, rounded up to 1-2-5; aliasing ceilings 2 dB above the
 //! measured level; group delay at the audibility budget, 0.2 ms from
 //! 500 Hz to 4 kHz; ANMR at Kahles et al.'s audibility threshold, −10 dB,
@@ -31,6 +39,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -38.6 / -20.6 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -51.0 / -33.0 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 1.0, 2.0), // 0.173 / 0.512
             (Bla, Shipping, 0.2, 0.5), // 0.0414 / 0.126 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 5e-4, 0.02), // 0.000109 / 0.0054
@@ -52,6 +62,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -104.0, NAN), // -106
             (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -18.5 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -82.2 / -64.7 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -79.6 / -62.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.05), // 0.000967 / 0.0102
             (Bla, Shipping, 0.01, 0.05), // 0.00221 / 0.0102
             (Compression, Oversampled, 1e-5, 1e-4), // 2.88e-06 / 1.73e-05
@@ -73,6 +85,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -99.0, NAN), // -101
             (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -18.5 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -68.7 / -54.7 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -80.4 / -63.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.1), // 0.00143 / 0.0271
             (Bla, Shipping, 0.005, 0.05), // 0.00141 / 0.0102
             (Compression, Oversampled, 2e-5, 0.001), // 4.01e-06 / 0.000253
@@ -94,6 +108,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -110.0, NAN), // -112
             (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -25.5 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -63.5 / -51.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -50.9 / -38.8 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000373
             (Bla, Shipping, 0.005, 0.02), // 0.00097 / 0.00649
             (Compression, Oversampled, 1e-5, 1e-4), // 3.03e-06 / 2.14e-05
@@ -115,6 +131,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -116.0, NAN), // -118 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -37.1 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -62.1 / -44.3 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -36.7 / -18.9 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.05, 0.2), // 0.00992 / 0.0356
             (Bla, Shipping, 1.0, 2.0), // 0.188 / 0.613 (R11: the whole card)
             (Compression, Oversampled, 2e-6, 5e-4), // 6.47e-07 / 6.88e-05 — R12: closed with the operating point (was 0.12 dB)
@@ -136,6 +154,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -94.3 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -82.2 / -64.5 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -82.2 / -64.5 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.05), // 0.000966 / 0.00669
             (Bla, Shipping, 0.005, 0.05), // 0.000966 / 0.00669
             (Compression, Oversampled, 5e-6, 0.002), // 1.24e-06 / 0.00039 — R12: closed with the operating point (was 0.12 dB)
@@ -157,6 +177,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -110.0, NAN), // -112
             (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -25.5 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -63.5 / -51.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -50.9 / -38.8 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000373
             (Bla, Shipping, 0.005, 0.02), // 0.00097 / 0.00649
             (Compression, Oversampled, 1e-5, 1e-4), // 3.03e-06 / 2.14e-05
@@ -177,6 +199,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode_grid_current/hand", Tier::T0) => &[
             (Aliasing, Oversampled, -108.0, NAN), // -111
             (Aliasing, Shipping, -112.0, NAN), // -114 — aliasing as it ships
+            (Audibility, Oversampled, -10.0, -10.0), // -67.1 / -53.3 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -73.4 / -60.0 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000411
             (Bla, Shipping, 0.005, 5e-4), // 0.000968 / 0.000145
             (Compression, Oversampled, 2e-5, 1e-4), // 3.49e-06 / 2.36e-05
@@ -197,6 +221,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode_grid_current", Tier::T0) => &[
             (Aliasing, Oversampled, -108.0, NAN), // -111
             (Aliasing, Shipping, -112.0, NAN), // -114 — aliasing as it ships
+            (Audibility, Oversampled, -10.0, -10.0), // -67.1 / -53.3 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -73.4 / -60.0 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000411
             (Bla, Shipping, 0.005, 5e-4), // 0.000968 / 0.000145
             (Compression, Oversampled, 2e-5, 1e-4), // 3.49e-06 / 2.36e-05
@@ -218,6 +244,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -93.3 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -39.1 / -21.0 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -52.8 / -34.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.49
             (Bla, Shipping, 0.2, 0.5), // 0.0355 / 0.107 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.01, 0.02), // 0.00257 / 0.00541
@@ -247,6 +275,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -99.0, NAN), // -101
             (Aliasing, Shipping, -103.0, NAN), // -105 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -10.7 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -48.1 / -35.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -54.8 / -42.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00491
             (Bla, Shipping, 0.005, 0.005), // 0.000978 / 0.00133
             (Compression, Oversampled, 2e-5, 2e-4), // 3.39e-06 / 3.82e-05
@@ -268,6 +298,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -99.0, NAN), // -101
             (Aliasing, Shipping, -103.0, NAN), // -105 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -10.7 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -48.1 / -35.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -54.8 / -42.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00492
             (Bla, Shipping, 0.005, 0.005), // 0.000977 / 0.00104
             (Compression, Oversampled, 2e-5, 2e-4), // 3.34e-06 / 3.79e-05
@@ -289,6 +321,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -72.7 / -54.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -67.8 / -52.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.001, 0.1), // 0.000316 / 0.021
             (Bla, Shipping, 0.02, 0.5), // 0.00361 / 0.0887 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 1e-4, 5e-4), // 1.81e-05 / 0.000119
@@ -310,6 +344,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -111.0, NAN), // -114
             (Aliasing, Shipping, -82.0, NAN), // -84.6 — aliasing as it ships
             (Anmr, Shipping, 11.0, NAN), // 7.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -79.8 / -64.7 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -69.1 / -56.1 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.01), // 0.000964 / 0.00231
             (Bla, Shipping, 0.005, 0.05), // 0.00164 / 0.00765
             (Compression, Oversampled, 2e-5, 2e-4), // 3.39e-06 / 4.27e-05
@@ -331,6 +367,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -101.0, NAN), // -104
             (Aliasing, Shipping, -77.0, NAN), // -79.3 — aliasing as it ships
             (Anmr, Shipping, 11.0, NAN), // 7.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -55.0 / -40.0 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -68.8 / -55.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
             (Bla, Shipping, 0.01, 0.05), // 0.00167 / 0.0106
             (Compression, Oversampled, 2e-5, 0.001), // 3.34e-06 / 0.000228
@@ -352,6 +390,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -81.3 / -64.1 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -81.2 / -64.1 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00105
             (Bla, Shipping, 0.005, 0.005), // 0.000968 / 0.00143
             (Compression, Oversampled, 2e-5, 5e-7), // 5.2e-06 / 1.36e-07
@@ -373,6 +413,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -72.7 / -54.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -67.8 / -52.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.001, 0.1), // 0.000316 / 0.021
             (Bla, Shipping, 0.02, 0.5), // 0.00361 / 0.0887 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 1e-4, 5e-4), // 1.81e-05 / 0.000119
@@ -402,6 +444,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -41.4 / -27.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -82.1 / -64.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.2, 2.0), // 0.0517 / 0.367
             (Bla, Shipping, 0.005, 0.002), // 0.00102 / 0.000538
             (Compression, Oversampled, 5e-5, 1e-6), // 8.39e-06 / 3.25e-07
@@ -423,6 +467,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -89.0, NAN), // -91.4
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -75.6 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -46.5 / -28.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -81.8 / -64.3 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.2, 0.5), // 0.0426 / 0.149
             (Bla, Shipping, 0.005, 0.005), // 0.001 / 0.000775
             (Compression, Oversampled, 5e-5, 2e-7), // 9.12e-06 / 4.32e-08
@@ -444,6 +490,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -57.5 / -37.0 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -81.9 / -64.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.02, 0.1), // 0.0057 / 0.0244
             (Bla, Shipping, 0.005, 2e-4), // 0.000968 / 6.51e-05
             (Compression, Oversampled, 2e-5, 1e-7), // 3.34e-06 / 2.54e-08
@@ -465,6 +513,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -52.1 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -68.8 / -56.6 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -43.8 / -31.3 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.02, 1.0), // 0.00421 / 0.186
             (Bla, Shipping, 0.2, 20.0), // 0.0479 / 3.35
             (Compression, Oversampled, 0.002, 0.01), // 0.00058 / 0.00255
@@ -486,6 +536,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -52.9 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -67.2 / -54.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -43.2 / -31.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.02, 1.0), // 0.00522 / 0.198
             (Bla, Shipping, 0.2, 20.0), // 0.0617 / 3.48
             (Compression, Oversampled, 0.002, 0.01), // 0.000603 / 0.00243
@@ -507,6 +559,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -49.5 / -31.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -37.2 / -19.5 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.2, 0.5), // 0.0456 / 0.109
             (Bla, Shipping, 1.0, 2.0), // 0.19 / 0.442 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 2e-4, 0.005), // 6.21e-05 / 0.000774
@@ -528,6 +582,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -59.0, NAN), // -61.7
             (Aliasing, Shipping, -76.0, NAN), // -78.3 — aliasing as it ships
             (Anmr, Shipping, 1.0, NAN), // -2.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -37.5 / -19.5 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -48.4 / -30.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 1.0, 2.0), // 0.173 / 0.515
             (Bla, Shipping, 0.2, 0.5), // 0.0493 / 0.15 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.1, 0.5), // 0.0287 / 0.194
@@ -553,6 +609,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -72.0, NAN), // -74.7
             (Aliasing, Shipping, -57.0, NAN), // -59.8 — aliasing as it ships
             (Anmr, Shipping, 17.0, NAN), // 13.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -78.9 / -63.3 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -70.3 / -54.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.02), // 0.00101 / 0.00518
             (Bla, Shipping, 0.005, 0.05), // 0.00139 / 0.0129
             (Compression, Oversampled, 0.001, 0.001), // 0.00028 / 0.000209
@@ -578,6 +636,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -46.0, NAN), // -48.6
             (Aliasing, Shipping, -57.0, NAN), // -59.6 — aliasing as it ships
             (Anmr, Shipping, 17.0, NAN), // 13.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -58.8 / -42.6 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -70.3 / -54.2 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.02, 0.05), // 0.00389 / 0.0141
             (Bla, Shipping, 0.005, 0.05), // 0.00149 / 0.00914
             (Compression, Oversampled, 0.001, 0.01), // 0.000244 / 0.0022
@@ -603,6 +663,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -94.0, NAN), // -96.5
             (Aliasing, Shipping, -30.0, NAN), // -32.7 — aliasing as it ships
             (Anmr, Shipping, 16.0, NAN), // 12.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -44.5 / -31.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -29.7 / -17.0 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000382
             (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
@@ -628,6 +690,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -94.0, NAN), // -96.5
             (Aliasing, Shipping, -30.0, NAN), // -32.7 — aliasing as it ships
             (Anmr, Shipping, 16.0, NAN), // 12.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -44.5 / -31.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -29.7 / -17.0 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000382
             (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
@@ -653,6 +717,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -115.0, NAN), // -117
             (Aliasing, Shipping, -107.0, NAN), // -110 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -19.9 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -54.6 / -36.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -28.8 / -11.1 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.05, 0.2), // 0.00992 / 0.0357
             (Bla, Shipping, 1.0, 5.0), // 0.223 / 0.731 (R11: the whole card)
             (Compression, Oversampled, 0.01, 0.05), // 0.0018 / 0.0109 — R12: closed with the operating point (was 0.12 dB)
@@ -678,6 +744,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -78.9 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -82.2 / -64.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -82.2 / -64.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.05), // 0.000966 / 0.00669
             (Bla, Shipping, 0.005, 0.05), // 0.000967 / 0.00794
             (Compression, Oversampled, 0.001, 0.02), // 0.000242 / 0.00335 — R12: closed with the operating point (was 0.12 dB)
@@ -703,6 +771,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -60.0, NAN), // -62.1
             (Aliasing, Shipping, -76.0, NAN), // -78.5 — aliasing as it ships
             (Anmr, Shipping, 0.0, NAN), // -3 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -38.1 / -19.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -50.0 / -31.9 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.493
             (Bla, Shipping, 0.2, 0.5), // 0.0446 / 0.131 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.1, 0.5), // 0.027 / 0.159
@@ -736,6 +806,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -58.0, NAN), // -60.3
             (Aliasing, Shipping, -79.0, NAN), // -81.4 — aliasing as it ships
             (Anmr, Shipping, -1.0, NAN), // -4.1 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -59.9 / -44.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -59.9 / -44.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.02), // 0.000968 / 0.00432
             (Bla, Shipping, 0.005, 0.002), // 0.000968 / 0.000434
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000211
@@ -761,6 +833,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -58.0, NAN), // -60.3
             (Aliasing, Shipping, -79.0, NAN), // -81.4 — aliasing as it ships
             (Anmr, Shipping, -1.0, NAN), // -4.1 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -59.9 / -44.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -59.9 / -44.4 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.02), // 0.000968 / 0.00432
             (Bla, Shipping, 0.005, 0.002), // 0.000968 / 0.000434
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000211
@@ -786,6 +860,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -52.0, NAN), // -54.8
             (Aliasing, Shipping, -64.0, NAN), // -66.4 — aliasing as it ships
             (Anmr, Shipping, 14.0, NAN), // 10.4 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -48.1 / -35.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -53.9 / -41.7 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.05), // 0.0013 / 0.00973
             (Bla, Shipping, 0.005, 0.005), // 0.00098 / 0.00164
             (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000545
@@ -811,6 +887,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -52.0, NAN), // -54.8
             (Aliasing, Shipping, -64.0, NAN), // -66.3 — aliasing as it ships
             (Anmr, Shipping, 14.0, NAN), // 10.4 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -48.1 / -35.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -53.9 / -41.7 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.05), // 0.0013 / 0.0101
             (Bla, Shipping, 0.005, 0.01), // 0.000987 / 0.00176
             (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000358
@@ -836,6 +914,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -108.0, NAN), // -110
             (Aliasing, Shipping, -68.0, NAN), // -70.4 — aliasing as it ships
             (Anmr, Shipping, 8.0, NAN), // 5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -67.4 / -48.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -59.4 / -39.1 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
             (Bla, Shipping, 0.05, 0.5), // 0.00839 / 0.106 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.001, 0.05), // 0.000215 / 0.0137
@@ -861,6 +941,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -63.0, NAN), // -65.8
             (Aliasing, Shipping, -49.0, NAN), // -51.4 — aliasing as it ships
             (Anmr, Shipping, 26.0, NAN), // 22.5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -50.5 / -34.5 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -31.8 / -12.1 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.01), // 0.000979 / 0.00328
             (Bla, Shipping, 0.01, 0.1), // 0.00297 / 0.0179
             (Compression, Oversampled, 0.002, 0.05), // 0.000406 / 0.00731 (R11: the whole card)
@@ -886,6 +968,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -39.0, NAN), // -41.7
             (Aliasing, Shipping, -49.0, NAN), // -51 — aliasing as it ships
             (Anmr, Shipping, 26.0, NAN), // 22.6 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -47.6 / -30.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -47.8 / -31.5 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
             (Bla, Shipping, 0.01, 0.05), // 0.00274 / 0.0161
             (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000652
@@ -919,6 +1003,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -86.0, NAN), // -88
             (Aliasing, Shipping, -32.0, NAN), // -34.7 — aliasing as it ships
             (Anmr, Shipping, 36.0, NAN), // 32.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -60.6 / -43.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -45.8 / -31.9 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00123
             (Bla, Shipping, 0.05, 0.2), // 0.00817 / 0.0651
             (Compression, Oversampled, 0.001, 0.002), // 0.000332 / 0.000346
@@ -944,6 +1030,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -108.0, NAN), // -110
             (Aliasing, Shipping, -68.0, NAN), // -70.4 — aliasing as it ships
             (Anmr, Shipping, 8.0, NAN), // 5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -67.4 / -48.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -59.4 / -39.1 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
             (Bla, Shipping, 0.05, 0.5), // 0.00839 / 0.106 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.001, 0.05), // 0.000215 / 0.0137
@@ -969,6 +1057,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -91.0, NAN), // -94 — RAISED from -115 (R12): not aliasing at 4×; the 8 kHz +20 dB tone's inharmonic floor is the circuit's own (-64.9 dBc in both), and the check reads the model's excess over the reference — 0.005 dB of agreement on that floor reads -94; the temp-corrected reference moved it from just above the model's to just below
             (Aliasing, Shipping, -27.0, NAN), // -29.7 — aliasing as it ships
             (Anmr, Shipping, 38.0, NAN), // 34.6 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -49.2 / -32.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, 0.0), // -23.1 / -6.7 — FINDING: audible as it ships, unoversampled: worst at 115 Hz on the +20 dB multisines, where products folded past Nyquist land on its lines (oversampled it is inaudible)
             (Bla, Oversampled, 0.5, 2.0), // 0.0877 / 0.404
             (Bla, Shipping, 2.0, 100.0), // 0.426 / 28.7
             (Compression, Oversampled, 0.01, 0.5), // 0.00299 / 0.0944
@@ -994,6 +1084,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -91.0, NAN), // -93.7 — RAISED from -115 (R12): not aliasing at 4×; the 8 kHz +20 dB tone's inharmonic floor is the circuit's own (-64.9 dBc in both), and the check reads the model's excess over the reference — 0.005 dB of agreement on that floor reads -94; the temp-corrected reference moved it from just above the model's to just below
             (Aliasing, Shipping, -23.0, NAN), // -25.3 — aliasing as it ships
             (Anmr, Shipping, 41.0, NAN), // 37.3 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -48.0 / -32.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, 5.0), // -21.3 / -4.9 — FINDING: audible as it ships, unoversampled: worst at 115 Hz on the +20 dB multisines, where products folded past Nyquist land on its lines (oversampled it is inaudible)
             (Bla, Oversampled, 0.1, 5.0), // 0.0317 / 1.39
             (Bla, Shipping, 5.0, 200.0), // 1.65 / 34.5
             (Compression, Oversampled, 0.02, 0.5), // 0.00362 / 0.107
@@ -1019,6 +1111,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -76.0, NAN), // -78.6
             (Aliasing, Shipping, -72.0, NAN), // -74.7 — aliasing as it ships
             (Anmr, Shipping, 6.0, NAN), // 2.8 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -62.1 / -44.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -62.1 / -44.8 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.000992
             (Bla, Shipping, 0.005, 0.005), // 0.000968 / 0.00131
             (Compression, Oversampled, 0.001, 5e-5), // 0.000243 / 1.03e-05
@@ -1044,6 +1138,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -50.0, NAN), // -52.8
             (Aliasing, Shipping, -63.0, NAN), // -65.1 — aliasing as it ships
             (Anmr, Shipping, 14.0, NAN), // 10.5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -60.0 / -43.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -70.9 / -51.0 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.05), // 0.00166 / 0.0114
             (Bla, Shipping, 0.005, 0.01), // 0.00106 / 0.0024
             (Compression, Oversampled, 0.002, 5e-4), // 0.000455 / 0.000105
@@ -1069,6 +1165,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -61.0, NAN), // -63.7
             (Aliasing, Shipping, -70.0, NAN), // -72.1 — aliasing as it ships
             (Anmr, Shipping, 6.0, NAN), // 2.6 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Audibility, Oversampled, -10.0, -10.0), // -66.4 / -49.1 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -66.4 / -49.1 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.005, 0.02), // 0.00112 / 0.0061
             (Bla, Shipping, 0.005, 0.005), // 0.00105 / 0.00165
             (Compression, Oversampled, 0.002, 5e-4), // 0.000426 / 0.000146
@@ -1094,6 +1192,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -118.0, NAN), // -120
             (Aliasing, Shipping, -88.0, NAN), // -90.6 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -17.4 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -62.2 / -44.5 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -35.3 / -17.6 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 0.05, 0.1), // 0.0101 / 0.0265
             (Bla, Shipping, 1.0, 2.0), // 0.226 / 0.54 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.01, 0.05), // 0.00198 / 0.0115
@@ -1118,6 +1218,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("boss_ce2_filters", Tier::T0) => &[
             (Aliasing, Oversampled, -82.0, NAN), // -84.2
             (Aliasing, Shipping, -111.0, NAN), // -113 — aliasing as it ships
+            (Audibility, Oversampled, -10.0, -10.0), // -27.5 / -11.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -52.0 / -35.7 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 5.0, 50.0), // 1.25 / 10.8 — at 16 kHz, 66 dB down in the stopband
             (Bla, Shipping, 0.5, 5.0), // 0.0712 / 0.69 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (Compression, Oversampled, 0.005, 0.05), // 0.00158 / 0.0139
@@ -1138,6 +1240,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("boss_ce2_filters", Tier::T1) => &[
             (Aliasing, Oversampled, -37.0, NAN), // -39.7
             (Aliasing, Shipping, -70.0, NAN), // -72.5 — aliasing as it ships
+            (Audibility, Oversampled, -10.0, 0.0), // -27.1 / -9.6 — FINDING: audible, just: the 8 kHz tone at the knee, its harmonics in the sixth-order stopband at 4× (T1's factor; it ships at 16×)
+            (Audibility, Shipping, -10.0, -10.0), // -50.2 / -32.7 — inaudible (R16: ≤ −10 dB total and worst band)
             (Bla, Oversampled, 5.0, 20.0), // 1.44 / 5.86 — at 16 kHz, 66 dB down in the stopband
             (Bla, Shipping, 0.5, 2.0), // 0.101 / 0.374 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (Compression, Oversampled, 1.0, 5.0), // 0.217 / 1.52

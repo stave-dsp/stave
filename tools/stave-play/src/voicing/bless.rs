@@ -225,6 +225,10 @@ pub struct Verification {
     /// bit-identical).
     pub residual_db: f64,
     pub bit_identical: bool,
+    /// The residual by audibility (DSP.md R16): the worst channel's null
+    /// NMR under the take, total and worst band, dB (a full-scale sine at
+    /// 92 dB SPL; level and latency aligned). `None` when bit-identical.
+    pub null_nmr: Option<(f64, f64)>,
     /// The characteristics whose fingerprint moved (DSP.md R18), each
     /// with its size; empty when it holds, `None` when the record has no
     /// fingerprint.
@@ -263,6 +267,20 @@ pub fn verify(record: &Path) -> Result<Verification, String> {
             sig += f64::from(*b).powi(2);
         }
     }
+    // The residual by audibility, the take as the masker.
+    let null_nmr = (!identical).then(|| {
+        use stave_measure::perceptual::{null, Playback};
+        now.iter()
+            .enumerate()
+            .map(|(c, ch)| {
+                let then: Vec<f64> = audio.channels[c.min(audio.channels.len() - 1)].iter().map(|&v| f64::from(v)).collect();
+                let mut ch: Vec<f64> = ch.iter().map(|&v| f64::from(v)).collect();
+                ch.resize(then.len(), 0.0);
+                let n = null::between(&then, &ch, rec.sample_rate, Playback::default(), 1e-3);
+                (n.nmr.total_db, n.nmr.max_db)
+            })
+            .fold((f64::NEG_INFINITY, f64::NEG_INFINITY), |a, b| (a.0.max(b.0), a.1.max(b.1)))
+    });
     let residual_db = if diff == 0.0 {
         f64::NEG_INFINITY
     } else {
@@ -286,6 +304,7 @@ pub fn verify(record: &Path) -> Result<Verification, String> {
         label: rec.candidate.label,
         residual_db,
         bit_identical: identical,
+        null_nmr,
         fingerprint_moved,
     })
 }
