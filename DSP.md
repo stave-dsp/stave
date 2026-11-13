@@ -145,6 +145,102 @@ circuit/
    catalogue**, is generated from these, and the build fails when a public
    model lacks a section or names a test that doesn't exist.
 
+## Measurement design
+
+What we measure decides what we can claim. The aim is the richest picture
+of a model per CPU-second, held to two references: **the equations**
+(ngspice, high-precision solutions — proves we solve the model) and **the
+hardware** (calibrated captures — proves the model is the unit). Every
+model, circuit and plugin is measured with the *same* stimulus suite, so
+results compare across models, across commits and against hardware.
+
+### Principles
+
+1. **Coherent sampling.** Every steady-state tone sits exactly on an FFT bin
+   (`f = k·fs/N`, the run an integer number of periods), so one rectangular
+   window gives exact magnitudes and phases with zero leakage — no averaging,
+   no windows, the shortest possible run. `k` is chosen so that harmonics
+   2…H, their aliases above Nyquist, and intermodulation products each land
+   on a distinct empty bin: harmonics, aliases and noise separate exactly.
+2. **Multisine first.** One run of a sparse odd-odd multisine (tones on bins
+   ≡ 1 mod 4, log-spaced, Schroeder or random phases for a low crest factor)
+   yields, per frequency, the best linear approximation (magnitude **and**
+   phase) plus the even- and odd-order distortion falling on the unexcited
+   detection bins (Pintelon & Schoukens). That replaces dozens of single-tone
+   runs with one.
+3. **Levels relative to the circuit, not absolute.** A quick DC/level sweep
+   finds each circuit's knee (input for 1 dB compression, or 1 % THD at 1
+   kHz). Nonlinear measurements then run at fixed offsets from the knee —
+   −40, −20, −10, −3, 0, +6, +12, +20 dB — so "clean", "edge of breakup" and
+   "full saturation" mean the same thing for a fuzz and a mastering
+   limiter. Real-world anchors are measured too, at calibrated levels:
+   instrument (single coil ~100 mV, hot humbucker ~1 V peak, a dug-in pick
+   ~2 V peak), line (−10 dBV, +4 dBu, +24 dBu hot), and the plugin's 0 dBFS
+   calibration.
+4. **Periodic steady state, not long settling.** Start from the solved
+   operating point (DK has it), discard settling periods computed from the
+   circuit's slowest time constant, and accept the run when the last two
+   periods agree to the budget — measured, not guessed, settling.
+5. **Separate the questions.** Solver correctness (vs ngspice) runs
+   oversampled where numerical error is tiny; shipping behaviour runs at
+   44.1/48/96 kHz with the plugin's own oversampling, with its own budget.
+   Both are reported.
+6. **Budgets that mean something.** Errors are judged relative to what is
+   audible: harmonic errors in dB relative to that harmonic (with an
+   absolute floor below −120 dBc), response errors in dB and degrees,
+   residuals by noise-to-mask ratio (NMR) against a psychoacoustic masking
+   model, never only by waveform RMS.
+
+### Characteristics
+
+| # | Characteristic | Stimulus | Reveals |
+|---|---|---|---|
+| C1 | Operating point | none (DC) | bias, headroom, asymmetry source |
+| C2 | Small-signal response, magnitude + phase + group delay | multisine at −40 dB re knee, or linearisation | tone, bandwidth, phase character |
+| C3 | Best linear approximation vs level | odd-odd multisine at each level | how tone changes as it is driven |
+| C4 | Compression / gain vs level | stepped coherent sine (1 kHz, plus 100 Hz and 5 kHz) | headroom, knee shape, softness |
+| C5 | Harmonics H2–H15, magnitude **and** phase, per level × frequency | coherent sines at 82, 330, 1k, 3k, 8k Hz × the level grid | the character itself: even/odd balance, waveform asymmetry |
+| C6 | THD+N and noise floor | same runs; idle run | grit, hiss, noise modulation |
+| C7 | Intermodulation | SMPTE (60 Hz + 7 kHz, 4:1), CCIF (19 + 20 kHz), and multisine detection bins | muddiness, chord behaviour, high-frequency aliasing |
+| C8 | Dynamics | tone bursts (5 ms–500 ms on, at +6/+20 dB re knee), level steps, a synthetic pluck envelope | sag, bias shift, blocking distortion, attack/release, time-varying harmonics |
+| C9 | Hysteresis / memory | slow triangle and level ramps up vs down | magnetics, tape, opto, thermal |
+| C10 | Aliasing at the shipping rate | coherent sines whose aliases fall on empty bins; a log sweep up to Nyquist | digital artefacts — where cheap emulations lose |
+| C11 | Sample-rate invariance | C2/C5 at 44.1, 48, 88.2, 96, 192 kHz | the same sound at every host rate |
+| C12 | Volterra / Hammerstein kernels | exponential sine sweep (Farina), 0.5–2 s | a compact fingerprint of weak nonlinearity; fits grey-box models |
+| C13 | Program material | short owned recordings: guitar DI, bass DI, drums, vocal, mix bus | the final check, by NMR on the null residual |
+| C14 | Controls | C2/C4/C5 at the corners and centre of every knob, plus a slow knob sweep | taper accuracy, interaction, zipper |
+
+### Tiers (feedback speed first)
+
+| Tier | When | What | Target time |
+|---|---|---|---|
+| T0 | every commit (gates, CI) | C1, C2 (linearised vs ngspice `.ac`), C3/C5 at 3 levels × 1 kHz, C10 at 48 kHz | < 0.5 s per circuit |
+| T1 | every PR touching models (references job) | the full C1–C11 matrix vs ngspice, oversampled and at shipping rates | < 5 min per job |
+| T2 | releases and model work | C12–C14, and the whole suite vs **hardware captures** (R8, R13) | minutes, off the main path |
+
+Reference data is generated offline (ngspice, captures) and committed as
+compact tables — harmonic magnitudes/phases, response points, compression
+curves — never as long waveforms. Tests only compare.
+
+### Fingerprints
+
+Each model, circuit and plugin has a committed **fingerprint**: its T0/T1
+results as data. CI diffs fingerprints, so any change in sound — even one
+that passes every budget — is visible in review, and an intended change is
+re-blessed on purpose. The model catalogue and plugin pages show the
+fingerprints as plots: frequency response, harmonic spectra against level,
+compression curves, aliasing, with the reference overlaid. No plugin
+vendor publishes this; we can.
+
+### Hardware captures (where we beat the field)
+
+The same stimulus suite (C2–C12) is played through the real unit with a
+reamp/interface rig, calibrated in volts (dBu), with loopback compensation
+of the interface's own response and latency, at every control corner
+(C14). Captures live outside git with checksums committed (R8); tests use
+them when present. A model ships only when its fingerprint matches the
+hardware's within budget — measured, not voiced by ear alone.
+
 ## Ledger
 
 ### K — architecture
@@ -436,18 +532,25 @@ circuit/
   under the pinned ngspice 42 so version noise (up to 5e-6 of peak today)
   doesn't eat the margin.
 
-- [ ] **R17** A characterisation matrix per circuit, not one waveform. Today 40
-  cases compare one waveform by normalised RMS and 8 compare AC magnitude;
-  the harness's `Harmonics` and `ThdDelta` metrics are used by no circuit
-  case, phase is never compared, and nothing spans drive levels. Every
-  nonlinear circuit gets, against ngspice (and later hardware, R13):
-  operating point (DC bias, exact); small-signal response at the operating
-  point, magnitude **and phase**; gain and compression versus input level;
-  each harmonic H2–H10 in magnitude and phase over a level × frequency
-  grid, with a budget per harmonic; THD+N versus level and frequency;
-  two-tone intermodulation; dynamics after a burst (bias shift, blocking,
-  sag recovery); aliasing at the shipping rate (A4). One `Case` builder
-  call gives the whole matrix, and the model catalogue shows its plots.
+- [ ] **R17** The measurement design above, built: a stimulus suite in
+  stave-measure (coherent tones with collision-free bins, odd-odd
+  multisines, bursts, sweeps, IMD pairs, calibrated levels and the knee
+  finder), analysers for C1–C14, a `Characterise` builder on the R1 harness
+  that runs a tier for a circuit against its reference, ngspice generation of
+  the matching analyses (`.op`, `.ac`, transient grids, compact tables), and
+  T0 in the gates and T1 in the references job. Today 40 cases compare one
+  waveform by normalised RMS; no circuit uses per-harmonic, phase or level
+  sweeps.
+- [ ] **R18** Fingerprints: committed per-model, per-circuit and per-plugin
+  T0/T1 results, diffed in CI and re-blessed on purpose; plotted on the
+  model catalogue and plugin pages against the reference.
+- [ ] **R19** NMR (noise-to-mask ratio) and ERB-band spectral error in
+  stave-measure, used for C13 residuals and for budgets stated in
+  audibility terms (R16).
+- [ ] **R20** The capture rig: a stave-host tool that plays the suite
+  through an interface, calibrates in dBu, compensates loopback, steps
+  control corners, and writes captures in the same table format as the
+  ngspice references.
 
 ### P — profiling and performance
 
@@ -473,7 +576,9 @@ circuit/
 1. **F1–F2** (FFT, convolution) and **R1–R2** (one reference harness,
    ngspice in CI): the most-used gap and the loop everything else
    is verified with. Then **K1–K6** (architecture), before new families land.
-2. **N1–N3** (netlist, DK method, solve strategies) with **R3–R4**.
+2. **R17–R19** (the measurement design: stimulus suite, characterisation
+   matrix, fingerprints, NMR) — every model after this is born measured.
+   **N1–N3** (netlist, DK method, solve strategies) with **R3–R4**.
 3. **U1–U5** (unit types), before the library grows further, so new APIs
    are born typed.
 4. **E1–E6** (BJT, FET, pentode, op-amp, OTA, diode presets) on N2.
