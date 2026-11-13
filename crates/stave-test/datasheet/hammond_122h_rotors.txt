@@ -1,0 +1,29 @@
+# title: Leslie 122H/142H rotor speeds and rise/fall times, factory defaults (each rotor control at its centre position).
+# document: Hammond Suzuki, "Leslie Heritage Series Model 122H/142H Owner's Manual" (document 00457-40211, 2022)
+# url: Hammond Suzuki owner's manual PDF (00457-40211_V100), as distributed with the cabinet and by its US dealers
+# figure: "Rotor Control Panel" section, the default-values table (RISE TIME, FALL TIME, SLOW SPEED, FAST SPEED for the HORN and LOW rotors), page 8
+# method: transcribed from the table
+# x: setting (0 slow, 1 fast) on curves speed; 0 on curves rise and fall
+# y: rotor speed (rpm) on curves speed; time (s) on curves rise and fall
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 1
+# full-scale-y: 402
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: horn=1 (horn rotor), drum=1 (LOW rotor)
+# notes: RISE TIME is "the time for the rotors to reach the FAST speed from the SLOW speed or STOP", FALL TIME "to reach SLOW speed or STOP from the FAST speed"; the manual does not say what "reach" means for an exponential approach, so stave reads it as 95% of the change (physical::rotary::REACH). The manual's block diagram gives the 800 Hz crossover. Every value is adjustable on the cabinet; these are the defaults.
+# curve speed=1 horn=1
+0 44
+1 402
+# curve rise=1 horn=1
+0 1.8
+# curve fall=1 horn=1
+0 2.4
+# curve speed=1 drum=1
+0 42
+1 372
+# curve rise=1 drum=1
+0 7
+# curve fall=1 drum=1
+0 5.5

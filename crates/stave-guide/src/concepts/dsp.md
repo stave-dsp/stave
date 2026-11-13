@@ -981,6 +981,59 @@ deck.set_speed(Machine::ips(3.75));
 assert!(deck.playback().loss(10_000.0).abs() < at_10k);
 ```
 
+## Plates and rotors
+
+A plate reverb is mechanics, so it lives in `physical`:
+[`Plate`](stave_dsp::physical::plate::Plate) is a thin, tensioned,
+simply supported plate as its modes — the DAFx-26 parameter-estimation
+challenge's model (Ducceschi & Gabrielli) — each a Mathews–Smith phasor,
+eight to a SIMD group. Its
+[`Geometry`](stave_dsp::physical::plate::Geometry) (sides, thickness,
+tension, material) places the modes; its
+[`Loss`](stave_dsp::physical::plate::Loss) decays them, `σ = η0 + η1Ω²`
+set by two T60s; the drive and two pickups weight them. The bandwidth is
+the cost knob: an EMT 140 holds about 1.3 modes a hertz.
+
+A rotary speaker is acoustics too:
+[`Cabinet`](stave_dsp::physical::rotary::Cabinet) splits the signal at
+800 Hz into a horn and a drum
+[`Radiator`](stave_dsp::physical::rotary::Radiator), each a source on a
+spinning circle heard at two microphones through the delay from where it
+was when it emitted (Smith et al.'s Doppler, near field), weighted by its
+directivity and its distance, with the cabinet's back wall as an image
+source. The speed switch ramps each rotor by its own inertia, the
+Leslie 122H's published rise and fall times.
+
+```rust
+use stave_dsp::physical::plate::{Plate, Point};
+use stave_dsp::physical::rotary::{Cabinet, Speed};
+use stave_dsp::units::{hz, seconds};
+use stave_dsp::Stage;
+
+// An EMT 140 with its damper at 2.5 s, its modes to 4 kHz.
+let mut plate = Plate::emt140(seconds(2.5));
+plate.set_bandwidth(hz(4_000.0));
+plate.prepare(48_000.0);
+assert!(plate.modes().len() > 4_500);
+assert!((plate.loss().t60(500.0).get() - 2.5).abs() < 1e-9);
+// Move the right pickup toward a corner, live.
+plate.set_pickup(1, Point::new(0.9, 0.85));
+let (left, right) = plate.tick_stereo(1.0);
+assert!(left.is_finite() && right.is_finite());
+
+// A Leslie switched to tremolo: the horn is there in seconds, the drum
+// takes longer.
+let mut leslie: Cabinet = Cabinet::leslie_122h();
+leslie.prepare(48_000.0);
+leslie.set_speed(Speed::Tremolo);
+for _ in 0..48_000 * 2 {
+    leslie.tick_stereo(0.0);
+}
+let horn = leslie.horn().rate() * 60.0;
+let drum = leslie.drum().rate() * 60.0;
+assert!(horn > 380.0 && drum < 300.0, "{horn} {drum} rpm");
+```
+
 ## Conventions
 
 - **Units in names.** `sample_rate` is `f32` everywhere (state may be
