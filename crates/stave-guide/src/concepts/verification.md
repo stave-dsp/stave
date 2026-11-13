@@ -230,3 +230,9 @@ patches.
 Every job aims to finish in five minutes warm, so the main signal gates
 every push. The overhaul ledger, `OVERHAUL.md`, records what each check
 was added for.
+
+A change reaches main through main's merge queue: open a pull request
+and `gh pr merge --auto`. Once the pull request's checks pass, the queue
+gates it again together with whatever is queued ahead of it (a merge
+group, up to five pull requests) and squashes it onto main only if that
+combination is green.
