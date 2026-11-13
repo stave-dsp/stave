@@ -86,7 +86,15 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends "ngspice=$NGSPICE_PACKAGE"
       - name: ngspice's waveforms and tables are current
-        run: python3 scripts/ngspice-simulate.py --check --expect-version "$NGSPICE_VERSION"
+        run: python3 scripts/ngspice-simulate.py --check --expect-version "$NGSPICE_VERSION" --keep target/fresh-tables
+      # A stale table's fresh simulation under the pinned ngspice: download
+      # it to commit (DSP.md R16: fixtures regenerated under ngspice 42).
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-tables
+          path: target/fresh-tables
+          if-no-files-found: ignore
       # The tolerance absorbs print and platform noise, not a real change:
       # a netlist value 1% off (the coupling cap) must fail the check.
       - name: A 1% netlist change fails the check

@@ -309,7 +309,7 @@ mod tests {
     use super::*;
     use crate::suite::period::tone_bin;
 
-    fn render(e: &Excitation, rate: f64, from: f64, f: impl Fn(f64) -> f64) -> Vec<f64> {
+    fn process(e: &Excitation, rate: f64, from: f64, f: impl Fn(f64) -> f64) -> Vec<f64> {
         let n = e.period.samples(rate);
         (0..n).map(|i| f(e.at(from + i as f64 / rate))).collect()
     }
@@ -327,7 +327,7 @@ mod tests {
         let bin = tone_bin(p, 1_000.0, 15, &[48_000.0]).unwrap();
         let e = Excitation::sine(p, bin, amp);
         let rate = 48_000.0;
-        let y = render(&e, rate, p.seconds(), |x| x + a2 * x * x + a3 * x * x * x);
+        let y = process(&e, rate, p.seconds(), |x| x + a2 * x * x + a3 * x * x * x);
         let want: Vec<u32> = (0..=15).map(|h| h * bin).collect();
         let s = bins(&y, p, rate, &want);
         let h = Harmonics::of(&s, bin, 15);
@@ -343,7 +343,7 @@ mod tests {
         let g = gain(&e.tones[0], h.fundamental());
         assert!((g.norm() - (1.0 + 0.75 * a3 * amp * amp)).abs() < 1e-12 && g.arg().abs() < 1e-12);
         // A delay moves arg c_h by h·arg c_1: the shape phase stays.
-        let late = render(&e, rate, p.seconds() + 3.0 / rate, |x| x + a2 * x * x + a3 * x * x * x);
+        let late = process(&e, rate, p.seconds() + 3.0 / rate, |x| x + a2 * x * x + a3 * x * x * x);
         let h2 = Harmonics::of(&bins(&late, p, rate, &want), bin, 15);
         for k in [2, 3] {
             assert!(wrap(h2.shape_phase(k).unwrap() - h.shape_phase(k).unwrap()).abs() < 1e-9);
@@ -361,7 +361,7 @@ mod tests {
         let p = Period::units(6);
         let rate = 48_000.0;
         let e = Excitation::sine(p, 21, 1.0).with_tone(Tone::new(1e-3, 333));
-        let y = render(&e, rate, 0.0, |x| x);
+        let y = process(&e, rate, 0.0, |x| x);
         assert!((aliasing(&y, p, rate, 21) - 1e-3).abs() < 1e-12);
         assert!((thd_n(&y, p, rate, 21) - 1e-3).abs() < 1e-12);
         assert!(bins(&y, p, rate, &[479, 480, 481]).bins.len() == 1);
@@ -422,7 +422,7 @@ mod tests {
         let e = Excitation::smpte(p, 1.0).unwrap();
         let (lo, hi) = (e.tones[0].bin, e.tones[1].bin);
         let a2 = 0.1;
-        let y = render(&e, rate, 0.0, |x| x + a2 * x * x);
+        let y = process(&e, rate, 0.0, |x| x + a2 * x * x);
         let want: Vec<u32> = products(lo, hi, 4).iter().map(|q| q.2 as u32).collect();
         let s = bins(&y, p, rate, &want);
         let imd = intermodulation(lo, hi, 4, &s);
@@ -446,7 +446,7 @@ mod tests {
                 let level = [1.0, 0.5, 0.75, 1.0][j];
                 let shift = [0.0, -0.2, -0.1, 0.0][j];
                 let e = Excitation::sine(p, 23, level).with_dc(shift);
-                let x = render(&e, rate, 0.0, |x| x);
+                let x = process(&e, rate, 0.0, |x| x);
                 bins(&x, p, rate, &[0, 23])
             })
             .collect();

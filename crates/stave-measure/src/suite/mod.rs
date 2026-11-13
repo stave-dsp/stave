@@ -13,7 +13,7 @@
 //! ```
 //!
 //! Every stimulus is a function of continuous time, so one description
-//! renders at any sample rate and as an ngspice source. A run is
+//! is sampled at any rate and written as an ngspice source. A run is
 //! measured over whole [`Period`](period::Period)s after settling: every
 //! tone sits exactly on a bin, so one rectangular window gives exact
 //! magnitudes and phases with no leakage.

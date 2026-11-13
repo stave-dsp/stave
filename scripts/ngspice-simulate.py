@@ -525,9 +525,9 @@ def table_rows(path):
 
 def compare_tables(committed, fresh, rtol):
     """The largest deviation, relative to its group's scale — the
-    operating point's largest node, the response's largest point, a
-    run's largest bin; THD+N relative to itself, steady state and the
-    floor (numerical noise) absolutely, as ratios."""
+    operating point's largest node (at least 1 V), the response's largest
+    point, a run's largest bin; steady state, THD+N and the floor are
+    already ratios to the signal and compare absolutely."""
     a, b = table_rows(committed), table_rows(fresh)
     if a.keys() != b.keys():
         return math.inf, f"rows differ: {sorted(set(a) ^ set(b))[:3]}"
@@ -546,11 +546,12 @@ def compare_tables(committed, fresh, rtol):
             for name, x, y in zip(("steady", "thdn", "floor"), v, w):
                 if math.isnan(x) and math.isnan(y):
                     continue
-                d = abs(x - y) / max(abs(x), 1e-4) if name == "thdn" else abs(x - y)
+                d = abs(x - y)
                 if d > worst:
                     worst, where = d, f"{key[1]} {name}: committed {x:.9e}, now {y:.9e}"
             continue
-        d = math.dist(v, w) / (scale[group(key)] or 1.0)
+        floor = 1.0 if key[0] == "op" else 1e-300
+        d = math.dist(v, w) / max(scale[group(key)], floor)
         if d > worst:
             worst, where = d, f"{' '.join(key)}: committed {v}, now {w}"
     return worst, where
@@ -566,6 +567,8 @@ def main():
     parser.add_argument("--expect-version", help="fail unless ngspice reports this version")
     parser.add_argument("--only", help="only these decks (comma-separated names)")
     parser.add_argument("--tables-only", action="store_true", help="skip the waveforms")
+    parser.add_argument("--keep", type=pathlib.Path,
+                        help="--check: copy every stale table's fresh simulation here (CI uploads them)")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1,
                         help="parallel characterisation runs (with the ngspice program)")
     args = parser.parse_args()
@@ -634,6 +637,9 @@ def main():
                   + (f" ({where})" if worst > 0 else ""))
             if worst > args.rtol:
                 failed.append(committed.name)
+                if args.keep:
+                    args.keep.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(fresh, args.keep / committed.name)
         if failed:
             sys.exit(f"{len(failed)} waveform(s) or table(s) differ from a fresh simulation by more than "
                      f"{args.rtol:g} of peak: {', '.join(failed)}. Regenerate with "

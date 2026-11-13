@@ -3,7 +3,7 @@
 //! from silence so the run starts at the operating point.
 //!
 //! An [`Excitation`] is a function of continuous time ([`Excitation::at`]),
-//! so the same description renders at any sample rate and as an ngspice
+//! so the same description is sampled at any rate and as an ngspice
 //! source; [`Excitation::describe`] and [`Excitation::parse`] are its text
 //! form, which the plan files carry to `scripts/ngspice-simulate.py`.
 
