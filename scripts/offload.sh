@@ -32,5 +32,15 @@ rsync -az --delete \
   --exclude '/target/' --exclude '/.claude/' --exclude '**/refs/' \
   "$ROOT/" "$HOST:$DIR/"
 
+# A git worktree's .git is a file naming a path on this machine; give the
+# host the repository itself (tags and history, for the docs and release
+# scripts) and point git at it there.
+GITENV=""
+if [[ -f "$ROOT/.git" ]]; then
+  COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)"
+  rsync -az --delete --exclude '/worktrees/' "$COMMON/" "$HOST:$DIR.git/"
+  GITENV="GIT_DIR=\$HOME/$DIR.git GIT_WORK_TREE=\$HOME/$DIR"
+fi
+
 printf -v CMD '%q ' "$@"
-exec ssh "$HOST" "cd '$DIR' && . ~/.cargo/env && CARGO_TERM_COLOR=always nice -n 10 $CMD"
+exec ssh "$HOST" "cd '$DIR' && . ~/.cargo/env && $GITENV CARGO_TERM_COLOR=always nice -n 10 $CMD"
