@@ -207,7 +207,7 @@ circuit/
   tests stay deterministic by running the worker inline.
 - [x] **F4** (this commit: `ImpulseResponse::from_channels(&channels, SampleRate)` (1/2/4 channels), `recorded_at`, `resampled` (Kaiser windowed-sinc band-limited interpolation, gain kept; the crate had no arbitrary-ratio resampler), `normalized(Peak | Energy)`, `minimum_phase` (cepstrum, per path); a `Convolver` re-plans at `prepare` when a recorded response's rate differs; WAV through `stave_host::wav::read_impulse_response`, since stave-dsp sits below the host's file I/O) `ImpulseResponse` loading: WAV, resampled to the prepared
   rate, normalised, mono/stereo/true-stereo; minimum-phase conversion.
-- [ ] **F5** STFT (analysis/synthesis with COLA windows) as a stage, the
+- [x] **F5** (this commit: `primitives::spectral::Stft::new(size, hop, window, closure)`, a `Stage` with latency `size`; weighted overlap-add, the squared window's COLA checked at construction by `Window::overlap_add_gain` and folded into the synthesis scale; 132 window/size/hop pairs reconstruct perfectly; 24 ns/sample at 1024/256) STFT (analysis/synthesis with COLA windows) as a stage, the
   base for spectral effects and the phase vocoder (S6).
 - [x] **F6** (this commit: `primitives::spectral::Fir` — `windowed_sinc`/`kaiser` lowpass, highpass, bandpass, `least_squares` over weighted `Band`s, `minimum_phase` by the cepstrum, into a `Convolver` via `impulse_response`; one `Window` type for FIR and STFT. The oversampler's half-band tables are `Fir::windowed_sinc` Kaiser designs bit for bit, pinned by a test, but stay in `kernel`, which may not depend on `primitives`) Linear-phase and minimum-phase FIR design (windowed sinc,
   Parks–McClellan or least squares) as a library, used by F2's EQ and A3.

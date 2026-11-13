@@ -195,7 +195,7 @@ signals are read from, for control wiring and observation alike.
 [`SwapPoint`](stave_dsp::SwapPoint) parks a slot's alternate stage and
 swaps it in by move, so a structural switch never allocates.
 
-## Spectral: the FFT and convolution
+## Spectral: the FFT, convolution, the STFT and FIR design
 
 [`primitives::spectral`](stave_dsp::primitives::spectral) holds the
 workspace's one [`Fft`](stave_dsp::Fft) and the
@@ -256,6 +256,51 @@ The tests hold both to naive references: `tests/fft_properties.rs`
 compares the transform with a direct DFT at every length from 2 to
 2^16, and `tests/convolver_properties.rs` compares the convolver with
 direct-form convolution over random responses and ragged blocks.
+
+### The STFT
+
+[`Stft`](stave_dsp::primitives::spectral::Stft) is a
+[`Stage`](stave_dsp::Stage) that analyses the last `size` samples every
+`hop`, hands each spectrum (`size/2 + 1` bins, DC to Nyquist) to a
+closure, and overlap-adds the result back. The window is applied at
+analysis and at synthesis, so reconstruction is perfect when the squared
+window overlap-adds to a constant at that hop:
+[`Stft::new`](stave_dsp::primitives::spectral::Stft::new) checks it and
+refuses a pair that is not COLA (Hann at a quarter of its size is;
+at half it is not, but `SqrtHann` is). The latency is `size` samples,
+reported.
+
+A spectral gate: bins quieter than a threshold are muted, the rest pass.
+A loud tone survives, quiet noise is removed:
+
+```rust
+use stave_dsp::primitives::spectral::{Complex, Stft, Window};
+use stave_dsp::{Stage, Xorshift32};
+
+let size = 1024;
+let threshold = 20.0; // in unnormalised bin magnitude
+let mut gate = Stft::new(size, size / 4, Window::Hann, move |bins: &mut [Complex<f32>]| {
+    for z in bins.iter_mut() {
+        if z.norm() < threshold {
+            *z = Complex::default();
+        }
+    }
+})
+.expect("Hann is COLA at a quarter of its size");
+gate.prepare(48_000.0);
+assert_eq!(gate.latency(), 1024);
+
+let mut rng = Xorshift32::new(1);
+let tone = |t: usize| (core::f32::consts::TAU * 1_000.0 * t as f32 / 48_000.0).sin();
+let mut residual = 0.0f32;
+for t in 0..8 * size {
+    let y = gate.tick(tone(t) + 0.05 * rng.next_bipolar());
+    if t >= 2 * size {
+        residual = residual.max((y - tone(t - size)).abs());
+    }
+}
+assert!(residual < 0.01); // the noise is gone; the tone is untouched
+```
 
 ### FIR design
 

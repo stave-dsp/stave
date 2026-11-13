@@ -62,7 +62,7 @@ use stave_dsp::primitives::time::interpolators::{
 use std::hint::black_box;
 use std::time::Instant;
 
-use stave_dsp::primitives::spectral::{Complex, Fir, Head, Passband};
+use stave_dsp::primitives::spectral::{Complex, Fir, Head, Passband, Stft, Window};
 use stave_dsp::units::SampleRate;
 use stave_dsp::{
     Adaa, Adsr, Allpass1, Biquad, Convolver, Curve, DelayLine, DiodeClipper, DiodeClipperConfig,
@@ -334,6 +334,14 @@ fn primitive_datasheet() {
     bench_points("ImpulseResponse minimum_phase 4096 taps", 4_096, || {
         black_box(cab.minimum_phase());
     });
+
+    // F5: the STFT with an identity closure, 75 % overlap.
+    for size in [1_024usize, 4_096] {
+        let mut stft = Stft::new(size, size / 4, Window::Hann, |_: &mut [Complex<f32>]| {})
+            .expect("Hann is COLA at a quarter hop");
+        stft.prepare(sr);
+        bench(&format!("Stft {size}/{} Hann", size / 4), &input, |x| stft.tick(x));
+    }
 
     // F6: a designed FIR (80 dB Kaiser lowpass, 127 taps) run through
     // the convolver at zero latency.
