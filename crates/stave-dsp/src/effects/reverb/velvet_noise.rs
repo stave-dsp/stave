@@ -86,10 +86,11 @@ struct Branch {
 /// `"VelvetNoise (4 branches, 408 taps, process)"` (64-sample blocks,
 /// where each tap reads a contiguous run and vectorises; bit-identical,
 /// `velvet_noise_process_is_tick`) and `"VelvetNoise (graphic EQ)"` on
-/// the datasheet, beside the `Fdn`'s. Its 408 taps are the density
-/// times the loop period, so in floating point it is not cheaper than
-/// the shelf-absorption `Fdn`; its case is an exact echo density from
-/// the first sample and a smooth, non-repeating late field.
+/// the datasheet, beside the `Fdn`'s. On the reference machine: 294
+/// ns/sample per sample, 53 in blocks (the shelf-absorption `Fdn` 80),
+/// 334 per sample with the graphic EQ (the graphic-EQ `Fdn` 234). Its
+/// 408 taps are the density times the loop period: cheap only where
+/// they vectorise, so feed it blocks.
 ///
 /// # Aliasing
 /// None (linear, integer delays).
