@@ -255,7 +255,7 @@ circuit/
   input offset, as a macromodel usable in N2/N5 (TL072, JRC4558, LM308).
 - [ ] **E5** OTA (CA3080, LM13700) with tanh transconductance and bias
   current, for synth filters and VCA compressors.
-- [ ] **E6** Diode presets beyond Shockley defaults: 1N4148, 1N34A
+- [x] **E6** (c4b0105: `Shockley` holds the whole static card — `series_ohms`, `Breakdown` evaluated as ngspice's dioload.c; parts `N4148`, `N914`, `N4007`, `N34A`, `LED_RED`/`GREEN`/`BLUE`, Zeners `BZX84C6V2L`, `N750`; seven I–V decks at 2e-8–5e-7) Diode presets beyond Shockley defaults: 1N4148, 1N34A
   (germanium), red/blue LEDs, Zener breakdown; series resistance.
 - [ ] **E7** Photocell (LDR/vactrol) with asymmetric attack/release and
   memory, for opto compressors and tremolos.
