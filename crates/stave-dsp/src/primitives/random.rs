@@ -58,6 +58,61 @@ pub const fn splitmix64(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+/// A seeded 64-bit stream: splitmix64's output over a Weyl sequence
+/// (Steele, Lea & Flood 2014), with 53-bit uniforms and standard normal
+/// deviates by the Box–Muller transform — the generator behind physical
+/// noise (thermal and shot noise, dither, drift), where 24-bit uniforms
+/// would bias the tails.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SplitMix64 {
+    state: u64,
+    spare: f64,
+    has_spare: bool,
+}
+
+impl SplitMix64 {
+    pub const fn new(seed: u64) -> Self {
+        Self {
+            state: seed,
+            spare: 0.0,
+            has_spare: false,
+        }
+    }
+
+    #[inline]
+    pub fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        splitmix64(self.state)
+    }
+
+    /// Uniform in the open interval (0, 1), 53-bit resolution.
+    #[inline]
+    pub fn next_open_unit(&mut self) -> f64 {
+        ((self.next_u64() >> 11) as f64 + 0.5) * (1.0 / (1u64 << 53) as f64)
+    }
+
+    /// Uniform in [−½, ½).
+    #[inline]
+    pub fn next_centred(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64) - 0.5
+    }
+
+    /// A standard normal deviate (mean 0, variance 1): Box–Muller, the
+    /// pair's second value kept for the next call.
+    #[inline]
+    pub fn next_normal(&mut self) -> f64 {
+        if self.has_spare {
+            self.has_spare = false;
+            return self.spare;
+        }
+        let r = (-2.0 * self.next_open_unit().ln()).sqrt();
+        let (s, c) = (std::f64::consts::TAU * self.next_open_unit()).sin_cos();
+        self.spare = r * s;
+        self.has_spare = true;
+        r * c
+    }
+}
+
 /// The top 24 bits as a uniform value in [0, 1).
 #[inline]
 pub fn unit_f32(x: u32) -> f32 {
@@ -93,6 +148,32 @@ mod tests {
         assert!(unit_f32(u32::MAX) < 1.0);
         assert_eq!(bipolar_f32(0), -1.0);
         assert!(bipolar_f32(u32::MAX) < 1.0);
+    }
+
+    #[test]
+    fn normals_have_unit_variance_and_uniforms_stay_open() {
+        let mut r = SplitMix64::new(7);
+        let n = 200_000;
+        let (mut sum, mut sq, mut quartic) = (0.0, 0.0, 0.0);
+        for _ in 0..n {
+            let x = r.next_normal();
+            sum += x;
+            sq += x * x;
+            quartic += x * x * x * x;
+        }
+        let (mean, var) = (sum / n as f64, sq / n as f64);
+        assert!(mean.abs() < 0.01, "{mean}");
+        assert!((var - 1.0).abs() < 0.01, "{var}");
+        // A Gaussian's kurtosis is 3.
+        assert!((quartic / n as f64 - 3.0).abs() < 0.06, "{}", quartic / n as f64);
+        for _ in 0..10_000 {
+            let u = r.next_open_unit();
+            assert!(u > 0.0 && u < 1.0);
+            let c = r.next_centred();
+            assert!((-0.5..0.5).contains(&c));
+        }
+        // Seeded: the same stream again.
+        assert_eq!(SplitMix64::new(3).next_u64(), SplitMix64::new(3).next_u64());
     }
 
     #[test]

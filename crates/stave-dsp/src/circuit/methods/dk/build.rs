@@ -4,7 +4,7 @@
 use super::adaa;
 use super::devices::{Charge, Device, Nonlinear, Slot, SHUNT};
 use super::solve::{Health, Settings, Workspace};
-use super::{pin, Capacitor, ChargeLink, Dk, Inductor, Input, Pin};
+use super::{pin, Capacitor, ChargeLink, Dk, Inductor, Input, NoiseSite, Pin, Site};
 use crate::circuit::devices::bjt::Substrate;
 use crate::circuit::methods::adaa::Antialiasing;
 use super::variable::{Stamp, Varying};
@@ -29,6 +29,9 @@ pub(super) struct Builder<'a> {
     devices: Vec<Nonlinear>,
     nq: usize,
     charges: Vec<ChargeLink>,
+    /// Where noise can enter, and the element being stamped.
+    noise_sites: Vec<NoiseSite>,
+    element: String,
 }
 
 impl<'a> Builder<'a> {
@@ -48,6 +51,8 @@ impl<'a> Builder<'a> {
             devices: Vec::new(),
             nq: 0,
             charges: Vec::new(),
+            noise_sites: Vec::new(),
+            element: String::new(),
         }
     }
 
@@ -96,6 +101,21 @@ impl<'a> Builder<'a> {
         self.source_names.push(name.to_string());
     }
 
+    /// A noise site: `column` its `Bu` entries.
+    fn noise(&mut self, site: Site, column: &[(Pin, f64)]) {
+        let column = column.iter().filter_map(|&(r, x)| r.map(|r| (r, x))).collect();
+        self.noise_sites.push(NoiseSite {
+            element: self.element.clone(),
+            site,
+            column,
+        });
+    }
+
+    /// A resistor's thermal noise: a current from `a` to `b`.
+    fn thermal(&mut self, a: Pin, b: Pin, ohms: f64) {
+        self.noise(Site::Thermal { ohms }, &[(a, -1.0), (b, 1.0)]);
+    }
+
     /// The global control for v(a, b), shared with v(b, a) by sign.
     fn control(&mut self, a: Pin, b: Pin) -> (usize, f64) {
         if let Some(i) = self.controls.iter().position(|&c| c == (a, b)) {
@@ -114,6 +134,7 @@ impl<'a> Builder<'a> {
         match internal {
             Some(node) => {
                 self.conductance(external, Some(node), 1.0 / ohms);
+                self.thermal(external, Some(node), ohms);
                 Some(node)
             }
             None => external,
@@ -230,6 +251,7 @@ impl<'a> Builder<'a> {
         self.n = next;
         for (i, e) in elements.iter().enumerate() {
             let name = e.name.as_str();
+            self.element.clone_from(&e.name);
             match &e.kind {
                 ElementKind::Resistor { a, b, ohms } if varies(name, BranchKind::Resistor).is_some() => {
                     if *ohms < 0.0 || !ohms.is_finite() {
@@ -237,13 +259,17 @@ impl<'a> Builder<'a> {
                     }
                     self.branch(pin(*a), pin(*b), row[i]);
                     self.add(Some(row[i]), Some(row[i]), -ohms);
-                    stamps[varies(name, BranchKind::Resistor).unwrap_or(0)] = Some(Stamp::Row(row[i]));
+                    let branch = varies(name, BranchKind::Resistor).unwrap_or(0);
+                    stamps[branch] = Some(Stamp::Row(row[i]));
+                    // In series: v(a) − v(b) − R·i = e.
+                    self.noise(Site::Branch { branch }, &[(Some(row[i]), 1.0)]);
                 }
                 ElementKind::Resistor { a, b, ohms } => {
                     if *ohms == 0.0 || !ohms.is_finite() {
                         return Err(unsupported(name, "a resistor needs finite, nonzero ohms"));
                     }
                     self.conductance(pin(*a), pin(*b), 1.0 / ohms);
+                    self.thermal(pin(*a), pin(*b), *ohms);
                 }
                 ElementKind::Capacitor {
                     a,
@@ -331,6 +357,11 @@ impl<'a> Builder<'a> {
                     let model = diode.junction();
                     let stored: &[(Slot, Pin, Pin)] =
                         if model.stores_charge() { &[(Slot::Junction, junction, k)] } else { &[] };
+                    // Shot noise beside the junction's current (the
+                    // device's first output, from `junction` to `k`, less
+                    // the shunt the method adds and takes out again).
+                    let control = self.control(junction, k);
+                    self.noise(Site::Shot { output: self.nq, control }, &[(junction, -1.0), (k, 1.0)]);
                     self.device(
                         Device::Diode(model),
                         &[(junction, k)],
@@ -607,6 +638,10 @@ impl<'a> Builder<'a> {
             adaa: adaa::State::new(nx, nu, nv, nq),
             earlier: Health::default(),
             varying: Varying::new(variables, stamps),
+            noise_sites: self.noise_sites,
+            noise: None,
+            base_inputs: nu,
+            held: vec![None; nu],
         })
     }
 }

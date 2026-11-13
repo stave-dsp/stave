@@ -658,6 +658,7 @@ impl Wdf {
                 match &mut slot.input {
                     Input::Source(s) => s.value_at(time),
                     Input::Expression { tape, stack } => tape.eval(&[], time, stack).value,
+                    Input::Noise(_) => 0.0,
                 }
             };
         }

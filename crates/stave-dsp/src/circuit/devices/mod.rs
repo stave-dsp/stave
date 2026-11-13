@@ -16,6 +16,9 @@
 //! | [`photocell`] | — (a light-driven resistance: a circuit holds it as a variable resistor) | [`Najnudel`](photocell::Najnudel), running as a [`Vactrol`](photocell::Vactrol); parts [`Najnudel::VTL5C3`](photocell::Najnudel::VTL5C3), `NSL32` |
 //! | [`bbd`] | — (clocked: a stage, not a netlist element) | [`HoltersParker`](bbd::HoltersParker); parts [`Chip::MN3007`](bbd::Chip::MN3007), `MN3008`, `MN3205` |
 //! | [`compander`] | — (a stage) | [`Compander`](compander::Compander); part [`Chip::NE570`](compander::Chip::NE570) |
+//! | [`potentiometer`] | — (laws and tolerances a circuit's variable parts name) | [`LinearCubic`](potentiometer::LinearCubic) (parts `ALPHA_05A` … `ALPHA_30A`), [`Tracking`](potentiometer::Tracking), [`Wiper`](potentiometer::Wiper), [`Bounce`](potentiometer::Bounce) |
+//! | [`thermal`] | — (temperature laws) | [`Expo`](thermal::Expo); a junction's is [`Shockley::at_celsius`](diode::Shockley::at_celsius) |
+//! | [`converter`] | — (clocked: a stage) | [`Converter`](converter::Converter), [`Delay`](converter::Delay); parts [`Machine::SP1200`](converter::Machine::SP1200), `S900`, `CD` |
 //!
 //! Transistors come in two [`Polarity`]s; a P device is its N twin with
 //! terminal voltages and currents negated.
@@ -24,6 +27,7 @@ pub mod bbd;
 pub mod bjt;
 pub mod capacitance;
 pub mod compander;
+pub mod converter;
 pub mod diode;
 pub mod jfet;
 pub(crate) mod junction;
@@ -33,7 +37,9 @@ pub mod opamp;
 pub mod ota;
 pub mod pentode;
 pub mod photocell;
+pub mod potentiometer;
 mod polarity;
+pub mod thermal;
 pub mod triode;
 
 pub use polarity::Polarity;

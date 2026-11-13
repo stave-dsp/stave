@@ -13,7 +13,7 @@
 
 use super::{Dk, NetlistError, Pin};
 use crate::circuit::methods::woodbury::Woodbury;
-use crate::circuit::variable::{Pot, Smoothing, VariableCapacitor, VariableResistor, Variables};
+use crate::circuit::variable::{Pot, Smoothing, Switch, VariableCapacitor, VariableResistor, Variables};
 use crate::units::{Farads, Ohms};
 
 /// Where a variable branch sits in the MNA system.
@@ -68,6 +68,17 @@ impl Dk {
     /// The variable capacitor on the element called `name`.
     pub fn variable_capacitor(&self, name: &str) -> Result<VariableCapacitor, NetlistError> {
         self.varying.variables.find_capacitor(name)
+    }
+
+    /// The switch on the element called `name` (H6).
+    pub fn switch(&self, name: &str) -> Result<Switch, NetlistError> {
+        self.varying.variables.find_switch(name)
+    }
+
+    /// Throw `switch` closed or open: at once, or over its ramp, its
+    /// contacts bouncing as it closes if it was declared so. Realtime.
+    pub fn set_closed(&mut self, switch: Switch, closed: bool) {
+        self.varying.variables.set(switch.0, if closed { 1.0 } else { 0.0 });
     }
 
     /// Turn `pot` to `position` (0 to 1), gliding as

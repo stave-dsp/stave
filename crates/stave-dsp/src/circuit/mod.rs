@@ -59,7 +59,7 @@ use crate::kernel::node::{Stage, Tail};
 use methods::dk::Dk;
 use methods::wdf::Wdf;
 pub use netlist::{Netlist, NetlistError};
-pub use variable::{Pot, Smoothing, VariableCapacitor, VariableResistor};
+pub use variable::{Pot, Smoothing, Switch, VariableCapacitor, VariableResistor};
 
 /// A way of solving a [`Netlist`]: what `Circuit<M>` runs. Each method
 /// documents which netlists it accepts.

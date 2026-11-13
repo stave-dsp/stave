@@ -152,6 +152,7 @@ impl Dk {
                 match input {
                     super::Input::Source(s) => s.value_at(0.0),
                     super::Input::Expression { tape, stack } => tape.eval(&[], 0.0, stack).value,
+                    super::Input::Noise(_) => 0.0,
                 }
             };
         }
@@ -302,6 +303,11 @@ impl Dk {
 
     pub(super) fn response_at(&self, angle: f64) -> Option<Phasor> {
         let (input, scale) = self.response_input()?;
+        self.response_from(input, scale, angle)
+    }
+
+    /// The linearised response from input column `input`, scaled.
+    pub(super) fn response_from(&self, input: usize, scale: f64, angle: f64) -> Option<Phasor> {
         let nx = self.x.len();
         let (a, b, c, d) = self.linearised(input);
         let mut zi = Phasor::new(angle.cos(), -angle.sin());

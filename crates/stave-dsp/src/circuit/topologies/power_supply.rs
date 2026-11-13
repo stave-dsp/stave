@@ -71,7 +71,15 @@ impl PowerSupplyConfig {
 /// `crates/stave-test/tests/matches_ngspice.rs::power_supply_matches_ngspice`:
 /// from switch-on through a 20 → 80 → 20 mA load step, 2e-5 normalized
 /// RMS at 4×, no capped solve;
-/// `crates/stave-test/tests/solver_conformance.rs::power_supply_converges_under_a_swinging_load`.
+/// `crates/stave-test/tests/solver_conformance.rs::power_supply_converges_under_a_swinging_load`;
+/// its ripple (H9):
+/// `crates/stave-test/tests/noise_matches_theory.rs::supply_ripple_matches_the_reservoir_formula`
+/// (a resistor-filtered supply's ripple at twice the mains within 5 % of
+/// the reservoir's `I/(2fC)` sawtooth through the filter, measured
+/// 1.4 %) and, held as a stage's rail,
+/// `crates/stave-test/tests/noise_matches_theory.rs::supply_ripple_reaches_a_stage_through_its_supply_response`
+/// (a 12AX7 stage's hum within 0.1 dB of its rail's ripple times its
+/// supply response, measured 0.013).
 ///
 /// # Cost
 /// No datasheet line yet (DSP.md P1).

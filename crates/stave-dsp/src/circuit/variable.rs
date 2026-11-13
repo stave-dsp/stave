@@ -32,6 +32,16 @@
 //! [`Smoothing::interval`] samples, so a block of `N` samples refreshes
 //! at most `⌈N / interval⌉ + 1` times, however many parts move.
 //!
+//! The parts are hardware (H6): a pot's law may be its manufacturer's
+//! ([`Taper::Curve`]); a second gang strays from the first by a drawn
+//! [`Tracking`]; a worn [`Wiper`] crackles while it moves (the circuit
+//! refreshes every sample then, and is exactly the clean circuit again
+//! once still); a [`Switch`] jumps between its two resistances, with no
+//! glide — so it pops by whatever DC the circuit leaves across it — or
+//! ramps in log-resistance over a set time (click suppression), its
+//! contacts bouncing on closing if declared so ([`Bounce`]). None of it
+//! applies unless declared: a plain pot is exactly N6's.
+//!
 //! A moved resistor can move the DC operating point. The running
 //! circuit follows it through its own dynamics; `prepare` solves it
 //! again at the new values (`reset` returns to the one last solved, as
@@ -70,7 +80,9 @@
 //! assert!(bright > dark, "{bright} > {dark}");
 //! ```
 
+use crate::circuit::devices::potentiometer::{Bounce, Tracking, Wiper, MAX_BOUNCES};
 use crate::circuit::netlist::{ElementKind, Netlist, NetlistError, Taper, Variable};
+use crate::primitives::random::SplitMix64;
 use crate::units::{ms, Seconds};
 
 /// A pot or rheostat of a running circuit, set by position (0 to 1).
@@ -84,6 +96,10 @@ pub struct VariableResistor(pub(crate) usize);
 /// A variable capacitor of a running circuit, set in farads.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct VariableCapacitor(pub(crate) usize);
+
+/// A switch of a running circuit, thrown open or closed (H6).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Switch(pub(crate) usize);
 
 /// How a set value is reached: each part glides toward its target
 /// through two one-poles of time constant `time / 2` each (critically
@@ -123,10 +139,45 @@ impl Default for Smoothing {
 /// How a part's value becomes its branches' values.
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum Law {
-    Pot { taper: Taper, track: f64, end: f64 },
-    Rheostat { taper: Taper, track: f64, end: f64 },
+    Pot { taper: Taper, track: f64, end: f64, tracking: Tracking },
+    Rheostat { taper: Taper, track: f64, end: f64, tracking: Tracking },
     Resistor,
     Capacitor,
+    /// Its value is how closed it is, 0 to 1, in log-resistance.
+    Switch { on: f64, off: f64, ramp: f64, bounce: Option<Bounce> },
+}
+
+/// A scratchy wiper's running state.
+#[derive(Clone, Debug)]
+struct Scratch {
+    wiper: Wiper,
+    rng: SplitMix64,
+    alpha: f64,
+    norm: f64,
+    noise: f64,
+    last: f64,
+    /// The track-fraction offset in effect.
+    jitter: f64,
+}
+
+/// A switch's contact: its chatter after the last closing.
+#[derive(Clone, Debug, Default)]
+struct Contact {
+    edges: [u32; 2 * MAX_BOUNCES],
+    count: usize,
+    /// Samples since the last closing, while its chatter lasts.
+    since: Option<u32>,
+    closings: u64,
+}
+
+impl Contact {
+    /// Whether the contact is open at this point of the chatter.
+    fn open(&self) -> bool {
+        let Some(t) = self.since else {
+            return false;
+        };
+        self.edges[..self.count].chunks(2).any(|pair| t >= pair[0] && t < pair[1])
+    }
 }
 
 /// What a variable branch is, in the netlist.
@@ -154,12 +205,14 @@ struct Part {
     middle: f64,
     current: f64,
     first: usize,
+    scratch: Option<Scratch>,
+    contact: Contact,
 }
 
 impl Part {
     fn arrived(&self) -> bool {
         let scale = match self.law {
-            Law::Pot { .. } | Law::Rheostat { .. } => 1.0,
+            Law::Pot { .. } | Law::Rheostat { .. } | Law::Switch { .. } => 1.0,
             Law::Resistor | Law::Capacitor => self.target.abs(),
         };
         let close = 1e-6 * scale;
@@ -179,6 +232,7 @@ pub(crate) struct Variables {
     alpha: f64,
     countdown: u32,
     moving: bool,
+    sample_rate: f64,
 }
 
 fn refuse(element: &str, reason: &str) -> NetlistError {
@@ -219,6 +273,8 @@ impl Variables {
                     legs,
                     taper,
                     end_ohms,
+                    tracking,
+                    ..
                 } => {
                     let (a, b) = (ohms_of(netlist, &legs[0]), ohms_of(netlist, &legs[1]));
                     let track = a + b - 2.0 * end_ohms;
@@ -230,6 +286,7 @@ impl Variables {
                         taper: *taper,
                         track,
                         end: *end_ohms,
+                        tracking: *tracking,
                     };
                     (law, taper.position((a - end_ohms) / track))
                 }
@@ -238,6 +295,8 @@ impl Variables {
                     track_ohms,
                     taper,
                     end_ohms,
+                    tracking,
+                    ..
                 } => {
                     let r = ohms_of(netlist, element);
                     if !(r >= *end_ohms && r <= end_ohms + track_ohms) {
@@ -248,6 +307,7 @@ impl Variables {
                         taper: *taper,
                         track: *track_ohms,
                         end: *end_ohms,
+                        tracking: *tracking,
                     };
                     (law, taper.position((r - end_ohms) / track_ohms))
                 }
@@ -262,6 +322,39 @@ impl Variables {
                     });
                     (Law::Capacitor, farads_of(netlist, element))
                 }
+                Variable::Switch {
+                    element,
+                    on_ohms,
+                    off_ohms,
+                    ramp_seconds,
+                    bounce,
+                } => {
+                    let r = ohms_of(netlist, element);
+                    if r.is_nan() || r <= 0.0 {
+                        return Err(refuse(element, "a switch is a positive resistance"));
+                    }
+                    v.branches.push(resistor(element));
+                    let closed = (r.ln() - on_ohms.ln()).abs() <= (r.ln() - off_ohms.ln()).abs();
+                    let law = Law::Switch {
+                        on: *on_ohms,
+                        off: *off_ohms,
+                        ramp: *ramp_seconds,
+                        bounce: *bounce,
+                    };
+                    (law, if closed { 1.0 } else { 0.0 })
+                }
+            };
+            let scratch = match variable {
+                Variable::Pot { wiper: Some(w), .. } | Variable::Rheostat { wiper: Some(w), .. } => Some(Scratch {
+                    wiper: *w,
+                    rng: SplitMix64::new(w.seed),
+                    alpha: 1.0,
+                    norm: 1.0,
+                    noise: 0.0,
+                    last: value,
+                    jitter: 0.0,
+                }),
+                _ => None,
             };
             v.parts.push(Part {
                 name: variable.name().to_string(),
@@ -270,6 +363,8 @@ impl Variables {
                 middle: value,
                 current: value,
                 first,
+                scratch,
+                contact: Contact::default(),
             });
         }
         // As written: a circuit with nothing moved is the netlist exactly.
@@ -298,6 +393,20 @@ impl Variables {
         // automation leaves a ripple falling at 12 dB/octave, not 6.
         let samples = 0.5 * self.smoothing.time.get() * f64::from(sample_rate);
         self.alpha = if samples > 0.0 { 1.0 - (-1.0 / samples).exp() } else { 1.0 };
+        self.sample_rate = f64::from(sample_rate);
+        for part in &mut self.parts {
+            if let Some(s) = part.scratch.as_mut() {
+                // A one-pole at the crackle's corner, and the gain that
+                // brings its output back to unit rms: variance a/(2 − a).
+                let a = 1.0 - (-std::f64::consts::TAU * s.wiper.corner_hz / f64::from(sample_rate)).exp();
+                s.alpha = a.clamp(1e-9, 1.0);
+                s.norm = ((2.0 - s.alpha) / s.alpha).sqrt();
+                s.rng = SplitMix64::new(s.wiper.seed);
+                s.noise = 0.0;
+                s.jitter = 0.0;
+                s.last = part.current;
+            }
+        }
     }
 
     pub fn set_smoothing(&mut self, smoothing: Smoothing, sample_rate: f32) {
@@ -338,6 +447,10 @@ impl Variables {
             .map(VariableCapacitor)
     }
 
+    pub fn find_switch(&self, name: &str) -> Result<Switch, NetlistError> {
+        self.find(name, "switch", |l| matches!(l, Law::Switch { .. })).map(Switch)
+    }
+
     /// Aim part `i` at `value` (a position is clamped to 0–1; ohms and
     /// farads to zero and above).
     pub fn set(&mut self, i: usize, value: f64) {
@@ -347,9 +460,24 @@ impl Variables {
         let value = match part.law {
             Law::Pot { .. } | Law::Rheostat { .. } => value.clamp(0.0, 1.0),
             Law::Resistor | Law::Capacitor => value.max(0.0),
+            Law::Switch { .. } => {
+                if value >= 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
         };
         if value.is_nan() || value == part.target {
             return;
+        }
+        if let Law::Switch { bounce: Some(b), .. } = part.law {
+            if value == 1.0 {
+                let c = &mut part.contact;
+                c.count = b.edges(self.sample_rate, c.closings, &mut c.edges);
+                c.closings += 1;
+                c.since = Some(0);
+            }
         }
         part.target = value;
         if !self.moving {
@@ -374,6 +502,12 @@ impl Variables {
     pub fn advance(&mut self) -> bool {
         let mut moving = false;
         for part in &mut self.parts {
+            if let Law::Switch { ramp, .. } = part.law {
+                if Self::throw(part, ramp, self.sample_rate) {
+                    moving = true;
+                }
+                continue;
+            }
             if part.current != part.target || part.middle != part.target {
                 part.middle += self.alpha * (part.target - part.middle);
                 part.current += self.alpha * (part.middle - part.current);
@@ -381,6 +515,18 @@ impl Variables {
                     part.middle = part.target;
                     part.current = part.target;
                 } else {
+                    moving = true;
+                }
+            }
+            if let Some(s) = part.scratch.as_mut() {
+                // The wiper's speed in rotations a second, through the
+                // crackle; nothing once the knob is still.
+                let speed = (part.current - s.last).abs() * self.sample_rate;
+                s.last = part.current;
+                s.noise += s.alpha * (s.rng.next_normal() - s.noise);
+                s.jitter = s.wiper.scratch * speed * s.norm * s.noise;
+                // A last step's jitter is undone on the next sample.
+                if s.jitter != 0.0 {
                     moving = true;
                 }
             }
@@ -394,11 +540,31 @@ impl Variables {
         false
     }
 
+    /// One sample of a switch: its ramp toward the target, its chatter;
+    /// true while either lasts.
+    fn throw(part: &mut Part, ramp: f64, sample_rate: f64) -> bool {
+        let step = if ramp > 0.0 { 1.0 / (ramp * sample_rate) } else { 1.0 };
+        let gap = part.target - part.current;
+        part.current = if gap.abs() <= step { part.target } else { part.current + step * gap.signum() };
+        part.middle = part.current;
+        let c = &mut part.contact;
+        if let Some(t) = c.since {
+            let end = c.edges[..c.count].last().copied().unwrap_or(0);
+            c.since = if t + 1 > end || part.target == 0.0 { None } else { Some(t + 1) };
+        }
+        part.current != part.target || c.since.is_some()
+    }
+
     /// Every part at its target now; true when a branch value changed.
     pub fn settle(&mut self) -> bool {
         for part in &mut self.parts {
             part.middle = part.target;
             part.current = part.target;
+            part.contact.since = None;
+            if let Some(s) = part.scratch.as_mut() {
+                s.jitter = 0.0;
+                s.last = part.current;
+            }
         }
         self.moving = false;
         self.countdown = 1;
@@ -411,6 +577,8 @@ impl Variables {
             mine.target = theirs.target;
             mine.middle = theirs.middle;
             mine.current = theirs.current;
+            mine.scratch.clone_from(&theirs.scratch);
+            mine.contact.clone_from(&theirs.contact);
         }
         self.values.copy_from_slice(&other.values);
         self.moving = other.moving;
@@ -430,14 +598,30 @@ impl Variables {
         for part in &self.parts {
             let x = part.current;
             let at = part.first;
+            let jitter = part.scratch.as_ref().map_or(0.0, |s| s.jitter);
+            let fraction = |taper: Taper, tracking: Tracking| (tracking.fraction(taper.fraction(x)) + jitter).clamp(0.0, 1.0);
             match part.law {
-                Law::Pot { taper, track, end } => {
-                    let f = taper.fraction(x);
+                Law::Pot {
+                    taper,
+                    track,
+                    end,
+                    tracking,
+                } => {
+                    let f = fraction(taper, tracking);
                     put(at, end + track * f);
                     put(at + 1, end + track * (1.0 - f));
                 }
-                Law::Rheostat { taper, track, end } => put(at, end + track * taper.fraction(x)),
+                Law::Rheostat {
+                    taper,
+                    track,
+                    end,
+                    tracking,
+                } => put(at, end + track * fraction(taper, tracking)),
                 Law::Resistor | Law::Capacitor => put(at, x),
+                Law::Switch { on, off, .. } => {
+                    let closed = if part.contact.open() { 0.0 } else { x };
+                    put(at, off * (on / off).powf(closed));
+                }
             }
         }
         changed

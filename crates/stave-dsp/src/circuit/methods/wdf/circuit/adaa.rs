@@ -70,6 +70,7 @@ impl Wdf {
                 match &mut slot.input {
                     Input::Source(s) => s.value_at(0.0),
                     Input::Expression { tape, stack } => tape.eval(&[], 0.0, stack).value,
+                    Input::Noise(_) => 0.0,
                 }
             };
             match slot.target {

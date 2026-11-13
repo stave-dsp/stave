@@ -1034,6 +1034,77 @@ let drum = leslie.drum().rate() * 60.0;
 assert!(horn > 380.0 && drum < 300.0, "{horn} {drum} rpm");
 ```
 
+## Knobs, converters and noise: the hardware around the circuit
+
+A pot names its manufacturer's law: [`Taper::Curve`](stave_dsp::circuit::netlist::Taper::Curve)
+holds Alpha's A family as Holmes & van Walstijn fitted it
+([`LinearCubic::ALPHA_15A`](stave_dsp::circuit::devices::potentiometer::LinearCubic::ALPHA_15A)
+and its siblings, `.reversed()` for C), and
+[`Taper::Symmetric`](stave_dsp::circuit::netlist::Taper::Symmetric) the
+S and W shapes. The same declaration takes a second gang's
+[`Tracking`](stave_dsp::circuit::devices::potentiometer::Tracking)
+(drawn per unit within a dB spec) and a scratchy
+[`Wiper`](stave_dsp::circuit::devices::potentiometer::Wiper);
+[`Variable::switch`](stave_dsp::circuit::netlist::Variable::switch) is a
+resistor thrown between two values, at once (it pops, as the circuit
+says), over a ramp (click suppression), or bouncing as it closes.
+
+Early digital machines are converters at their own clock:
+[`Converter`](stave_dsp::circuit::devices::converter::Converter) samples
+at the machine's rate inside the host's, quantises to its word, holds,
+and lets every alias through unless it is given filters;
+[`Delay`](stave_dsp::circuit::devices::converter::Delay) puts a
+fixed-point memory and feedback multiply between them. The parts
+underneath are primitives: [`Quantiser`](stave_dsp::primitives::quantise::Quantiser)
+(TPDF dither, error-feedback shaping) and
+[`Fixed`](stave_dsp::primitives::fixed::Fixed).
+
+A `Circuit<Dk>` makes its own noise on request:
+[`set_noise`](stave_dsp::circuit::methods::dk::Dk::set_noise) adds every
+resistor's `4kT/R` and every diode's `2qI` as inputs of the state space,
+seeded; without it nothing changes. A rail can be held from a supply
+model ([`set_supply`](stave_dsp::circuit::methods::dk::Dk::set_supply)),
+so ripple and sag arrive through the netlist. Slow drift is
+[`OrnsteinUhlenbeck`](stave_dsp::primitives::control::drift::OrnsteinUhlenbeck)
+and [`Wiener`](stave_dsp::primitives::control::drift::Wiener), into
+[`Shockley::at_celsius`](stave_dsp::circuit::devices::diode::Shockley::at_celsius)
+or a VCO's [`Expo`](stave_dsp::circuit::devices::thermal::Expo).
+
+```rust
+use stave_dsp::circuit::devices::converter::{Converter, Machine};
+use stave_dsp::circuit::devices::potentiometer::LinearCubic;
+use stave_dsp::circuit::methods::dk::{Dk, Noise};
+use stave_dsp::circuit::netlist::{Netlist, Taper, Variable};
+use stave_dsp::circuit::Circuit;
+use stave_dsp::Stage;
+
+// A volume pot on Alpha's 15A law, and the circuit's own hiss.
+let mut netlist = Netlist::parse_spice(
+    "* volume
+     V1 in 0 0
+     RA in out 50k
+     RB out 0 50k
+     .control
+     wrdata out v(out)
+     .endc",
+)
+.unwrap();
+let law = Taper::Curve(LinearCubic::ALPHA_15A);
+netlist.add_variable(Variable::pot("volume", ["rb", "ra"], law)).unwrap();
+let mut volume = Circuit::<Dk>::new(&netlist).unwrap();
+volume.drive("V1").unwrap();
+volume.prepare(48_000.0);
+volume.set_noise(Some(Noise::room(1)));
+let hiss = (0..4_800).map(|_| volume.tick_f64(0.0).abs()).fold(0.0, f64::max);
+assert!(hiss > 0.0 && hiss < 1e-4, "microvolts: {hiss}");
+
+// The same signal through an SP-1200's converters: 12 bits at 26.04 kHz.
+let mut sp = Converter::new(Machine::SP1200);
+sp.prepare(48_000.0);
+let y = (0..480).map(|n| sp.tick((n as f32 * 0.3).sin())).last().unwrap();
+assert!(y.abs() <= 1.0);
+```
+
 ## Conventions
 
 - **Units in names.** `sample_rate` is `f32` everywhere (state may be

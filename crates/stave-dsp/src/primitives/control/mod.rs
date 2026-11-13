@@ -3,6 +3,7 @@
 //! readable without advancing; all are [`Stage`](crate::Stage)s.
 
 pub mod adsr;
+pub mod drift;
 pub mod envelope;
 pub mod lag;
 pub mod lfo;
