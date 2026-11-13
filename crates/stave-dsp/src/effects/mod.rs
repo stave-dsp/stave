@@ -1,5 +1,5 @@
 //! **Layer 7 — effects.** Algorithmic designs that model no hardware:
-//! [`reverb`] (FDN, Dattorro plate, Schroeder/Moorer) and [`dynamics`]
+//! [`reverb`] (FDN, Dattorro plate, Schroeder/Moorer, velvet noise) and [`dynamics`]
 //! (detectors, gain computers, compressor, look-ahead limiter), [`modulation`]
 //! (frequency shifter, single sideband), [`eq`] (minimum-phase,
 //! linear-phase and dynamic), [`pitch`] (phase vocoder, PSOLA) and

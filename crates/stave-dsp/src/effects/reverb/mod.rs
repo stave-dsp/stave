@@ -1,15 +1,25 @@
-//! Algorithmic reverberators: the [`Fdn`], the [`Dattorro`] plate and
+//! Algorithmic reverberators: the [`Fdn`], the [`Dattorro`] plate,
 //! [`Schroeder`]'s comb-and-allpass designs (with Moorer's lowpass
-//! combs). Each takes its decay as a T60 and is wet only: mix the dry
-//! signal yourself.
+//! combs) and the interleaved [`VelvetNoise`] late reverb. Each takes its
+//! decay as a T60 and is wet only: mix the dry signal yourself. The
+//! `Fdn` and `VelvetNoise` also hold a [`T60`] per octave band, through
+//! graphic-EQ attenuation filters; the `Fdn` mixes through a fixed
+//! [`Mixing`] or a parametric [`Kronecker`] matrix.
 
+mod attenuation;
 mod dattorro;
 mod fdn;
+mod kronecker;
 mod schroeder;
+mod t60;
+mod velvet_noise;
 
 pub use dattorro::Dattorro;
 pub use fdn::{Fdn, Mixing};
+pub use kronecker::{Kernel, Kronecker};
 pub use schroeder::Schroeder;
+pub use t60::T60;
+pub use velvet_noise::VelvetNoise;
 
 use crate::kernel::node::Tail;
 

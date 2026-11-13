@@ -105,11 +105,11 @@ use stave_dsp::primitives::filters::hilbert::Hilbert;
 use stave_dsp::primitives::filters::korg35::Korg35;
 use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
 use stave_dsp::primitives::filters::sallen_key::SallenKey;
-use stave_dsp::units::hz;
+use stave_dsp::units::{hz, seconds};
 use stave_dsp::circuit::devices::bbd::{Chip, Filter, HoltersParker};
 use stave_dsp::circuit::devices::compander::{self, Compander, Mode};
 use stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade;
-use stave_dsp::effects::reverb::{Dattorro, Fdn, Mixing, Schroeder};
+use stave_dsp::effects::reverb::{Dattorro, Fdn, Kronecker, Mixing, Schroeder, VelvetNoise, T60};
 use stave_dsp::physical::spring::{Chirp, Spring, Tank};
 use stave_dsp::units;
 use stave_dsp::primitives::time::delay::Delay;
@@ -270,6 +270,36 @@ fn primitive_datasheet() {
         fdn.prepare(sr);
         bench(name, &input, |x| fdn.tick(x));
     }
+    // S3b: the per-band T60 (graphic-EQ attenuation, a hall profile),
+    // the parametric matrix with its angles swept, and the velvet-noise
+    // late reverb broadband and per band.
+    let hall = T60::octaves([3.0, 2.8, 2.68, 2.55, 2.47, 2.5, 2.3, 1.89, 1.4, 1.2].map(seconds));
+    let mut graphic = Fdn::new(Mixing::Hadamard);
+    graphic.set_t60(hall);
+    graphic.prepare(sr);
+    bench("Fdn (8 lines, graphic EQ)", &input, |x| graphic.tick(x));
+    let mut kronecker = Fdn::new(Mixing::Hadamard);
+    kronecker.set_kronecker(Kronecker::hadamard());
+    kronecker.set_angle_modulation(0.3, hz(0.5));
+    kronecker.set_t60_s(2.0);
+    kronecker.prepare(sr);
+    bench("Fdn (8 lines, Kronecker, modulated)", &input, |x| kronecker.tick(x));
+    let mut velvet = VelvetNoise::new();
+    velvet.set_t60_s(2.0);
+    velvet.prepare(sr);
+    bench("VelvetNoise (4 branches, 408 taps)", &input, |x| velvet.tick(x));
+    // Its block path: each tap reads a contiguous run, which vectorises.
+    let mut blocks = input.to_vec();
+    bench_points("VelvetNoise (4 branches, 408 taps, process)", blocks.len(), || {
+        blocks.copy_from_slice(&input);
+        for block in blocks.chunks_mut(64) {
+            velvet.process(block);
+        }
+    });
+    let mut velvet = VelvetNoise::new();
+    velvet.set_t60(hall);
+    velvet.prepare(sr);
+    bench("VelvetNoise (graphic EQ)", &input, |x| velvet.tick(x));
     let mut plate = Dattorro::new(50.0);
     plate.set_t60_s(2.0);
     plate.prepare(sr);

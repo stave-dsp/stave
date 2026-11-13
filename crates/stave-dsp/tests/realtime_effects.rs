@@ -14,7 +14,7 @@ use stave_dsp::primitives::filters::crossover::{Crossover, Order};
 use stave_dsp::primitives::filters::formant::{Formants, Speaker, Vowel};
 use stave_dsp::primitives::resonators::{Bank, Comb, KarplusStrong, Mode};
 use stave_dsp::units::{db, hz, seconds};
-use stave_dsp::effects::reverb::{Dattorro, Fdn, Mixing, Schroeder};
+use stave_dsp::effects::reverb::{Dattorro, Fdn, Kronecker, Mixing, Schroeder, VelvetNoise, T60};
 use stave_dsp::primitives::time::delay::Delay;
 use stave_dsp::primitives::time::interpolators::{Lagrange3, Lagrange5, Sinc, Thiran};
 use stave_dsp::Stage;
@@ -87,6 +87,12 @@ fn effects_never_allocate_after_prepare() {
     no_allocation("Delay<Thiran>", &mut Delay::<Thiran>::new(20.0, 7.3));
     no_allocation("Delay<Sinc<16>>", &mut Delay::<Sinc<16>>::new(20.0, 7.3));
     no_allocation("Fdn", &mut Fdn::new(Mixing::Hadamard));
+    let mut graphic = Fdn::new(Mixing::Hadamard);
+    graphic.set_t60(T60::uniform(seconds(2.0)));
+    graphic.set_kronecker(Kronecker::hadamard());
+    graphic.set_angle_modulation(0.4, hz(0.7));
+    no_allocation("Fdn (graphic EQ, Kronecker)", &mut graphic);
+    no_allocation("VelvetNoise", &mut VelvetNoise::new());
     no_allocation("Dattorro", &mut Dattorro::new(50.0));
     no_allocation("Schroeder", &mut Schroeder::new());
     no_allocation("Schroeder::moorer", &mut Schroeder::moorer());
@@ -110,6 +116,14 @@ fn effects_never_allocate_after_prepare() {
             voice.set_ms(10.0 + (i as f32 * 0.01).sin());
             voice.tick(0.1);
             room.set_t60_s(1.0 + i as f32 * 1e-3);
+            room.tick_stereo(0.1);
+        }
+        // A per-band design, a matrix angle and a freeze, as a knob or
+        // an automation lane moves them.
+        for i in 0..20 {
+            room.set_t60(T60::uniform(seconds(1.0 + f64::from(i) * 0.1)));
+            room.set_kronecker(Kronecker::new(Default::default(), [0.1 * i as f32; 3]));
+            room.set_freeze(i % 2 == 0);
             room.tick_stereo(0.1);
         }
     });
