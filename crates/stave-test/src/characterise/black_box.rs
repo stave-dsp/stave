@@ -114,7 +114,7 @@ pub fn characterise(instance: Box<dyn Instance + Send>, rate: f64, block: usize,
     let knee = delayed_knee(&make, rate, STAGE_SETTLE_SECONDS);
     let plan = stage_plan("black box", knee, STAGE_SETTLE_SECONDS);
     let model = Model::Delayed { make: Box::new(make) };
-    let (table, _) = model.measure(&plan, &stave_dsp::circuit::netlist::Netlist::new(), tier, rate, false, &[]);
+    let (table, _) = model.measure(&plan, &stave_dsp::circuit::netlist::Netlist::new(), tier, rate, false, super::Shipping::PLAIN, &[]);
     let ns_per_sample = cost(&mut **shared.borrow_mut(), &plan, rate, block);
     let inert = inert(&plan, &table);
     BlackBox {

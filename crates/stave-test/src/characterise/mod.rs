@@ -71,8 +71,65 @@ pub enum Rates {
     /// The solver's rate: 48 kHz times the case's oversampling.
     Oversampled,
     /// The host rates a plugin ships at (T0: 48 kHz; T1: 44.1, 48 and
-    /// 96 kHz), no oversampling of the model's own.
+    /// 96 kHz), in the case's [`Shipping`] configuration: its
+    /// oversampling (the model run at that multiple of the host rate,
+    /// the decimator taken as ideal: its own passband and stopband are
+    /// `oversampler_conformance.rs`'s), its prewarp and its
+    /// antiderivative anti-aliasing (R12).
     Shipping,
+}
+
+/// How a case ships (DSP.md R12): the oversampling it runs at inside the
+/// host rate, the frequency its reactances are prewarped to, and whether
+/// its solve runs first-order stateful ADAA (A1).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Shipping {
+    pub oversample: u32,
+    pub prewarp: Option<f64>,
+    pub adaa: bool,
+}
+
+impl Shipping {
+    /// At the host rate, the plain trapezoidal rule.
+    pub const PLAIN: Self = Self {
+        oversample: 1,
+        prewarp: None,
+        adaa: false,
+    };
+
+    /// `oversample`× the host rate, unwarped.
+    pub const fn oversampled(oversample: u32) -> Self {
+        Self {
+            oversample,
+            prewarp: None,
+            adaa: false,
+        }
+    }
+
+    pub const fn prewarped(self, hz: f64) -> Self {
+        Self {
+            prewarp: Some(hz),
+            ..self
+        }
+    }
+
+    /// With first-order stateful ADAA in the solve (DSP.md A1).
+    pub const fn antialiased(self) -> Self {
+        Self { adaa: true, ..self }
+    }
+}
+
+impl fmt::Display for Shipping {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}×", self.oversample)?;
+        if let Some(hz) = self.prewarp {
+            write!(f, ", prewarped to {:.3} kHz", hz / 1e3)?;
+        }
+        if self.adaa {
+            write!(f, ", ADAA")?;
+        }
+        Ok(())
+    }
 }
 
 /// A check's budget: its first error (dB, volts, or a dBc ceiling for
@@ -122,6 +179,7 @@ pub struct Characterise {
     deck: Netlist,
     tier: Tier,
     oversample: u32,
+    shipping: Shipping,
     budgets: Vec<(Check, Rates, Budget)>,
     model: Option<Model>,
     deck_name: String,
@@ -147,6 +205,7 @@ impl Characterise {
             deck: deck(name),
             tier: Tier::T0,
             oversample: 8,
+            shipping: Shipping::PLAIN,
             budgets: Vec::new(),
             model: None,
             deck_name: name.to_string(),
@@ -184,6 +243,13 @@ impl Characterise {
     /// The solver's rate: `oversample` × 48 kHz (8 unless set).
     pub fn oversampled(self, oversample: u32) -> Self {
         Self { oversample, ..self }
+    }
+
+    /// The shipping configuration ([`Shipping::PLAIN`] unless set): the
+    /// [`Rates::Shipping`] runs are at the host rates times its
+    /// oversampling, a circuit prewarped and anti-aliased as it says.
+    pub fn shipped(self, shipping: Shipping) -> Self {
+        Self { shipping, ..self }
     }
 
     /// The budget for `check` at the oversampled rate.
@@ -288,18 +354,26 @@ impl Characterise {
             Tier::T1 => &SHIPPING_RATES,
         };
         let mut rates = vec![(48_000.0 * f64::from(self.oversample), Rates::Oversampled)];
-        rates.extend(shipping.iter().map(|&r| (r, Rates::Shipping)));
+        let m = f64::from(self.shipping.oversample.max(1));
+        rates.extend(shipping.iter().map(|&r| (r * m, Rates::Shipping)));
         let mut rows = Vec::new();
         let mut tables = Vec::new();
+        // Each table's configuration, so a cached table is the same model's.
+        let mut warps: Vec<Shipping> = Vec::new();
         let mut capped = 0;
         let started = std::time::Instant::now();
         for (rate, class) in rates {
             // A memoryless circuit runs "oversampled" at a shipping rate:
             // measure once.
+            let config = match class {
+                Rates::Oversampled => Shipping::PLAIN,
+                Rates::Shipping => self.shipping,
+            };
             let cached = tables
                 .iter()
-                .find(|(r, _): &&(f64, Table)| *r == rate)
-                .map(|(_, t)| t.clone());
+                .zip(&warps)
+                .find(|((r, _), w): &(&(f64, Table), &Shipping)| *r == rate && **w == config)
+                .map(|((_, t), _)| t.clone());
             let table = match cached {
                 Some(t) => t,
                 None => {
@@ -309,6 +383,7 @@ impl Characterise {
                         self.tier,
                         rate,
                         class == Rates::Oversampled,
+                        config,
                         &nodes,
                     );
                     capped += health.capped;
@@ -333,8 +408,9 @@ impl Characterise {
                     budget,
                 });
             }
-            if !tables.iter().any(|(r, _)| *r == rate) {
+            if !tables.iter().zip(&warps).any(|((r, _), w)| *r == rate && *w == config) {
                 tables.push((rate, table));
+                warps.push(config);
             }
         }
         let what = match model {
@@ -345,7 +421,12 @@ impl Characterise {
         };
         Characterisation {
             name: self.name,
-            against: format!("{} ({})", reference.source, self.target.regenerate()),
+            against: format!(
+                "{} ({}); shipping {}",
+                reference.source,
+                self.target.regenerate(),
+                self.shipping
+            ),
             tier: self.tier,
             rows,
             tables,

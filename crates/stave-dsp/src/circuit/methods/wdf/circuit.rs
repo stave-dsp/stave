@@ -8,6 +8,7 @@ use crate::circuit::methods::dk::solve::{Prediction, Workspace};
 use crate::circuit::methods::dk::{pin, read, Dk, Health, Input, Pin, Settings};
 use crate::circuit::methods::adaa::Antialiasing;
 use crate::circuit::methods::newton::NewtonStats;
+use crate::circuit::methods::prewarp;
 use crate::circuit::netlist::{ElementKind, Netlist, NetlistError, Node};
 use crate::kernel::node::Tail;
 
@@ -230,6 +231,8 @@ pub struct Wdf {
     /// The solves since the last `take_health` (or prepare), and before.
     health: Health,
     antialiasing: Antialiasing,
+    /// The frequency every reactance is prewarped to (R12).
+    prewarp: Option<f64>,
     adaa: adaa::State,
     earlier: Health,
     /// Variable parts (N6).
@@ -508,6 +511,7 @@ impl Wdf {
             settings,
             health: Health::default(),
             antialiasing: Antialiasing::None,
+            prewarp: None,
             adaa: adaa::State::new(nu, nv, nq),
             earlier: Health::default(),
             varying,
@@ -777,13 +781,9 @@ impl Wdf {
 
     /// The R-type root's rows for the current rate.
     fn discretise(&mut self) -> Result<(), NetlistError> {
-        // Under ADAA the trees' reactances are adapted for 1.5·T.
-        let scale = if self.adaa_active() {
-            self.antialiasing.design_step_scale()
-        } else {
-            1.0
-        };
-        let fs = f64::from(self.sample_rate) / scale;
+        // Under ADAA the trees' reactances are adapted for 1.5·T; a
+        // prewarp adapts them for its design step.
+        let fs = self.design_rate();
         self.forest.adapt(fs);
         let n = self.n;
         let p = self.ports.len();
@@ -1025,7 +1025,7 @@ impl Wdf {
     /// frequency the bilinear transform maps there, exact for a linear
     /// circuit.
     pub fn analog_response(&self, hz: f64) -> Option<Phasor> {
-        self.response_at(2.0 * (std::f64::consts::PI * hz * self.step).atan())
+        self.response_at(prewarp::digital_angle(hz, prewarp::design_step(self.step, self.prewarp)))
     }
 
     fn response_at(&self, angle: f64) -> Option<Phasor> {

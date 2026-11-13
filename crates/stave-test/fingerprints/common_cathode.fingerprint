@@ -36,7 +36,7 @@ metric 192000 tone/1k/+12 nmr_total_db -7.80442e1
 metric 192000 tone/1k/+12 nmr_max_db -6.07836492e1
 metric 192000 tone/1k/+12 nmr_disturbed 0e0
 metric 192000 tone/1k/+12 erb_max_db 6.86363261e-5
-metric 192000 tone/1k/+12 erb_rms_db 4.48486462e-5
+metric 192000 tone/1k/+12 erb_rms_db 4.48486461e-5
 metric 192000 tone/1k/+12 gedlee 1.65201586e-1
 metric 48000 multisine/-40/r1 nmr_total_db -8.74888234e1
 metric 48000 multisine/-40/r1 nmr_max_db -7.08724711e1
@@ -57,10 +57,10 @@ metric 48000 multisine/+12/r1 erb_max_db 4.06572841e-3
 metric 48000 multisine/+12/r1 erb_rms_db 8.2269854e-4
 metric 48000 multisine/+12/r1 rnonlin 9.84899842e-1
 metric 48000 tone/1k/-20 nmr_total_db -1.13545086e2
-metric 48000 tone/1k/-20 nmr_max_db -9.74522713e1
+metric 48000 tone/1k/-20 nmr_max_db -9.74522711e1
 metric 48000 tone/1k/-20 nmr_disturbed 0e0
-metric 48000 tone/1k/-20 erb_max_db 3.75830257e-6
-metric 48000 tone/1k/-20 erb_rms_db 3.75830257e-6
+metric 48000 tone/1k/-20 erb_max_db 3.75830259e-6
+metric 48000 tone/1k/-20 erb_rms_db 3.75830259e-6
 metric 48000 tone/1k/-20 gedlee 3.99433475e-3
 metric 48000 tone/1k/+0 nmr_total_db -7.9145167e1
 metric 48000 tone/1k/+0 nmr_max_db -5.91990287e1
@@ -193,9 +193,9 @@ plot harmonics 48000 -2e1 8e0 -1.55208706e2
 plot harmonics 48000 -2e1 9e0 -1.56134783e2
 plot harmonics 48000 -2e1 1e1 -1.56941026e2
 plot harmonics 48000 -2e1 1.1e1 -1.57647856e2
-plot harmonics 48000 -2e1 1.2e1 -1.58270271e2
+plot harmonics 48000 -2e1 1.2e1 -1.5827027e2
 plot harmonics 48000 -2e1 1.3e1 -1.58819609e2
-plot harmonics 48000 -2e1 1.4e1 -1.59304568e2
+plot harmonics 48000 -2e1 1.4e1 -1.59304567e2
 plot harmonics 48000 -2e1 1.5e1 -1.59731977e2
 plot aliasing 48000 -2e1 -1.09880688e2
 plot anmr 48000 -2e1 -5.7609314e1
@@ -233,36 +233,36 @@ plot harmonics 48000 1.2e1 1.4e1 -1.2690268e2
 plot harmonics 48000 1.2e1 1.5e1 -1.27330535e2
 plot aliasing 48000 1.2e1 -7.74833727e1
 plot anmr 48000 1.2e1 -2.55068054e1
-plot response reference 2e1 3.51520605e1
-plot response reference 1e2 3.57310567e1
-plot response reference 1.8e2 3.57499636e1
-plot response reference 2.6e2 3.57543792e1
-plot response reference 3.4e2 3.57560689e1
-plot response reference 4.2e2 3.57568895e1
-plot response reference 5e2 3.5757349e1
-plot response reference 5.8e2 3.57576319e1
-plot response reference 6.6e2 3.57578183e1
-plot response reference 7.4e2 3.57579476e1
-plot response reference 8.2e2 3.57580409e1
-plot response reference 9e2 3.57581105e1
-plot response reference 9.8e2 3.57581637e1
-plot response reference 1.06e3 3.57582054e1
-plot response reference 1.14e3 3.57582386e1
-plot response reference 1.22e3 3.57582655e1
-plot response reference 1.3e3 3.57582875e1
-plot response reference 1.38e3 3.57583059e1
-plot response reference 1.46e3 3.57583213e1
-plot response reference 1.62e3 3.57583456e1
-plot response reference 2.02e3 3.5758383e1
-plot response reference 2.5e3 3.57584065e1
-plot response reference 3.22e3 3.5758424e1
-plot response reference 4.02e3 3.57584335e1
-plot response reference 5.06e3 3.57584398e1
-plot response reference 6.42e3 3.57584438e1
-plot response reference 8.1e3 3.57584463e1
-plot response reference 1.018e4 3.57584479e1
-plot response reference 1.29e4 3.57584489e1
-plot response reference 1.626e4 3.57584495e1
+plot response reference 2e1 3.51520604e1
+plot response reference 1e2 3.57310566e1
+plot response reference 1.8e2 3.57499635e1
+plot response reference 2.6e2 3.57543791e1
+plot response reference 3.4e2 3.57560688e1
+plot response reference 4.2e2 3.57568894e1
+plot response reference 5e2 3.57573489e1
+plot response reference 5.8e2 3.57576317e1
+plot response reference 6.6e2 3.57578181e1
+plot response reference 7.4e2 3.57579474e1
+plot response reference 8.2e2 3.57580408e1
+plot response reference 9e2 3.57581104e1
+plot response reference 9.8e2 3.57581636e1
+plot response reference 1.06e3 3.57582053e1
+plot response reference 1.14e3 3.57582385e1
+plot response reference 1.22e3 3.57582653e1
+plot response reference 1.3e3 3.57582874e1
+plot response reference 1.38e3 3.57583058e1
+plot response reference 1.46e3 3.57583212e1
+plot response reference 1.62e3 3.57583454e1
+plot response reference 2.02e3 3.57583829e1
+plot response reference 2.5e3 3.57584063e1
+plot response reference 3.22e3 3.57584238e1
+plot response reference 4.02e3 3.57584334e1
+plot response reference 5.06e3 3.57584396e1
+plot response reference 6.42e3 3.57584437e1
+plot response reference 8.1e3 3.57584462e1
+plot response reference 1.018e4 3.57584477e1
+plot response reference 1.29e4 3.57584487e1
+plot response reference 1.626e4 3.57584494e1
 plot compression reference -2e1 3.5758078e1
 plot harmonics reference -2e1 2e0 -6.00122084e1
 plot harmonics reference -2e1 3e0 -1.14307425e2
@@ -592,7 +592,7 @@ run multisine/-40/r1 steady 1.693437744e-3 thdn - floor -
 75 2.3717662e-9 -7.9144659e-8
 81 1.4470658e-2 1.6364955e-2
 82 4.1634097e-8 5.4232091e-7
-83 3.0131618e-9 -7.1417431e-8
+83 3.0131618e-9 -7.1417432e-8
 101 -8.8410015e-3 1.9976297e-2
 102 1.0715098e-7 -1.1389661e-8
 103 1.9127137e-9 -5.7436576e-8
@@ -670,7 +670,7 @@ run tone/1k/-20 steady 2.251389983e-5 thdn 9.985978867e-4 floor 3.203098367e-6
 171 -2.4884046e-9 1.7589533e-8
 190 -2.4862655e-9 1.5806120e-8
 209 -2.4846717e-9 1.4344609e-8
-228 -2.4834628e-9 1.3124519e-8
+228 -2.4834628e-9 1.3124520e-8
 247 -2.4825141e-9 1.2090136e-8
 266 -2.4817663e-9 1.1201656e-8
 285 -2.4811612e-9 1.0429896e-8
@@ -977,13 +977,13 @@ run multisine/-40/r1 steady 1.694211265e-3 thdn - floor -
 255 8.2041456e-9 -2.2294468e-8
 321 -6.4897680e-3 2.0859217e-2
 322 5.8991596e-7 -1.4685480e-7
-323 7.1936274e-9 -1.7718575e-8
+323 7.1936274e-9 -1.7718574e-8
 405 2.1377767e-3 -2.1740645e-2
 406 5.6907700e-7 4.7398115e-7
 407 7.7457083e-9 -1.2548652e-8
 509 2.1283784e-2 -4.9220158e-3
 510 -2.7438179e-7 6.7778312e-7
-511 7.6634622e-9 -9.8437974e-9
+511 7.6634622e-9 -9.8437973e-9
 645 -5.9350010e-3 2.1023815e-2
 646 -4.5909083e-7 -5.8518071e-7
 647 7.4816330e-9 -6.6726895e-9
@@ -1034,11 +1034,11 @@ run tone/1k/-20 steady 2.252418934e-5 thdn 9.985918481e-4 floor 3.206015369e-6 a
 114 -9.9342990e-9 2.5314170e-8
 133 -9.9276984e-9 2.1307925e-8
 152 -9.9233965e-9 1.8247829e-8
-171 -9.9204216e-9 1.5817308e-8
+171 -9.9204216e-9 1.5817309e-8
 190 -9.9182938e-9 1.3826260e-8
 209 -9.9167265e-9 1.2153522e-8
-228 -9.9155457e-9 1.0718160e-8
+228 -9.9155457e-9 1.0718161e-8
 247 -9.9146243e-9 9.4639224e-9
-266 -9.9139046e-9 8.3504968e-9
+266 -9.9139046e-9 8.3504971e-9
 285 -9.9133328e-9 7.3480933e-9
 end

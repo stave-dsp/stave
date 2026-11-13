@@ -114,6 +114,27 @@ impl<T: Triode> CommonCathode<T> {
         self.nodes.cathode
     }
 
+    /// One sample in f64: input volts in, plate volts out, at the
+    /// solve's own precision.
+    pub fn tick_f64(&mut self, input: f64) -> f64 {
+        let cap = Companion {
+            siemens: self.companion_siemens,
+            previous_cathode: self.nodes.cathode,
+            previous_amps: self.cap_amps,
+        };
+        let solution = solve(&self.config, &cap, self.nodes, input);
+        self.stats.record(
+            solution.iterations,
+            solution.final_step < self.config.newton.tolerance,
+            solution.final_step,
+        );
+        let solved = solution.nodes;
+        self.cap_amps =
+            self.companion_siemens * (solved.cathode - self.nodes.cathode) - self.cap_amps;
+        self.nodes = solved;
+        solved.plate
+    }
+
     /// Component values change in place; the circuit moves toward its
     /// new operating point through its own dynamics.
     pub fn configure(&mut self, config: &CommonCathodeConfig<T>) {
@@ -290,24 +311,11 @@ impl<T: Triode> Stage for CommonCathode<T> {
         self.settle_at_operating_point();
     }
 
-    /// Input volts in, plate volts out.
+    /// Input volts in, plate volts out ([`tick_f64`](CommonCathode::tick_f64)
+    /// rounded: a plate near 200 V in f32 resolves 15 µV, about −100 dB
+    /// under a small signal; read `tick_f64` where that matters).
     fn tick(&mut self, input: f32) -> f32 {
-        let cap = Companion {
-            siemens: self.companion_siemens,
-            previous_cathode: self.nodes.cathode,
-            previous_amps: self.cap_amps,
-        };
-        let solution = solve(&self.config, &cap, self.nodes, f64::from(input));
-        self.stats.record(
-            solution.iterations,
-            solution.final_step < self.config.newton.tolerance,
-            solution.final_step,
-        );
-        let solved = solution.nodes;
-        self.cap_amps =
-            self.companion_siemens * (solved.cathode - self.nodes.cathode) - self.cap_amps;
-        self.nodes = solved;
-        solved.plate as f32
+        self.tick_f64(f64::from(input)) as f32
     }
 
     /// The bypass capacitor recovers through the cathode resistor:

@@ -12,6 +12,7 @@
 //! arriving waves, under the scattering iterative method).
 
 use super::{Kind, NetlistError, Pin, Wdf};
+use crate::circuit::methods::prewarp;
 use crate::circuit::methods::woodbury::Woodbury;
 use crate::circuit::netlist::{Netlist, Variable};
 use crate::circuit::variable::{BranchKind, Pot, Smoothing, Switch, VariableCapacitor, VariableResistor, Variables};
@@ -264,15 +265,15 @@ impl Wdf {
         Ok(())
     }
 
-    /// The rate the trees are adapted at (1.5·T's under ADAA, as
-    /// `discretise` adapts them).
-    fn design_rate(&self) -> f64 {
+    /// The rate the trees are adapted at (1.5·T's under ADAA, prewarped,
+    /// as `discretise` adapts them).
+    pub(super) fn design_rate(&self) -> f64 {
         let scale = if self.adaa_active() {
             self.antialiasing.design_step_scale()
         } else {
             1.0
         };
-        f64::from(self.sample_rate) / scale
+        1.0 / prewarp::design_step(scale / f64::from(self.sample_rate), self.prewarp)
     }
 
     fn port_conductances(&self) -> Vec<f64> {

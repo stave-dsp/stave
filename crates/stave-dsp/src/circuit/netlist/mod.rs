@@ -344,6 +344,14 @@ pub struct Netlist {
     /// 27 °C. Model cards are read at this temperature (`tnom` must
     /// match: temperature scaling is not modelled).
     pub temperature_celsius: Option<f64>,
+    /// The conductance SPICE puts across every semiconductor junction
+    /// (`.options gmin=`, siemens): `cd = Is·(exp(vd/(N·Vt)) − 1) +
+    /// gmin·vd` in ngspice's `dioload.c`, `bjtload.c` and `jfetload.c`.
+    /// `None` is SPICE's 1e-12 ([`Netlist::junction_gmin`]). Part of the
+    /// equations a deck solves, so methods stamp it: a reverse-biased
+    /// junction leaks `gmin·v` (a J201's gate–drain junction 4.3 pA at
+    /// 4.3 V, 4.3 µV across a 1 MΩ gate leak).
+    pub gmin_siemens: Option<f64>,
     /// Model-card parameters the parser accepted but no stave element
     /// models (a diode's junction capacitance, transit time),
     /// as `model: parameter` — so what a comparison leaves out is on
@@ -360,6 +368,17 @@ impl Netlist {
             names: vec!["0".into()],
             ..Self::default()
         }
+    }
+
+    /// SPICE's default `gmin`: the conductance across every junction when
+    /// the deck sets none.
+    pub const DEFAULT_GMIN_SIEMENS: f64 = 1e-12;
+
+    /// The junction conductance methods stamp
+    /// ([`gmin_siemens`](Self::gmin_siemens), SPICE's 1e-12 S unless the
+    /// deck sets it).
+    pub fn junction_gmin(&self) -> f64 {
+        self.gmin_siemens.unwrap_or(Self::DEFAULT_GMIN_SIEMENS)
     }
 
     /// The node called `name`, created on first use (`0` and `gnd` are

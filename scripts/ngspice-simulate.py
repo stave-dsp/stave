@@ -343,10 +343,28 @@ def deck_parts(cir):
         if low.startswith(".tran"):
             uic = " uic" in low
             continue
-        if low.startswith((".ac", ".op", ".end")):
+        # The deck's analyses go (the plan's replace them); its .options
+        # (tolerances, temp, gmin) stay: ".op" is a prefix of ".options".
+        if re.match(r"\.(ac|op|end)\b", low):
             continue
         lines.append(line)
     return lines, probe, uic
+
+
+def transient_tolerances(lines):
+    """The deck's lines with the tolerances taken out of its .options
+    (reltol, abstol, vntol, chgtol), the rest — temp, tnom, gmin — kept.
+    The plan's transients run on a fixed step at the reference rate, so
+    the step sets their accuracy: ngspice's default tolerances agree
+    with a deck's 1e-9 to 1.3e-8 of peak (the Fuzz Face at +12 dB re
+    its knee) in an eighth of the time. The operating point and the
+    small-signal response keep the deck's own."""
+    out = []
+    for line in lines:
+        if re.match(r"\s*\.opt", line, re.I):
+            line = re.sub(r"\s+(reltol|abstol|vntol|chgtol)\s*=\s*\S+", "", line, flags=re.I)
+        out.append(line)
+    return out
 
 
 def split_deck(lines, plan, stimulus):
@@ -432,7 +450,7 @@ def simulate_run(spice, cir, plan, run, scratch):
     stop = (run["settle"] + run["measure"]) * period
     tag = f"{cir.stem}.{run['id'].replace('/', '_')}"
     out = scratch / f"{tag}.txt"
-    deck = "\n".join([f"* {cir.stem} {run['id']}"] + split_deck(lines, plan, stimulus) + [
+    deck = "\n".join([f"* {cir.stem} {run['id']}"] + split_deck(transient_tolerances(lines), plan, stimulus) + [
         ".options interp",
         ".control",
         "set wr_singlescale",

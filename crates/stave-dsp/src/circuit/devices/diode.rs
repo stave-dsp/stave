@@ -63,8 +63,10 @@ impl Diode for Shockley {
 /// `IBV < Is·BV/Vt`), so the current at `−BV` is `IBV` when `Is` is small
 /// (a germanium junction's large `Is` leaves it less).
 /// [`junction`](Self::junction) solves `xbv` once. ngspice's `gmin`
-/// (a picosiemens across the junction) is a convergence aid, not part of
-/// the model, and is left out. Parts are the published `.model` cards
+/// (a picosiemens across the junction) is not part of this device: a
+/// circuit method stamps it as a linear conductance across the junction
+/// ([`Netlist::gmin_siemens`](crate::circuit::netlist::Netlist::gmin_siemens)),
+/// as it does for BJT and JFET junctions. Parts are the published `.model` cards
 /// named on each constant.
 ///
 /// # Verified
