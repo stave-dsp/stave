@@ -418,12 +418,12 @@ other references; a model with a capture is held to it within budget.
 - [ ] **A1** ADAA for stateful nonlinearities (Holters 2019) and inside
   WDF one-ports (Albertini et al. 2020), so circuits get the anti-aliasing
   memoryless shapes already have.
-- [ ] **A2** Arbitrary-ratio oversampling (3×, 6×, 8×) and an IIR
+- [x] **A2** (e0f9423: `Oversampled::linear(s, factor)` / `Oversampled::minimum(s, factor)`, any whole factor from its primes — 2s as half-bands, odd primes as polyphase Kaiser designs, the outer stage steep and the inner ones relaxed; minimum phase as elliptic allpass half-bands, an odd factor staying linear; `latency_exact()` exact (DC group delay for minimum phase), `latency()` rounded to nearest, half up; `linear(s, 2/4)` is `Oversampled2x` bit for bit, which is untouched. At 44.1 kHz: ripple ≤ 6.7e-4 dB, fold-in and images ≤ −95.4 dB linear, −111.5 minimum; latency 66/66/84/73/87 linear at 2/3/4/6/8×, 3.94/5.63/6.42 minimum at 2/4/8×; 41–176 ns/sample linear, 47–222 minimum) Arbitrary-ratio oversampling (3×, 6×, 8×) and an IIR
   minimum-phase half-band option for low latency, with the latency
   reported exactly.
-- [ ] **A3** Oscillators: BLAMP for triangle/hard sync, minBLEP option,
+- [x] **A3** (e0f9423: `Osc` triangle with polyBLAMP; `Osc::min_blep` (minimum-phase BLEP/BLAMP tables, 3 samples of delay); `Osc::set_sync(Option<Hz>)` hard sync with either kind; `Wavetable::new(Waveform)` / `from_cycle`, per-octave mip-maps of 4096 points, Catmull-Rom, tables shared between clones) Oscillators: BLAMP for triangle/hard sync, minBLEP option,
   wavetable with mip-mapped band limiting.
-- [ ] **A4** An aliasing measurement in stave-measure (inharmonic energy
+- [x] **A4** (e0f9423: `stave_measure::aliasing` — `SteppedTone::through` / `generated`, odd bins of a power-of-two window so harmonics and folds separate exactly by bin; `AliasPoint` carries harmonics, inharmonic (full band and ≤ 20 kHz) and the loudest fold) An aliasing measurement in stave-measure (inharmonic energy
   of a swept tone through a stage, in dB below the fundamental) and a
   per-stage budget enforced in tests (R5).
 
@@ -539,7 +539,7 @@ other references; a model with a capture is held to it within budget.
 - [ ] **R4** Every new device (E1–E9) arrives with an ngspice or
   datasheet-curve test, and every DK/WDF circuit (N2/N4) with the same
   netlist simulated in ngspice.
-- [ ] **R5** Anti-aliasing budgets (A4) per nonlinear stage at 44.1/48
+- [x] **R5** (e0f9423: `stave-dsp/tests/aliasing_budgets.rs`, the audible inharmonic energy of each stage and oscillator at 44.1 and 48 kHz, budget 2 dB above the recorded measurement: triode −21.8/−20.2 dB, diode clipper at 4× −43.3/−38.0, smooth sat at 4× −103.3/−99.9, tanh ADAA1 −30.4/−28.0, ADAA2 −32.1/−32.9; saw polyBLEP −23.2/−27.5, minBLEP −93.5/−94.9, triangle polyBLAMP −38.0/−52.7, minBLAMP −103.7/−105.2, sync polyBLEP −14.2/−21.7, sync minBLEP −85.5/−89.4, wavetable −124.6) Anti-aliasing budgets (A4) per nonlinear stage at 44.1/48
   kHz with its default oversampling.
 - [ ] **R6** Sample-rate invariance for every stage: the same response
   (within a budget) from 44.1 to 192 kHz; NaN/denormal-free from 8 kHz to
