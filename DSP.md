@@ -407,7 +407,7 @@ other references; a model with a capture is held to it within budget.
 - [x] **F3** (edf9579: `Convolver::non_uniform(&ir, block, largest, head)`: power-of-two sizes up to `largest`, counts by dynamic programming over a measured cost model (García); 96 k taps at zero latency 68 ns/sample against 132 for uniform at a 256-sample latency) Non-uniform partitioned convolution (Gardner / Garcia
   schedules) for long IRs at low latency; worker-thread tail partitions
   with a lock-free handoff.
-- [ ] **F3b** The worker-thread half of F3: the large partitions' steps
+- [x] **F3b** (e9b3a5fd: `Convolver::deferred(&ir, block, largest, head, from)` keeps a block of slack (`skip ≥ 1`) on every run of `from` samples or more and steps it a block ahead through a `Worker`; `Inline` computes on the calling thread, bit-identical to the same schedule stepped in place; stave-core's `workers::Workers` runs one thread per partition size through a lock-free, allocation-free swap ring (`handoff`, loom-modelled), `Deadline::Realtime` plays a missed block as silence and counts it (`late_blocks`, `report`), `Deadline::Offline` waits and is bit-identical to `Inline`; paced 96 k taps on a loaded host: 99th-percentile 64-sample block 369 ns/sample against 1290 single-threaded; `Crossfade` swaps responses by warming the incoming convolver for its tail, then a raised-cosine output fade: within 1.7e-6 of the direct crossfade, −73 dB spray against −28 dB for a hard swap) The worker-thread half of F3: the large partitions' steps
   computed off the audio thread (or spread over their block), handed
   back lock-free, so the worst block costs what the average does (today
   1.2 µs/sample against 68 average for 96 k taps). The schedule search
@@ -420,7 +420,7 @@ other references; a model with a capture is held to it within budget.
 - [x] **F6** (fd8b284: `primitives::spectral::Fir` — `windowed_sinc`/`kaiser` lowpass, highpass, bandpass, `least_squares` over weighted `Band`s, `minimum_phase` by the cepstrum, into a `Convolver` via `impulse_response`; one `Window` type for FIR and STFT. The oversampler's half-band tables are `Fir::windowed_sinc` Kaiser designs bit for bit, pinned by a test, but stay in `kernel`, which may not depend on `primitives`) Linear-phase and minimum-phase FIR design (windowed sinc,
   Parks–McClellan or least squares) as a library, used by F2's EQ and A3.
 
-- [ ] **F3b** The worker-thread half of non-uniform convolution: one thread per
+- [x] **F3b** (e9b3a5fd, as above) The worker-thread half of non-uniform convolution: one thread per
   partition size with deadlines and slack (Battenberg & Avizienis 2011), and
   click-free impulse-response swapping (Wefers 2015) for H7's mic blending.
 ### N — circuit solvers
@@ -543,7 +543,7 @@ other references; a model with a capture is held to it within budget.
   `DelayLine` takes the interpolator as a type parameter.
 - [x] **S3** (d64817a; decay as `set_t60_s` in f32 seconds until U4 moves setters to `units::Seconds`) Reverb structures: FDN (Householder/Hadamard, modulated),
   Dattorro plate, Schroeder/Moorer, each with decay in `Seconds` (U1).
-- [ ] **S3b** Reverb accuracy and engines: T60 held by graphic-EQ attenuation
+- [x] **S3b** (5f63fe62: `Fdn::set_t60(T60)`, a T60 per octave band held by Prawda et al.'s graphic-EQ attenuation filter per line (broadband gain, ten octave peaks, high shelf; weighted least squares refined against the real cascade; the interpolator's treble loss characterised and taken out), `set_t60_s` unchanged; measured T30 per band 63 Hz – 8 kHz within 5 % (worst 3.9 %) for a hall and a studio profile, 48/96 kHz, modulated and static, the filter within 1.4 % of its target at every centre; `Kronecker` matrices (Coppola 2026) with set and modulated angles, freeze holding the stored energy within 1.5e-5 over 10 s with the angles swept, angle modulation moving per-band T60 under 2.5 %; `VelvetNoise`, Välimäki & Prawda's interleaved velvet-noise late reverb: exactly one impulse per grid cell, 2181.8 /s at 48 kHz, T60 within 2.3 % per band; T30 per octave band in stave-measure's `tail::t60_band_s`) Reverb accuracy and engines: T60 held by graphic-EQ attenuation
   filters with a tested accuracy (Schlecht 2017; Prawda et al. 2019);
   orthogonal energy-preserving feedback matrices with continuous angle
   controls for modulation and freeze (Coppola 2026); velvet-noise late reverb
