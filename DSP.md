@@ -398,7 +398,7 @@ circuit/
   and a store outside git for third-party or licensed captures (the
   existing `**/refs/` rule), with checksums committed so tests can
   require them when present.
-- [ ] **R9** Golden audio: short renders of each library stage at fixed
+- [ ] **R9** Golden audio: short outputs of each library stage at fixed
   settings, compared within tolerance, so a refactor that changes the
   sound is visible.
 - [ ] **R10** Kani/proptest for the pure kernels added here (FFT index
@@ -407,7 +407,7 @@ circuit/
 ### P — profiling and performance
 
 - [ ] **P1** The datasheet as data: `datasheet.rs` writes JSON
-  (ns/sample, spread, rate) per stage; the docs site renders it as a
+  (ns/sample, spread, rate) per stage; the docs site shows it as a
   reference page, the same way the catalogue is generated.
 - [ ] **P2** Deterministic performance regression in CI: instruction
   counts (iai-callgrind / cachegrind on Linux) per stage, with a
