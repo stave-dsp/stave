@@ -364,8 +364,7 @@ impl Segment {
         let l = self.size;
         let pos = self.pos;
         for lane in 0..lanes {
-            let at = lane * 2 * l + l + pos;
-            y[lane] += self.swap.blend(&self.out, at, pos, l);
+            y[lane] += self.out[lane * 2 * l + l + pos];
             self.frames[lane * 2 * l + l + pos] = x[lane];
         }
         self.pos += 1;
@@ -390,13 +389,17 @@ impl Segment {
             frame.copy_within(l.., 0);
         }
         if self.swap.begins_fade() {
-            // The old response's block for the fade's start, then the
-            // new one's, which stays.
+            // The old response's block, then the new one's, blended in
+            // place: the block played out fades between them, and the
+            // per-sample path never looks at the swap.
             self.convolve(lanes);
             self.swap.keep_old_block(&mut self.out);
             self.swap.install(&mut self.paths);
+            self.convolve(lanes);
+            self.swap.blend_block(&mut self.out, lanes, l);
+        } else {
+            self.convolve(lanes);
         }
-        self.convolve(lanes);
     }
 
     /// Sums the delay line against the partitions into `out`, per
@@ -531,6 +534,10 @@ pub struct Convolver {
     /// The direct head's side of a response swap; empty until
     /// [`reserve_swaps`](Self::reserve_swaps).
     head_swap: swap::HeadSwap,
+    /// How the head runs this sample: the head swap's crossfade is a
+    /// third case of the head's own dispatch, so the steady state pays
+    /// nothing for it.
+    head_mode: swap::HeadMode,
 }
 
 /// The delay-line slot of the spectrum `age` blocks older than the one
@@ -645,6 +652,7 @@ impl Convolver {
             largest,
             planned: ir.sample_rate(),
             head_swap: swap::HeadSwap::default(),
+            head_mode: swap::HeadMode::of(head),
         }
     }
 
@@ -708,22 +716,30 @@ impl Convolver {
         for segment in &mut self.segments {
             segment.advance(x, &mut y, self.lanes);
         }
-        if self.head == Head::Direct {
-            let b = self.block;
-            let pos = self.pos;
-            for lane in 0..self.lanes {
-                let h = &mut self.history[lane * 2 * b..(lane + 1) * 2 * b];
-                h[pos] = x[lane];
-                h[pos + b] = x[lane];
+        match self.head_mode {
+            swap::HeadMode::Direct => {
+                let b = self.block;
+                let pos = self.pos;
+                for lane in 0..self.lanes {
+                    let h = &mut self.history[lane * 2 * b..(lane + 1) * 2 * b];
+                    h[pos] = x[lane];
+                    h[pos + b] = x[lane];
+                }
+                for path in &self.heads {
+                    let h = &self.history[path.input * 2 * b..(path.input + 1) * 2 * b];
+                    let window = &h[pos + 1..pos + 1 + b];
+                    y[path.output] += dot(window, &path.taps);
+                }
+                self.pos = (pos + 1) & (b - 1);
             }
-            for path in &self.heads {
-                let h = &self.history[path.input * 2 * b..(path.input + 1) * 2 * b];
-                let window = &h[pos + 1..pos + 1 + b];
-                y[path.output] += self.head_swap.dot(window, &path.taps);
+            swap::HeadMode::Swapping => {
+                // By value: a `&mut y` would keep `y` in memory on the
+                // steady path too (about 12 instructions a sample).
+                let head = self.head_swapping(x);
+                y[0] += head[0];
+                y[1] += head[1];
             }
-            let run_fading = self.segments.first().is_some_and(Segment::is_fading);
-            self.head_swap.advance(&mut self.heads, run_fading);
-            self.pos = (pos + 1) & (b - 1);
+            swap::HeadMode::Partitioned => {}
         }
         y
     }
@@ -757,6 +773,7 @@ impl Stage for Convolver {
         self.history.fill(0.0);
         self.pos = 0;
         self.head_swap.finish(&mut self.heads);
+        self.head_mode = swap::HeadMode::of(self.head);
     }
 
     /// One sample through a mono response (a stereo one `debug_assert!`s

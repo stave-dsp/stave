@@ -7,7 +7,25 @@
 //! new convolution, with no settling (Wefers 2015, §5.5, filter
 //! exchange in the frequency domain with an output crossfade).
 
-use super::{dot, Convolver, HeadPath, Segment, SegmentPath, Split};
+use super::{dot, Convolver, Head, HeadPath, Segment, SegmentPath, Split};
+
+/// How a convolver's direct head runs: not at all, plain, or through a
+/// swap's crossfade.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum HeadMode {
+    Direct,
+    Swapping,
+    Partitioned,
+}
+
+impl HeadMode {
+    pub(super) fn of(head: Head) -> Self {
+        match head {
+            Head::Direct => HeadMode::Direct,
+            Head::Partitioned => HeadMode::Partitioned,
+        }
+    }
+}
 
 /// Where a run is in a swap.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -45,16 +63,17 @@ impl SegmentSwap {
         self.staged.is_some()
     }
 
-    /// The output sample at `at` of the block being played out, `pos`
-    /// samples into a block of `l`: blended toward the new response
-    /// during a fade (the last sample of the block is all new).
-    #[inline]
-    pub(super) fn blend(&self, out: &[f32], at: usize, pos: usize, l: usize) -> f32 {
-        if self.state == State::Fading {
-            let r = (pos + 1) as f32 / l as f32;
-            self.old[at] + (out[at] - self.old[at]) * r
-        } else {
-            out[at]
+    /// Blends the block about to be played out (the second half of
+    /// each lane's `2L` output) from the old response's, kept in `old`,
+    /// to the new one's in `out`: a linear ramp ending all new.
+    pub(super) fn blend_block(&self, out: &mut [f32], lanes: usize, l: usize) {
+        for lane in 0..lanes {
+            let at = lane * 2 * l + l;
+            let (new, old) = (&mut out[at..at + l], &self.old[at..at + l]);
+            for (p, (n, &o)) in new.iter_mut().zip(old).enumerate() {
+                let r = (p + 1) as f32 / l as f32;
+                *n = o + (*n - o) * r;
+            }
         }
     }
 
@@ -110,6 +129,12 @@ pub(super) struct HeadSwap {
 }
 
 impl HeadSwap {
+    /// `true` while the head is waiting to fade or fading.
+    #[inline]
+    pub(super) fn is_active(&self) -> bool {
+        self.waiting || self.fade != 0
+    }
+
     pub(super) fn is_reserved(&self) -> bool {
         !self.staged.is_empty()
     }
@@ -184,6 +209,33 @@ impl Segment {
 }
 
 impl Convolver {
+    /// The direct head for one sample while its swap is waiting or
+    /// fading (kept off the steady-state path); back to the plain head
+    /// when the fade completes.
+    #[inline(always)]
+    pub(super) fn head_swapping(&mut self, x: [f32; 2]) -> [f32; 2] {
+        let mut y = [0.0f32; 2];
+        let b = self.block;
+        let pos = self.pos;
+        for lane in 0..self.lanes {
+            let h = &mut self.history[lane * 2 * b..(lane + 1) * 2 * b];
+            h[pos] = x[lane];
+            h[pos + b] = x[lane];
+        }
+        for path in &self.heads {
+            let h = &self.history[path.input * 2 * b..(path.input + 1) * 2 * b];
+            let window = &h[pos + 1..pos + 1 + b];
+            y[path.output] += self.head_swap.dot(window, &path.taps);
+        }
+        let run_fading = self.segments.first().is_some_and(Segment::is_fading);
+        self.head_swap.advance(&mut self.heads, run_fading);
+        if !self.head_swap.is_active() {
+            self.head_mode = HeadMode::Direct;
+        }
+        self.pos = (pos + 1) & (b - 1);
+        y
+    }
+
     /// Reserves the buffers [`swap_response`](Self::swap_response)
     /// needs: one more set of partition spectra and one output block per
     /// run (this allocates; call it before the audio starts). A
@@ -246,6 +298,7 @@ impl Convolver {
             } else {
                 self.head_swap.waiting = true;
             }
+            self.head_mode = HeadMode::Swapping;
         }
         true
     }
