@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run a command on a build host instead of this machine: the working tree
-# (uncommitted changes included, build output excluded) is synced to the
+# (uncommitted changes included; anything git ignores is not sent) is synced to the
 # host, the command runs there under `nice`, its output streams back, and
 # its exit status is this script's.
 #
@@ -25,7 +25,10 @@ NAME="${NAME//[^A-Za-z0-9._-]/_}"
 DIR="stave-offload/$NAME"
 
 ssh "$HOST" "mkdir -p '$DIR'"
+# Sources only: whatever git ignores (build output, bundles, refs) is not
+# sent, and the host's own target/ (also excluded) survives --delete.
 rsync -az --delete \
+  --filter=':- .gitignore' \
   --exclude '/target/' --exclude '/.claude/' --exclude '**/refs/' \
   "$ROOT/" "$HOST:$DIR/"
 
