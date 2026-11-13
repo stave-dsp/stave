@@ -1,61 +1,47 @@
 //! Devices with no SPICE counterpart, against independent high-accuracy
-//! solutions of their defining equations. Regenerate with
-//! scripts/ja-reference.py.
-
-use std::path::PathBuf;
+//! solutions of their defining equations (`stave-test/reference/*.txt`,
+//! written by scripts/ja-reference.py), each a
+//! `stave_test::reference::Case` with its metric and budget.
 
 use stave_dsp::{JilesAtherton, JilesAthertonCore};
-use stave_measure::waveform::Waveform;
+use stave_test::reference::{assert_converges, Case, Drive, Metric, Stimulus};
 
-fn reference(name: &str) -> Waveform {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("reference/{name}.txt"));
-    Waveform::parse(&std::fs::read_to_string(&path).unwrap()).unwrap()
-}
+const STEEL: JilesAtherton = JilesAtherton {
+    saturation: 1.6e6,
+    shape: 1_100.0,
+    coupling: 1.6e-3,
+    pinning: 400.0,
+    reversibility: 0.2,
+};
 
 /// Jiles & Atherton's 1986 steel driven at 5 kA/m, 50 Hz: the core's
 /// trapezoidal-in-H discretization against SciPy's DOP853 (rtol 1e-12) on
 /// the same ODE. The error must fall as h² — converging to the reference.
 #[test]
-fn the_jiles_atherton_core_matches_the_reference() {
-    let r = reference("jiles_atherton");
-    let model = JilesAtherton {
-        saturation: 1.6e6,
-        shape: 1_100.0,
-        coupling: 1.6e-3,
-        pinning: 400.0,
-        reversibility: 0.2,
-    };
-    let deviation = |oversample: usize| {
-        let rate = 48_000.0 * oversample as f64;
-        let mut core = JilesAthertonCore::new(model, Default::default());
-        let run: Vec<f64> = (0..(r.value.len() - 1) * oversample + 1)
-            .map(|n| core.step(5_000.0 * (std::f64::consts::TAU * 50.0 * n as f64 / rate).sin()))
-            .step_by(oversample)
-            .collect();
+fn jiles_atherton_matches_reference() {
+    let case = Case::generated("jiles_atherton", "scripts/ja-reference.py")
+        .stimulus(Stimulus::sine(5_000.0, 50.0))
+        .budget(Metric::NormalizedRms, 5e-5);
+    let at = |oversample: usize| {
+        let mut core = JilesAthertonCore::new(STEEL, Default::default());
+        let outcome = case.stage(Drive::oversampled(oversample), |h| core.step(h));
         assert_eq!(core.stats().capped, 0);
-        let d = r.difference(&run);
-        d.normalized_rms
+        outcome
     };
-    let (coarse, fine) = (deviation(1), deviation(2));
-    assert!(coarse < 1e-4, "48 kHz: {coarse}");
-    assert!(fine < coarse / 3.0, "not converging: {coarse} → {fine}");
+    let (coarse, fine) = (at(1), at(2));
+    assert_converges(&coarse, &fine, 3.0);
+    coarse.assert();
 }
 
 /// A transformer on that core (2000 turns, 6 cm², 10 cm path, 1 kΩ
 /// source) driven at 400 V, 50 Hz into saturation, against SciPy's
-/// DOP853 on the circuit's ODE. Converges as h².
+/// DOP853 on the circuit's ODE. Converges as h², slightly under 4×: the
+/// trapezoid crosses a turning-point kink.
 #[test]
-fn the_transformer_matches_the_reference() {
+fn transformer_matches_reference() {
     use stave_dsp::{Stage, Transformer, TransformerConfig};
-    let r = reference("transformer");
     let config = TransformerConfig {
-        core: JilesAtherton {
-            saturation: 1.6e6,
-            shape: 1_100.0,
-            coupling: 1.6e-3,
-            pinning: 400.0,
-            reversibility: 0.2,
-        },
+        core: STEEL,
         primary_turns: 2_000.0,
         core_area: 6e-4,
         path_length: 0.1,
@@ -63,20 +49,17 @@ fn the_transformer_matches_the_reference() {
         source_ohms: 1_000.0,
         newton: Default::default(),
     };
-    let deviation = |oversample: usize| {
-        let rate = 48_000.0 * oversample as f64;
+    let case = Case::generated("transformer", "scripts/ja-reference.py")
+        .stimulus(Stimulus::sine(400.0, 50.0))
+        .budget(Metric::NormalizedRms, 1e-5);
+    let at = |oversample: usize| {
         let mut t = Transformer::new(config);
-        t.prepare(rate as f32);
-        let run: Vec<f64> = (0..(r.value.len() - 1) * oversample + 1)
-            .map(|n| t.tick_f64(400.0 * (std::f64::consts::TAU * 50.0 * n as f64 / rate).sin()))
-            .step_by(oversample)
-            .collect();
+        t.prepare(48_000.0 * oversample as f32);
+        let outcome = case.stage(Drive::oversampled(oversample), |v| t.tick_f64(v));
         assert_eq!(t.stats().capped, 0);
-        let d = r.difference(&run);
-        d.normalized_rms
+        outcome
     };
-    let (coarse, fine) = (deviation(1), deviation(2));
-    assert!(coarse < 5e-5, "48 kHz: {coarse}");
-    // Slightly under 4×: the trapezoid crosses a turning-point kink.
-    assert!(fine < coarse / 2.5, "not converging: {coarse} → {fine}");
+    let (coarse, fine) = (at(1), at(2));
+    assert_converges(&coarse, &fine, 2.5);
+    coarse.assert();
 }

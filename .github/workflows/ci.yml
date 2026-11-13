@@ -54,6 +54,13 @@ jobs:
           name: golden-diff
           path: target/golden-diff
           if-no-files-found: ignore
+      # A reference case over its budget leaves target/reference-diff/<case>.tsv.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-diff
+          path: target/reference-diff
+          if-no-files-found: ignore
 
   lint:
     # clippy (its -D warnings covers rustc's warnings), rustdoc with

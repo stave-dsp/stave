@@ -1,0 +1,13 @@
+* RC low-pass AC response: checks the oracle itself against
+* |H| = 1 / sqrt(1 + (2 pi f R C)^2). First column = frequency.
+V1 in 0 DC 0 AC 1
+R1 in out 1k
+C1 out 0 100n
+.ac dec 20 10 100k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(out)
+.endc
+.end
