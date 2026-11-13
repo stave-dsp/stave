@@ -515,6 +515,86 @@ fn primitive_datasheet() {
     conv.prepare(sr);
     bench(&format!("Fir {} taps B=64 direct", fir.len()), &input, |x| conv.tick(x));
 
+    // S5: the EQs on six bands (cuts, shelves, bells); the dynamic EQ
+    // with its bands working on the noise.
+    {
+        use stave_dsp::effects::eq::{
+            Band, Detector, Dynamic, DynamicBand, Dynamics, LinearPhase, MinimumPhase, Phase,
+        };
+        use stave_dsp::units::{db, ms, Ratio};
+        let bands = [
+            Band::LowCut { frequency: hz(30.0), q: 0.707 },
+            Band::LowShelf { frequency: hz(120.0), gain: db(4.0) },
+            Band::Bell { frequency: hz(400.0), gain: db(-6.0), q: 1.5 },
+            Band::Bell { frequency: hz(3_000.0), gain: db(5.0), q: 3.0 },
+            Band::HighShelf { frequency: hz(10_000.0), gain: db(-3.0) },
+        ];
+        let mut minimum = MinimumPhase::new(&bands);
+        minimum.prepare(sr);
+        bench("MinimumPhase EQ (5 bands)", &input, |x| minimum.tick(x));
+        let mut linear = LinearPhase::new(&bands);
+        linear.prepare(sr);
+        bench("LinearPhase EQ 85 ms", &input, |x| linear.tick(x));
+        let working = Dynamics {
+            threshold: db(-30.0),
+            ratio: Ratio::new(4.0),
+            knee: db(6.0),
+            range: db(-9.0),
+            attack: ms(2.0),
+            release: ms(60.0),
+            detector: Detector::Peak,
+        };
+        let dynamic = |phase: Phase| {
+            let mut eq = Dynamic::new(&[
+                DynamicBand::dynamic(bands[1], Phase::Minimum, working),
+                DynamicBand::dynamic(bands[2], Phase::Minimum, working),
+                DynamicBand::dynamic(bands[3], phase, working),
+                DynamicBand::dynamic(bands[4], Phase::Minimum, working),
+            ]);
+            eq.prepare(sr);
+            eq
+        };
+        let mut eq = dynamic(Phase::Minimum);
+        bench("Dynamic EQ (4 minimum-phase bands)", &input, |x| eq.tick(x));
+        let mut eq = dynamic(Phase::Linear);
+        bench("Dynamic EQ (3 min + 1 linear band)", &input, |x| eq.tick(x));
+    }
+
+    // S6: the pitch shifters a fifth up, and a granulator.
+    {
+        use stave_dsp::effects::granular::Granulator;
+        use stave_dsp::effects::pitch::{PhaseVocoder, Psola, Reconstruction};
+        use stave_dsp::units::{ms, seconds, semitones};
+        for (r, name) in [
+            (Reconstruction::Prusa, "PhaseVocoder +7 st (Prusa)"),
+            (Reconstruction::LarocheDolson, "PhaseVocoder +7 st (LarocheDolson)"),
+        ] {
+            let mut pv = PhaseVocoder::new(r, semitones(12.0));
+            pv.set_shift(semitones(7.0));
+            pv.prepare(sr);
+            bench(name, &input, |x| pv.tick(x));
+        }
+        // A voiced input, so the grains run pitch-synchronously.
+        let voiced: Vec<f32> = (0..input.len())
+            .map(|n| {
+                let p = core::f32::consts::TAU * 150.0 * n as f32 / sr;
+                (1..20).map(|k| (k as f32 * p).sin() / k as f32).sum::<f32>() * 0.3
+            })
+            .collect();
+        let mut psola = Psola::new(hz(60.0), hz(1_000.0));
+        psola.set_shift(semitones(7.0));
+        psola.prepare(sr);
+        bench("Psola +7 st", &voiced, |x| psola.tick(x));
+        let mut cloud = Granulator::new(seconds(1.0), 16);
+        cloud.set_density(50.0);
+        cloud.set_size(ms(80.0));
+        cloud.set_pitch(semitones(7.0));
+        cloud.set_position(ms(150.0));
+        cloud.set_spray(ms(50.0));
+        cloud.prepare(sr);
+        bench("Granulator 50 grains/s, 80 ms", &input, |x| cloud.tick(x));
+    }
+
     // F3: the same lengths with a direct head and doubling partitions
     // up to 8192; the worst 64-sample block shows the spike where the
     // large partitions step.

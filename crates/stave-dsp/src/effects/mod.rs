@@ -1,8 +1,9 @@
 //! **Layer 7 — effects.** Algorithmic designs that model no hardware:
 //! [`reverb`] (FDN, Dattorro plate, Schroeder/Moorer) and [`dynamics`]
 //! (detectors, gain computers, compressor, look-ahead limiter), [`modulation`]
-//! (frequency shifter, single sideband); pitch,
-//! granular and EQ to come.
+//! (frequency shifter, single sideband), [`eq`] (minimum-phase,
+//! linear-phase and dynamic), [`pitch`] (phase vocoder, PSOLA) and
+//! [`granular`].
 //!
 //! *Claim:* the design has the properties it states — a decay time in
 //! seconds, a lossless feedback matrix, a gain computer's static curve,
@@ -14,5 +15,8 @@
 //! It may use every layer above it.
 
 pub mod dynamics;
+pub mod eq;
+pub mod granular;
 pub mod modulation;
+pub mod pitch;
 pub mod reverb;

@@ -707,6 +707,57 @@ let out: Vec<f32> = (0..200).map(|n| limiter.tick(if n == 0 { 0.5 } else { 0.0 }
 assert!((out[limiter.latency() as usize] - 0.5).abs() < 1e-5);
 ```
 
+### EQ, pitch and grains
+
+[`effects::eq`](stave_dsp::effects::eq) runs parametric
+[`Band`](stave_dsp::effects::eq::Band)s three ways: a
+[`MinimumPhase`](stave_dsp::effects::eq::MinimumPhase) cascade of
+cookbook biquads, a [`LinearPhase`](stave_dsp::effects::eq::LinearPhase)
+FIR with the same magnitude (frequency sampling into the partitioned
+convolver; exactly linear phase, pre-ringing, latency reported), and a
+[`Dynamic`](stave_dsp::effects::eq::Dynamic) EQ whose bands follow their
+own level through D1's detectors and D2's gain computer, each band
+minimum- or linear-phase. A band change on the linear-phase EQs
+redesigns in place and crossfades the convolver's response
+([`Convolver::swap_response`](stave_dsp::Convolver::swap_response)), so
+automation does not click.
+
+[`effects::pitch`](stave_dsp::effects::pitch) shifts pitch with a
+[`PhaseVocoder`](stave_dsp::effects::pitch::PhaseVocoder) (Průša's
+phase-gradient reconstruction by default, Laroche–Dolson identity
+locking as the cheap [`Reconstruction`](stave_dsp::effects::pitch::Reconstruction)),
+stretches time offline with [`time_stretch`](stave_dsp::effects::pitch::time_stretch),
+and shifts monophonic sources with [`Psola`](stave_dsp::effects::pitch::Psola),
+which keeps their formants. [`effects::granular`](stave_dsp::effects::granular)
+has the [`Granulator`](stave_dsp::effects::granular::Granulator): a fixed
+voice pool over a recorded buffer, no allocation after `prepare`.
+
+```rust
+use stave_dsp::effects::eq::{Band, LinearPhase, MinimumPhase};
+use stave_dsp::effects::pitch::{PhaseVocoder, Reconstruction};
+use stave_dsp::units::{db, hz, semitones};
+use stave_dsp::Stage;
+
+// The same bell, minimum- and linear-phase: one magnitude, two phases.
+let bell = Band::Bell { frequency: hz(2_000.0), gain: db(6.0), q: 2.0 };
+let mut minimum = MinimumPhase::new(&[bell]);
+let mut linear = LinearPhase::new(&[bell]);
+minimum.prepare(48_000.0);
+linear.prepare(48_000.0);
+assert_eq!(minimum.latency(), 0);
+let delay = linear.latency() as usize;
+let impulse = |n: usize| if n == 0 { 1.0 } else { 0.0 };
+let h: Vec<f32> = (0..2 * delay + 1).map(|n| linear.tick(impulse(n))).collect();
+// Symmetric about the reported latency: exactly linear phase.
+assert!((1..1_000).all(|k| (h[delay + k] - h[delay - k]).abs() < 1e-7));
+
+// An octave up; the latency is fixed by the ±12 semitone range.
+let mut up = PhaseVocoder::new(Reconstruction::Prusa, semitones(12.0));
+up.set_shift(semitones(12.0));
+up.prepare(48_000.0);
+assert_eq!(up.latency(), 4_114);
+```
+
 ## Hardware beyond circuits: bucket brigades and springs
 
 A bucket-brigade delay is a schematic part, so it lives in `circuit`

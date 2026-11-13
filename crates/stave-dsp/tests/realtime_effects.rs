@@ -109,3 +109,71 @@ fn effects_never_allocate_after_prepare() {
     });
     assert_eq!(n, 0, "setters allocated {n} times");
 }
+
+/// The EQs, pitch shifters and granulator (DSP.md S5, S6): `tick`,
+/// `reset` and their realtime setters never allocate after `prepare` —
+/// a linear-phase band change redesigns and swaps its FIR in place.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn spectral_effects_never_allocate_after_prepare() {
+    use stave_dsp::effects::eq::{Band, Detector, Dynamic, DynamicBand, Dynamics, LinearPhase, MinimumPhase, Phase};
+    use stave_dsp::effects::granular::Granulator;
+    use stave_dsp::effects::pitch::{PhaseVocoder, Psola, Reconstruction};
+    use stave_dsp::units::{db, hz, ms, seconds, semitones, Ratio};
+
+    let bell = |g: f32| Band::Bell { frequency: hz(1_000.0), gain: db(g), q: 2.0 };
+    let bands = [Band::LowCut { frequency: hz(40.0), q: 0.707 }, bell(3.0)];
+    let dynamics = Dynamics {
+        threshold: db(-30.0),
+        ratio: Ratio::new(4.0),
+        knee: db(6.0),
+        range: db(-9.0),
+        attack: ms(1.0),
+        release: ms(50.0),
+        detector: Detector::Rms(ms(10.0)),
+    };
+    let dynamic_bands = [
+        DynamicBand::fixed(bands[0], Phase::Linear),
+        DynamicBand::dynamic(bell(0.0), Phase::Minimum, dynamics),
+        DynamicBand::dynamic(bell(2.0), Phase::Linear, dynamics),
+    ];
+    no_allocation("MinimumPhase", &mut MinimumPhase::new(&bands));
+    no_allocation("LinearPhase", &mut LinearPhase::new(&bands));
+    no_allocation("Dynamic", &mut Dynamic::new(&dynamic_bands));
+    for r in [Reconstruction::Prusa, Reconstruction::LarocheDolson] {
+        let mut pv = PhaseVocoder::new(r, semitones(12.0));
+        pv.set_shift(semitones(7.0));
+        no_allocation("PhaseVocoder", &mut pv);
+    }
+    let mut psola = Psola::new(hz(60.0), hz(1_000.0));
+    psola.set_shift(semitones(-5.0));
+    no_allocation("Psola", &mut psola);
+    let mut cloud = Granulator::new(seconds(1.0), 32);
+    cloud.set_density(80.0);
+    cloud.set_pitch(semitones(7.0));
+    cloud.set_spray(ms(50.0));
+    no_allocation("Granulator", &mut cloud);
+
+    // Band changes and shifts while running.
+    let mut linear = LinearPhase::new(&bands);
+    linear.prepare(48_000.0);
+    let mut dynamic = Dynamic::new(&dynamic_bands);
+    dynamic.prepare(48_000.0);
+    let mut pv = PhaseVocoder::new(Reconstruction::Prusa, semitones(12.0));
+    pv.prepare(48_000.0);
+    let n = allocations_in(|| {
+        for i in 0..6_000 {
+            let x = (i as f32 * 0.07).sin();
+            if i % 700 == 0 {
+                let g = (i / 700) as f32 - 4.0;
+                linear.set_band(1, bell(g));
+                dynamic.set_band(2, bell(g), Some(dynamics));
+                pv.set_shift(semitones(g));
+            }
+            linear.tick(x);
+            dynamic.tick(x);
+            pv.tick(x);
+        }
+    });
+    assert_eq!(n, 0, "band changes allocated {n} times");
+}

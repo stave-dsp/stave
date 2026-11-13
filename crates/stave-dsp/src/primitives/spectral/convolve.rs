@@ -29,6 +29,8 @@ use super::impulse_response::ImpulseResponse;
 use crate::kernel::node::{Stage, Tail};
 use crate::units::SampleRate;
 
+mod swap;
+
 /// How a [`Convolver`] computes the first block of its response.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Head {
@@ -261,6 +263,8 @@ struct Search {
 #[derive(Clone, Debug)]
 struct Segment {
     size: usize,
+    /// Where this run's partitions start in the response, in taps.
+    offset: usize,
     skip: usize,
     parts: usize,
     paths: Vec<SegmentPath>,
@@ -283,6 +287,9 @@ struct Segment {
     acc: Split,
     /// Position in the current block, `0..L`.
     pos: usize,
+    /// A response swap ([`Convolver::swap_response`]): empty until
+    /// [`Convolver::reserve_swaps`].
+    swap: swap::SegmentSwap,
 }
 
 impl Segment {
@@ -325,6 +332,7 @@ impl Segment {
         }
         Self {
             size,
+            offset,
             skip,
             parts,
             paths,
@@ -336,6 +344,7 @@ impl Segment {
             spectrum,
             acc: Split::zeroed(bins),
             pos: 0,
+            swap: swap::SegmentSwap::default(),
         }
     }
 
@@ -345,6 +354,7 @@ impl Segment {
         self.out.fill(0.0);
         self.newest = 0;
         self.pos = 0;
+        self.swap.finish(&mut self.paths);
     }
 
     /// One sample in on every lane: adds the block being played out to
@@ -354,7 +364,8 @@ impl Segment {
         let l = self.size;
         let pos = self.pos;
         for lane in 0..lanes {
-            y[lane] += self.out[lane * 2 * l + l + pos];
+            let at = lane * 2 * l + l + pos;
+            y[lane] += self.swap.blend(&self.out, at, pos, l);
             self.frames[lane * 2 * l + l + pos] = x[lane];
         }
         self.pos += 1;
@@ -378,6 +389,22 @@ impl Segment {
             self.fdl.store(at, &self.spectrum);
             frame.copy_within(l.., 0);
         }
+        if self.swap.begins_fade() {
+            // The old response's block for the fade's start, then the
+            // new one's, which stays.
+            self.convolve(lanes);
+            self.swap.keep_old_block(&mut self.out);
+            self.swap.install(&mut self.paths);
+        }
+        self.convolve(lanes);
+    }
+
+    /// Sums the delay line against the partitions into `out`, per
+    /// output lane.
+    fn convolve(&mut self, lanes: usize) {
+        let l = self.size;
+        let bins = l + 1;
+        let slots = self.skip + self.parts;
         for output in 0..lanes {
             self.acc.fill_zero();
             for path in self.paths.iter().filter(|p| p.output == output) {
@@ -501,6 +528,9 @@ pub struct Convolver {
     largest: usize,
     /// The rate the current plan's response is at, when known.
     planned: Option<SampleRate>,
+    /// The direct head's side of a response swap; empty until
+    /// [`reserve_swaps`](Self::reserve_swaps).
+    head_swap: swap::HeadSwap,
 }
 
 /// The delay-line slot of the spectrum `age` blocks older than the one
@@ -614,6 +644,7 @@ impl Convolver {
             source: None,
             largest,
             planned: ir.sample_rate(),
+            head_swap: swap::HeadSwap::default(),
         }
     }
 
@@ -688,8 +719,10 @@ impl Convolver {
             for path in &self.heads {
                 let h = &self.history[path.input * 2 * b..(path.input + 1) * 2 * b];
                 let window = &h[pos + 1..pos + 1 + b];
-                y[path.output] += dot(window, &path.taps);
+                y[path.output] += self.head_swap.dot(window, &path.taps);
             }
+            let run_fading = self.segments.first().is_some_and(Segment::is_fading);
+            self.head_swap.advance(&mut self.heads, run_fading);
             self.pos = (pos + 1) & (b - 1);
         }
         y
@@ -705,8 +738,13 @@ impl Stage for Convolver {
         if self.source.is_some() && self.planned != Some(SampleRate::new(sample_rate)) {
             if let Some(source) = self.source.take() {
                 let ir = source.resampled(SampleRate::new(sample_rate));
+                let swappable = self.head_swap.is_reserved()
+                    || self.segments.iter().any(|s| s.swap.is_reserved());
                 *self = Self::plan(&ir, self.block, self.largest, self.head);
                 self.source = Some(source);
+                if swappable {
+                    self.reserve_swaps();
+                }
             }
         }
         self.reset();
@@ -718,6 +756,7 @@ impl Stage for Convolver {
         }
         self.history.fill(0.0);
         self.pos = 0;
+        self.head_swap.finish(&mut self.heads);
     }
 
     /// One sample through a mono response (a stereo one `debug_assert!`s

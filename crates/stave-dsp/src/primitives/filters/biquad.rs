@@ -292,6 +292,14 @@ impl Biquad {
         )
     }
 
+    /// The normalised coefficients `([b0, b1, b2], [a1, a2])` of
+    /// `H(z) = (b0 + b1·z⁻¹ + b2·z⁻²) / (1 + a1·z⁻¹ + a2·z⁻²)` at the
+    /// prepared rate: for designs that evaluate the response on a grid
+    /// (a linear-phase EQ's FIR) without a transcendental per point.
+    pub const fn coefficients(&self) -> ([f64; 3], [f64; 2]) {
+        ([self.b0, self.b1, self.b2], [self.a1, self.a2])
+    }
+
     /// |H(e^{jω})| — see [`response_at`](Self::response_at).
     pub fn magnitude_at(&self, hz: f32) -> f32 {
         let (re, im) = self.response_at(hz);

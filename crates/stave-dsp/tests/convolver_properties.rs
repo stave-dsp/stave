@@ -370,3 +370,62 @@ fn an_empty_response_is_silence() {
 fn a_partition_that_is_not_a_power_of_two_is_refused() {
     let _ = Convolver::uniform(&ImpulseResponse::mono(&[1.0]), 48, Head::Partitioned);
 }
+
+/// A swapped response (`Convolver::swap_response`): once the fade is
+/// over, the output is the new response's convolution of the whole
+/// input history; before it, the old one's; during it, near the pair;
+/// and a swap is refused while one is under way. Uniform and
+/// non-uniform schedules, both heads.
+#[test]
+fn swapped_responses_take_over_the_whole_history() {
+    let mut rng = Xorshift32::new(0x5EED);
+    for (block, largest, head) in [
+        (64usize, 64usize, Head::Partitioned),
+        (32, 256, Head::Partitioned),
+        (16, 16, Head::Direct),
+        (16, 128, Head::Direct),
+    ] {
+        let old = response(700, &mut rng);
+        let new = response(650, &mut rng);
+        let x = noise(4_000, &mut rng);
+        let mut conv = Convolver::non_uniform(&ImpulseResponse::mono(&old), block, largest, head);
+        conv.reserve_swaps();
+        conv.prepare(48_000.0);
+        let latency = conv.latency() as usize;
+        let at = 1_500;
+        let mut y = Vec::with_capacity(x.len());
+        for (t, &v) in x.iter().enumerate() {
+            if t == at {
+                assert!(conv.swap_response(&new));
+                assert!(!conv.swap_response(&old), "a second swap waits");
+            }
+            y.push(conv.tick(v));
+        }
+        let (a, b) = (direct(&x, &old), direct(&x, &new));
+        let bound = TOLERANCE * l2(&old).max(l2(&new));
+        let what = format!("{block}/{largest}/{head:?}");
+        // Settled after the largest partition's next step and its block.
+        let settled = at + 2 * largest + latency;
+        for t in settled..x.len() {
+            let err = (f64::from(y[t]) - b[t - latency]).abs();
+            assert!(err <= bound, "{what}: sample {t} off the new response by {err:e}");
+        }
+        for t in latency..at {
+            let err = (f64::from(y[t]) - a[t - latency]).abs();
+            assert!(err <= bound, "{what}: sample {t} off the old response by {err:e}");
+        }
+        // A non-uniform schedule's runs fade at their own block
+        // boundaries, so mid-fade it runs a hybrid response; a uniform
+        // one fades all at once, between the two.
+        for t in (at..settled).filter(|_| block == largest) {
+            let (p, q) = (a[t - latency], b[t - latency]);
+            let (lo, hi) = (p.min(q), p.max(q));
+            // Each run blends on its own, so the sum may leave the pair by
+            // up to their spread.
+            let spread = (hi - lo) + bound;
+            let g = f64::from(y[t]);
+            assert!(g >= lo - spread && g <= hi + spread, "{what}: fade sample {t} {g} outside [{lo}, {hi}]");
+        }
+        assert!(!conv.is_swapping());
+    }
+}

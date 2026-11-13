@@ -9,7 +9,7 @@
 //! is made for one rate: `hz / sample_rate`.
 
 use super::cepstrum;
-use super::fft::Complex;
+use super::fft::{Complex, Fft};
 use super::impulse_response::ImpulseResponse;
 use super::window::Window;
 use core::f64::consts::{PI, TAU};
@@ -292,6 +292,32 @@ impl Fir {
         Self { taps }
     }
 
+    /// The linear-phase (type I) design of odd length `len` whose
+    /// zero-phase response follows `response(f)` (`f` a fraction of the
+    /// sample rate, `0..=0.5`; a real gain, negative allowed): the
+    /// response sampled on a dense grid, transformed to its zero-phase
+    /// impulse response and truncated by `window`. See
+    /// [`FrequencySampling`], which plans the same design to repeat it
+    /// without allocating.
+    ///
+    /// ```
+    /// use stave_dsp::primitives::spectral::{Fir, Window};
+    ///
+    /// // A gentle tilt: +3 dB at Nyquist, linear phase.
+    /// let tilt = |f: f64| 10f64.powf(3.0 / 20.0 * 2.0 * f);
+    /// let fir = Fir::frequency_sampling(255, Window::Hann, tilt);
+    /// assert!((fir.gain_db(0.25) - 1.5).abs() < 0.01);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// If `len` is even.
+    pub fn frequency_sampling(len: usize, window: Window, response: impl FnMut(f64) -> f64) -> Self {
+        let mut taps = vec![0.0; len];
+        FrequencySampling::new(len, window).design(response, &mut taps);
+        Self { taps }
+    }
+
     /// The minimum-phase filter with this magnitude response (the real
     /// cepstrum), the same length: the least delay any filter with this
     /// magnitude can have, for the loss of linear phase. The polarity
@@ -340,6 +366,88 @@ impl Fir {
     pub fn impulse_response(&self) -> ImpulseResponse {
         let taps: Vec<f32> = self.taps.iter().map(|&h| h as f32).collect();
         ImpulseResponse::mono(&taps)
+    }
+}
+
+/// A planned frequency-sampling design ([`Fir::frequency_sampling`]):
+/// the grid, transform and window made once, so each
+/// [`design`](Self::design) runs without allocating — a linear-phase
+/// EQ redesigns on the audio thread when a band moves.
+///
+/// The response is sampled at `grid/2 + 1` points from DC to Nyquist
+/// (`grid` the power of two at least eight times the length), so the
+/// zero-phase impulse response it transforms to is time-aliased only
+/// past `grid/2` taps; the window then truncates it to `len`. Windowing
+/// smooths the response by the window's main lobe (Hann: ±2 bins of
+/// `1/len`), so features narrower than a few `fs/len` are rounded off;
+/// the error budget is the design's, measured where it is used.
+#[derive(Clone, Debug)]
+pub struct FrequencySampling {
+    len: usize,
+    fft: Fft<f64>,
+    spectrum: Vec<Complex<f64>>,
+    impulse: Vec<f64>,
+    /// The window's weights at offsets `0..=(len − 1)/2` from the centre.
+    half: Vec<f64>,
+}
+
+impl FrequencySampling {
+    /// Plans designs of odd length `len`, truncated by `window`.
+    ///
+    /// # Panics
+    ///
+    /// If `len` is even.
+    pub fn new(len: usize, window: Window) -> Self {
+        assert!(len % 2 == 1, "FrequencySampling needs an odd length, got {len}");
+        let grid = (8 * len).next_power_of_two().max(16);
+        let m = (len - 1) / 2;
+        Self {
+            len,
+            fft: Fft::new(grid),
+            spectrum: vec![Complex::default(); grid / 2 + 1],
+            impulse: vec![0.0; grid],
+            half: window.symmetric(len)[m..].to_vec(),
+        }
+    }
+
+    /// The design length, in taps.
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Always `false`: a design has at least one tap.
+    pub const fn is_empty(&self) -> bool {
+        false
+    }
+
+    /// The number of points the response is sampled at, DC to Nyquist
+    /// inclusive.
+    pub fn points(&self) -> usize {
+        self.spectrum.len()
+    }
+
+    /// Designs into `taps` (the planned length) from the zero-phase
+    /// `response(f)`, `f` a fraction of the sample rate in `0..=0.5`.
+    /// Realtime: never allocates; one inverse real transform of the
+    /// grid.
+    ///
+    /// # Panics
+    ///
+    /// If `taps` is not the planned length.
+    pub fn design(&mut self, mut response: impl FnMut(f64) -> f64, taps: &mut [f64]) {
+        assert_eq!(taps.len(), self.len, "FrequencySampling::design: wrong length");
+        let grid = self.impulse.len();
+        for (k, z) in self.spectrum.iter_mut().enumerate() {
+            *z = Complex::new(response(k as f64 / grid as f64), 0.0);
+        }
+        self.fft.inverse_real(&mut self.spectrum, &mut self.impulse);
+        let m = (self.len - 1) / 2;
+        let scale = 1.0 / grid as f64;
+        for (k, &w) in self.half.iter().enumerate() {
+            let h = self.impulse[k] * w * scale;
+            taps[m + k] = h;
+            taps[m - k] = h;
+        }
     }
 }
 
