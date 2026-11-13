@@ -152,7 +152,7 @@ circuit/
 - [x] **K1** (418b140) The layer table above in code: add `units`, `physical`,
   `learned`, `effects` modules (empty until their first model), update
   `lib.rs`'s layer docs and `check-view-bindings.sh`'s dependency rules.
-- [ ] **K2** Restructure `circuit/` into devices (a module per family, a
+- [x] **K2** (3073425) Restructure `circuit/` into devices (a module per family, a
   trait per family), methods, netlist and topologies as above. The
   existing `PairSolver` choice on `DiodeClipper` becomes the method type
   parameter; the device families get their traits (`Triode` exists as

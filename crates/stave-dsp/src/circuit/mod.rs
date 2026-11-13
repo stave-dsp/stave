@@ -4,6 +4,9 @@
 //! - [`devices`] — one module per device family (diode, triode,
 //!   magnetic), one trait per family that every published model of it
 //!   implements, parts as constants;
+//! - [`netlist`] — a circuit as data ([`Netlist`](netlist::Netlist)):
+//!   nodes, elements, and the SPICE subset the ngspice decks are written
+//!   in, so one deck feeds ngspice and stave;
 //! - [`methods`] — how a circuit is solved (Newton with SPICE junction
 //!   limiting, wave digital filters, load lines, Wright omega);
 //! - [`topologies`] — named circuits, each a hand-derived solution of
@@ -18,4 +21,5 @@
 pub mod audio;
 pub mod devices;
 pub mod methods;
+pub mod netlist;
 pub mod topologies;
