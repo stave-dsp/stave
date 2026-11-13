@@ -7,12 +7,18 @@
 # part without a picture, a binary whose --help fails, or a link on any
 # page that goes nowhere. The guide's examples are doctests, run with
 # the workspace's in ci.yml's test job.
+#
+# A pull request or a merge group (main's merge queue) builds the site
+# only when scripts/affected.sh says the change reaches it (a page's
+# source, the guide, a shared file); otherwise the job reports success
+# without building, so the required check reports on every change.
 name: docs
 
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -24,6 +30,11 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # scripts/affected.sh's base: the pull request's, or the merge group's.
+  AFFECTED_ARGS: >-
+    ${{ github.event_name == 'pull_request' && format('--base origin/{0}', github.base_ref)
+    || github.event_name == 'merge_group' && format('--base {0}', github.event.merge_group.base_sha)
+    || '--full' }}
 
 jobs:
   build:
@@ -42,12 +53,17 @@ jobs:
           # The changelog is read from the release tags.
           fetch-depth: 0
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - name: What the change affects
+        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+      - if: env.AFFECTED_SITE == '1'
+        uses: Swatinem/rust-cache@v2
         with:
           shared-key: docsite
           save-if: "${{ github.ref == 'refs/heads/main' }}"
-      - run: scripts/docsite.sh target/site
-      - uses: actions/upload-pages-artifact@v3
+      - if: env.AFFECTED_SITE == '1'
+        run: scripts/docsite.sh target/site
+      - if: env.AFFECTED_SITE == '1'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: target/site
 

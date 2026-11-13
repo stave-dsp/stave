@@ -1,6 +1,14 @@
 # CI: the main signal (OVERHAUL.md C10). Every job here fits in
 # five minutes warm and the run's wall clock does too, so it gates every
-# push and pull request. Builds are --locked against the committed
+# push, pull request and merge group (main's merge queue).
+#
+# A pull request or a merge group gates what it changes, and only that:
+# each job asks scripts/affected.sh which packages the change against its
+# base reaches (the owners of the changed files and their dependents; a
+# shared file — Cargo.lock, scripts/, .github/ — reaches everything) and
+# runs its gates over those. A job the change cannot reach still reports
+# success, so every required check reports on every change. Main,
+# release branches and a dispatched run gate everything. Builds are --locked against the committed
 # Cargo.lock; every tool is pinned. macOS runners only where macOS is
 # needed (Cocoa, bundles, the validators) — three jobs, so they never
 # queue behind each other; everything else is Linux.
@@ -16,6 +24,7 @@ on:
   push:
     branches: [main, "release/**"]
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -30,6 +39,11 @@ env:
   CARGO_TERM_COLOR: always
   # The one nightly (Miri here; sanitizers and fuzzing in deep.yml).
   NIGHTLY: nightly-2026-11-01
+  # scripts/affected.sh's base: the pull request's, or the merge group's.
+  AFFECTED_ARGS: >-
+    ${{ github.event_name == 'pull_request' && format('--base origin/{0}', github.base_ref)
+    || github.event_name == 'merge_group' && format('--base {0}', github.event.merge_group.base_sha)
+    || '--full' }}
 
 jobs:
   test:
@@ -40,13 +54,20 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
-      - uses: Swatinem/rust-cache@v2
+      - name: What the change affects
+        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: Swatinem/rust-cache@v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
-      - uses: taiki-e/install-action@v2.90.3
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: taiki-e/install-action@v2.90.3
         with: { tool: nextest@0.9.148 }
-      - run: cargo nextest run --workspace --locked --profile ci
-      - run: cargo test --workspace --doc --locked
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: cargo nextest run --locked --profile ci --no-tests=pass $AFFECTED_PACKAGES
+      - if: env.AFFECTED_LIB_PACKAGES != ''
+        run: cargo test --doc --locked $AFFECTED_LIB_PACKAGES
       # A golden-image mismatch leaves <name>.actual.png and .diff.png.
       - if: failure()
         uses: actions/upload-artifact@v4
@@ -71,17 +92,26 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install && rustup toolchain install 1.86.0 --profile minimal
-      - uses: Swatinem/rust-cache@v2
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
+      - run: rustup toolchain install
+      - name: What the change affects
+        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: rustup toolchain install 1.86.0 --profile minimal
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: Swatinem/rust-cache@v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
-      - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: cargo clippy --all-targets --no-deps --locked $AFFECTED_PACKAGES -- -D warnings
       # Every intra-doc link, private items' docs included, and none
       # dropped between crates documented side by side: the same script
       # docs.yml's site build runs.
-      - run: scripts/rustdoc.sh --document-private-items
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: scripts/rustdoc.sh --document-private-items $AFFECTED_DOC_PACKAGES
       # The declared rust-version is a promise: hold it.
-      - run: cargo +1.86.0 check --workspace --all-targets --locked
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: cargo +1.86.0 check --all-targets --locked $AFFECTED_PACKAGES
 
   validators:
     # The industry's own suites against every plugin: clap-validator and
@@ -91,10 +121,15 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - name: What the change affects
+        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: Swatinem/rust-cache@v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - name: Cache the validators
+        if: env.AFFECTED_SCOPE != 'none'
         id: tools-cache
         uses: actions/cache@v4
         with:
@@ -103,7 +138,7 @@ jobs:
             ~/.cargo/bin/clap-validator
           key: validators-${{ runner.os }}-vst3sdk-v3.8.1_build_84-clap-validator-0.4.1
       - name: Build the validators
-        if: steps.tools-cache.outputs.cache-hit != 'true'
+        if: env.AFFECTED_SCOPE != 'none' && steps.tools-cache.outputs.cache-hit != 'true'
         run: |
           cargo install --locked --git https://github.com/free-audio/clap-validator.git --tag 0.4.1 clap-validator
           git clone --depth 1 --branch v3.8.1_build_84 --recurse-submodules --shallow-submodules \
@@ -113,8 +148,10 @@ jobs:
             -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
             -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF
           cmake --build vst3sdk/build --target validator -j3
-      - run: scripts/validate-formats.sh clap
-      - run: scripts/validate-formats.sh vst3
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: scripts/validate-formats.sh clap
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: scripts/validate-formats.sh vst3
         env:
           VALIDATOR: vst3sdk/build/bin/Release/validator
 
@@ -147,18 +184,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { path: stave }
-      - uses: actions/checkout@v4
-        with: { repository: stave-dsp/stave-plugins, path: stave-plugins }
+        with: { path: stave, fetch-depth: 0 }
       - run: rustup toolchain install
+        working-directory: stave
+      - name: What the change affects
+        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        working-directory: stave
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: actions/checkout@v4
+        with: { repository: stave-dsp/stave-plugins, path: stave-plugins }
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: rustup toolchain install
         working-directory: stave-plugins
-      - uses: Swatinem/rust-cache@v2
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: stave-plugins
           save-if: "${{ github.ref == 'refs/heads/main' }}"
-      - run: scripts/link-framework.sh ../stave
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: scripts/link-framework.sh ../stave
         working-directory: stave-plugins
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: cargo clippy --workspace --all-targets -- -D warnings
         working-directory: stave-plugins
 
   portable:
@@ -169,15 +216,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - name: What the change affects
+        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: Swatinem/rust-cache@v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
-      - run: >-
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: >-
           cargo check --all-targets --locked
           -p stave-core -p stave-dsp -p stave-telemetry -p stave-measure -p stave-macros
           -p stave-ui -p stave-raster -p stave-face -p stave-clap -p stave-clap-sys
           -p stave-vst3 -p stave-vst3-sys -p stave-model
-      - run: cargo test -p stave-core -p stave-telemetry --test loom --release --locked
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: cargo test -p stave-core -p stave-telemetry --test loom --release --locked
         env:
           RUSTFLAGS: --cfg loom
 
@@ -196,15 +249,32 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install $NIGHTLY --profile minimal --component miri,rust-src
-      - uses: Swatinem/rust-cache@v2
+      # Miri's packages, or a change that reaches the whole workspace.
+      - name: What the change affects
+        env: { RUSTUP_TOOLCHAIN: "${{ env.NIGHTLY }}" }   # cargo metadata, without the pinned toolchain
+        run: |
+          out="$(scripts/affected.sh --outputs $AFFECTED_ARGS)"
+          echo "$out" >> "$GITHUB_ENV"
+          miri=0
+          grep -qx 'AFFECTED_SCOPE=workspace' <<<"$out" && miri=1
+          for p in $(sed -n 's/^AFFECTED_PACKAGE_NAMES=//p' <<<"$out"); do
+            case "$p" in stave-core | stave-telemetry | stave-vst3 | stave-clap) miri=1 ;; esac
+          done
+          echo "AFFECTED_MIRI=$miri" >> "$GITHUB_ENV"
+      - if: env.AFFECTED_MIRI == '1'
+        uses: Swatinem/rust-cache@v2
         with:
           shared-key: miri
           save-if: "${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}"
-      - uses: taiki-e/install-action@v2.90.3
+      - if: env.AFFECTED_MIRI == '1'
+        uses: taiki-e/install-action@v2.90.3
         with: { tool: nextest@0.9.148 }
-      - run: cargo +$NIGHTLY miri setup
-      - run: >-
+      - if: env.AFFECTED_MIRI == '1'
+        run: cargo +$NIGHTLY miri setup
+      - if: env.AFFECTED_MIRI == '1'
+        run: >-
           cargo +$NIGHTLY miri nextest run --locked --profile miri
           --partition hash:${{ matrix.shard }}/4
           -p stave-core -p stave-telemetry -p stave-vst3 -p stave-clap

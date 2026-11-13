@@ -1,0 +1,63 @@
+# The primitive datasheet (DSP.md P1) measured on the reference machine:
+# scripts/datasheet.sh's run, in release, on the self-hosted runner that
+# carries the `reference` label — the one machine every committed row of
+# crates/stave-dsp/datasheet.json comes from. It measures, checks that the
+# benched stages and the file's stages agree, and uploads the refreshed
+# file to commit; it never pushes.
+#
+# Self-hosted, so trusted triggers only: a dispatch, or a push to main
+# that touches what the datasheet measures. No pull_request trigger — a
+# fork's code never reaches this runner — and the job's `if` refuses any
+# other event even if a trigger is added later.
+#
+# The runner runs one job at a time, and the concurrency group below
+# queues runs rather than overlapping them: a timing measured beside
+# another measurement is noise. The file records the load average at the
+# start of the run.
+name: reference
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - crates/stave-dsp/src/**
+      - crates/stave-dsp/tests/datasheet*
+      - crates/stave-dsp/datasheet.json
+      - .github/workflows/reference.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  datasheet:
+    name: datasheet (reference machine)
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: [self-hosted, macOS, ARM64, reference]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      # The runner names its hardware (FLEET_HARDWARE, e.g. "Apple M1,
+      # 8 cores"); the file records it beside every row.
+      - name: Measure the datasheet
+        run: STAVE_DATASHEET_MACHINE="${FLEET_HARDWARE:-reference runner}" scripts/datasheet.sh local
+      - name: Did a row move?
+        run: |
+          git diff --stat --exit-code crates/stave-dsp/datasheet.json \
+            || echo "::notice::datasheet.json changed; download the artifact to commit it"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: datasheet
+          path: crates/stave-dsp/datasheet.json
+          if-no-files-found: ignore

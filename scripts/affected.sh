@@ -8,6 +8,7 @@
 #   scripts/affected.sh                 # the working tree vs where it left origin/main
 #   scripts/affected.sh --base REF      # vs REF (CI: the pull request's or merge group's base)
 #   scripts/affected.sh --plan          # print the selected gate commands, run nothing
+#   scripts/affected.sh --outputs       # print the selection as AFFECTED_* lines, run nothing
 #   scripts/affected.sh --full          # every gate, whatever changed
 #   scripts/affected.sh --no-cache      # gate even a tree that already passed
 #
@@ -32,6 +33,16 @@
 # the MSRV check over the selected packages, then scripts/docsite.sh.
 # Each one's time is printed; a failure stops the run and names the gate.
 #
+# --outputs is for CI, whose jobs run their own gates: NAME=VALUE lines
+# for $GITHUB_ENV (or eval) —
+#
+#   AFFECTED_SCOPE=workspace|packages|none
+#   AFFECTED_PACKAGES       --workspace, or -p a -p b (cargo's selection)
+#   AFFECTED_PACKAGE_NAMES  the packages' names, space-separated (empty: all)
+#   AFFECTED_LIB_PACKAGES   the selection for doctests (packages with a library)
+#   AFFECTED_DOC_PACKAGES   rustdoc.sh's selection (empty: every crate)
+#   AFFECTED_SITE=1|0       whether the docs site is built
+#
 # A tree that passes is recorded in <git common dir>/affected/ (or
 # $STAVE_AFFECTED_CACHE), keyed by its git tree hash and the gate set; a
 # tree that passed the full set satisfies any set.
@@ -49,12 +60,13 @@ SITE=(crates/stave-guide/ tools/docsite/ releases/ crates/stave-dsp/datasheet.js
   crates/stave-face/src/theme.rs crates/stave-core/src/params/display.rs)
 RULES=(check-file-sizes check-view-bindings check-plugin-rules check-vocabulary check-purity check-golden-sizes)
 
-base_ref="" plan_only=0 full=0 cache=1
+base_ref="" plan_only=0 outputs=0 full=0 cache=1
 while (($#)); do
   case "$1" in
     --base) base_ref="${2:?--base needs a ref}"; shift ;;
     --base=*) base_ref="${1#--base=}" ;;
     --plan) plan_only=1 ;;
+    --outputs) outputs=1 ;;
     --full) full=1 ;;
     --no-cache) cache=0 ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
@@ -114,7 +126,7 @@ else
 fi
 
 # The gate commands, as NAME<TAB>COMMAND lines.
-gates=()
+gates=() sel="" docsel="" libsel=""
 for r in "${RULES[@]}"; do gates+=("rules	bash scripts/$r.sh"); done
 if [[ "$scope" != none* ]]; then
   if ((${#pkgs[@]})); then
@@ -142,6 +154,18 @@ set_id="$(printf '%s\n' "${gates[@]}" | git hash-object --stdin | cut -c1-12)"
 CACHE="${STAVE_AFFECTED_CACHE:-$(git rev-parse --path-format=absolute --git-common-dir)/affected}"
 echo "affected: ${#changed[@]} file(s) changed against ${base:0:8} ($base_ref); tree ${tree:0:12}" >&2
 echo "affected: cargo gates: $scope; docs site: $( ((site)) && echo yes || echo no)" >&2
+if ((outputs)); then
+  case "$scope" in
+    whole*) kind=workspace ;;
+    none*) kind=none ;;
+    *) kind=packages ;;
+  esac
+  printf 'AFFECTED_SCOPE=%s\nAFFECTED_PACKAGES=%s\nAFFECTED_PACKAGE_NAMES=%s\n' \
+    "$kind" "$sel" "${pkgs[*]+${pkgs[*]}}"
+  printf 'AFFECTED_LIB_PACKAGES=%s\nAFFECTED_DOC_PACKAGES=%s\nAFFECTED_SITE=%s\n' \
+    "$libsel" "$docsel" "$site"
+  exit 0
+fi
 if ((plan_only)); then
   printf '%s\n' "${gates[@]}" | cut -f2-
   exit 0

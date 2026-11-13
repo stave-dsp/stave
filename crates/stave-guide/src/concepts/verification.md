@@ -219,11 +219,12 @@ patches.
 
 | workflow | when | runs |
 |---|---|---|
-| `ci.yml` | every push to main and release branches, every pull request | macOS: every test under nextest and the doctests; clippy, rustdoc and the MSRV check; both validators. Linux: the tree rules and hygiene; the portable crates' check and the Loom models; Miri in four shards |
+| `ci.yml` | every push to main and release branches, every pull request, every merge group (main's merge queue); a pull request or merge group gates only the packages its change reaches ([`scripts/affected.sh`](crate::howto::affected)) | macOS: every test under nextest and the doctests; clippy, rustdoc and the MSRV check; both validators. Linux: the tree rules and hygiene; the portable crates' check and the Loom models; Miri in four shards |
 | `platforms.yml` | every push to main and release branches, every pull request | Linux and Windows: build and test the workspace (the X11 face in a real window on Xvfb), clippy and rustdoc, exported entry points, both validators, and stave-host opening the bundle |
 | `deep.yml` | nightly and on demand; semver checks on every push to a release branch | one Kani job per harness, both sanitizers, every fuzz target for four minutes, the simulated host over 3 000 seeds, RustSec advisories, and semver checks |
 | `references.yml` | pushes and pull requests that touch a netlist, a reference, their scripts, the circuit code or the harness; not a required check, since it is path-filtered | Linux: the pinned ngspice and NumPy/SciPy regenerate every reference, which must match the committed one (see [models against references](#models-against-references)) |
-| `docs.yml` | every push to main, every pull request; deployed from main | macOS: `scripts/docsite.sh` builds the documentation site — rustdoc with every warning an error; a guide module without an article, a face part without a picture, a binary whose `--help` fails or a link that goes nowhere fails it — and main deploys it to GitHub Pages |
+| `docs.yml` | every push to main, every pull request and merge group (built when the change reaches the site); deployed from main | macOS: `scripts/docsite.sh` builds the documentation site — rustdoc with every warning an error; a guide module without an article, a face part without a picture, a binary whose `--help` fails or a link that goes nowhere fails it — and main deploys it to GitHub Pages |
+| `reference.yml` | on demand, and pushes to main that touch what the datasheet measures | the primitive datasheet in release on the reference machine (a self-hosted runner labelled `reference`, one job at a time); uploads the refreshed `datasheet.json` to commit |
 | `canary.yml` | weekly | the newest stable toolchain's build and clippy; a failure opens an issue instead of turning main red |
 
 Every job aims to finish in five minutes warm, so the main signal gates
