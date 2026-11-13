@@ -80,7 +80,7 @@ mod hand {
     }
 
     t1!(
-        diode_clipper: "diode_clipper/wdf",
+        diode_clipper: "diode_clipper/hand",
         opamp_clipper: "opamp_clipper/hand",
         common_cathode: "common_cathode/hand",
         common_cathode_grid_current: "common_cathode_grid_current/hand",

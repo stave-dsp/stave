@@ -125,7 +125,7 @@ pub fn hand(case: &str, tier: Tier) {
     let circuit = case.split('/').next().unwrap();
     let base = Characterise::ngspice(circuit).named(case).tier(tier);
     let c = match case {
-        "diode_clipper/wdf" => base
+        "diode_clipper/hand" => base
             .stage(|rate| {
                 let mut c = DiodeClipper::new(DiodeClipperConfig {
                     input_ohms: 2.2e3,

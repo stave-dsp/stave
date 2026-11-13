@@ -3,7 +3,7 @@
 //! measured level; group delay at the audibility budget, 0.2 ms from
 //! 500 Hz to 4 kHz), as `(check, rates, first, second)` — the second is
 //! degrees (dB of probe level for dynamics), `NAN` where the check has
-//! none. Measured against ngspice 47's tables. A row that holds a finding
+//! none. Measured against the ngspice 42 tables. A row that holds a finding
 //! says so beside it: its budget is the measured value with the same
 //! margin, so the finding cannot get worse unnoticed; DSP.md R17 lists
 //! them. Errors at shipping rates are the model run unoversampled at 44.1,
@@ -19,6 +19,26 @@ pub type Row = (Check, Rates, f64, f64);
 
 pub fn table(case: &str, tier: Tier) -> &'static [Row] {
     match (case, tier) {
+        ("diode_clipper", Tier::T0) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -65.0, NAN), // -73.8 — aliasing at the host rate
+            (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.491
+            (Bla, Shipping, 20.0, 50.0), // 4.07 / 9.65 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 5e-4, 0.02), // 0.000109 / 0.0054
+            (Compression, Shipping, 0.005, 0.1), // 0.00153 / 0.0301
+            (Detection, Oversampled, 0.05, NAN), // 0.0108
+            (Detection, Shipping, 1.0, NAN), // 0.186
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.73e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 6.09e-07
+            (Harmonics, Oversampled, 0.2, 2.0), // 0.0663 / 0.402
+            (Harmonics, Shipping, 5.0, 50.0), // 1.61 / 6.84
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
+            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
+            (Response, Oversampled, 0.02, 0.1), // 0.0058 / 0.0228 — FINDING: the deck's 4 pF Cjo, which DK leaves out (R11)
+            (Response, Shipping, 20.0, 50.0), // 4.07 / 9.25 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.005, NAN), // 0.000825
+            (ThdN, Shipping, 0.1, NAN), // 0.0211 — aliasing at the host rate
+        ],
         ("ce_stage", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -101
             (Aliasing, Shipping, -60.0, NAN), // -65.5 — aliasing at the host rate
@@ -46,7 +66,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Bla, Shipping, 0.005, 0.02), // 0.00097 / 0.00649
             (Compression, Oversampled, 1e-5, 1e-4), // 3.03e-06 / 2.14e-05
             (Compression, Shipping, 2e-5, 0.002), // 3.76e-06 / 0.000348
-            (Detection, Oversampled, 0.02, NAN), // 0.0042
+            (Detection, Oversampled, 0.02, NAN), // 0.00421
             (Detection, Shipping, 0.05, NAN), // 0.0119
             (GroupDelay, Oversampled, 2e-4, NAN), // 3.51e-14
             (GroupDelay, Shipping, 2e-4, NAN), // 1.03e-09
@@ -58,46 +78,6 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Response, Shipping, 2e-6, 0.02), // 6.61e-07 / 0.00648
             (ThdN, Oversampled, 2e-4, NAN), // 3.98e-05
             (ThdN, Shipping, 5e-4, NAN), // 9.32e-05 — aliasing at the host rate
-        ],
-        ("common_cathode_grid_current", Tier::T0) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -111
-            (Aliasing, Shipping, -95.0, NAN), // -103 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000411
-            (Bla, Shipping, 0.1, 0.5), // 0.0196 / 0.123
-            (Compression, Oversampled, 2e-5, 1e-4), // 3.49e-06 / 2.36e-05
-            (Compression, Shipping, 2e-5, 0.002), // 4.31e-06 / 0.000384
-            (Detection, Oversampled, 0.005, NAN), // 0.00125
-            (Detection, Shipping, 0.2, NAN), // 0.043
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.28e-15
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.13e-09
-            (Harmonics, Oversampled, 0.1, 0.2), // 0.0279 / 0.0536
-            (Harmonics, Shipping, 0.5, 1.0), // 0.111 / 0.232
-            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
-            (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
-            (Response, Oversampled, 1e-6, 1e-5), // 6.39e-10 / 1.41e-09
-            (Response, Shipping, 5e-6, 0.05), // 8.96e-07 / 0.00714
-            (ThdN, Oversampled, 2e-4, NAN), // 5.3e-05
-            (ThdN, Shipping, 5e-4, NAN), // 0.000103 — aliasing at the host rate
-        ],
-        ("diode_clipper", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -65.0, NAN), // -73.8 — aliasing at the host rate
-            (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.491
-            (Bla, Shipping, 20.0, 50.0), // 4.07 / 9.65 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 5e-4, 0.02), // 0.000109 / 0.0054
-            (Compression, Shipping, 0.005, 0.1), // 0.00153 / 0.0301
-            (Detection, Oversampled, 0.05, NAN), // 0.0108
-            (Detection, Shipping, 1.0, NAN), // 0.186
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.73e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 6.09e-07
-            (Harmonics, Oversampled, 0.2, 2.0), // 0.0663 / 0.402
-            (Harmonics, Shipping, 5.0, 50.0), // 1.61 / 6.84
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 2.65e-23
-            (OperatingPoint, Shipping, 1e-9, NAN), // 2.65e-23
-            (Response, Oversampled, 0.02, 0.1), // 0.0058 / 0.0228 — FINDING: the deck's 4 pF Cjo, which DK leaves out (R11)
-            (Response, Shipping, 20.0, 50.0), // 4.07 / 9.25 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.005, NAN), // 0.000825
-            (ThdN, Shipping, 0.1, NAN), // 0.0211 — aliasing at the host rate
         ],
         ("fuzz_face", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
@@ -143,11 +123,11 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Aliasing, Oversampled, -105.0, NAN), // -110
             (Aliasing, Shipping, -95.0, NAN), // -103 — aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.002), // 0.000981 / 0.000488
-            (Bla, Shipping, 0.1, 0.5), // 0.0196 / 0.123
+            (Bla, Shipping, 0.1, 0.5), // 0.0195 / 0.123
             (Compression, Oversampled, 2e-5, 1e-4), // 3.46e-06 / 2.36e-05
             (Compression, Shipping, 2e-5, 0.002), // 4.21e-06 / 0.000389
             (Detection, Oversampled, 0.5, NAN), // 0.141
-            (Detection, Shipping, 0.2, NAN), // 0.043
+            (Detection, Shipping, 0.2, NAN), // 0.0431
             (GroupDelay, Oversampled, 2e-4, NAN), // 2.54e-08
             (GroupDelay, Shipping, 2e-4, NAN), // 2.07e-08
             (Harmonics, Oversampled, 0.1, 0.2), // 0.0283 / 0.0554
@@ -159,7 +139,27 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 2e-4, NAN), // 5.29e-05
             (ThdN, Shipping, 0.001, NAN), // 0.000271 — aliasing at the host rate
         ],
-        ("diode_clipper/wdf", Tier::T0) => &[
+        ("common_cathode_grid_current", Tier::T0) => &[
+            (Aliasing, Oversampled, -105.0, NAN), // -111
+            (Aliasing, Shipping, -95.0, NAN), // -103 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000411
+            (Bla, Shipping, 0.1, 0.5), // 0.0195 / 0.123
+            (Compression, Oversampled, 2e-5, 1e-4), // 3.49e-06 / 2.36e-05
+            (Compression, Shipping, 2e-5, 0.002), // 4.31e-06 / 0.000384
+            (Detection, Oversampled, 0.005, NAN), // 0.00125
+            (Detection, Shipping, 0.2, NAN), // 0.0431
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.28e-15
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.13e-09
+            (Harmonics, Oversampled, 0.1, 0.2), // 0.0279 / 0.0536
+            (Harmonics, Shipping, 0.5, 1.0), // 0.111 / 0.232
+            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
+            (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
+            (Response, Oversampled, 1e-6, 1e-5), // 6.39e-10 / 1.41e-09
+            (Response, Shipping, 5e-6, 0.05), // 8.96e-07 / 0.00714
+            (ThdN, Oversampled, 2e-4, NAN), // 5.3e-05
+            (ThdN, Shipping, 5e-4, NAN), // 0.000103 — aliasing at the host rate
+        ],
+        ("diode_clipper/hand", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -65.0, NAN), // -73.8 — aliasing at the host rate
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.49
@@ -172,40 +172,20 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (GroupDelay, Shipping, 2e-4, NAN), // 6.08e-07
             (Harmonics, Oversampled, 0.5, 2.0), // 0.0757 / 0.376
             (Harmonics, Shipping, 5.0, 50.0), // 1.61 / 6.8
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 2.65e-23
-            (OperatingPoint, Shipping, 1e-9, NAN), // 2.65e-23
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
+            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
             (Response, Oversampled, 1.0, 2.0), // 0.169 / 0.489
             (Response, Shipping, 20.0, 50.0), // 4.07 / 9.25 — FINDING: bilinear warping at 1× (no prewarp)
             (ThdN, Oversampled, 0.02, NAN), // 0.00402
             (ThdN, Shipping, 0.05, NAN), // 0.0163 — aliasing at the host rate
         ],
-        ("opamp_clipper/hand", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -90.0, NAN), // -97.5 — aliasing at the host rate
-            (Bla, Oversampled, 0.001, 0.1), // 0.000317 / 0.021
-            (Bla, Shipping, 2.0, 50.0), // 0.489 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 1e-4, 5e-4), // 1.9e-05 / 0.000118
-            (Compression, Shipping, 0.02, 0.1), // 0.00404 / 0.0327
-            (Detection, Oversampled, 5e-4, NAN), // 0.000107
-            (Detection, Shipping, 0.5, NAN), // 0.105
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.68e-09
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.45e-07
-            (Harmonics, Oversampled, 0.5, 0.05), // 0.0717 / 0.0106
-            (Harmonics, Shipping, 0.5, 20.0), // 0.147 / 4.12
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 0
-            (OperatingPoint, Shipping, 1e-9, NAN), // 0
-            (Response, Oversampled, 0.005, 0.1), // 0.000826 / 0.0224
-            (Response, Shipping, 2.0, 50.0), // 0.49 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.002, NAN), // 0.000612
-            (ThdN, Shipping, 0.05, NAN), // 0.0139 — aliasing at the host rate
-        ],
         ("power_supply/hand", Tier::T0) => &[
-            (Dynamics, Oversampled, 0.001, 0.02), // 0.000233 / 0.005
-            (Dynamics, Shipping, 0.01, 0.1), // 0.0022 / 0.032
-            (Harmonics, Oversampled, 0.05, 1.0), // 0.00667 / 0.194
+            (Dynamics, Oversampled, 5e-4, 0.02), // 0.000113 / 0.00488
+            (Dynamics, Shipping, 0.01, 0.1), // 0.00236 / 0.0319
+            (Harmonics, Oversampled, 0.05, 1.0), // 0.00668 / 0.194
             (Harmonics, Shipping, 0.2, 5.0), // 0.0507 / 1.28
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.45e-05
-            (OperatingPoint, Shipping, 0.005, NAN), // 0.000689
+            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.45e-05
+            (OperatingPoint, Shipping, 0.005, NAN), // 0.000679
         ],
         ("jfet_booster", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -100
@@ -227,25 +207,65 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 5e-6, NAN), // 1.25e-06
             (ThdN, Shipping, 0.001, NAN), // 0.000299 — aliasing at the host rate
         ],
+        ("opamp_clipper/hand", Tier::T0) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -90.0, NAN), // -97.5 — aliasing at the host rate
+            (Bla, Oversampled, 0.001, 0.1), // 0.000317 / 0.021
+            (Bla, Shipping, 2.0, 50.0), // 0.489 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 1e-4, 5e-4), // 1.9e-05 / 0.000118
+            (Compression, Shipping, 0.02, 0.1), // 0.00404 / 0.0327
+            (Detection, Oversampled, 5e-4, NAN), // 0.000107
+            (Detection, Shipping, 0.5, NAN), // 0.105
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.68e-09
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.45e-07
+            (Harmonics, Oversampled, 0.5, 0.05), // 0.0717 / 0.0106
+            (Harmonics, Shipping, 0.5, 20.0), // 0.147 / 4.12
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 0
+            (OperatingPoint, Shipping, 1e-9, NAN), // 0
+            (Response, Oversampled, 0.005, 0.1), // 0.000826 / 0.0224
+            (Response, Shipping, 2.0, 50.0), // 0.49 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.002, NAN), // 0.000612
+            (ThdN, Shipping, 0.05, NAN), // 0.0139 — aliasing at the host rate
+        ],
         ("mosfet_booster", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -104
             (Aliasing, Shipping, -40.0, NAN), // -46.1 — aliasing at the host rate
-            (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0432
+            (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
             (Bla, Shipping, 1.0, 5.0), // 0.205 / 1.13
-            (Compression, Oversampled, 2e-5, 0.001), // 3.55e-06 / 0.000225
-            (Compression, Shipping, 5e-5, 0.005), // 8.86e-06 / 0.00129
-            (Detection, Oversampled, 0.05, NAN), // 0.00739
+            (Compression, Oversampled, 2e-5, 0.001), // 3.34e-06 / 0.000228
+            (Compression, Shipping, 5e-5, 0.005), // 8.18e-06 / 0.00129
+            (Detection, Oversampled, 1.0, NAN), // 0.224
             (Detection, Shipping, 2.0, NAN), // 0.414
-            (GroupDelay, Oversampled, 2e-4, NAN), // 7.67e-15
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
             (GroupDelay, Shipping, 2e-4, NAN), // 1.46e-09
-            (Harmonics, Oversampled, 0.02, 0.5), // 0.00412 / 0.15
-            (Harmonics, Shipping, 0.1, 2.0), // 0.0194 / 0.548
-            (OperatingPoint, Oversampled, 5e-7, NAN), // 8.84e-08
-            (OperatingPoint, Shipping, 5e-7, NAN), // 8.84e-08
-            (Response, Oversampled, 1e-6, 1e-5), // 7.42e-08 / 7.32e-09
-            (Response, Shipping, 2e-6, 0.05), // 4.05e-07 / 0.00918
-            (ThdN, Oversampled, 0.001, NAN), // 0.000183
-            (ThdN, Shipping, 0.02, NAN), // 0.00405 — aliasing at the host rate
+            (Harmonics, Oversampled, 0.2, 0.5), // 0.0406 / 0.148
+            (Harmonics, Shipping, 0.2, 2.0), // 0.0431 / 0.546
+            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
+            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
+            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
+            (Response, Shipping, 2e-5, 0.05), // 5.86e-06 / 0.00918
+            (ThdN, Oversampled, 0.01, NAN), // 0.00197
+            (ThdN, Shipping, 0.02, NAN), // 0.00408 — aliasing at the host rate
+        ],
+        ("ota_vca", Tier::T0) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00105
+            (Bla, Shipping, 0.2, 1.0), // 0.053 / 0.177
+            (Compression, Oversampled, 2e-5, 1e-5), // 5.2e-06 / 1.36e-07
+            (Compression, Shipping, 2e-5, 1e-5), // 5.2e-06 / 1.36e-07
+            (Detection, Oversampled, 0.01, NAN), // 0.00257
+            (Detection, Shipping, 0.2, NAN), // 0.0404
+            (GroupDelay, Oversampled, 2e-4, NAN), // 0
+            (GroupDelay, Shipping, 2e-4, NAN), // 0
+            (Harmonics, Oversampled, 0.01, 5e-4), // 0.00206 / 8.53e-05
+            (Harmonics, Shipping, 0.01, 5e-4), // 0.00206 / 8.53e-05
+            (OperatingPoint, Oversampled, 5e-5, NAN), // 7.25e-06
+            (OperatingPoint, Shipping, 5e-5, NAN), // 7.25e-06
+            (Response, Oversampled, 0.005, NAN), // 0.00122
+            (Response, Shipping, 0.005, NAN), // 0.00122
+            (ThdN, Oversampled, 5e-4, NAN), // 8.6e-05
+            (ThdN, Shipping, 5e-4, NAN), // 8.6e-05 — aliasing at the host rate
         ],
         ("opamp_clipper", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
@@ -267,33 +287,13 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.002, NAN), // 0.000612
             (ThdN, Shipping, 0.05, NAN), // 0.0139 — aliasing at the host rate
         ],
-        ("ota_vca", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00105
-            (Bla, Shipping, 0.2, 1.0), // 0.053 / 0.177
-            (Compression, Oversampled, 2e-5, 1e-5), // 5.2e-06 / 1.36e-07
-            (Compression, Shipping, 2e-5, 1e-5), // 5.2e-06 / 1.36e-07
-            (Detection, Oversampled, 0.01, NAN), // 0.00249
-            (Detection, Shipping, 0.2, NAN), // 0.0404
-            (GroupDelay, Oversampled, 2e-4, NAN), // 0
-            (GroupDelay, Shipping, 2e-4, NAN), // 0
-            (Harmonics, Oversampled, 0.01, 5e-4), // 0.00206 / 8.54e-05
-            (Harmonics, Shipping, 0.01, 5e-4), // 0.00206 / 8.54e-05
-            (OperatingPoint, Oversampled, 2e-9, NAN), // 6.1e-10
-            (OperatingPoint, Shipping, 2e-9, NAN), // 6.1e-10
-            (Response, Oversampled, 1e-6, NAN), // 8.48e-08
-            (Response, Shipping, 1e-6, NAN), // 8.48e-08
-            (ThdN, Oversampled, 5e-4, NAN), // 8.6e-05
-            (ThdN, Shipping, 5e-4, NAN), // 8.6e-05 — aliasing at the host rate
-        ],
         ("power_supply", Tier::T0) => &[
-            (Dynamics, Oversampled, 0.001, 0.02), // 0.000233 / 0.005
-            (Dynamics, Shipping, 0.01, 0.1), // 0.0022 / 0.032
-            (Harmonics, Oversampled, 0.05, 1.0), // 0.00667 / 0.194
+            (Dynamics, Oversampled, 5e-4, 0.02), // 0.000113 / 0.00488
+            (Dynamics, Shipping, 0.01, 0.1), // 0.00236 / 0.0319
+            (Harmonics, Oversampled, 0.05, 1.0), // 0.00668 / 0.194
             (Harmonics, Shipping, 0.2, 5.0), // 0.0507 / 1.28
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.45e-05
-            (OperatingPoint, Shipping, 0.005, NAN), // 0.000689
+            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.45e-05
+            (OperatingPoint, Shipping, 0.005, NAN), // 0.000679
         ],
         ("push_pull", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
@@ -335,6 +335,26 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 5e-4, NAN), // 9.66e-05
             (ThdN, Shipping, 5e-4, NAN), // 9.66e-05 — aliasing at the host rate
         ],
+        ("triode_stage", Tier::T0) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Bla, Oversampled, 0.02, 0.1), // 0.0057 / 0.0244
+            (Bla, Shipping, 0.02, 0.1), // 0.0057 / 0.0244
+            (Compression, Oversampled, 2e-5, 1e-5), // 3.34e-06 / 2.54e-08
+            (Compression, Shipping, 2e-5, 1e-5), // 3.34e-06 / 2.54e-08
+            (Detection, Oversampled, 0.1, NAN), // 0.018
+            (Detection, Shipping, 0.1, NAN), // 0.018
+            (GroupDelay, Oversampled, 2e-4, NAN), // 0
+            (GroupDelay, Shipping, 2e-4, NAN), // 0
+            (Harmonics, Oversampled, 0.002, 1e-5), // 0.000635 / 1.46e-06
+            (Harmonics, Shipping, 0.002, 1e-5), // 0.000635 / 1.46e-06
+            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.11e-05
+            (OperatingPoint, Shipping, 1e-4, NAN), // 2.11e-05
+            (Response, Oversampled, 5e-6, NAN), // 7.23e-07
+            (Response, Shipping, 5e-6, NAN), // 7.23e-07
+            (ThdN, Oversampled, 1e-4, NAN), // 2.29e-05
+            (ThdN, Shipping, 1e-4, NAN), // 2.29e-05 — aliasing at the host rate
+        ],
         ("rangemaster", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
@@ -355,26 +375,6 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.1, NAN), // 0.0272
             (ThdN, Shipping, 0.05, NAN), // 0.00715 — aliasing at the host rate
         ],
-        ("triode_stage", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Bla, Oversampled, 0.02, 0.1), // 0.0057 / 0.0244
-            (Bla, Shipping, 0.02, 0.1), // 0.0057 / 0.0244
-            (Compression, Oversampled, 2e-5, 1e-5), // 3.34e-06 / 2.54e-08
-            (Compression, Shipping, 2e-5, 1e-5), // 3.34e-06 / 2.54e-08
-            (Detection, Oversampled, 0.1, NAN), // 0.018
-            (Detection, Shipping, 0.1, NAN), // 0.018
-            (GroupDelay, Oversampled, 2e-4, NAN), // 0
-            (GroupDelay, Shipping, 2e-4, NAN), // 0
-            (Harmonics, Oversampled, 0.002, 1e-5), // 0.00063 / 1.39e-06
-            (Harmonics, Shipping, 0.002, 1e-5), // 0.00063 / 1.39e-06
-            (OperatingPoint, Oversampled, 5e-9, NAN), // 7.6e-10
-            (OperatingPoint, Shipping, 5e-9, NAN), // 7.6e-10
-            (Response, Oversampled, 1e-6, NAN), // 5.68e-10
-            (Response, Shipping, 1e-6, NAN), // 5.68e-10
-            (ThdN, Oversampled, 1e-4, NAN), // 2.29e-05
-            (ThdN, Shipping, 1e-4, NAN), // 2.29e-05 — aliasing at the host rate
-        ],
         ("tube_screamer", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
@@ -392,7 +392,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Shipping, 1e-7, NAN), // 3.05e-08
             (Response, Oversampled, 5e-5, 1e-4), // 9.11e-06 / 3.1e-05
             (Response, Shipping, 20.0, 50.0), // 4.33 / 6.8 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.001, NAN), // 0.000256
+            (ThdN, Oversampled, 0.001, NAN), // 0.000274
             (ThdN, Shipping, 0.1, NAN), // 0.0189 — aliasing at the host rate
         ],
         ("diode_clipper", Tier::T1) => &[
@@ -412,8 +412,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Harmonics, Shipping, 100.0, 500.0), // 21.7 / 77.3
             (Intermodulation, Oversampled, 20.0, 20.0), // 5.19 / 5.1
             (Intermodulation, Shipping, 200.0, 200.0), // 50.9 / 57.2
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 2.65e-23
-            (OperatingPoint, Shipping, 1e-9, NAN), // 2.65e-23
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
+            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
             (Response, Oversampled, 0.02, 0.1), // 0.0058 / 0.0228 — FINDING: the deck's 4 pF Cjo, which DK leaves out (R11)
             (Response, Shipping, 20.0, 50.0), // 5.33 / 11.3 — FINDING: bilinear warping at 1× (no prewarp)
             (ThdN, Oversampled, 200.0, NAN), // 48.8
@@ -443,30 +443,6 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.1, NAN), // 0.0277
             (ThdN, Shipping, 20.0, NAN), // 5.27 — aliasing at the host rate
         ],
-        ("diode_clipper/wdf", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -62.1
-            (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
-            (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.493
-            (Bla, Shipping, 20.0, 50.0), // 5.33 / 11.8 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 0.1, 0.5), // 0.027 / 0.159
-            (Compression, Shipping, 5.0, 100.0), // 0.714 / 19.6
-            (Detection, Oversampled, 0.1, NAN), // 0.0303
-            (Detection, Shipping, 500.0, NAN), // 89.2
-            (Dynamics, Oversampled, 5e-5, 0.1), // 1.15e-05 / 0.026
-            (Dynamics, Shipping, 5e-4, 0.5), // 9.66e-05 / 0.119
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.69e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 7.26e-07
-            (Harmonics, Oversampled, 100.0, 200.0), // 17.6 / 45.5
-            (Harmonics, Shipping, 100.0, 500.0), // 21.7 / 77.4
-            (Intermodulation, Oversampled, 20.0, 20.0), // 5.18 / 5.1
-            (Intermodulation, Shipping, 200.0, 200.0), // 50.9 / 57.1
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 2.65e-23
-            (OperatingPoint, Shipping, 1e-9, NAN), // 2.65e-23
-            (Response, Oversampled, 1.0, 2.0), // 0.169 / 0.489
-            (Response, Shipping, 20.0, 50.0), // 5.33 / 11.3 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 200.0, NAN), // 48.7
-            (ThdN, Shipping, 500.0, NAN), // 98.9 — aliasing at the host rate
-        ],
         ("common_cathode", Tier::T1) => &[
             (Aliasing, Oversampled, -90.0, NAN), // -96.5
             (Aliasing, Shipping, -25.0, NAN), // -32.7 — aliasing at the host rate
@@ -474,7 +450,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
             (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.00363
-            (Detection, Oversampled, 0.05, NAN), // 0.0124
+            (Detection, Oversampled, 0.05, NAN), // 0.0125
             (Detection, Shipping, 0.2, NAN), // 0.0617
             (Dynamics, Oversampled, 0.001, 5e-4), // 0.000319 / 9.51e-05
             (Dynamics, Shipping, 0.01, 0.005), // 0.00181 / 0.00154
@@ -482,8 +458,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (GroupDelay, Shipping, 2e-4, NAN), // 1.22e-09
             (Harmonics, Oversampled, 2.0, 0.2), // 0.598 / 0.0663
             (Harmonics, Shipping, 10.0, 5.0), // 2.07 / 0.738
-            (Intermodulation, Oversampled, 0.2, 0.05), // 0.0495 / 0.0159
-            (Intermodulation, Shipping, 0.5, 0.05), // 0.0826 / 0.0126
+            (Intermodulation, Oversampled, 0.2, 0.05), // 0.0493 / 0.016
+            (Intermodulation, Shipping, 0.5, 0.05), // 0.0828 / 0.0126
             (OperatingPoint, Oversampled, 1e-5, NAN), // 2.51e-06
             (OperatingPoint, Shipping, 1e-5, NAN), // 2.51e-06
             (Response, Oversampled, 1e-6, 1e-5), // 1.26e-07 / 1.56e-07
@@ -491,29 +467,29 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.01, NAN), // 0.0017
             (ThdN, Shipping, 0.5, NAN), // 0.163 — aliasing at the host rate
         ],
-        ("opamp_clipper/hand", Tier::T1) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -110
-            (Aliasing, Shipping, -5.0, NAN), // -13.3 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
-            (Bla, Shipping, 5.0, 50.0), // 0.737 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 0.001, 0.05), // 0.000216 / 0.0137
-            (Compression, Shipping, 2.0, 50.0), // 0.37 / 9.29
-            (Detection, Oversampled, 0.001, NAN), // 0.000272
-            (Detection, Shipping, 500.0, NAN), // 88.5
-            (Dynamics, Oversampled, 1e-4, 0.01), // 2.24e-05 / 0.00273
-            (Dynamics, Shipping, 0.002, 0.2), // 0.000357 / 0.0538
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.5e-09
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.91e-07
-            (Harmonics, Oversampled, 2.0, 20.0), // 0.51 / 3.62
-            (Harmonics, Shipping, 50.0, 500.0), // 12.2 / 72.1
-            (Intermodulation, Oversampled, 0.5, 5.0), // 0.074 / 0.669
-            (Intermodulation, Shipping, 100.0, 500.0), // 26.4 / 112
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 0
-            (OperatingPoint, Shipping, 1e-9, NAN), // 0
-            (Response, Oversampled, 0.005, 0.1), // 0.000824 / 0.0224
-            (Response, Shipping, 5.0, 50.0), // 0.738 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 50.0, NAN), // 9.53
-            (ThdN, Shipping, 500.0, NAN), // 107 — aliasing at the host rate
+        ("common_cathode/hand", Tier::T1) => &[
+            (Aliasing, Oversampled, -85.0, NAN), // -92.6
+            (Aliasing, Shipping, -25.0, NAN), // -32.7 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000381
+            (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
+            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
+            (Compression, Shipping, 0.001, 0.02), // 0.000245 / 0.00363
+            (Detection, Oversampled, 10.0, NAN), // 2.77
+            (Detection, Shipping, 20.0, NAN), // 5.91
+            (Dynamics, Oversampled, 0.001, 5e-4), // 0.000319 / 9.73e-05
+            (Dynamics, Shipping, 0.01, 0.005), // 0.00181 / 0.00154
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.64e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.82e-08
+            (Harmonics, Oversampled, 50.0, 0.2), // 7.86 / 0.0662
+            (Harmonics, Shipping, 50.0, 5.0), // 12.1 / 0.739
+            (Intermodulation, Oversampled, 0.5, 0.1), // 0.13 / 0.0179
+            (Intermodulation, Shipping, 1.0, 0.2), // 0.241 / 0.0447
+            (OperatingPoint, Oversampled, 1e-5, NAN), // 2.51e-06
+            (OperatingPoint, Shipping, 1e-5, NAN), // 2.51e-06
+            (Response, Oversampled, 0.01, 0.01), // 0.0018 / 0.00332
+            (Response, Shipping, 0.01, 0.05), // 0.00184 / 0.00749
+            (ThdN, Oversampled, 0.5, NAN), // 0.129
+            (ThdN, Shipping, 5.0, NAN), // 0.924 — aliasing at the host rate
         ],
         ("fuzz_face", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
@@ -539,6 +515,86 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.5, NAN), // 0.145
             (ThdN, Shipping, 0.5, NAN), // 0.159 — aliasing at the host rate
         ],
+        ("diode_clipper/hand", Tier::T1) => &[
+            (Aliasing, Oversampled, -55.0, NAN), // -62.1
+            (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
+            (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.493
+            (Bla, Shipping, 20.0, 50.0), // 5.33 / 11.8 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.1, 0.5), // 0.027 / 0.159
+            (Compression, Shipping, 5.0, 100.0), // 0.714 / 19.6
+            (Detection, Oversampled, 0.1, NAN), // 0.0303
+            (Detection, Shipping, 500.0, NAN), // 89.2
+            (Dynamics, Oversampled, 5e-5, 0.1), // 1.15e-05 / 0.026
+            (Dynamics, Shipping, 5e-4, 0.5), // 9.66e-05 / 0.119
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.69e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 7.26e-07
+            (Harmonics, Oversampled, 100.0, 200.0), // 17.6 / 45.5
+            (Harmonics, Shipping, 100.0, 500.0), // 21.7 / 77.4
+            (Intermodulation, Oversampled, 20.0, 20.0), // 5.19 / 5.1
+            (Intermodulation, Shipping, 200.0, 200.0), // 50.9 / 57.1
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
+            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
+            (Response, Oversampled, 1.0, 2.0), // 0.169 / 0.489
+            (Response, Shipping, 20.0, 50.0), // 5.33 / 11.3 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 200.0, NAN), // 48.7
+            (ThdN, Shipping, 500.0, NAN), // 98.9 — aliasing at the host rate
+        ],
+        ("power_supply/hand", Tier::T1) => &[
+            (Dynamics, Oversampled, 0.001, 0.02), // 0.000177 / 0.00521
+            (Dynamics, Shipping, 0.01, 0.2), // 0.00272 / 0.0374
+            (Harmonics, Oversampled, 0.05, 1.0), // 0.00668 / 0.194
+            (Harmonics, Shipping, 0.2, 5.0), // 0.0571 / 1.57
+            (OperatingPoint, Oversampled, 5e-4, NAN), // 0.00014
+            (OperatingPoint, Shipping, 0.005, NAN), // 0.00114
+        ],
+        ("common_cathode_grid_current", Tier::T1) => &[
+            (Aliasing, Oversampled, -55.0, NAN), // -60.3
+            (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.02), // 0.000968 / 0.00432
+            (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
+            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000211
+            (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.00401
+            (Detection, Oversampled, 0.05, NAN), // 0.00981
+            (Detection, Shipping, 5.0, NAN), // 1.34
+            (Dynamics, Oversampled, 0.001, 1e-4), // 0.000246 / 2.44e-05
+            (Dynamics, Shipping, 0.005, 0.002), // 0.000966 / 0.000582
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.28e-15
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.34e-09
+            (Harmonics, Oversampled, 1.0, 0.5), // 0.235 / 0.122
+            (Harmonics, Shipping, 5.0, 1.0), // 0.989 / 0.265
+            (Intermodulation, Oversampled, 0.2, 0.2), // 0.0617 / 0.0344
+            (Intermodulation, Shipping, 0.2, 0.1), // 0.0343 / 0.0181
+            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
+            (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
+            (Response, Oversampled, 1e-6, 1e-5), // 6.39e-10 / 1.41e-09
+            (Response, Shipping, 5e-6, 0.05), // 1.06e-06 / 0.0086
+            (ThdN, Oversampled, 0.02, NAN), // 0.00386
+            (ThdN, Shipping, 50.0, NAN), // 15.2 — aliasing at the host rate
+        ],
+        ("common_cathode_grid_current/hand", Tier::T1) => &[
+            (Aliasing, Oversampled, -55.0, NAN), // -60.3
+            (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.02), // 0.000969 / 0.00432
+            (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
+            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.00021
+            (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.004
+            (Detection, Oversampled, 5.0, NAN), // 1.11
+            (Detection, Shipping, 10.0, NAN), // 3.22
+            (Dynamics, Oversampled, 0.001, 1e-4), // 0.000246 / 1.99e-05
+            (Dynamics, Shipping, 0.005, 0.002), // 0.000966 / 0.000576
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.4e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.16e-08
+            (Harmonics, Oversampled, 1.0, 0.5), // 0.247 / 0.122
+            (Harmonics, Shipping, 20.0, 1.0), // 5.46 / 0.265
+            (Intermodulation, Oversampled, 0.2, 0.2), // 0.0623 / 0.037
+            (Intermodulation, Shipping, 0.5, 0.1), // 0.0784 / 0.0205
+            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
+            (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
+            (Response, Oversampled, 0.005, 0.01), // 0.00158 / 0.00278
+            (Response, Shipping, 0.005, 0.05), // 0.00161 / 0.00857
+            (ThdN, Oversampled, 0.2, NAN), // 0.041
+            (ThdN, Shipping, 50.0, NAN), // 15.2 — aliasing at the host rate
+        ],
         ("jfet_booster", Tier::T1) => &[
             (Aliasing, Oversampled, -45.0, NAN), // -54.8
             (Aliasing, Shipping, -10.0, NAN), // -16.7 — aliasing at the host rate
@@ -554,7 +610,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (GroupDelay, Shipping, 2e-4, NAN), // 2.17e-09
             (Harmonics, Oversampled, 2.0, 1.0), // 0.575 / 0.294
             (Harmonics, Shipping, 10.0, 20.0), // 2.23 / 4.69
-            (Intermodulation, Oversampled, 5.0, 0.2), // 0.776 / 0.0482
+            (Intermodulation, Oversampled, 5.0, 0.2), // 0.775 / 0.0482
             (Intermodulation, Shipping, 10.0, 1.0), // 1.72 / 0.225
             (OperatingPoint, Oversampled, 1e-4, NAN), // 3.21e-05 — FINDING: ngspice's gate sits 4.3 µV up (4.3 pA in 1 MΩ; not gmin)
             (OperatingPoint, Shipping, 1e-4, NAN), // 3.21e-05
@@ -563,85 +619,85 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.01, NAN), // 0.00309
             (ThdN, Shipping, 50.0, NAN), // 7.42 — aliasing at the host rate
         ],
-        ("common_cathode_grid_current", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -60.3
-            (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.02), // 0.000968 / 0.00434
-            (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
-            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000211
-            (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.00401
-            (Detection, Oversampled, 0.05, NAN), // 0.00975
-            (Detection, Shipping, 5.0, NAN), // 1.34
-            (Dynamics, Oversampled, 0.001, 1e-4), // 0.000246 / 2.58e-05
-            (Dynamics, Shipping, 0.005, 0.002), // 0.000966 / 0.000582
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.28e-15
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.34e-09
-            (Harmonics, Oversampled, 1.0, 0.5), // 0.234 / 0.15
-            (Harmonics, Shipping, 5.0, 1.0), // 0.989 / 0.265
-            (Intermodulation, Oversampled, 0.2, 0.2), // 0.0617 / 0.0344
-            (Intermodulation, Shipping, 0.2, 0.1), // 0.0343 / 0.0181
-            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
-            (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
-            (Response, Oversampled, 1e-6, 1e-5), // 6.39e-10 / 1.41e-09
-            (Response, Shipping, 5e-6, 0.05), // 1.06e-06 / 0.0086
-            (ThdN, Oversampled, 0.02, NAN), // 0.00383
-            (ThdN, Shipping, 50.0, NAN), // 15.2 — aliasing at the host rate
-        ],
-        ("common_cathode/hand", Tier::T1) => &[
-            (Aliasing, Oversampled, -85.0, NAN), // -92.6
-            (Aliasing, Shipping, -25.0, NAN), // -32.7 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000381
-            (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
-            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
-            (Compression, Shipping, 0.001, 0.02), // 0.000245 / 0.00363
-            (Detection, Oversampled, 10.0, NAN), // 2.77
-            (Detection, Shipping, 20.0, NAN), // 5.91
-            (Dynamics, Oversampled, 0.001, 5e-4), // 0.000319 / 9.73e-05
-            (Dynamics, Shipping, 0.01, 0.005), // 0.00181 / 0.00154
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.64e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.82e-08
-            (Harmonics, Oversampled, 50.0, 0.2), // 7.86 / 0.0662
-            (Harmonics, Shipping, 50.0, 5.0), // 12.1 / 0.739
-            (Intermodulation, Oversampled, 0.5, 0.1), // 0.13 / 0.0178
-            (Intermodulation, Shipping, 1.0, 0.2), // 0.241 / 0.0447
-            (OperatingPoint, Oversampled, 1e-5, NAN), // 2.51e-06
-            (OperatingPoint, Shipping, 1e-5, NAN), // 2.51e-06
-            (Response, Oversampled, 0.01, 0.01), // 0.0018 / 0.00332
-            (Response, Shipping, 0.01, 0.05), // 0.00184 / 0.00749
-            (ThdN, Oversampled, 0.5, NAN), // 0.129
-            (ThdN, Shipping, 5.0, NAN), // 0.924 — aliasing at the host rate
+        ("opamp_clipper/hand", Tier::T1) => &[
+            (Aliasing, Oversampled, -105.0, NAN), // -110
+            (Aliasing, Shipping, -5.0, NAN), // -13.3 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
+            (Bla, Shipping, 5.0, 50.0), // 0.737 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.001, 0.05), // 0.000216 / 0.0137
+            (Compression, Shipping, 2.0, 50.0), // 0.37 / 9.29
+            (Detection, Oversampled, 0.001, NAN), // 0.000272
+            (Detection, Shipping, 500.0, NAN), // 88.5
+            (Dynamics, Oversampled, 1e-4, 0.01), // 2.24e-05 / 0.00273
+            (Dynamics, Shipping, 0.002, 0.2), // 0.000357 / 0.0538
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.5e-09
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.91e-07
+            (Harmonics, Oversampled, 2.0, 20.0), // 0.511 / 3.62
+            (Harmonics, Shipping, 50.0, 500.0), // 12.2 / 72.1
+            (Intermodulation, Oversampled, 0.5, 5.0), // 0.074 / 0.669
+            (Intermodulation, Shipping, 100.0, 500.0), // 26.4 / 112
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 0
+            (OperatingPoint, Shipping, 1e-9, NAN), // 0
+            (Response, Oversampled, 0.005, 0.1), // 0.000824 / 0.0224
+            (Response, Shipping, 5.0, 50.0), // 0.738 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 50.0, NAN), // 9.53
+            (ThdN, Shipping, 500.0, NAN), // 107 — aliasing at the host rate
         ],
         ("mosfet_booster", Tier::T1) => &[
             (Aliasing, Oversampled, -35.0, NAN), // -41.7
             (Aliasing, Shipping, 0.0, NAN), // -7.7 — aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
             (Bla, Shipping, 1.0, 10.0), // 0.294 / 2.26
-            (Compression, Oversampled, 0.001, 0.002), // 0.000246 / 0.000575
-            (Compression, Shipping, 0.001, 0.02), // 0.000269 / 0.00613
-            (Detection, Oversampled, 0.2, NAN), // 0.0402
-            (Detection, Shipping, 20.0, NAN), // 5.75
-            (Dynamics, Oversampled, 2e-4, 0.02), // 3.99e-05 / 0.00471
-            (Dynamics, Shipping, 0.002, 0.5), // 0.000348 / 0.142
-            (GroupDelay, Oversampled, 2e-4, NAN), // 7.67e-15
+            (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000652
+            (Compression, Shipping, 0.001, 0.02), // 0.000266 / 0.0062
+            (Detection, Oversampled, 50.0, NAN), // 9.93
+            (Detection, Shipping, 50.0, NAN), // 9.93
+            (Dynamics, Oversampled, 2e-4, 0.02), // 4.33e-05 / 0.00452
+            (Dynamics, Shipping, 0.002, 0.5), // 0.000351 / 0.142
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
             (GroupDelay, Shipping, 2e-4, NAN), // 1.73e-09
-            (Harmonics, Oversampled, 0.5, 5.0), // 0.0862 / 0.92
-            (Harmonics, Shipping, 5.0, 50.0), // 0.906 / 8.22
-            (Intermodulation, Oversampled, 1.0, 1.0), // 0.25 / 0.232
-            (Intermodulation, Shipping, 2.0, 10.0), // 0.61 / 1.78
-            (OperatingPoint, Oversampled, 5e-7, NAN), // 8.84e-08
-            (OperatingPoint, Shipping, 5e-7, NAN), // 8.84e-08
-            (Response, Oversampled, 1e-6, 1e-5), // 7.42e-08 / 7.32e-09
-            (Response, Shipping, 2e-6, 0.05), // 4.66e-07 / 0.0111
-            (ThdN, Oversampled, 0.5, NAN), // 0.0675
+            (Harmonics, Oversampled, 1.0, 2.0), // 0.275 / 0.638
+            (Harmonics, Shipping, 5.0, 50.0), // 0.905 / 8.21
+            (Intermodulation, Oversampled, 2.0, 1.0), // 0.639 / 0.245
+            (Intermodulation, Shipping, 2.0, 10.0), // 0.647 / 1.78
+            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
+            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
+            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
+            (Response, Shipping, 2e-5, 0.05), // 6.07e-06 / 0.0111
+            (ThdN, Oversampled, 5.0, NAN), // 1.14
             (ThdN, Shipping, 100.0, NAN), // 21.2 — aliasing at the host rate
         ],
         ("power_supply", Tier::T1) => &[
-            (Dynamics, Oversampled, 0.001, 0.02), // 0.000233 / 0.00529
-            (Dynamics, Shipping, 0.01, 0.2), // 0.00266 / 0.0374
-            (Harmonics, Oversampled, 0.05, 1.0), // 0.00667 / 0.194
+            (Dynamics, Oversampled, 0.001, 0.02), // 0.000177 / 0.00521
+            (Dynamics, Shipping, 0.01, 0.2), // 0.00272 / 0.0374
+            (Harmonics, Oversampled, 0.05, 1.0), // 0.00668 / 0.194
             (Harmonics, Shipping, 0.2, 5.0), // 0.0571 / 1.57
-            (OperatingPoint, Oversampled, 5e-4, NAN), // 0.00013
+            (OperatingPoint, Oversampled, 5e-4, NAN), // 0.00014
             (OperatingPoint, Shipping, 0.005, NAN), // 0.00114
+        ],
+        ("ota_vca", Tier::T1) => &[
+            (Aliasing, Oversampled, -80.0, NAN), // -88
+            (Aliasing, Shipping, -5.0, NAN), // -11.1 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00123
+            (Bla, Shipping, 0.5, 5.0), // 0.1 / 0.733
+            (Compression, Oversampled, 0.001, 0.002), // 0.000332 / 0.000346
+            (Compression, Shipping, 0.001, 0.002), // 0.000332 / 0.000346
+            (Detection, Oversampled, 0.01, NAN), // 0.00257
+            (Detection, Shipping, 100.0, NAN), // 24.3
+            (Dynamics, Oversampled, 5e-6, 2e-4), // 1.47e-06 / 4.73e-05
+            (Dynamics, Shipping, 5e-6, 2e-4), // 1.47e-06 / 4.73e-05
+            (GroupDelay, Oversampled, 2e-4, NAN), // 0
+            (GroupDelay, Shipping, 2e-4, NAN), // 0
+            (Harmonics, Oversampled, 0.5, 0.2), // 0.162 / 0.0608
+            (Harmonics, Shipping, 0.1, 0.05), // 0.0293 / 0.0133
+            (Intermodulation, Oversampled, 0.2, 0.1), // 0.065 / 0.0254
+            (Intermodulation, Shipping, 0.1, 0.02), // 0.0265 / 0.00433
+            (OperatingPoint, Oversampled, 5e-5, NAN), // 7.25e-06
+            (OperatingPoint, Shipping, 5e-5, NAN), // 7.25e-06
+            (Response, Oversampled, 0.005, NAN), // 0.00122
+            (Response, Shipping, 0.005, NAN), // 0.00122
+            (ThdN, Oversampled, 0.01, NAN), // 0.0024
+            (ThdN, Shipping, 200.0, NAN), // 42.7 — aliasing at the host rate
         ],
         ("opamp_clipper", Tier::T1) => &[
             (Aliasing, Oversampled, -105.0, NAN), // -110
@@ -656,7 +712,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Dynamics, Shipping, 0.002, 0.2), // 0.000357 / 0.0538
             (GroupDelay, Oversampled, 2e-4, NAN), // 3.43e-12
             (GroupDelay, Shipping, 2e-4, NAN), // 2.91e-07
-            (Harmonics, Oversampled, 2.0, 20.0), // 0.51 / 3.62
+            (Harmonics, Oversampled, 2.0, 20.0), // 0.511 / 3.62
             (Harmonics, Shipping, 50.0, 500.0), // 12.2 / 72.1
             (Intermodulation, Oversampled, 0.5, 5.0), // 0.074 / 0.669
             (Intermodulation, Shipping, 100.0, 500.0), // 26.4 / 112
@@ -666,30 +722,6 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Response, Shipping, 5.0, 50.0), // 0.738 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
             (ThdN, Oversampled, 50.0, NAN), // 9.53
             (ThdN, Shipping, 500.0, NAN), // 107 — aliasing at the host rate
-        ],
-        ("ota_vca", Tier::T1) => &[
-            (Aliasing, Oversampled, -80.0, NAN), // -88
-            (Aliasing, Shipping, -5.0, NAN), // -11.1 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00123
-            (Bla, Shipping, 0.5, 5.0), // 0.1 / 0.733
-            (Compression, Oversampled, 0.001, 0.002), // 0.000332 / 0.000346
-            (Compression, Shipping, 0.001, 0.002), // 0.000332 / 0.000346
-            (Detection, Oversampled, 0.01, NAN), // 0.00249
-            (Detection, Shipping, 100.0, NAN), // 24.3
-            (Dynamics, Oversampled, 5e-6, 2e-4), // 1.47e-06 / 4.73e-05
-            (Dynamics, Shipping, 5e-6, 2e-4), // 1.47e-06 / 4.73e-05
-            (GroupDelay, Oversampled, 2e-4, NAN), // 0
-            (GroupDelay, Shipping, 2e-4, NAN), // 0
-            (Harmonics, Oversampled, 0.5, 0.2), // 0.162 / 0.0608
-            (Harmonics, Shipping, 0.1, 0.05), // 0.0293 / 0.0133
-            (Intermodulation, Oversampled, 0.2, 0.1), // 0.0648 / 0.0255
-            (Intermodulation, Shipping, 0.1, 0.02), // 0.0265 / 0.00433
-            (OperatingPoint, Oversampled, 2e-9, NAN), // 6.1e-10
-            (OperatingPoint, Shipping, 2e-9, NAN), // 6.1e-10
-            (Response, Oversampled, 1e-6, NAN), // 8.48e-08
-            (Response, Shipping, 1e-6, NAN), // 8.48e-08
-            (ThdN, Oversampled, 0.01, NAN), // 0.0024
-            (ThdN, Shipping, 200.0, NAN), // 42.7 — aliasing at the host rate
         ],
         ("rangemaster", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
@@ -712,47 +744,47 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Shipping, 0.02, NAN), // 0.0039
             (Response, Oversampled, 0.5, 2.0), // 0.133 / 0.337 — FINDING: 0.13 dB of gain from the operating point
             (Response, Shipping, 1.0, 20.0), // 0.193 / 3.9
-            (ThdN, Oversampled, 1.0, NAN), // 0.238
+            (ThdN, Oversampled, 1.0, NAN), // 0.234
             (ThdN, Shipping, 2.0, NAN), // 0.342 — aliasing at the host rate
         ],
         ("triode_stage", Tier::T1) => &[
             (Aliasing, Oversampled, -70.0, NAN), // -78.6
             (Aliasing, Shipping, -15.0, NAN), // -20.9 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.001
+            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.000992
             (Bla, Shipping, 0.05, 1.0), // 0.0163 / 0.261
-            (Compression, Oversampled, 0.001, 5e-5), // 0.000243 / 7.53e-06
-            (Compression, Shipping, 0.001, 5e-5), // 0.000243 / 7.53e-06
-            (Detection, Oversampled, 0.01, NAN), // 0.00311
+            (Compression, Oversampled, 0.001, 5e-5), // 0.000243 / 1.03e-05
+            (Compression, Shipping, 0.001, 5e-5), // 0.000243 / 1.03e-05
+            (Detection, Oversampled, 0.01, NAN), // 0.00327
             (Detection, Shipping, 2.0, NAN), // 0.397
             (Dynamics, Oversampled, 1e-4, 2e-4), // 2.27e-05 / 6.38e-05
             (Dynamics, Shipping, 1e-4, 2e-4), // 2.27e-05 / 6.38e-05
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
-            (Harmonics, Oversampled, 0.5, 0.5), // 0.14 / 0.0855
-            (Harmonics, Shipping, 0.5, 0.01), // 0.0727 / 0.00315
-            (Intermodulation, Oversampled, 0.2, 0.05), // 0.0657 / 0.0131
-            (Intermodulation, Shipping, 0.1, 0.02), // 0.0271 / 0.00353
-            (OperatingPoint, Oversampled, 5e-9, NAN), // 7.6e-10
-            (OperatingPoint, Shipping, 5e-9, NAN), // 7.6e-10
-            (Response, Oversampled, 1e-6, NAN), // 5.68e-10
-            (Response, Shipping, 1e-6, NAN), // 5.68e-10
-            (ThdN, Oversampled, 0.05, NAN), // 0.00966
+            (Harmonics, Oversampled, 0.5, 0.1), // 0.0949 / 0.0281
+            (Harmonics, Shipping, 0.5, 0.05), // 0.0949 / 0.00675
+            (Intermodulation, Oversampled, 0.2, 0.05), // 0.0655 / 0.0131
+            (Intermodulation, Shipping, 0.1, 0.02), // 0.0273 / 0.00353
+            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.11e-05
+            (OperatingPoint, Shipping, 1e-4, NAN), // 2.11e-05
+            (Response, Oversampled, 5e-6, NAN), // 7.23e-07
+            (Response, Shipping, 5e-6, NAN), // 7.23e-07
+            (ThdN, Oversampled, 0.05, NAN), // 0.0101
             (ThdN, Shipping, 50.0, NAN), // 10.5 — aliasing at the host rate
         ],
         ("push_pull", Tier::T1) => &[
             (Aliasing, Oversampled, -45.0, NAN), // -52.8
             (Aliasing, Shipping, -5.0, NAN), // -14.8 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.05), // 0.00164 / 0.0115
+            (Bla, Oversampled, 0.005, 0.05), // 0.00166 / 0.0114
             (Bla, Shipping, 0.5, 2.0), // 0.0912 / 0.48
             (Compression, Oversampled, 0.002, 5e-4), // 0.000455 / 0.000105
             (Compression, Shipping, 0.002, 5e-4), // 0.000455 / 0.000105
-            (Detection, Oversampled, 0.02, NAN), // 0.00338
+            (Detection, Oversampled, 0.02, NAN), // 0.00342
             (Detection, Shipping, 500.0, NAN), // 82.6
-            (Dynamics, Oversampled, 2e-4, 5e-4), // 4.54e-05 / 6.99e-05
-            (Dynamics, Shipping, 2e-4, 5e-4), // 4.54e-05 / 0.000105
+            (Dynamics, Oversampled, 2e-4, 5e-4), // 4.54e-05 / 7.9e-05
+            (Dynamics, Shipping, 2e-4, 5e-4), // 4.54e-05 / 0.000114
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
-            (Harmonics, Oversampled, 0.5, 0.1), // 0.109 / 0.0182
+            (Harmonics, Oversampled, 0.5, 0.1), // 0.109 / 0.0175
             (Harmonics, Shipping, 0.1, 0.05), // 0.0283 / 0.0161
             (Intermodulation, Oversampled, 0.1, 0.1), // 0.0307 / 0.0332
             (Intermodulation, Shipping, 0.05, 0.05), // 0.0156 / 0.0157
@@ -760,8 +792,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Shipping, 5e-8, NAN), // 7.5e-09
             (Response, Oversampled, 1e-6, NAN), // 4.68e-10
             (Response, Shipping, 1e-6, NAN), // 4.68e-10
-            (ThdN, Oversampled, 200.0, NAN), // 63.6
-            (ThdN, Shipping, 500.0, NAN), // 102 — aliasing at the host rate
+            (ThdN, Oversampled, 200.0, NAN), // 64.9
+            (ThdN, Shipping, 500.0, NAN), // 103 — aliasing at the host rate
         ],
         ("push_pull_pentode", Tier::T1) => &[
             (Aliasing, Oversampled, -55.0, NAN), // -63.7
@@ -772,14 +804,14 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Compression, Shipping, 0.002, 5e-4), // 0.000426 / 0.000146
             (Detection, Oversampled, 0.01, NAN), // 0.00217
             (Detection, Shipping, 500.0, NAN), // 82.3
-            (Dynamics, Oversampled, 2e-4, 2e-4), // 5.19e-05 / 3.82e-05
+            (Dynamics, Oversampled, 2e-4, 2e-4), // 5.19e-05 / 3.92e-05
             (Dynamics, Shipping, 2e-4, 0.02), // 5.19e-05 / 0.00377
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
             (Harmonics, Oversampled, 2.0, 1.0), // 0.346 / 0.171
             (Harmonics, Shipping, 1.0, 0.1), // 0.202 / 0.0322
             (Intermodulation, Oversampled, 0.2, 0.1), // 0.0372 / 0.0235
-            (Intermodulation, Shipping, 50.0, 0.02), // 15.8 / 0.0038
+            (Intermodulation, Shipping, 50.0, 0.02), // 15.8 / 0.00381
             (OperatingPoint, Oversampled, 5e-5, NAN), // 1.08e-05
             (OperatingPoint, Shipping, 5e-5, NAN), // 1.08e-05
             (Response, Oversampled, 1e-6, NAN), // 5.65e-09
@@ -808,40 +840,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Shipping, 1e-7, NAN), // 3.05e-08
             (Response, Oversampled, 5e-5, 1e-4), // 9.11e-06 / 3.1e-05
             (Response, Shipping, 20.0, 50.0), // 5.62 / 8.07 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.05, NAN), // 0.00997
+            (ThdN, Oversampled, 0.1, NAN), // 0.0248
             (ThdN, Shipping, 500.0, NAN), // 99.4 — aliasing at the host rate
-        ],
-        ("power_supply/hand", Tier::T1) => &[
-            (Dynamics, Oversampled, 0.001, 0.02), // 0.000233 / 0.00529
-            (Dynamics, Shipping, 0.01, 0.2), // 0.00266 / 0.0374
-            (Harmonics, Oversampled, 0.05, 1.0), // 0.00667 / 0.194
-            (Harmonics, Shipping, 0.2, 5.0), // 0.0571 / 1.57
-            (OperatingPoint, Oversampled, 5e-4, NAN), // 0.00013
-            (OperatingPoint, Shipping, 0.005, NAN), // 0.00114
-        ],
-        ("common_cathode_grid_current/hand", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -60.3
-            (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.02), // 0.000969 / 0.00434
-            (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
-            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.00021
-            (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.004
-            (Detection, Oversampled, 5.0, NAN), // 1.11
-            (Detection, Shipping, 10.0, NAN), // 3.22
-            (Dynamics, Oversampled, 0.001, 1e-4), // 0.000246 / 2.07e-05
-            (Dynamics, Shipping, 0.005, 0.002), // 0.000966 / 0.000576
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.4e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.16e-08
-            (Harmonics, Oversampled, 1.0, 0.5), // 0.246 / 0.15
-            (Harmonics, Shipping, 20.0, 1.0), // 5.46 / 0.265
-            (Intermodulation, Oversampled, 0.2, 0.2), // 0.0623 / 0.037
-            (Intermodulation, Shipping, 0.5, 0.1), // 0.0784 / 0.0205
-            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
-            (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
-            (Response, Oversampled, 0.005, 0.01), // 0.00158 / 0.00278
-            (Response, Shipping, 0.005, 0.05), // 0.00161 / 0.00857
-            (ThdN, Oversampled, 0.2, NAN), // 0.041
-            (ThdN, Shipping, 50.0, NAN), // 15.2 — aliasing at the host rate
         ],
         (case, tier) => panic!("no budgets for `{case}` at {tier:?}"),
     }

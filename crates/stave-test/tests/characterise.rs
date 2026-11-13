@@ -180,7 +180,7 @@ mod hand {
 
     #[test]
     fn diode_clipper() {
-        hand("diode_clipper/wdf", Tier::T0);
+        hand("diode_clipper/hand", Tier::T0);
     }
 
     #[test]
