@@ -18,7 +18,7 @@
 //! latency     onset + peak of an impulse response
 //! transfer    H(f) from input/output (H1, Welch-averaged)
 //! compare     bitwise divergence; null-test residuals
-//! design      sweeps, sensitivities and Monte Carlo over a model's parts (G2, G3)
+//! design      sweeps, sensitivities and Monte Carlo over a model's parts
 //! tone_window   a bin-centred tone (or two) through a system: alias, gain, IMD
 //! suite       the measurement design: coherent stimuli and their analysers
 //! nonlinear   alias floor, gain surfaces, hysteresis
