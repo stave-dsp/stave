@@ -7,8 +7,9 @@
 //! - [`netlist`] — a circuit as data ([`Netlist`]): nodes, elements, and
 //!   the SPICE subset the ngspice decks are written in;
 //! - [`methods`] — how a circuit is solved: the nodal DK method for any
-//!   netlist, and the hand-derivation tools (Newton with SPICE junction
-//!   limiting, wave digital filters, load lines, Wright omega);
+//!   netlist, wave digital filters (trees under an R-type root, also
+//!   from any netlist), and the hand-derivation tools (Newton with SPICE
+//!   junction limiting, load lines, Wright omega);
 //! - [`topologies`] — named circuits, each a hand-derived solution of
 //!   its schematic with its ngspice case in stave-test, checked against
 //!   [`Circuit<Dk>`](Circuit) on the same netlist.
@@ -55,6 +56,7 @@ pub mod topologies;
 
 use crate::kernel::node::{Stage, Tail};
 use methods::dk::Dk;
+use methods::wdf::Wdf;
 pub use netlist::{Netlist, NetlistError};
 
 /// A way of solving a [`Netlist`]: what `Circuit<M>` runs. Each method
@@ -87,11 +89,29 @@ impl Method for Dk {
     }
 }
 
+impl Method for Wdf {
+    fn build(netlist: &Netlist) -> Result<Self, NetlistError> {
+        Wdf::new(netlist)
+    }
+    fn prepare(&mut self, sample_rate: f32) {
+        Wdf::prepare(self, sample_rate);
+    }
+    fn reset(&mut self) {
+        Wdf::reset(self);
+    }
+    fn step(&mut self, input: f64) -> f64 {
+        Wdf::step(self, input)
+    }
+    fn tail(&self) -> Tail {
+        Wdf::tail(self)
+    }
+}
+
 /// One runtime type for every netlist: a [`Netlist`] solved by the
-/// method `M` — `Circuit::<Dk>::new(&netlist)`. The method is a type
-/// parameter, never part of a name; `Circuit<M>` dereferences to it for
-/// the method's own controls ([`Dk::drive`], [`Dk::stats`],
-/// [`Dk::analog_response`]).
+/// method `M` — `Circuit::<Dk>::new(&netlist)`, `Circuit::<Wdf>::new(&netlist)`.
+/// The method is a type parameter, never part of a name; `Circuit<M>`
+/// dereferences to it for the method's own controls ([`Dk::drive`],
+/// [`Dk::stats`], [`Dk::analog_response`], [`Wdf::structure`]).
 ///
 /// # Models
 /// The netlist it is given ([`Netlist`]), whatever its elements: no
@@ -100,7 +120,11 @@ impl Method for Dk {
 /// # Derivation
 /// The method `M`'s: for [`Dk`], the nodal DK state space of the
 /// netlist's MNA equations, trapezoidal companions, Newton on the
-/// nonlinear ports.
+/// nonlinear ports; for [`Wdf`], adapted leaves by the bilinear
+/// transform, series and parallel adaptors, an R-type root from MNA
+/// (Werner, Smith & Abel, DAFx-15) and the devices as one multi-port
+/// nonlinear root solved by the K-method. Both discretise by the
+/// bilinear transform, so on one netlist they agree to rounding.
 ///
 /// # Verified
 /// `crates/stave-test/tests/dk_matches_ngspice.rs::diode_clipper_matches_ngspice`
@@ -108,20 +132,32 @@ impl Method for Dk {
 /// supply, tone stack, triode and push-pull transfers): every deck at
 /// the hand topology's budget or tighter, with healthy solves; for one,
 /// `crates/stave-test/tests/dk_matches_ngspice.rs::common_cathode_matches_ngspice`:
-/// 1e-5 normalized RMS at 4×.
+/// 1e-5 normalized RMS at 4×. `Circuit<Wdf>`:
+/// `crates/stave-test/tests/wdf_matches_ngspice.rs::transient_decks_match_ngspice`
+/// (fifteen decks at DK's budgets),
+/// `crates/stave-test/tests/wdf_matches_ngspice.rs::tone_stack_matches_ngspice_and_yeh_smith`
+/// (1e-10 dB, an R-type root) and
+/// `crates/stave-test/tests/wdf_matches_ngspice.rs::bridged_t_matches_ngspice`,
+/// and every circuit's R17 matrix at DK's T0 budgets in
+/// `crates/stave-test/tests/characterise.rs::every_circuit_on_wdf`.
 ///
 /// # Cost
 /// Datasheet `"Circuit<Dk> diode clipper x10"` (about 6
 /// iterations/solve), `"Circuit<Dk> op-amp clipper"`,
 /// `"Circuit<Dk> cathode x5 (B src)"`, `"Circuit<Dk> cathode x5 (Koren)"`
-/// and `"Circuit<Dk> tone stack"`: 2–3× the hand derivations.
+/// and `"Circuit<Dk> tone stack"`: 2–3× the hand derivations. The same
+/// netlists as WDFs: `"Circuit<Wdf> diode clipper x10"`,
+/// `"Circuit<Wdf> op-amp clipper"`, `"Circuit<Wdf> cathode x5 (Koren)"`,
+/// `"Circuit<Wdf> tone stack"`, `"Circuit<Wdf> fuzz face"`, and the
+/// scattering iterative method's `"Circuit<Wdf> diode clipper x10 (SIM)"`.
 ///
 /// # Aliasing
 /// None of its own; a nonlinear netlist expects to run oversampled.
 ///
 /// # Valid ranges
 /// Its devices' and its method's: any positive rate; Newton caps and
-/// continuations reported in [`Dk::health`], never silent.
+/// continuations reported in [`Dk::health`] and [`Wdf::health`], never
+/// silent.
 #[derive(Clone, Debug)]
 pub struct Circuit<M> {
     method: M,

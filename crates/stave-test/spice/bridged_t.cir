@@ -1,0 +1,20 @@
+* Bridged-T notch with a load: C1 and C2 (10n) in series from the input
+* to the output, R1 (100k) bridging them, R2 (1k) from their middle to
+* ground, RL (100k) from the output to ground. With the load and the
+* source it is a bridge, which no tree of series and parallel adaptors
+* holds (the R-type adaptor's case). Notch near 1/(2 pi C sqrt(R1 R2))
+* = 1.59 kHz. Output |Vo/Vi| over 20 Hz-20 kHz (first column = frequency).
+VI i 0 DC 0 AC 1
+C1 i m 10n
+C2 m o 10n
+R1 i o 100k
+R2 m 0 1k
+RL o 0 100k
+.ac dec 40 20 20k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(o)
+.endc
+.end

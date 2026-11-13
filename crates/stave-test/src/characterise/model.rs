@@ -2,7 +2,9 @@
 //! topology (any ticking stage), run through a plan at one rate into a
 //! [`Table`] of the same measurements the reference holds.
 
-use stave_dsp::circuit::methods::dk::Dk;
+use stave_dsp::circuit::methods::dk::{Dk, Phasor};
+use stave_dsp::circuit::methods::newton::NewtonStats;
+use stave_dsp::circuit::methods::wdf::Wdf;
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
 use stave_dsp::kernel::node::Tail;
@@ -84,11 +86,69 @@ pub fn split(deck: &Netlist, input: &Input) -> (Netlist, String) {
 
 /// `Circuit<Dk>` on the split deck, driven, at `rate`.
 pub fn circuit(deck: &Netlist, input: &Input, rate: f64) -> Circuit<Dk> {
-    let (netlist, driven) = split(deck, input);
-    let mut c = Circuit::<Dk>::new(&netlist).unwrap_or_else(|e| panic!("{e:?}"));
-    c.drive(&driven).unwrap();
-    c.prepare(rate as f32);
-    c
+    <Circuit<Dk> as Solver>::on(deck, input, rate)
+}
+
+/// A circuit method a plan runs a netlist through.
+trait Solver: Clone {
+    fn on(deck: &Netlist, input: &Input, rate: f64) -> Self;
+    fn output(&self) -> f64;
+    fn tick(&mut self, x: f64) -> f64;
+    fn stats(&self) -> NewtonStats;
+    /// The small-signal response at `hz`: analog (prewarped) or discrete.
+    fn response(&self, hz: f64, analog: bool) -> Option<Phasor>;
+}
+
+impl Solver for Circuit<Dk> {
+    fn on(deck: &Netlist, input: &Input, rate: f64) -> Self {
+        let (netlist, driven) = split(deck, input);
+        let mut c = Circuit::<Dk>::new(&netlist).unwrap_or_else(|e| panic!("{e:?}"));
+        c.drive(&driven).unwrap();
+        c.prepare(rate as f32);
+        c
+    }
+    fn output(&self) -> f64 {
+        Dk::output(self)
+    }
+    fn tick(&mut self, x: f64) -> f64 {
+        self.tick_f64(x)
+    }
+    fn stats(&self) -> NewtonStats {
+        Dk::stats(self)
+    }
+    fn response(&self, hz: f64, analog: bool) -> Option<Phasor> {
+        if analog {
+            self.analog_response(hz)
+        } else {
+            self.frequency_response(hz)
+        }
+    }
+}
+
+impl Solver for Circuit<Wdf> {
+    fn on(deck: &Netlist, input: &Input, rate: f64) -> Self {
+        let (netlist, driven) = split(deck, input);
+        let mut c = Circuit::<Wdf>::new(&netlist).unwrap_or_else(|e| panic!("{e:?}"));
+        c.drive(&driven).unwrap();
+        c.prepare(rate as f32);
+        c
+    }
+    fn output(&self) -> f64 {
+        Wdf::output(self)
+    }
+    fn tick(&mut self, x: f64) -> f64 {
+        self.tick_f64(x)
+    }
+    fn stats(&self) -> NewtonStats {
+        Wdf::stats(self)
+    }
+    fn response(&self, hz: f64, analog: bool) -> Option<Phasor> {
+        if analog {
+            self.analog_response(hz)
+        } else {
+            self.frequency_response(hz)
+        }
+    }
 }
 
 /// A fresh ticking model: the stimulus at `i / rate` in, the output then out.
@@ -99,6 +159,9 @@ pub enum Model {
     /// `Circuit<Dk>` on a netlist (the deck, or the deck with stave's
     /// devices in), split by the plan's input.
     Circuit(Netlist),
+    /// `Circuit<Wdf>` on a netlist, split the same way; its operating
+    /// point is the DK method's DC analysis of the same netlist.
+    Wdf(Netlist),
     /// A hand topology: `make(rate)` returns a fresh ticker, called with
     /// the stimulus at `i / rate` for `i = 0, 1, …` and returning the
     /// output then; `operating_point` lists the node voltages it knows.
@@ -173,46 +236,10 @@ impl Model {
         let mut health = Health::default();
         match self {
             Model::Circuit(netlist) => {
-                let base = circuit(netlist, &plan.input, rate);
-                let uic = netlist.tran.is_some_and(|t| t.uic);
-                if !uic {
-                    let (split_netlist, _) = split(netlist, &plan.input);
-                    for node in nodes {
-                        if let Some(n) = split_netlist.node(node) {
-                            let mut c = base.clone();
-                            c.set_probe(Probe::node(n));
-                            table.op.push((node.clone(), c.output()));
-                        }
-                    }
-                }
-                for &hz in &plan.response_hz {
-                    if hz < rate / 2.0 {
-                        let r = if oversampled {
-                            base.analog_response(hz)
-                        } else {
-                            base.frequency_response(hz)
-                        };
-                        if let Some(r) = r {
-                            table.ac.push((hz, Complex::new(r.re, r.im)));
-                        }
-                    }
-                }
-                for run in plan.runs(tier) {
-                    let mut c = base.clone();
-                    let mut first = true;
-                    let mut tick = |x: f64| {
-                        if std::mem::take(&mut first) {
-                            c.output()
-                        } else {
-                            c.tick_f64(x)
-                        }
-                    };
-                    let periods = simulate(run, rate, &mut tick);
-                    let stats = c.stats();
-                    health.capped += stats.capped;
-                    health.solves += stats.solves;
-                    table.runs.insert(run.id.clone(), measure_run(run, rate, &periods));
-                }
+                measure_circuit::<Circuit<Dk>>(netlist, plan, tier, rate, oversampled, nodes, &mut table, &mut health);
+            }
+            Model::Wdf(netlist) => {
+                measure_circuit::<Circuit<Wdf>>(netlist, plan, tier, rate, oversampled, nodes, &mut table, &mut health);
             }
             Model::Stage {
                 make,
@@ -240,6 +267,58 @@ impl Model {
         }
         let _ = deck;
         (table, health)
+    }
+}
+
+/// `netlist` through `plan` on the method `S`: the operating point (the
+/// DK method's DC analysis, which every method starts from), the
+/// small-signal response, and every run.
+#[allow(clippy::too_many_arguments)]
+fn measure_circuit<S: Solver>(
+    netlist: &Netlist,
+    plan: &Plan,
+    tier: Tier,
+    rate: f64,
+    oversampled: bool,
+    nodes: &[String],
+    table: &mut Table,
+    health: &mut Health,
+) {
+    let base = S::on(netlist, &plan.input, rate);
+    let uic = netlist.tran.is_some_and(|t| t.uic);
+    if !uic {
+        let dk = circuit(netlist, &plan.input, rate);
+        let (split_netlist, _) = split(netlist, &plan.input);
+        for node in nodes {
+            if let Some(n) = split_netlist.node(node) {
+                let mut c = dk.clone();
+                c.set_probe(Probe::node(n));
+                table.op.push((node.clone(), c.output()));
+            }
+        }
+    }
+    for &hz in &plan.response_hz {
+        if hz < rate / 2.0 {
+            if let Some(r) = base.response(hz, oversampled) {
+                table.ac.push((hz, Complex::new(r.re, r.im)));
+            }
+        }
+    }
+    for run in plan.runs(tier) {
+        let mut c = base.clone();
+        let mut first = true;
+        let mut tick = |x: f64| {
+            if std::mem::take(&mut first) {
+                c.output()
+            } else {
+                c.tick(x)
+            }
+        };
+        let periods = simulate(run, rate, &mut tick);
+        let stats = c.stats();
+        health.capped += stats.capped;
+        health.solves += stats.solves;
+        table.runs.insert(run.id.clone(), measure_run(run, rate, &periods));
     }
 }
 

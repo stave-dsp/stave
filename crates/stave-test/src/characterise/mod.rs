@@ -16,8 +16,9 @@
 //!   on the same deck (`spice/<name>.table`, by
 //!   `scripts/ngspice-simulate.py`), or a pinned fingerprint, a measured
 //!   target or a capture — one table format for all;
-//! - a **model** ([`model`]): `Circuit<Dk>` on the deck, or a hand
-//!   topology's ticking stage, run through the plan into a table;
+//! - a **model** ([`model`]): `Circuit<Dk>` or `Circuit<Wdf>` on the
+//!   deck, or a hand topology's ticking stage, run through the plan into
+//!   a table;
 //! - the **comparison** ([`compare`]), check by check.
 //!
 //! Tiers: [`Tier::T0`] (every commit: C1, C2, C3 and C5 at three levels
@@ -193,6 +194,20 @@ impl Characterise {
         }
     }
 
+    /// `Circuit<Wdf>` on the deck: the wave digital method.
+    pub fn wdf(self) -> Self {
+        let netlist = self.deck.clone();
+        self.wdf_netlist(netlist)
+    }
+
+    /// `Circuit<Wdf>` on a netlist built from the deck.
+    pub fn wdf_netlist(self, netlist: Netlist) -> Self {
+        Self {
+            model: Some(Model::Wdf(netlist)),
+            ..self
+        }
+    }
+
     /// A hand topology: `make(rate)` returns a ticker that takes the
     /// stimulus at `i / rate` and returns the output then.
     pub fn stage<T: FnMut(f64) -> f64 + 'static>(
@@ -243,7 +258,7 @@ impl Characterise {
         let model = self
             .model
             .as_ref()
-            .expect("no model: call .circuit(), .netlist() or .stage()");
+            .expect("no model: call .circuit(), .netlist(), .wdf() or .stage()");
         let nodes: Vec<String> = reference.op.iter().map(|(n, _)| n.clone()).collect();
         let shipping: &[f64] = match self.tier {
             Tier::T0 => &[48_000.0],

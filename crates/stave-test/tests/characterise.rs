@@ -157,6 +157,20 @@ fn ota_vca() {
     circuit("ota_vca");
 }
 
+/// `Circuit<Wdf>` on every circuit's plan at `Circuit<Dk>`'s T0
+/// budgets: the wave digital method (trees under an R-type root, the
+/// devices a K-method root) held to ngspice on the whole matrix — both
+/// methods discretise by the bilinear transform, so the same budgets hold.
+#[test]
+fn every_circuit_on_wdf() {
+    for c in CIRCUITS.iter() {
+        budgets(c.name, Tier::T0, Characterise::ngspice(c.name).tier(Tier::T0).wdf())
+            .named(format!("{}/wdf", c.name))
+            .run()
+            .assert();
+    }
+}
+
 /// The hand topologies on the same plans: each ships as its own type,
 /// so each is held to ngspice directly, not only to `Circuit<Dk>`.
 mod hand {

@@ -29,7 +29,7 @@
 //!
 //! The circuit section lists each hand-derived topology, then
 //! `Circuit<Dk>` solving the same netlist, with its Newton iterations
-//! per sample (mini, arm64, 2026-11-12): diode clipper 264 vs 553,
+//! per sample (the reference machine, 2026-11-12): diode clipper 264 vs 553,
 //! op-amp clipper 296 vs 646, common cathode 1040 vs 1959 (the deck's
 //! B-source Koren law; 2062 with the Koren device), tone stack 9.7 vs
 //! 29. The general method costs 2–3× the hand derivation; a topology
@@ -38,12 +38,23 @@
 //! (two Gummel–Poon AC128s, four controls, 7.4 iterations on ±0.3 V
 //! noise), CE stage 784, JFET booster 573.
 //!
+//! `Circuit<Wdf>` follows `Circuit<Dk>` on the same netlists (the
+//! reference machine, 2026-11-13, DK in brackets): diode clipper 463
+//! (510), op-amp clipper 549 (615), common cathode 1321 (1316), tone
+//! stack 30 (28), Fuzz Face 3545 (3540), CE stage 823 (796), Tube
+//! Screamer 2427 (2431). Both solve the same nonlinear equation with the
+//! same devices, which is most of the cost: the wave digital form saves
+//! where its nonlinear root is one port (a scalar solve, 9–11 %) and
+//! spends a few ns on its tree passes elsewhere. The scattering iterative
+//! method on the clipper costs 1847 (10.6 sweeps of two scalar solves).
+//!
 //! Learned anchors (M3, 2026-11-12): WaveNet at Neural Amp Modeler's
 //! standard size 2.2 µs/sample (12 + 6 channels 1.7), LSTM 1 x 16 0.32,
 //! GRU 1 x 16 0.23 — a different scale: a capture network is the whole
 //! amp, and costs like one.
 
 use stave_dsp::circuit::methods::dk::Dk;
+use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
 use stave_dsp::learned::{nam, Gru, LoadError};
@@ -535,6 +546,18 @@ fn circuit_from(netlist: Netlist, sr: f32) -> Circuit<Dk> {
     c
 }
 
+/// The same netlist as `Circuit<Wdf>`, `source` driven by the input.
+fn wdf_from(netlist: &Netlist, source: &str, sr: f32) -> Circuit<Wdf> {
+    let mut c = Circuit::<Wdf>::new(netlist).unwrap();
+    c.drive(source).unwrap();
+    c.prepare(sr);
+    c
+}
+
+fn wdf_deck(deck: &str, sr: f32) -> Circuit<Wdf> {
+    wdf_from(&Netlist::parse_spice(deck).unwrap(), "v1", sr)
+}
+
 const CLIPPER: &str = "diode clipper
 V1 in 0 0
 R1 in out 2.2k
@@ -598,7 +621,7 @@ wrdata out v(o)
 /// circuit's working range).
 fn circuit_datasheet(sr: f32, input: &[f32]) {
     if sheet::timed() {
-        println!("  circuits: hand-derived topology, then Circuit<Dk> on its netlist");
+        println!("  circuits: hand-derived topology, then Circuit<Dk> and Circuit<Wdf> on its netlist");
     }
 
     let mut wdf = DiodeClipper::new(DiodeClipperConfig {
@@ -612,6 +635,14 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut clipper = dk(CLIPPER, sr);
     bench("Circuit<Dk> diode clipper x10", input, |x| clipper.tick(10.0 * x));
     solve_health(&clipper);
+    let mut clipper_wdf = wdf_deck(CLIPPER, sr);
+    bench("Circuit<Wdf> diode clipper x10", input, |x| clipper_wdf.tick(10.0 * x));
+    solve_health(&clipper_wdf);
+    let mut clipper_sim = wdf_deck(CLIPPER, sr);
+    clipper_sim.set_nonlinear_root(NonlinearRoot::Scattering).unwrap();
+    clipper_sim.prepare(sr);
+    bench("Circuit<Wdf> diode clipper x10 (SIM)", input, |x| clipper_sim.tick(10.0 * x));
+    solve_health(&clipper_sim);
 
     let mut opamp = OpAmpClipper::new(OpAmpClipperConfig::TS808);
     opamp.prepare(sr);
@@ -619,6 +650,9 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut opamp_dk = dk(OPAMP_CLIPPER, sr);
     bench("Circuit<Dk> op-amp clipper", input, |x| opamp_dk.tick(x));
     solve_health(&opamp_dk);
+    let mut opamp_wdf = wdf_deck(OPAMP_CLIPPER, sr);
+    bench("Circuit<Wdf> op-amp clipper", input, |x| opamp_wdf.tick(x));
+    solve_health(&opamp_wdf);
 
     let mut cathode = CommonCathode::new(CommonCathodeConfig {
         tube: Koren::T12AX7,
@@ -637,6 +671,9 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut cathode_t = circuit_from(cathode_netlist(), sr);
     bench("Circuit<Dk> cathode x5 (Koren)", input, |x| cathode_t.tick(5.0 * x));
     solve_health(&cathode_t);
+    let mut cathode_wdf = wdf_from(&cathode_netlist(), "v1", sr);
+    bench("Circuit<Wdf> cathode x5 (Koren)", input, |x| cathode_wdf.tick(5.0 * x));
+    solve_health(&cathode_wdf);
 
     let mut stack = PassiveToneStack::new(PassiveToneStackComponents {
         treble_capacitance_farads: 250e-12,
@@ -652,6 +689,8 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     bench("PassiveToneStack", input, |x| stack.tick(x));
     let mut stack_dk = dk(TONE_STACK, sr);
     bench("Circuit<Dk> tone stack", input, |x| stack_dk.tick(x));
+    let mut stack_wdf = wdf_deck(TONE_STACK, sr);
+    bench("Circuit<Wdf> tone stack", input, |x| stack_wdf.tick(x));
 
     // The transistor circuits (DSP.md E1, E2): no hand topology, the
     // ngspice decks themselves with their sources driven by the noise.
@@ -659,9 +698,17 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut fuzz = deck(include_str!("../../stave-test/spice/fuzz_face.cir"), sr);
     bench("Circuit<Dk> fuzz face", input, |x| fuzz.tick(x));
     solve_health(&fuzz);
+    let fuzz_deck = Netlist::parse_spice(include_str!("../../stave-test/spice/fuzz_face.cir")).unwrap();
+    let mut fuzz_wdf = wdf_from(&fuzz_deck, "vin", sr);
+    bench("Circuit<Wdf> fuzz face", input, |x| fuzz_wdf.tick(x));
+    solve_health(&fuzz_wdf);
     let mut ce = deck(include_str!("../../stave-test/spice/ce_stage.cir"), sr);
     bench("Circuit<Dk> CE stage x0.2", input, |x| ce.tick(0.2 * x));
     solve_health(&ce);
+    let ce_deck = Netlist::parse_spice(include_str!("../../stave-test/spice/ce_stage.cir")).unwrap();
+    let mut ce_wdf = wdf_from(&ce_deck, "vin", sr);
+    bench("Circuit<Wdf> CE stage x0.2", input, |x| ce_wdf.tick(0.2 * x));
+    solve_health(&ce_wdf);
     let mut jfet = deck(include_str!("../../stave-test/spice/jfet_booster.cir"), sr);
     bench("Circuit<Dk> JFET booster", input, |x| jfet.tick(x));
     solve_health(&jfet);
@@ -682,6 +729,9 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut screamer = circuit_from(tube_screamer_netlist(), sr);
     bench("Circuit<Dk> Tube Screamer (JRC4558)", input, |x| screamer.tick(4.5 + x));
     solve_health(&screamer);
+    let mut screamer_wdf = wdf_from(&tube_screamer_netlist(), "v1", sr);
+    bench("Circuit<Wdf> Tube Screamer (JRC4558)", input, |x| screamer_wdf.tick(4.5 + x));
+    solve_health(&screamer_wdf);
 
     // E5: an LM13700 VCA at a fixed control voltage.
     let mut vca = circuit_from(ota_vca_netlist(), sr);
@@ -824,8 +874,8 @@ wrdata out v(p2,p1)
 
 /// The solve behind a `Circuit<Dk>` line: iterations per sample, cap
 /// hits and continuation fallbacks over its timed passes.
-fn solve_health(c: &Circuit<Dk>) {
-    let h = c.health();
+fn solve_health(c: &impl CircuitHealth) {
+    let h = c.circuit_health();
     println!(
         "  {:<28} {:>7.2} iterations/solve, {} capped, {} continuations",
         "",
@@ -833,6 +883,23 @@ fn solve_health(c: &Circuit<Dk>) {
         h.newton.capped,
         h.continuations
     );
+}
+
+/// The solve account both methods keep.
+trait CircuitHealth {
+    fn circuit_health(&self) -> stave_dsp::circuit::methods::dk::Health;
+}
+
+impl CircuitHealth for Circuit<Dk> {
+    fn circuit_health(&self) -> stave_dsp::circuit::methods::dk::Health {
+        self.health()
+    }
+}
+
+impl CircuitHealth for Circuit<Wdf> {
+    fn circuit_health(&self) -> stave_dsp::circuit::methods::dk::Health {
+        self.health()
+    }
 }
 
 /// The common cathode built in code, with stave's Koren device.

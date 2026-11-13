@@ -80,28 +80,28 @@ use crate::circuit::netlist::{Netlist, NetlistError, Node, Probe, Source};
 use crate::kernel::node::Tail;
 
 /// An index into the MNA unknowns, or ground.
-type Pin = Option<usize>;
+pub(crate) type Pin = Option<usize>;
 
 /// An independent source's value over time.
 #[derive(Clone, Debug)]
-enum Input {
+pub(crate) enum Input {
     Source(Source),
     Expression { tape: Tape, stack: Vec<Dual> },
 }
 
 #[derive(Clone, Debug)]
-struct Capacitor {
-    a: Pin,
-    b: Pin,
-    farads: f64,
-    initial_volts: f64,
+pub(crate) struct Capacitor {
+    pub a: Pin,
+    pub b: Pin,
+    pub farads: f64,
+    pub initial_volts: f64,
 }
 
 #[derive(Clone, Debug)]
-struct Inductor {
-    row: usize,
-    henries: f64,
-    initial_amps: f64,
+pub(crate) struct Inductor {
+    pub row: usize,
+    pub henries: f64,
+    pub initial_amps: f64,
 }
 
 /// A netlist discretised by the nodal DK method: the runtime behind
@@ -116,26 +116,26 @@ struct Inductor {
 #[derive(Clone, Debug)]
 pub struct Dk {
     // Structure, fixed at build.
-    n: usize,
+    pub(crate) n: usize,
     /// Node unknowns (netlist nodes and internal ones) come first.
-    nodes: usize,
-    static_matrix: Vec<f64>,
-    bu: Vec<f64>,
-    bq: Vec<f64>,
-    controls: Vec<(Pin, Pin)>,
-    capacitors: Vec<Capacitor>,
-    inductors: Vec<Inductor>,
-    inputs: Vec<Input>,
-    input_ac: Vec<f64>,
-    devices: Vec<Nonlinear>,
-    nq: usize,
-    probe: (Pin, Pin),
-    driven: Option<usize>,
-    uic: bool,
-    source_names: Vec<String>,
+    pub(crate) nodes: usize,
+    pub(crate) static_matrix: Vec<f64>,
+    pub(crate) bu: Vec<f64>,
+    pub(crate) bq: Vec<f64>,
+    pub(crate) controls: Vec<(Pin, Pin)>,
+    pub(crate) capacitors: Vec<Capacitor>,
+    pub(crate) inductors: Vec<Inductor>,
+    pub(crate) inputs: Vec<Input>,
+    pub(crate) input_ac: Vec<f64>,
+    pub(crate) devices: Vec<Nonlinear>,
+    pub(crate) nq: usize,
+    pub(crate) probe: (Pin, Pin),
+    pub(crate) driven: Option<usize>,
+    pub(crate) uic: bool,
+    pub(crate) source_names: Vec<String>,
     // The operating point, fixed at build.
-    dc_w: Vec<f64>,
-    dc_v: Vec<f64>,
+    pub(crate) dc_w: Vec<f64>,
+    pub(crate) dc_v: Vec<f64>,
     // Discretised at prepare.
     sample_rate: f32,
     step: f64,
@@ -180,6 +180,13 @@ impl Dk {
         dk.discretise()?;
         dk.reset();
         Ok(dk)
+    }
+
+    /// The MNA structure alone — no operating point, no discretisation —
+    /// for a method that solves the same stamps its own way (`Wdf`).
+    pub(crate) fn assemble(netlist: &Netlist, settings: Settings) -> Result<Self, NetlistError> {
+        let probe = netlist.probe.ok_or(NetlistError::NoProbe)?;
+        Builder::new(netlist).build(probe, settings)
     }
 
     /// Drive the named independent source from [`step`](Self::step)'s
@@ -348,12 +355,12 @@ mod discretise;
 
 use build::Builder;
 
-fn pin(node: Node) -> Pin {
+pub(crate) fn pin(node: Node) -> Pin {
     node.index().checked_sub(1)
 }
 
 #[inline]
-fn read(w: &[f64], p: Pin) -> f64 {
+pub(crate) fn read(w: &[f64], p: Pin) -> f64 {
     p.map_or(0.0, |i| w[i])
 }
 
