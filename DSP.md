@@ -838,7 +838,7 @@ other references; a model with a capture is held to it within budget.
 - [ ] **P4** SIMD: portable lanes (`std::simd` when stable, or a narrow
   internal abstraction) for FFT, convolution, FIR and the M1 engine; the
   cost shown in P1 before and after.
-- [ ] **P5** Per-stage cost and solver health (N8) as telemetry taps, so
+- [x] **P5** (#9: stave-core's `CostTaps` (+ `cost_tap_ids!`, re-exported by `stave`) wraps a stage's block in `measure(samples, || …)` and publishes `<name>_ns_per_sample` and `<name>_load` (that time over the sample period, 1 a core's whole realtime budget), the monotonic clock read twice a block, no lock or allocation; each slot keeps its maximum, so the worst block of a session stays on record beside N8's solver taps; `stave-play` plots them and `stave-bench --describe` lists them as it does every tap; the guide's telemetry page shows a plugin how. The wrapper's `cpu` tap stays the whole plugin's) Per-stage cost and solver health (N8) as telemetry taps, so
   `stave-play` and a DAW session show where time goes.
 - [ ] **P6** Budgets: each plugin declares a CPU budget per channel at
   48 kHz; `plugin_checks!` perf cases fail a release build over budget.

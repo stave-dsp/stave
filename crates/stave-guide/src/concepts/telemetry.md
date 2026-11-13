@@ -159,6 +159,38 @@ difference since the last block (`Health::from` takes the
 drives every topology hot through exactly this path and holds every
 `capped` tap to zero.
 
+### A stage's cost
+
+The wrapper's `cpu` tap is the whole plugin; to see which stage the time
+goes to, wrap each stage's block in [`CostTaps::measure`](stave::CostTaps::measure).
+It publishes the block's wall-clock time in nanoseconds a sample and its
+`load`, that time over the sample period (1 is one core's whole realtime
+budget), and each slot keeps its maximum, so the worst block of a session
+stays on record beside the solver's health. Name each stage's taps with
+[`cost_tap_ids!`](stave::cost_tap_ids):
+
+```
+use stave::{CostTapIds, CostTaps, Telemetry};
+use stave_dsp::physical::tape::{Chowdhury, Machine};
+use stave_dsp::Stage;
+
+const TAPE: CostTapIds = stave::cost_tap_ids!("tape");   // tape_ns_per_sample, tape_load
+let telemetry = Telemetry::new();
+let mut cost = CostTaps::new(&telemetry, TAPE);          // in Plugin::new
+cost.prepare(48_000.0);                                  // in prepare
+
+let mut deck = Chowdhury::new(Machine::TC260);
+let mut block = [0.1f32; 64];                            // in process
+cost.measure(block.len(), || deck.process(&mut block));
+
+assert!(telemetry.value(TAPE.load).is_some());
+```
+
+The clock is the monotonic one, read twice a block (no lock, no
+allocation). What it measures is what the host's deadline sees,
+preemption included; the datasheet and `scripts/icount.sh` measure the
+same stages offline and deterministically.
+
 ## Capture and the curve
 
 The block also carries a **capture frame**: the latest block of output,

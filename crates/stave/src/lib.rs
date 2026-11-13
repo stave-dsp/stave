@@ -106,15 +106,16 @@ pub mod route;
 mod voice;
 
 pub use stave_core::{
-    block, buffer, controller, diagnostics, environment, event, info, params, preset, process,
-    solver_taps, state, telemetry, units,
+    block, buffer, controller, cost_taps, diagnostics, environment, event, info, params, preset,
+    process, solver_taps, state, telemetry, units,
 };
 pub use stave_core::{
-    Aux, Block, Channels, Controller, Environment, Event, EventCursor, EventKind, Feature, Info,
+    Aux, Block, Channels, Controller, CostTapIds, CostTaps, Environment, Event, EventCursor,
+    EventKind, Feature, Info,
     InputBuffer, LaneFrame, Lanes, Layout, NoteEvent, NoteKind, Normalized, OutputBuffer, ParamId,
     Peaks, Preset, SolverTapIds, SolverTaps, Tail, Tap, TapId, Telemetry, Transport,
 };
-pub use stave_core::{brk_if, param_enum, probe, solver_tap_ids};
+pub use stave_core::{brk_if, cost_tap_ids, param_enum, probe, solver_tap_ids};
 /// `#[derive(Params)]`: the parameter table of a struct of params.
 pub use stave_macros::StaveParams as Params;
 /// `#[derive(Smoothers)]`: a group of [`Smoother`](params::Smoother)s
