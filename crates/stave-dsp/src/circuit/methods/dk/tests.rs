@@ -99,6 +99,86 @@ fn the_diode_clipper_agrees_with_its_wave_digital_form() {
     assert_eq!(dk.stats().capped, 0);
 }
 
+/// A failing warm start falls back to continuation, and a cap hit is
+/// counted, never hidden.
+#[test]
+fn caps_are_reported_and_continuation_rescues_hard_steps() {
+    let run = |settings: Settings| {
+        let mut dk = Dk::with_settings(&deck(CLIPPER), settings).unwrap();
+        dk.drive("v1").unwrap();
+        dk.prepare(48_000.0);
+        for n in 0..4_800 {
+            let x = 20.0 * (std::f64::consts::TAU * 3_000.0 * n as f64 / 48_000.0).sin();
+            assert!(dk.step(x).is_finite());
+        }
+        dk.health()
+    };
+    // Eight iterations are too few for the two hardest samples of each
+    // cycle of this drive (a junction switching hard at 48 kHz).
+    let tight = NewtonSettings {
+        max_iterations: 8,
+        ..NewtonSettings::DEFAULT
+    };
+    let bare = run(Settings {
+        newton: tight,
+        continuation_steps: 0,
+    });
+    assert!(bare.newton.capped > 0, "{bare:?}");
+    assert_eq!(bare.continuations, 0);
+    let rescued = run(Settings {
+        newton: tight,
+        continuation_steps: 8,
+    });
+    assert!(rescued.continuations > 0, "{rescued:?}");
+    assert_eq!(rescued.newton.capped, 0, "{rescued:?} vs {bare:?}");
+    let default = run(Settings::DEFAULT);
+    assert_eq!(default.newton.capped, 0, "{default:?}");
+}
+
+/// A cold start Newton cannot finish in its cap is found by source
+/// stepping, at the same operating point; with the fallbacks off it is an
+/// error, never a silent start from zero.
+#[test]
+fn source_stepping_finds_a_hard_operating_point() {
+    let netlist = deck(
+        "a diode string hard on from 300 V
+VB b 0 300
+R1 b a 10
+D1 a c DI
+D2 c d DI
+D3 d 0 DI
+.model DI D(Is=1e-15 N=1)
+.control
+wrdata out v(a)
+.endc",
+    );
+    let direct = Dk::new(&netlist).unwrap().output();
+    // One iteration a sample: eight for the operating point.
+    let tight = NewtonSettings {
+        max_iterations: 1,
+        ..NewtonSettings::DEFAULT
+    };
+    let stepped = Dk::with_settings(
+        &netlist,
+        Settings {
+            newton: tight,
+            continuation_steps: 8,
+        },
+    )
+    .unwrap()
+    .output();
+    assert!((stepped - direct).abs() < 1e-9, "{stepped} vs {direct}");
+    assert!((2.5..3.5).contains(&direct), "three forward drops: {direct}");
+    let bare = Dk::with_settings(
+        &netlist,
+        Settings {
+            newton: tight,
+            continuation_steps: 0,
+        },
+    );
+    assert_eq!(bare.unwrap_err(), NetlistError::NoOperatingPoint);
+}
+
 /// The operating point holds: with no input, nothing moves.
 #[test]
 fn a_biased_circuit_rests_at_its_operating_point() {

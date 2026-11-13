@@ -217,7 +217,7 @@ circuit/
 - [x] **N1** (c2c2a54) A netlist type in Rust: nodes, elements (R, C, L, sources,
   devices), and a parser for the SPICE subset `stave-test/spice/*.cir`
   already uses, so one netlist feeds both ngspice and stave.
-- [ ] **N2** Nodal DK method (Yeh 2009; Holters & Zölzer 2015, ACME.jl):
+- [x] **N2** (9ca8ca5) Nodal DK method (Yeh 2009; Holters & Zölzer 2015, ACME.jl):
   MNA → discretised state-space with the nonlinear subsystem separated,
   matrices computed once per prepare. Newton on the nonlinear subsystem
   only. Built from N1 netlists.

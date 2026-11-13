@@ -7,9 +7,17 @@ use crate::circuit::devices::diode::Shockley;
 use crate::circuit::devices::triode::{Triode, Tube};
 use crate::circuit::netlist::expr::{Dual, Tape, MAX_CONTROLS};
 
+/// The conductance each junction lends the linear network, taken back
+/// out of its device output (`q = i(v) − SHUNT·v`): exact, but a node
+/// reached only through junctions (a diode string, a bridge) keeps a
+/// well-conditioned MNA matrix instead of a singular one patched by
+/// `gmin`, whose `1/gmin` gains would cost the solve its precision.
+pub(crate) const SHUNT: f64 = 1e-3;
+
 #[derive(Clone, Debug)]
 pub(crate) enum Device {
-    /// One control (anode to cathode), one output (its current).
+    /// One control (anode to cathode), one output: its current less the
+    /// part `shunt · v` the linear network carries (see [`SHUNT`]).
     Diode(Shockley),
     /// Controls (grid–cathode, plate–cathode); outputs (plate, grid).
     Triode(Tube),
@@ -41,9 +49,10 @@ impl Nonlinear {
         match &mut self.device {
             Device::Diode(d) => {
                 let (g, sign) = self.controls[0];
-                let (i, slope) = d.current_and_conductance(sign * v[g]);
-                q[o] = i;
-                jq[o * nv + g] += slope * sign;
+                let volts = sign * v[g];
+                let (i, slope) = d.current_and_conductance(volts);
+                q[o] = i - SHUNT * volts;
+                jq[o * nv + g] += (slope - SHUNT) * sign;
             }
             Device::Triode(t) => {
                 let (vgk, vpk) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));

@@ -97,3 +97,63 @@ fn push_pull_feedback_converges_at_the_host_rate() {
     let st = s.stats();
     report("push-pull feedback", st.solves, st.iterations, st.capped);
 }
+
+/// `Circuit<Dk>` on the same circuits, from their netlists, at the host
+/// rate under the same hot signals: no solve may end at its cap, and the
+/// continuation fallback's use is printed.
+mod dk {
+    use super::{hot, RATE};
+    use stave_dsp::circuit::methods::dk::Dk;
+    use stave_dsp::circuit::netlist::Netlist;
+    use stave_dsp::circuit::Circuit;
+
+    fn deck(name: &str) -> String {
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("spice/{name}.cir"));
+        std::fs::read_to_string(path).unwrap()
+    }
+
+    fn run(name: &str, text: &str, source: &str, mut input: impl FnMut(usize) -> f64) {
+        let mut c = Circuit::<Dk>::new(&Netlist::parse_spice(text).unwrap()).unwrap();
+        c.drive(source).unwrap();
+        c.prepare(RATE as f32);
+        for n in 0..RATE as usize {
+            assert!(c.tick_f64(input(n)).is_finite(), "{name}: sample {n}");
+        }
+        let h = c.health();
+        println!(
+            "{name} (DK): {:.2} iterations/solve, {} capped, {} continuations",
+            h.newton.mean_iterations(),
+            h.newton.capped,
+            h.continuations
+        );
+        assert_eq!(h.newton.capped, 0, "{name} (DK) hit its iteration cap");
+    }
+
+    #[test]
+    fn diode_clipper_converges_at_the_host_rate() {
+        let text = deck("diode_clipper").replace("V1 in 0 SIN(0 1 1k)", "V1 in 0 0");
+        run("diode clipper", &text, "v1", |n| hot(n, 4.0));
+    }
+
+    #[test]
+    fn opamp_clipper_converges_at_the_host_rate() {
+        let text = deck("opamp_clipper")
+            .replace("V1 in 0 DC 0 SIN(0 0.5 1k)", "V1 in 0 0")
+            .replace("RF out fb 51k", "RF out fb 551k");
+        run("op-amp clipper", &text, "v1", |n| hot(n, 1.0));
+    }
+
+    #[test]
+    fn common_cathode_converges_at_the_host_rate() {
+        let text = deck("common_cathode_grid_current").replace("V1 in 0 SIN(0 3 1k)", "V1 in 0 0");
+        run("common cathode", &text, "v1", |n| hot(n, 8.0));
+    }
+
+    #[test]
+    fn power_supply_converges_under_a_swinging_load() {
+        run("power supply", &deck("power_supply"), "il", |n| {
+            0.05 + 0.04 * (std::f64::consts::TAU * 7.0 * n as f64 / RATE).sin()
+        });
+    }
+}

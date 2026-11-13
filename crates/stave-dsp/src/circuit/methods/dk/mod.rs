@@ -43,8 +43,8 @@
 //! `V = {…}`, at most four node voltages each), provided its MNA matrix
 //! is nonsingular (no floating node, no loop of voltage sources). The
 //! operating point is solved with capacitors open and inductors shorted,
-//! by Newton; a deck with `.tran … UIC` starts from its `IC=` values
-//! instead.
+//! by Newton and then source stepping; a deck with `.tran … UIC` starts
+//! from its `IC=` values instead.
 //!
 //! # Verified
 //!
@@ -203,7 +203,7 @@ impl Dk {
         self.settings = settings;
     }
 
-    /// Newton work and cap hits since prepare.
+    /// Newton work, cap hits and continuation fallbacks since prepare.
     pub fn health(&self) -> Health {
         self.health
     }

@@ -48,10 +48,11 @@ fn transient(name: &str, oversample: u32) -> (Vec<f64>, Health) {
 
 fn healthy(name: &str, health: &Health) {
     println!(
-        "  DK solve: {:.2} iterations/solve, {} of {} capped",
+        "  DK solve: {:.2} iterations/solve, {} of {} capped, {} continuations",
         health.newton.mean_iterations(),
         health.newton.capped,
-        health.newton.solves
+        health.newton.solves,
+        health.continuations
     );
     assert_eq!(health.newton.capped, 0, "{name} hit its iteration cap");
 }

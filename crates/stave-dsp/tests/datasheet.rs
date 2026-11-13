@@ -16,6 +16,14 @@
 //! Adaa(1) 8.8, Hysteresis 10.5. The outlier is NonlinearRc's
 //! Newton solve at ~63 — an implicit nonlinear ODE per sample is
 //! the one primitive you budget around.
+//!
+//! The circuit section lists each hand-derived topology, then
+//! `Circuit<Dk>` solving the same netlist, with its Newton iterations
+//! per sample (mini, arm64, 2026-11-12): diode clipper 264 vs 553,
+//! op-amp clipper 296 vs 646, common cathode 1040 vs 1959 (the deck's
+//! B-source Koren law; 2062 with the Koren device), tone stack 9.7 vs
+//! 29. The general method costs 2–3× the hand derivation; a topology
+//! stays its own type where that matters.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
@@ -350,12 +358,14 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     bench("DiodeClipper x10 (WDF)", input, |x| wdf.tick(10.0 * x));
     let mut clipper = dk(CLIPPER, sr);
     bench("Circuit<Dk> diode clipper x10", input, |x| clipper.tick(10.0 * x));
+    solve_health(&clipper);
 
     let mut opamp = OpAmpClipper::new(OpAmpClipperConfig::TS808);
     opamp.prepare(sr);
     bench("OpAmpClipper", input, |x| opamp.tick(x));
     let mut opamp_dk = dk(OPAMP_CLIPPER, sr);
     bench("Circuit<Dk> op-amp clipper", input, |x| opamp_dk.tick(x));
+    solve_health(&opamp_dk);
 
     let mut cathode = CommonCathode::new(CommonCathodeConfig {
         tube: Koren::T12AX7,
@@ -370,8 +380,10 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     bench("CommonCathode x5 (Koren)", input, |x| cathode.tick(5.0 * x));
     let mut cathode_b = dk(CATHODE_B, sr);
     bench("Circuit<Dk> cathode x5 (B src)", input, |x| cathode_b.tick(5.0 * x));
+    solve_health(&cathode_b);
     let mut cathode_t = circuit_from(cathode_netlist(), sr);
     bench("Circuit<Dk> cathode x5 (Koren)", input, |x| cathode_t.tick(5.0 * x));
+    solve_health(&cathode_t);
 
     let mut stack = PassiveToneStack::new(PassiveToneStackComponents {
         treble_capacitance_farads: 250e-12,
@@ -387,6 +399,19 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     bench("PassiveToneStack", input, |x| stack.tick(x));
     let mut stack_dk = dk(TONE_STACK, sr);
     bench("Circuit<Dk> tone stack", input, |x| stack_dk.tick(x));
+}
+
+/// The solve behind a `Circuit<Dk>` line: iterations per sample, cap
+/// hits and continuation fallbacks over its timed passes.
+fn solve_health(c: &Circuit<Dk>) {
+    let h = c.health();
+    println!(
+        "  {:<28} {:>7.2} iterations/solve, {} capped, {} continuations",
+        "",
+        h.newton.mean_iterations(),
+        h.newton.capped,
+        h.continuations
+    );
 }
 
 /// The common cathode built in code, with stave's Koren device.

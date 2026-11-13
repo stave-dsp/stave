@@ -1,24 +1,52 @@
-//! The nonlinear subsystem's solve: find the controlling voltages `v`
-//! with `v = p + K·q(v)`, where `q` are the devices' outputs, by damped
-//! Newton from the previous sample's solution — a step that does not
-//! reduce the residual is halved (down to `min_damping`), a step is
-//! bounded by `max_step`, and each junction bounds its own voltage's
-//! step (SPICE's `pnjlim`). A solve that ends unconverged is counted in
-//! [`NewtonStats::capped`], never hidden.
+//! The nonlinear subsystem's solve (N3): find the controlling voltages
+//! `v` with `v = p + K·q(v)`, where `q` are the devices' outputs.
+//!
+//! - **Damped Newton with device limiting**, generalising the scalar
+//!   solve every topology uses: a step whose Newton correction does not
+//!   shrink is halved (down to `min_damping`; Deuflhard's natural
+//!   monotonicity test, which unlike a residual norm ignores how the
+//!   equations are scaled), a step is bounded by `max_step`, and each
+//!   junction bounds its own voltage's step (SPICE's `pnjlim`), so an
+//!   iterate never climbs far up an exponential.
+//! - **Warm start**: each sample starts from the previous sample's
+//!   solution.
+//! - **Continuation** (homotopy in the linear prediction `p`): when
+//!   Newton fails from the warm start `v₀`, the sample is re-solved along
+//!   `p(s) = p₀ + s·(p − p₀)` in `continuation_steps` steps, each
+//!   starting from the last, where `p₀ = v₀ − K·q(v₀)` is the prediction
+//!   `v₀` solves exactly; at the operating point the same idea is source
+//!   stepping.
+//! - **Honest convergence**: a solve has converged when its last step is
+//!   below `tolerance` *and* the equations hold to a microvolt per volt —
+//!   a stalled step in an ill-conditioned system is not convergence.
+//! - **Reported, bounded**: at most
+//!   `max_iterations · (1 + continuation_steps)` iterations a sample, each
+//!   at most `1 + log2(1/min_damping)` device evaluations; a solve that
+//!   ends unconverged is counted in [`NewtonStats::capped`], never
+//!   hidden.
 
 use super::devices::Nonlinear;
 use super::matrix::{lu, lu_solve};
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 
+/// The largest residual, relative to `1 + max |v|`, a converged solve
+/// may leave in `v = p + K·q(v)` (a microvolt on a volt).
+const RESIDUAL: f64 = 1e-6;
+
 /// How hard the DK solve tries.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Settings {
     pub newton: NewtonSettings,
+    /// Continuation steps tried when Newton fails from the warm start;
+    /// 0 disables the fallback, and the operating point's source
+    /// stepping with it.
+    pub continuation_steps: u32,
 }
 
 impl Settings {
     pub const DEFAULT: Self = Self {
         newton: NewtonSettings::DEFAULT,
+        continuation_steps: 8,
     };
 }
 
@@ -35,10 +63,15 @@ pub(crate) struct Prediction<'a> {
     pub k: &'a [f64],
 }
 
-/// What the solves did, accumulated: Newton work and cap hits.
+/// What the solves did, accumulated: Newton work and cap hits, and how
+/// often the continuation fallback ran.
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Health {
     pub newton: NewtonStats,
+    /// Samples whose warm-started Newton failed and fell back to
+    /// continuation (converged or not; a final failure is also in
+    /// `newton.capped`).
+    pub continuations: u64,
 }
 
 /// One solve's outcome.
@@ -65,6 +98,10 @@ pub(crate) struct Workspace {
     jacobian: Vec<f64>,
     pivots: Vec<usize>,
     delta: Vec<f64>,
+    correction: Vec<f64>,
+    p_step: Vec<f64>,
+    p_start: Vec<f64>,
+    v_start: Vec<f64>,
 }
 
 impl Workspace {
@@ -83,6 +120,10 @@ impl Workspace {
             jacobian: vec![0.0; nv * nv],
             pivots: vec![0; nv],
             delta: vec![0.0; nv],
+            correction: vec![0.0; nv],
+            p_step: vec![0.0; nv],
+            p_start: vec![0.0; nv],
+            v_start: vec![0.0; nv],
         }
     }
 
@@ -96,8 +137,12 @@ impl Workspace {
         evaluate(devices, &self.v, &mut self.q, &mut self.jq, self.nv, time);
     }
 
-    /// Solve `v = p + K·q(v)` from the current `v`; `v` and `q` hold the
-    /// result, `health` the account.
+    /// Solve `v = p + K·q(v)` from the current `v`, falling back to
+    /// continuation; `v` and `q` hold the result, `health` the account.
+    ///
+    /// Any start `v₀` solves exactly the prediction `p₀ = v₀ − K·q(v₀)`,
+    /// so the path from `p₀` to `p` always begins at a solution, even
+    /// after a sample that failed.
     pub fn solve(
         &mut self,
         prediction: Prediction<'_>,
@@ -111,7 +156,38 @@ impl Workspace {
             evaluate(devices, &self.v, &mut self.q, &mut self.jq, 0, time);
             return;
         }
-        let outcome = self.newton(p, k, devices, time, &settings.newton);
+        self.v_start.copy_from_slice(&self.v);
+        let mut outcome = self.newton(p, k, devices, time, &settings.newton);
+        if !outcome.converged && settings.continuation_steps > 0 {
+            health.continuations += 1;
+            self.v.copy_from_slice(&self.v_start);
+            evaluate(devices, &self.v, &mut self.q, &mut self.jq, self.nv, time);
+            // p₀ = v₀ − K·q(v₀): the prediction the start solves exactly.
+            let nq = self.nq;
+            for i in 0..self.nv {
+                let mut s = self.v[i];
+                for j in 0..nq {
+                    s -= k[i * nq + j] * self.q[j];
+                }
+                self.p_start[i] = s;
+            }
+            let steps = settings.continuation_steps;
+            let mut total = outcome.iterations;
+            for s in 1..=steps {
+                let f = f64::from(s) / f64::from(steps);
+                for i in 0..self.nv {
+                    self.p_step[i] = self.p_start[i] + f * (p[i] - self.p_start[i]);
+                }
+                let p_step = std::mem::take(&mut self.p_step);
+                outcome = self.newton(&p_step, k, devices, time, &settings.newton);
+                self.p_step = p_step;
+                total += outcome.iterations;
+                if !outcome.converged {
+                    break;
+                }
+            }
+            outcome.iterations = total;
+        }
         health
             .newton
             .record(outcome.iterations, outcome.converged, outcome.final_step);
@@ -128,7 +204,7 @@ impl Workspace {
     ) -> Outcome {
         let (nv, nq) = (self.nv, self.nq);
         evaluate(devices, &self.v, &mut self.q, &mut self.jq, nv, time);
-        let mut norm = residual(p, k, &self.q, &self.v, &mut self.r, nq);
+        residual(p, k, &self.q, &self.v, &mut self.r, nq);
         let (mut iterations, mut step) = (0, f64::INFINITY);
         while iterations < settings.max_iterations && (step.is_nan() || step >= settings.tolerance) {
             // J = K·Jq − I; solve J·δ = −r.
@@ -151,6 +227,12 @@ impl Workspace {
                 let scale = settings.max_step / largest;
                 self.delta.iter_mut().for_each(|d| *d *= scale);
             }
+            // Natural monotonicity (Deuflhard): a step is accepted when the
+            // Newton correction at the trial point, J⁻¹·r(v + λδ) with this
+            // iteration's J, is smaller than δ. Unlike the residual's norm it
+            // is blind to how the equations are scaled — a plate's volts-per-
+            // amp row would otherwise veto good full steps.
+            let size = self.delta.iter().fold(0.0f64, |m, d| m.max(d.abs()));
             let mut damping = 1.0;
             let accepted = loop {
                 for i in 0..nv {
@@ -160,18 +242,23 @@ impl Workspace {
                     d.limit(&mut self.v_try, &self.v);
                 }
                 evaluate(devices, &self.v_try, &mut self.q_try, &mut self.jq_try, nv, time);
-                let trial = residual(p, k, &self.q_try, &self.v_try, &mut self.r_try, nq);
-                if trial < norm {
-                    break Some(trial);
+                residual(p, k, &self.q_try, &self.v_try, &mut self.r_try, nq);
+                for i in 0..nv {
+                    self.correction[i] = -self.r_try[i];
+                }
+                lu_solve(&self.jacobian, nv, &self.pivots, &mut self.correction);
+                let next = self.correction.iter().fold(0.0f64, |m, d| m.max(d.abs()));
+                if next < size || size == 0.0 || (next.is_finite() && damping <= settings.min_damping) {
+                    break true;
                 }
                 if damping <= settings.min_damping {
-                    break trial.is_finite().then_some(trial);
+                    break false;
                 }
                 damping *= 0.5;
             };
-            let Some(trial) = accepted else {
+            if !accepted {
                 break;
-            };
+            }
             step = 0.0;
             for i in 0..nv {
                 step = f64::max(step, (self.v_try[i] - self.v[i]).abs());
@@ -180,12 +267,16 @@ impl Workspace {
             std::mem::swap(&mut self.q, &mut self.q_try);
             std::mem::swap(&mut self.jq, &mut self.jq_try);
             std::mem::swap(&mut self.r, &mut self.r_try);
-            norm = trial;
             iterations += 1;
         }
+        // A step below tolerance is convergence only where the equations
+        // hold too: an ill-conditioned system can stall with a tiny step
+        // and a residual of volts.
+        let scale = 1.0 + self.v.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let holds = self.r.iter().all(|r| r.abs() <= RESIDUAL * scale);
         Outcome {
             iterations,
-            converged: step < settings.tolerance,
+            converged: step < settings.tolerance && holds,
             final_step: step,
         }
     }
@@ -199,16 +290,13 @@ fn evaluate(devices: &mut [Nonlinear], v: &[f64], q: &mut [f64], jq: &mut [f64],
     }
 }
 
-/// `r = p + K·q − v`; returns |r|².
-fn residual(p: &[f64], k: &[f64], q: &[f64], v: &[f64], r: &mut [f64], nq: usize) -> f64 {
-    let mut norm = 0.0;
+/// `r = p + K·q − v`.
+fn residual(p: &[f64], k: &[f64], q: &[f64], v: &[f64], r: &mut [f64], nq: usize) {
     for i in 0..r.len() {
         let mut s = p[i] - v[i];
         for j in 0..nq {
             s += k[i * nq + j] * q[j];
         }
         r[i] = s;
-        norm += s * s;
     }
-    norm
 }

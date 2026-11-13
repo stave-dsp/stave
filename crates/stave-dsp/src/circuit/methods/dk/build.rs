@@ -1,7 +1,7 @@
 //! From a [`Netlist`] to the MNA structure: unknowns numbered, the
 //! rate-independent stamps made, sources and devices given their columns.
 
-use super::devices::{Device, Nonlinear};
+use super::devices::{Device, Nonlinear, SHUNT};
 use super::solve::{Health, Settings, Workspace};
 use super::{pin, Capacitor, Dk, Inductor, Input, Pin};
 use crate::circuit::netlist::expr::{Dual, Tape};
@@ -226,7 +226,12 @@ impl<'a> Builder<'a> {
                         None => pin(*anode),
                     };
                     let k = pin(*cathode);
-                    self.device(Device::Diode(*diode), &[(junction, k)], &[&[(junction, -1.0), (k, 1.0)]]);
+                    self.conductance(junction, k, SHUNT);
+                    self.device(
+                        Device::Diode(*diode),
+                        &[(junction, k)],
+                        &[&[(junction, -1.0), (k, 1.0)]],
+                    );
                 }
                 ElementKind::Triode {
                     plate,

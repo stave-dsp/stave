@@ -108,8 +108,9 @@ impl Dk {
         Ok(())
     }
 
-    /// Capacitors open, inductors shorted: Newton from zero. Under `UIC`
-    /// there is no operating point to find.
+    /// Capacitors open, inductors shorted: Newton from zero, then source
+    /// stepping (16, 128, then 1024 steps). Under `UIC` there is no
+    /// operating point to find.
     pub(super) fn solve_operating_point(&mut self) -> Result<(), NetlistError> {
         let (n, nu, nq, nv) = (self.n, self.inputs.len(), self.nq, self.controls.len());
         if self.uic {
@@ -142,12 +143,38 @@ impl Dk {
             p0[i] = (0..nu).map(|k| row[k] * u0[k]).sum();
             k_dc[i * nq..(i + 1) * nq].copy_from_slice(&row[nu..]);
         }
+        // The operating point is solved once, off the audio thread: eight
+        // times the per-sample cap from a cold start.
         let newton = NewtonSettings {
-            max_iterations: 200,
+            max_iterations: self.settings.newton.max_iterations.saturating_mul(8),
             ..self.settings.newton
         };
-        self.work.v.iter_mut().for_each(|v| *v = 0.0);
-        let converged = self.work.newton(&p0, &k_dc, &mut self.devices, 0.0, &newton).converged;
+        let mut converged = {
+            self.work.v.iter_mut().for_each(|v| *v = 0.0);
+            self.work.newton(&p0, &k_dc, &mut self.devices, 0.0, &newton).converged
+        };
+        let mut p = vec![0.0; nv];
+        // Source stepping: every source scaled from 0 to its value, each
+        // step from the last solution. Off with the continuation fallback.
+        let stepping: &[u32] = if self.settings.continuation_steps > 0 {
+            &[16, 128, 1024]
+        } else {
+            &[]
+        };
+        for &steps in stepping {
+            if converged {
+                break;
+            }
+            self.work.v.iter_mut().for_each(|v| *v = 0.0);
+            for s in 1..=steps {
+                let f = f64::from(s) / f64::from(steps);
+                p.iter_mut().zip(&p0).for_each(|(p, p0)| *p = f * p0);
+                converged = self.work.newton(&p, &k_dc, &mut self.devices, 0.0, &newton).converged;
+                if !converged {
+                    break;
+                }
+            }
+        }
         if !converged {
             return Err(NetlistError::NoOperatingPoint);
         }
