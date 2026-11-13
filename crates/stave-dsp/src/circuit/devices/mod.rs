@@ -13,6 +13,7 @@
 //! | [`opamp`] | [`OpAmp`](opamp::OpAmp) | [`Ideal`](opamp::Ideal), [`Macromodel`](opamp::Macromodel), the run-time choice [`Amp`](opamp::Amp) |
 //! | [`ota`] | [`Ota`](ota::Ota) | [`BipolarPair`](ota::BipolarPair) |
 //! | [`magnetic`] | [`Magnetic`](magnetic::Magnetic) | [`JilesAtherton`](magnetic::JilesAtherton) |
+//! | [`photocell`] | — (a light-driven resistance: a circuit holds it as a variable resistor) | [`Najnudel`](photocell::Najnudel), running as a [`Vactrol`](photocell::Vactrol); parts [`Najnudel::VTL5C3`](photocell::Najnudel::VTL5C3), `NSL32` |
 //! | [`bbd`] | — (clocked: a stage, not a netlist element) | [`HoltersParker`](bbd::HoltersParker); parts [`Chip::MN3007`](bbd::Chip::MN3007), `MN3008`, `MN3205` |
 //! | [`compander`] | — (a stage) | [`Compander`](compander::Compander); part [`Chip::NE570`](compander::Chip::NE570) |
 //!
@@ -31,6 +32,7 @@ pub mod mosfet;
 pub mod opamp;
 pub mod ota;
 pub mod pentode;
+pub mod photocell;
 mod polarity;
 pub mod triode;
 

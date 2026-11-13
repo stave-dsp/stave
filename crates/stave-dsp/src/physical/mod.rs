@@ -12,6 +12,7 @@
 //! | Module | Models |
 //! |---|---|
 //! | [`spring`] | [`Tank`](spring::Tank), [`Spring`](spring::Spring) (Välimäki, Parker & Abel's dispersive chirps as waveguides), [`Chirp`](spring::Chirp) |
+//! | [`tape`] | [`Chowdhury`](tape::Chowdhury) (a tape machine: [`Recording`](tape::Recording), [`Flutter`](tape::Flutter), [`Playback`](tape::Playback)); machine [`Machine::TC260`](tape::Machine::TC260), transport [`Transport::AKAI_4000D`](tape::Transport::AKAI_4000D) |
 //!
 //! It may use `units`, `kernel`, `primitives`, `behavioral` and
 //! `circuit`. A bucket-brigade delay is not here: the chip is a
@@ -20,3 +21,4 @@
 //! transfer is a sampling process.
 
 pub mod spring;
+pub mod tape;

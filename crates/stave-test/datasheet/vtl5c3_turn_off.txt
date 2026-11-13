@@ -1,0 +1,39 @@
+# title: VTL5C3 cell resistance after the LED current is removed (turn-off), from 10 mA and 40 mA, typical.
+# document: PerkinElmer Optoelectronics, Low Cost Axial Vactrols VTL5C3, 5C4 (catalog pages 45-46, "Photoconductive Cells and Analog Optoisolators (Vactrols)", 2001)
+# url: https://www.rlocman.ru/i/File/2023/03/15/VTL5C3-5C4.pdf
+# figure: "Response Time, VTL5C3" (Typical Performance Curves), PDF page 2; the TURN-OFF curves (solid 40 mA, dashed 10 mA), on the lower time scale (ten times the upper)
+# method: the figure is a 300 dpi 1-bit scan; axes calibrated on the drawn gridlines: time linear, 0 at x 111.5 px and 14 ms (turn-on scale; 140 ms turn-off) at x 962.5 px, 60.79 px a 2 ms (20 ms) division, the scale's labels 0-12 under the first seven gridlines; resistance log from 1 Mohm (y 34.5 px) to 1 kohm (y 504 px), 156.5 px a decade; strokes read at fixed columns clear of gridlines with the labels and their leader lines blanked, solid and dashed curves told apart by continuity across the crossings (the solid pair crosses near 0.7 ms and 10 kohm, the dashed pair near 1.0 ms and 100 kohm); a column where a dashed curve falls in a gap between dashes is skipped.
+# x: time after the LED current is removed (s)
+# y: cell resistance (ohm)
+# scale-x: linear
+# scale-y: log
+# full-scale-x: 140e-3
+# full-scale-y: 1e6
+# uncertainty-x: 0.5e-3
+# uncertainty-y: 6%
+# conditions: t=25
+# notes: Note 3: response time characteristics are based upon test following adapt condition (2), 24 hours at 40 mA; the starting state before turn-off is the steady state at the stated current. The final values agree with the transfer curve of the dark-adapted condition (1) rather than (2): turn-on at 40 mA settles near 1.0 kohm, at 10 mA near 2.6 kohm. The electrical table gives turn-on to 63% of final RON as 2.5 ms typical (the 40 mA curve's) and turn-off to 100 kohm as 35 ms maximum. Uncertainty: +/-3 px on either axis (0.05 ms on the turn-on scale, 0.5 ms on turn-off; 4.5% in resistance), more where a dash ends.
+# curve led=0.04
+0.00255 3623
+0.005018 7961
+0.007485 1.332e+04
+0.009953 2.102e+04
+0.01505 4.899e+04
+0.02015 9.359e+04
+0.02509 1.372e+05
+0.03002 1.855e+05
+0.04022 2.863e+05
+0.04993 3.732e+05
+0.06029 4.619e+05
+0.07 5.43e+05
+0.0802 6.245e+05
+0.09007 7.288e+05
+# curve led=0.01
+0.00255 8890
+0.007485 2.508e+04
+0.01505 8.443e+04
+0.03002 3.704e+05
+0.06029 5.312e+05
+0.07 6.154e+05
+0.0802 7.129e+05
+0.09007 8.506e+05

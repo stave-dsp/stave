@@ -1,0 +1,25 @@
+# title: NSL-32SR2 coupled characteristics from the opto-electrical parameters table, at 23 C.
+# document: Advanced Photonix, Inc., Optocoupler NSL-32SR2, REV 12-02-15 (2015)
+# url: https://logosfoundation.org/instrum_gwr/teno/datasheets/NSL-32SR2.pdf
+# figure: "Opto-Electrical Parameters" table, page 2
+# method: transcribed from the table
+# x: LED forward current of the test condition (A)
+# y: rise time (s) on curve rise; decay time (s) on curve decay; resistance (ohm) on curves on and off
+# scale-x: linear
+# scale-y: log
+# full-scale-x: 0.02
+# full-scale-y: 5e6
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: t=23
+# notes: rise: "time for the dark to light change in conductance to reach 63% of its final value", 5 ms typical, the LED current not stated (listed at 20 mA, the current of the off-resistance's adapt condition: an assumption); decay: "time to reach 100 kohm after removal of IF = 16 mA", 5 ms typical; on: 140 ohm typical at 1 mA and 40 ohm maximum at 20 mA (curve max=1); off: 5 Mohm typical (1 Mohm minimum) 10 s after IF = 0 with 5 V dc on the cell, after 1 minute ON at 20 mA (listed at 0 mA). LED forward voltage 2.5 V maximum at 20 mA (no typical, no curve).
+# curve rise=1
+0.02 5e-3
+# curve decay=1
+0.016 5e-3
+# curve on=1
+0.001 140
+# curve on=1 max=1
+0.02 40
+# curve off=1
+0 5e6

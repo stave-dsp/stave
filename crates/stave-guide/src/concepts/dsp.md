@@ -919,6 +919,68 @@ let ir: Vec<f32> = (0..4_800).map(|n| tank.tick(if n == 0 { 1.0 } else { 0.0 }))
 assert!(ir[..900].iter().all(|y| y.abs() < 1e-3));
 ```
 
+## Light and tape: photocells and the tape path
+
+A vactrol is a schematic part — an LED and a CdS cell in one package —
+so it lives in `circuit`, but not as a netlist element: the cell's
+resistance moves on its own millisecond clock, so a circuit holds it as
+an N6 variable resistor and a
+[`Vactrol`](stave_dsp::circuit::devices::photocell::Vactrol) sets that
+resistor each sample. The cell is Najnudel et al.'s two-carrier model
+(DAFx-23); its parts
+([`Najnudel::VTL5C3`](stave_dsp::circuit::devices::photocell::Najnudel::VTL5C3),
+`NSL32`) are fitted to their datasheets' transfer curves and response
+times (`scripts/vactrol-fit.py`). It turns on in milliseconds and off in
+tens of them, slower after a brighter light, and over hours it adapts to
+the light it has lived in.
+[`OptoCompressor`](stave_dsp::circuit::topologies::opto_compressor::OptoCompressor)
+is the paper's minimal feedback opto compressor around one.
+
+Tape is magnetic recording physics, not a schematic, so it lives in
+`physical`:
+[`Chowdhury`](stave_dsp::physical::tape::Chowdhury) is a tape machine's
+record-and-play path after Chowdhury (DAFx-19) — the record head and its
+bias into the tape's Jiles–Atherton hysteresis at about 720 kHz, the
+transport's wow and flutter from a measured machine's spectrum, the play
+head's spacing, thickness and gap losses at the tape's speed. Each part
+is a stage of its own ([`Recording`](stave_dsp::physical::tape::Recording),
+[`Flutter`](stave_dsp::physical::tape::Flutter),
+[`Playback`](stave_dsp::physical::tape::Playback)).
+
+```rust
+use stave_dsp::circuit::devices::photocell::{LedDriver, Najnudel, Vactrol};
+use stave_dsp::physical::tape::{Chowdhury, Machine};
+use stave_dsp::Stage;
+
+// An opto tremolo's control side: an LFO's 0-5 V through 220 ohm into
+// a VTL5C3's LED. The cell swings between kilohms and tens of kilohms,
+// rounder than the LFO: it turns on fast and off slow.
+let led = LedDriver::new(Najnudel::VTL5C3.led, 220.0);
+let mut cell = Vactrol::new(Najnudel::VTL5C3);
+cell.prepare(48_000.0);
+let (mut low, mut high) = (f64::MAX, 0.0f64);
+for n in 0..96_000 {
+    let lfo = 2.5 * (1.0 + (std::f64::consts::TAU * 4.0 * n as f64 / 48_000.0).sin());
+    let ohms = cell.step(led.amps(lfo));
+    if n > 48_000 {
+        low = low.min(ohms);
+        high = high.max(ohms);
+    }
+}
+assert!(low < 5_000.0 && high > 20_000.0, "{low} {high}");
+
+// A TC-260 at 7.5 ips: the tape's latency is its resampler, its 2 ms
+// transport and its play head's linear-phase filter.
+let mut deck = Chowdhury::new(Machine::TC260);
+deck.prepare(48_000.0);
+assert_eq!(deck.factor(), 15);
+assert!(deck.latency() > 500 && deck.latency() < 800, "{}", deck.latency());
+// Halve the speed: the play head loses more of the treble.
+let at_10k = deck.playback().loss(10_000.0).abs();
+deck.set_speed(Machine::ips(3.75));
+assert!(deck.playback().loss(10_000.0).abs() < at_10k);
+```
+
 ## Conventions
 
 - **Units in names.** `sample_rate` is `f32` everywhere (state may be

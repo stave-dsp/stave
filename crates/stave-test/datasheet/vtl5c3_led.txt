@@ -1,0 +1,29 @@
+# title: VTL5C3 LED forward current against forward voltage, typical.
+# document: PerkinElmer Optoelectronics, Low Cost Axial Vactrols VTL5C3, 5C4 (catalog pages 45-46, "Photoconductive Cells and Analog Optoisolators (Vactrols)", 2001)
+# url: https://www.rlocman.ru/i/File/2023/03/15/VTL5C3-5C4.pdf
+# figure: "Input Characteristics" (Typical Performance Curves), PDF page 2
+# method: 300 dpi 1-bit scan; axes on the drawn gridlines, voltage linear 0 V (x 49 px) to 2 V (x 1026.5 px), current linear 0 mA (y 596.5 px) to 50 mA (y 41.5 px); the steep curve read by rows: at each current the centre of the stroke's horizontal run, rows clear of gridlines.
+# x: LED forward voltage (V)
+# y: LED forward current (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 2
+# full-scale-y: 0.05
+# uncertainty-x: 0.005
+# uncertainty-y: 0.0005
+# conditions: t=25
+# notes: The absolute-maximum box gives the forward drop at 20 mA as 2.0 V maximum, 1.65 V typical; the curve reads 1.606 V. Above about 5 mA the curve is a straight line of 4.3 ohm (the LED's bulk resistance). Uncertainty: +/-2 px of stroke centre (0.004 V; 0.2 mA) plus the 1-bit scan's edge.
+# curve t=25
+1.509 0.002387
+1.528 0.00464
+1.542 0.006892
+1.553 0.009144
+1.575 0.01365
+1.596 0.01815
+1.614 0.02266
+1.634 0.02716
+1.651 0.03167
+1.67 0.03617
+1.688 0.04068
+1.706 0.04518
+1.724 0.04968

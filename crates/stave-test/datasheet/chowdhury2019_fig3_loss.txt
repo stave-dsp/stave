@@ -1,0 +1,76 @@
+# title: Tape playback loss (spacing, thickness and gap) against frequency at 15 ips, Chowdhury's FIR.
+# document: Jatin Chowdhury, "Real-Time Physical Modelling for Analog Tape Machines", Proc. DAFx-19, Birmingham, 2019
+# url: https://dafx.de/paper-archive/2019/DAFx2019_paper_3.pdf
+# figure: Fig. 3, "Frequency Response of Playhead Loss Effects" ("Tape Loss Effects vs. Frequency"), page 3: tape-head spacing 20 um, head gap 5 um, tape thickness 35 um, 15 ips, a 100-tap FIR from eq. 13
+# method: the figure is an embedded 640 x 480 raster (pdfimages); axes calibrated on its tick marks, frequency log 1 kHz (x 186 px) to 10 kHz (x 453 px), 267 px a decade, the minor ticks agreeing; amplitude linear 0 dB (y 74 px) to -80 dB (y 369 px), 3.6875 px/dB; each point the mean row of the blue stroke in a column 8 px apart, from 404 Hz (the plot's left edge) to 23.7 kHz.
+# x: frequency (Hz)
+# y: playback loss (dB)
+# scale-x: log
+# scale-y: linear
+# full-scale-x: 24000
+# full-scale-y: 92
+# uncertainty-x: 1%
+# uncertainty-y: 0.4
+# conditions: speed=0.381
+# notes: The curve lies 0.9-1.4 dB above eq. 13 everywhere from 400 Hz to 23.7 kHz (1.15 dB mean), its shape within 0.3 dB of the formula's: a constant offset, most likely the 100-tap FIR's normalisation (the thickness loss's heavy spatial tail truncated). Below about 900 Hz the paper's FIR flattens (two segments at -1.22 dB): its 480 Hz resolution at 48 kHz. Uncertainty-y: a 1.5 px stroke (0.4 dB).
+# curve speed=0.381
+404.34 -1.22
+433.22 -1.22
+464.16 -1.22
+497.31 -1.22
+532.83 -1.49
+570.89 -1.76
+611.67 -2.03
+655.36 -2.31
+702.17 -2.58
+752.32 -2.85
+806.06 -3.12
+863.63 -3.25
+925.32 -3.53
+991.41 -3.93
+1062.2 -4.20
+1138.1 -4.75
+1219.4 -5.15
+1306.5 -5.56
+1399.8 -5.97
+1499.8 -6.37
+1606.9 -7.05
+1721.7 -7.73
+1844.7 -8.27
+1976.4 -8.81
+2117.6 -9.63
+2268.8 -10.31
+2430.9 -10.98
+2604.5 -12.07
+2790.6 -12.88
+2989.9 -13.69
+3203.5 -14.78
+3432.3 -15.86
+3677.4 -16.95
+3940.1 -18.31
+4221.5 -19.39
+4523 -20.75
+4846.1 -22.24
+5192.3 -23.73
+5563.1 -25.36
+5960.5 -26.98
+6386.2 -28.88
+6842.4 -30.78
+7331.1 -32.68
+7854.7 -34.85
+8415.8 -37.02
+9016.9 -39.32
+9660.9 -41.76
+10351 -44.47
+11090 -47.19
+11882 -50.17
+12731 -53.15
+13641 -56.41
+14615 -59.93
+15659 -63.59
+16777 -67.53
+17976 -71.73
+19259 -76.07
+20635 -80.81
+22109 -85.83
+23688 -90.85

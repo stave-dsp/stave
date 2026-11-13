@@ -111,6 +111,9 @@ use stave_dsp::circuit::devices::compander::{self, Compander, Mode};
 use stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade;
 use stave_dsp::effects::reverb::{Dattorro, Fdn, Kronecker, Mixing, Schroeder, VelvetNoise, T60};
 use stave_dsp::physical::spring::{Chirp, Spring, Tank};
+use stave_dsp::physical::tape::{Chowdhury, Flutter, Formulation, Machine, Phase, Playback, Transport};
+use stave_dsp::circuit::devices::photocell::{Najnudel, Vactrol};
+use stave_dsp::circuit::topologies::opto_compressor::OptoCompressor;
 use stave_dsp::units;
 use stave_dsp::primitives::time::delay::Delay;
 use stave_dsp::primitives::time::interpolators::{
@@ -376,6 +379,33 @@ fn primitive_datasheet() {
     let mut tank = Tank::default();
     tank.prepare(sr);
     bench("Tank (3 springs)", &input, |x| tank.tick(x));
+
+    // E7: photocells. The cell's TR-BDF2 step under a held LED current,
+    // and under a 5 Hz tremolo's sweep (the Newton iterations move).
+    let mut vactrol = Vactrol::new(Najnudel::VTL5C3);
+    vactrol.prepare(sr);
+    bench("Vactrol (VTL5C3), 10 mA", &input, |_| vactrol.step(0.010) as f32);
+    let mut lfo = 0.0f64;
+    let lfo_step = 5.0 / f64::from(sr);
+    bench("Vactrol (VTL5C3), tremolo", &input, |_| {
+        lfo = (lfo + lfo_step).fract();
+        vactrol.step(0.010 * (1.0 + (std::f64::consts::TAU * lfo).sin())) as f32
+    });
+    let mut opto = OptoCompressor::new(Najnudel::VTL5C3);
+    opto.prepare(sr);
+    bench("OptoCompressor (VTL5C3)", &input, |x| opto.tick(10.0 * x));
+
+    // E8: tape. The machine (record side 15× at 48 kHz, flutter, play
+    // head), and its linear parts alone.
+    let mut deck = Chowdhury::new(Machine::TC260);
+    deck.prepare(sr);
+    bench("Chowdhury tape (TC-260, 7.5 ips)", &input, |x| deck.tick(x));
+    let mut play = Playback::new(Machine::TC260.play, Formulation::FERRIC.thickness, Machine::ips(7.5), Phase::Linear);
+    play.prepare(sr);
+    bench("Playback losses (7.5 ips)", &input, |x| play.tick(x));
+    let mut flutter = Flutter::new(Transport::AKAI_4000D);
+    flutter.prepare(sr);
+    bench("Flutter (Akai 4000D)", &input, |x| flutter.tick(x));
 
     // D1–D3: dynamics.
     let mut peak = Peak::new(5.0, 50.0);

@@ -34,6 +34,7 @@ pub mod marshall_jcm800;
 pub mod moog_ladder;
 pub mod mxr_phase90;
 pub mod opamp_clipper;
+pub mod opto_compressor;
 pub mod power_supply;
 pub mod proco_rat;
 pub mod push_pull;

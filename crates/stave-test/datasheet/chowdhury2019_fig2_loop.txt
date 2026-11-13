@@ -1,0 +1,25 @@
+# title: Tape magnetisation hysteresis loop, the outermost (2 kA/m peak) of Chowdhury's simulated loops, normalised.
+# document: Jatin Chowdhury, "Real-Time Physical Modelling for Analog Tape Machines", Proc. DAFx-19, Birmingham, 2019
+# url: https://dafx.de/paper-archive/2019/DAFx2019_paper_3.pdf
+# figure: Fig. 2, "Digitized Hysteresis Loop Simulation" ("Simulated Ditigal Tape Magnetization Hysteresis Loop"), page 3: a 2 kHz sine whose amplitude grows from 800 to 2000 A/m (the axis reads -2 to 2, so kA/m), Jiles-Atherton solved by RK4, "the constants Ms, a, alpha, k and c from [11]" (Jiles & Atherton 1986)
+# method: the figure is an embedded 640 x 480 raster (pdfimages); axes calibrated on its tick marks, field linear -2.0 (x 103 px) to 2.0 (x 553 px), 112.5 px a unit; magnetisation linear 0.4 (y 111 px) to -0.4 (y 374 px), 328.75 px a unit; the outermost loop read as the extreme blue pixel of each column (the upper, descending branch) and of each row near M = 0, less half the 1.5 px stroke; the loop's tip is at H = 2.0, M = 0.509 (the axis's units). Field and magnetisation are listed normalised by the tip's (2.0 and 0.509), the descending branch; the ascending branch is its odd image.
+# x: field over the loop's peak field (1)
+# y: magnetisation over the loop's peak magnetisation (1)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 1
+# full-scale-y: 1
+# uncertainty-x: 0.007
+# uncertainty-y: 0.012
+# conditions: hz=2000
+# notes: The magnetisation axis reads 0.51 at the tip, in no stated unit: neither of the paper's parameter sets gives it in A/m or as M/Ms at 2 kA/m (Jiles & Atherton 1986's steel: Mp = 1.09e6 A/m, 0.68 Ms; the paper's own ferric-oxide tape constants: Mp = 2.05 kA/m, 0.006 Ms), so only the normalised shape is a reference. The loop's remanence is 0.230 of its peak and its coercive field 0.167 of its peak (the M = 0 crossing at H = -0.334). Uncertainty: the 1.5 px stroke (0.013 in H, 0.005 in M) over the normalisers.
+# curve peak=2000
+-0.75 -0.739
+-0.5 -0.446
+-0.25 -0.112
+-0.167 0
+0 0.230
+0.25 0.540
+0.5 0.792
+0.75 0.959
+1 1

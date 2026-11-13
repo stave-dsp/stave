@@ -1,0 +1,21 @@
+# title: NSL-32SR2 cell resistance against LED current, typical.
+# document: Advanced Photonix, Inc., Optocoupler NSL-32SR2, REV 12-02-15 (2015)
+# url: https://logosfoundation.org/instrum_gwr/teno/datasheets/NSL-32SR2.pdf
+# figure: "Resistance vs. Current", page 2
+# method: vector extraction: page converted to SVG (pdftocairo -svg); the curve is one 2.64 pt polyline of five vertices, read exactly in page points; axes on the drawn gridlines, current log x 161.398 pt -> 0.1 mA, 251.281 -> 1, 341.039 -> 10, 430.922 -> 100 mA (89.88 pt a decade to 0.01 pt), resistance log y 221.16 pt -> 10 ohm, 270.96 -> 100, 320.64 -> 1000, 370.44 -> 10000 ohm (49.76 pt a decade); the vertices are listed (the drawn curve is straight between them on log-log axes).
+# x: LED forward current (A)
+# y: cell resistance (ohm)
+# scale-x: log
+# scale-y: log
+# full-scale-x: 0.1
+# full-scale-y: 1e4
+# uncertainty-x: 2%
+# uncertainty-y: 3%
+# conditions: t=23
+# notes: The vertices are read exactly; the uncertainty is the drawing's: a 2.64 pt stroke is 3% of a decade in resistance, and the curve is a five-point sketch. The table on the same page gives ON resistance 140 ohm typical at 1 mA (the curve reads 123 ohm) and 40 ohm maximum at 20 mA (the curve reads 24 ohm). No light-adapt condition is stated; the off resistance is measured after 1 minute ON at 20 mA.
+# curve t=23
+0.0001 1061
+0.001 123
+0.009969 32.82
+0.01997 24.45
+0.03989 19.15
