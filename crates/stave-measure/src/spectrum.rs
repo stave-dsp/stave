@@ -1,46 +1,30 @@
-//! The Fourier tools the other metrics stand on: an in-place radix-2
-//! FFT and a single-bin Goertzel (f64, bin-centred tones — see the crate
-//! docs for why measurement here never windows a stationary capture).
+//! The Fourier tools the other metrics stand on: an in-place FFT (the
+//! shared [`stave_dsp::Fft`]) and a single-bin Goertzel (f64,
+//! bin-centred tones — see the crate docs for why measurement here never windows a stationary capture).
 
-/// In-place iterative radix-2 FFT (f64). `re.len()` must be a power of 2.
+use stave_dsp::primitives::spectral::Complex;
+use stave_dsp::Fft;
+
+/// In-place forward FFT (f64) over split real and imaginary parts,
+/// `re.len()` a power of two (at least 2), `im` the same length. Plans
+/// [`stave_dsp::Fft`], the workspace's one transform, per call:
+/// measurement is offline, so the plan is not kept.
 pub fn fft(re: &mut [f64], im: &mut [f64]) {
     let n = re.len();
     assert!(n.is_power_of_two(), "fft length must be a power of two");
-    let mut j = 0usize;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j |= bit;
-        if i < j {
-            re.swap(i, j);
-            im.swap(i, j);
-        }
+    assert_eq!(im.len(), n, "fft: re and im differ in length");
+    if n < 2 {
+        return;
     }
-    let mut len = 2usize;
-    while len <= n {
-        let ang = -2.0 * core::f64::consts::PI / len as f64;
-        let (wr, wi) = (ang.cos(), ang.sin());
-        let mut i = 0usize;
-        while i < n {
-            let (mut cr, mut ci) = (1.0f64, 0.0f64);
-            for k in 0..len / 2 {
-                let (a, b) = (i + k, i + k + len / 2);
-                let tr = cr * re[b] - ci * im[b];
-                let ti = cr * im[b] + ci * re[b];
-                re[b] = re[a] - tr;
-                im[b] = im[a] - ti;
-                re[a] += tr;
-                im[a] += ti;
-                let nr = cr * wr - ci * wi;
-                ci = cr * wi + ci * wr;
-                cr = nr;
-            }
-            i += len;
-        }
-        len <<= 1;
+    let mut data: Vec<Complex<f64>> = re
+        .iter()
+        .zip(im.iter())
+        .map(|(&r, &i)| Complex::new(r, i))
+        .collect();
+    Fft::new(n).forward(&mut data);
+    for ((r, i), z) in re.iter_mut().zip(im.iter_mut()).zip(&data) {
+        *r = z.re;
+        *i = z.im;
     }
 }
 

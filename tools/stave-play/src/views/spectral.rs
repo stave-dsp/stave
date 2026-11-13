@@ -2,10 +2,8 @@
 //! buffer (nothing allocates per frame), any window, amplitude scaled so
 //! a full-scale sine reads 0 dBFS.
 
-use std::sync::Arc;
-
-use rustfft::num_complex::Complex32;
-use rustfft::{Fft, FftPlanner};
+use stave_dsp::primitives::spectral::Complex;
+use stave_dsp::Fft;
 
 use stave_measure::window::Window;
 
@@ -32,23 +30,22 @@ impl Default for AnalyzerConfig {
 
 pub struct Analyzer {
     config: AnalyzerConfig,
-    planner: FftPlanner<f32>,
-    fft: Arc<dyn Fft<f32>>,
+    fft: Fft<f32>,
     window: Vec<f32>,
     time: Vec<f32>,
-    freq: Vec<Complex32>,
+    snapshot: Vec<f32>,
+    freq: Vec<Complex<f32>>,
 }
 
 impl Analyzer {
     pub fn new(config: AnalyzerConfig) -> Self {
-        let mut planner = FftPlanner::new();
-        let fft = planner.plan_fft_forward(config.size);
+        let fft = Fft::new(config.size);
         let mut analyzer = Self {
             config,
-            planner,
             fft,
             window: vec![],
             time: vec![],
+            snapshot: vec![],
             freq: vec![],
         };
         analyzer.allocate();
@@ -69,7 +66,7 @@ impl Analyzer {
             return;
         }
         if config.size != self.config.size {
-            self.fft = self.planner.plan_fft_forward(config.size);
+            self.fft = Fft::new(config.size);
         }
         self.config = config;
         self.allocate();
@@ -85,29 +82,32 @@ impl Analyzer {
             .map(|w| w as f32)
             .collect();
         self.time = vec![0.0; n];
-        self.freq = vec![Complex32::default(); n];
+        self.snapshot = vec![0.0; n];
+        self.freq = vec![Complex::default(); n / 2 + 1];
     }
 
     /// The first n/2 bins of the windowed FFT of `x` (`x.len() == n`).
-    pub fn spectrum(&mut self, x: &[f32]) -> &[Complex32] {
-        for ((f, &s), &w) in self.freq.iter_mut().zip(x).zip(&self.window) {
-            *f = Complex32::new(s * w, 0.0);
+    pub fn spectrum(&mut self, x: &[f32]) -> &[Complex<f32>] {
+        let mut windowed = std::mem::take(&mut self.time);
+        for ((t, &s), &w) in windowed.iter_mut().zip(x).zip(&self.window) {
+            *t = s * w;
         }
-        self.fft.process(&mut self.freq);
+        self.fft.forward_real(&windowed, &mut self.freq);
+        self.time = windowed;
         &self.freq[..self.size() / 2]
     }
 
     /// The spectrum of the newest n frames of `ring`'s channel `ch`.
-    pub fn ring_spectrum(&mut self, ring: &AnalysisRing, ch: usize) -> &[Complex32] {
-        let mut time = std::mem::take(&mut self.time);
-        ring.snapshot(ch, &mut time);
-        self.spectrum(&time);
-        self.time = time;
+    pub fn ring_spectrum(&mut self, ring: &AnalysisRing, ch: usize) -> &[Complex<f32>] {
+        let mut snapshot = std::mem::take(&mut self.snapshot);
+        ring.snapshot(ch, &mut snapshot);
+        self.spectrum(&snapshot);
+        self.snapshot = snapshot;
         &self.freq[..self.size() / 2]
     }
 
     /// Sine amplitude in dBFS for a bin, corrected for the window's gain.
-    pub fn amp_db(&self, bin: Complex32) -> f32 {
+    pub fn amp_db(&self, bin: Complex<f32>) -> f32 {
         let gain = self.config.window.coherent_gain() as f32;
         let amp = bin.norm() * 2.0 / (self.size() as f32 * gain);
         if amp <= 1e-6 {

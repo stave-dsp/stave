@@ -267,48 +267,12 @@ mod tests {
         };
         for fir in [false, true] {
             let out = run(fir);
-            let mut re: Vec<f64> = out.iter().map(|&x| x as f64).collect();
-            let mut im = vec![0.0f64; n];
-            // radix-2 fft (local copy)
-            {
-                let n = re.len();
-                let mut j = 0usize;
-                for i in 1..n {
-                    let mut bit = n >> 1;
-                    while j & bit != 0 {
-                        j ^= bit;
-                        bit >>= 1;
-                    }
-                    j |= bit;
-                    if i < j {
-                        re.swap(i, j);
-                        im.swap(i, j);
-                    }
-                }
-                let mut len = 2usize;
-                while len <= n {
-                    let ang = -2.0 * core::f64::consts::PI / len as f64;
-                    let (wr, wi) = (ang.cos(), ang.sin());
-                    let mut i = 0usize;
-                    while i < n {
-                        let (mut cr, mut ci) = (1.0f64, 0.0f64);
-                        for k in 0..len / 2 {
-                            let (a, b) = (i + k, i + k + len / 2);
-                            let tr = cr * re[b] - ci * im[b];
-                            let ti = cr * im[b] + ci * re[b];
-                            re[b] = re[a] - tr;
-                            im[b] = im[a] - ti;
-                            re[a] += tr;
-                            im[a] += ti;
-                            let nr = cr * wr - ci * wi;
-                            ci = cr * wi + ci * wr;
-                            cr = nr;
-                        }
-                        i += len;
-                    }
-                    len <<= 1;
-                }
-            }
+            let fft = crate::Fft::<f64>::new(n);
+            let samples: Vec<f64> = out.iter().map(|&x| x as f64).collect();
+            let mut bins = vec![crate::primitives::spectral::Complex::default(); fft.real_bins()];
+            fft.forward_real(&samples, &mut bins);
+            let re: Vec<f64> = bins.iter().map(|z| z.re).collect();
+            let im: Vec<f64> = bins.iter().map(|z| z.im).collect();
             let mut sig = 0.0f64;
             let mut noise_all = 0.0f64;
             let mut noise_20k = 0.0f64;

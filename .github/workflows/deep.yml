@@ -49,6 +49,7 @@ jobs:
           - { crate: stave-core, harness: an_admitted_begin_always_gets_its_end }
           - { crate: stave-telemetry, harness: truncation_is_the_longest_fitting_prefix_and_round_trips }
           - { crate: stave-dsp, harness: delays_by_exactly_its_length }
+          - { crate: stave-dsp, harness: bit_reversal_is_an_in_range_involution }
     steps:
       - uses: actions/checkout@v4
       - name: Cache Kani

@@ -15,12 +15,12 @@ stave-host.workspace = true
 stave-vst3-sys.workspace = true
 stave-telemetry.workspace = true
 stave-core.workspace = true
+stave-dsp.workspace = true
 thiserror.workspace = true
 cpal = "0.15"
 crossbeam-queue = "0.3"
 eframe = { version = "0.27", default-features = false, features = ["default_fonts", "wgpu"] }
 rfd = "0.14"
-rustfft = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "5"

@@ -10,6 +10,7 @@ description = "Stave's design system: themed, physically lit instrument faces co
 
 [dependencies]
 stave-core.workspace = true
+stave-dsp.workspace = true
 stave-ui.workspace = true
 stave-raster.workspace = true
 

@@ -5,7 +5,7 @@
 //! deterministic curve use the Profiles tab.)
 
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
-use rustfft::num_complex::Complex32;
+use stave_dsp::primitives::spectral::Complex;
 
 use super::plot::{Density, FreqPlot, LogAxis};
 use super::spectral::{Analyzer, AnalyzerConfig, FLOOR_DB};
@@ -63,7 +63,7 @@ impl Default for ResponseState {
 
 /// One frame of the estimate: per bin, |Y|/|X| in dB where the input
 /// is strong enough, folded into `avg` with weight `alpha`.
-fn update(avg: &mut [f32], x: &[Complex32], y: &[Complex32], alpha: f32) {
+fn update(avg: &mut [f32], x: &[Complex<f32>], y: &[Complex<f32>], alpha: f32) {
     for ((a, xi), yi) in avg.iter_mut().zip(x).zip(y).skip(1) {
         if xi.norm() < INPUT_FLOOR {
             continue;
@@ -195,14 +195,14 @@ mod tests {
     #[test]
     fn strong_bins_converge_and_weak_bins_hold() {
         let x = [
-            Complex32::new(1.0, 0.0),
-            Complex32::new(1.0, 0.0),
-            Complex32::new(1e-5, 0.0),
+            Complex::new(1.0, 0.0),
+            Complex::new(1.0, 0.0),
+            Complex::new(1e-5, 0.0),
         ];
         let y = [
-            Complex32::new(9.0, 0.0),
-            Complex32::new(0.5, 0.0),
-            Complex32::new(1.0, 0.0),
+            Complex::new(9.0, 0.0),
+            Complex::new(0.5, 0.0),
+            Complex::new(1.0, 0.0),
         ];
         let mut avg = [7.0, 0.0, 3.0];
         for _ in 0..200 {

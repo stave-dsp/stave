@@ -37,45 +37,19 @@ fn rms(buf: &[f32]) -> f64 {
 
 // ===== ADAA tests =====
 
-/// In-place iterative radix-2 FFT (f64). N must be a power of two.
+/// In-place forward FFT (f64) over split parts, through the crate's
+/// [`Fft`](crate::Fft). N must be a power of two.
 fn fft(re: &mut [f64], im: &mut [f64]) {
-    let n = re.len();
-    let mut j = 0usize;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j |= bit;
-        if i < j {
-            re.swap(i, j);
-            im.swap(i, j);
-        }
-    }
-    let mut len = 2usize;
-    while len <= n {
-        let ang = -2.0 * core::f64::consts::PI / len as f64;
-        let (wr, wi) = (ang.cos(), ang.sin());
-        let mut i = 0usize;
-        while i < n {
-            let (mut cr, mut ci) = (1.0f64, 0.0f64);
-            for k in 0..len / 2 {
-                let a = i + k;
-                let b = i + k + len / 2;
-                let tr = cr * re[b] - ci * im[b];
-                let ti = cr * im[b] + ci * re[b];
-                re[b] = re[a] - tr;
-                im[b] = im[a] - ti;
-                re[a] += tr;
-                im[a] += ti;
-                let nr = cr * wr - ci * wi;
-                ci = cr * wi + ci * wr;
-                cr = nr;
-            }
-            i += len;
-        }
-        len <<= 1;
+    use crate::primitives::spectral::Complex;
+    let mut data: Vec<Complex<f64>> = re
+        .iter()
+        .zip(im.iter())
+        .map(|(&r, &i)| Complex::new(r, i))
+        .collect();
+    crate::Fft::new(re.len()).forward(&mut data);
+    for ((r, i), z) in re.iter_mut().zip(im.iter_mut()).zip(&data) {
+        *r = z.re;
+        *i = z.im;
     }
 }
 

@@ -23,9 +23,11 @@ use stave_dsp::{AdaaOrder, AdsrConfig};
 use std::hint::black_box;
 use std::time::Instant;
 
+use stave_dsp::primitives::spectral::Complex;
 use stave_dsp::{
-    Adaa, Adsr, Allpass1, Biquad, Curve, DelayLine, DiodeClipper, DiodeClipperConfig, Hysteresis,
-    Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley, Slew, Stage, Waveform,
+    Adaa, Adsr, Allpass1, Biquad, Curve, DelayLine, DiodeClipper, DiodeClipperConfig, Fft,
+    Hysteresis, Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley, Slew, Stage,
+    Waveform,
 };
 
 const N: usize = 1 << 17;
@@ -53,6 +55,25 @@ fn bench(name: &str, input: &[f32], mut tick: impl FnMut(f32) -> f32) {
         t0.elapsed().as_secs_f64() / input.len() as f64 * 1e9
     };
     run(); // warm
+    let mut samples: Vec<f64> = (0..REPEATS).map(|_| run()).collect();
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = samples[REPEATS / 2];
+    let spread = (samples[REPEATS - 1] - samples[0]) / median * 100.0;
+    println!("  {name:<28} {median:>7.2} ns/sample  (spread {spread:.0}%)");
+}
+
+/// Median ns per point of a whole-buffer operation over `REPEATS`
+/// timed batches, for the transforms (cost per transform ÷ length).
+fn bench_points(name: &str, points: usize, mut run_once: impl FnMut()) {
+    let calls = (N / points).max(8);
+    let mut run = || {
+        let t0 = Instant::now();
+        for _ in 0..calls {
+            run_once();
+        }
+        t0.elapsed().as_secs_f64() / (calls * points) as f64 * 1e9
+    };
+    run();
     let mut samples: Vec<f64> = (0..REPEATS).map(|_| run()).collect();
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let median = samples[REPEATS / 2];
@@ -167,4 +188,17 @@ fn primitive_datasheet() {
     osc_saw.prepare(sr);
     osc_saw.set_hz(220.0);
     bench("Osc (saw, polyBLEP)", &input, |x| osc_saw.tick(x));
+
+    for n in [512usize, 4096] {
+        let fft = Fft::<f32>::new(n);
+        let mut data: Vec<Complex<f32>> =
+            input[..n].iter().map(|&x| Complex::new(x, 0.0)).collect();
+        bench_points(&format!("Fft f32 complex {n}"), n, || {
+            fft.forward(black_box(&mut data))
+        });
+        let mut bins = vec![Complex::default(); fft.real_bins()];
+        bench_points(&format!("Fft f32 real {n}"), n, || {
+            fft.forward_real(black_box(&input[..n]), &mut bins)
+        });
+    }
 }

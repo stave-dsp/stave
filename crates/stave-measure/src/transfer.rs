@@ -5,8 +5,8 @@
 //! bins whose input energy is below the floor are reported invalid
 //! rather than as noise.
 
-use rustfft::num_complex::Complex64;
-use rustfft::FftPlanner;
+use stave_dsp::primitives::spectral::Complex;
+use stave_dsp::Fft;
 
 use crate::level::db;
 use crate::window::Window;
@@ -46,6 +46,7 @@ const INPUT_FLOOR: f64 = 1e-8;
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TransferConfig {
     pub sample_rate: f64,
+    /// Segment length: a power of two, at least 2.
     pub fft_size: usize,
     pub window: Window,
 }
@@ -71,21 +72,25 @@ pub fn estimate(input: &[f32], output: &[f32], config: &TransferConfig) -> Trans
     let hop = n / 2;
     let len = input.len().min(output.len());
     let window = config.window.coefficients(n);
-    let fft = FftPlanner::<f64>::new().plan_fft_forward(n);
-    let half = n / 2 + 1;
-    let (mut sxy, mut sxx) = (vec![Complex64::default(); half], vec![0.0f64; half]);
+    let fft = Fft::<f64>::new(n);
+    let half = fft.real_bins();
+    let (mut sxy, mut sxx) = (vec![Complex::default(); half], vec![0.0f64; half]);
     let mut segments = 0;
-    let (mut xb, mut yb) = (vec![Complex64::default(); n], vec![Complex64::default(); n]);
+    let (mut xt, mut yt) = (vec![0.0f64; n], vec![0.0f64; n]);
+    let (mut xb, mut yb) = (
+        vec![Complex::default(); half],
+        vec![Complex::default(); half],
+    );
     let mut start = 0;
     while start + n <= len {
         for i in 0..n {
-            xb[i] = Complex64::new(f64::from(input[start + i]) * window[i], 0.0);
-            yb[i] = Complex64::new(f64::from(output[start + i]) * window[i], 0.0);
+            xt[i] = f64::from(input[start + i]) * window[i];
+            yt[i] = f64::from(output[start + i]) * window[i];
         }
-        fft.process(&mut xb);
-        fft.process(&mut yb);
+        fft.forward_real(&xt, &mut xb);
+        fft.forward_real(&yt, &mut yb);
         for k in 0..half {
-            sxy[k] += yb[k] * xb[k].conj();
+            sxy[k] = sxy[k] + yb[k] * xb[k].conj();
             sxx[k] += xb[k].norm_sqr();
         }
         segments += 1;
@@ -95,7 +100,7 @@ pub fn estimate(input: &[f32], output: &[f32], config: &TransferConfig) -> Trans
     let bins = (1..half)
         .filter(|&k| sxx[k] > floor && sxx[k] > 0.0)
         .map(|k| {
-            let h = sxy[k] / sxx[k];
+            let h = sxy[k].scale(1.0 / sxx[k]);
             Bin {
                 hz: k as f64 * rate / n as f64,
                 gain_db: db(h.norm()),
@@ -171,7 +176,7 @@ mod tests {
         );
         for hz in [100.0, 1_000.0, 5_000.0] {
             let w = std::f64::consts::TAU * hz / RATE;
-            let den = Complex64::new(1.0 - (1.0 - a) * w.cos(), (1.0 - a) * w.sin());
+            let den = Complex::<f64>::new(1.0 - (1.0 - a) * w.cos(), (1.0 - a) * w.sin());
             let want = db(a / den.norm());
             let got = h.gain_at(hz).unwrap();
             assert!(

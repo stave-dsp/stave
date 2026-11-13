@@ -5,6 +5,9 @@
 
 use std::vec::Vec;
 
+use stave_dsp::primitives::spectral::Complex;
+use stave_dsp::Fft;
+
 use stave_ui::layout::Rect;
 use stave_ui::scene::{pt, Path, Pt, Scene, Stroke};
 use stave_ui::style::Color;
@@ -64,16 +67,17 @@ pub fn spectrum(f: &Frame<'_>, r: Rect, s: &mut Scene, channel: usize, sample_ra
     let mut buf = std::vec![0f32; 2048];
     let n = f.controller.capture(channel, &mut buf).min(2048);
     let size = if n >= 2048 { 2048 } else if n >= 1024 { 1024 } else { return };
-    let mut re: Vec<f32> = buf[..size]
+    let windowed: Vec<f32> = buf[..size]
         .iter()
         .enumerate()
         .map(|(i, &v)| v * (0.5 - 0.5 * (core::f32::consts::TAU * i as f32 / size as f32).cos()))
         .collect();
-    let mut im = std::vec![0f32; size];
-    fft(&mut re, &mut im);
+    let fft = Fft::<f32>::new(size);
+    let mut bins = std::vec![Complex::default(); fft.real_bins()];
+    fft.forward_real(&windowed, &mut bins);
     let mags: Vec<f64> = (0..size / 2)
         .map(|k| {
-            let m = f64::from(re[k].hypot(im[k])) / (size as f64 / 4.0);
+            let m = f64::from(bins[k].norm()) / (size as f64 / 4.0);
             20.0 * m.max(1e-9).log10()
         })
         .collect();
@@ -139,43 +143,5 @@ pub fn envelope(f: &Frame<'_>, r: Rect, s: &mut Scene, attack: f64, decay: f64, 
     glow_line(f, s, &pts);
     for p in &pts[1..4] {
         s.solid(Path::circle(*p, 2.4), f.theme.palette.phosphor);
-    }
-}
-
-/// In-place radix-2 FFT (length a power of two).
-fn fft(re: &mut [f32], im: &mut [f32]) {
-    let n = re.len();
-    let mut j = 0;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j |= bit;
-        if i < j {
-            re.swap(i, j);
-            im.swap(i, j);
-        }
-    }
-    let mut len = 2;
-    while len <= n {
-        let ang = -core::f32::consts::TAU / len as f32;
-        let (wr, wi) = (ang.cos(), ang.sin());
-        for start in (0..n).step_by(len) {
-            let (mut cr, mut ci) = (1.0f32, 0.0f32);
-            for k in 0..len / 2 {
-                let (a, b) = (start + k, start + k + len / 2);
-                let (tr, ti) = (re[b] * cr - im[b] * ci, re[b] * ci + im[b] * cr);
-                re[b] = re[a] - tr;
-                im[b] = im[a] - ti;
-                re[a] += tr;
-                im[a] += ti;
-                let nc = cr * wr - ci * wi;
-                ci = cr * wi + ci * wr;
-                cr = nc;
-            }
-        }
-        len <<= 1;
     }
 }
