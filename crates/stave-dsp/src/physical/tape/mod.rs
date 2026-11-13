@@ -21,8 +21,15 @@
 //!   redesigned with the speed.
 //! - [`Flutter`] — wow and flutter, a delay modulated by a measured
 //!   transport's spectrum ([`Transport`]).
+//! - [`Capstan`] — the tape's speed past the play head (DSP.md H5): slow
+//!   [`Drift`], the [`Motor`]'s start and stop, [`Splices`]' jumps in
+//!   time.
+//! - [`Spacing`] — the head-to-tape spacing over time (H5): dropouts,
+//!   splice joints and wear, a tape's [`Condition`], each a loss by the
+//!   spacing law.
 //! - [`Chowdhury`] — the three in a machine's order (record, transport,
-//!   play) for one [`Machine`]: [`Machine::TC260`].
+//!   play) for one [`Machine`]: [`Machine::TC260`]; with a capstan and a
+//!   tape condition after the play head when given (off by default).
 //!
 //! ```
 //! use stave_dsp::physical::tape::{Chowdhury, Machine};
@@ -47,14 +54,18 @@
 //! assert!(slow < fast, "{slow} < {fast}");
 //! ```
 
+mod capstan;
 mod flutter;
 mod playback;
 mod recording;
+mod spacing;
 
 #[cfg(test)]
 mod tests;
 
+pub use capstan::{Capstan, Drift, Motor, Splices, Stop};
 pub use flutter::{Flutter, Transport};
+pub use spacing::{Condition, Dropout, Spacing};
 pub use playback::{Phase, Playback};
 pub use recording::Recording;
 
@@ -208,7 +219,10 @@ const BIAS_SAMPLES: u32 = 14;
 /// 55 moved by at most 8%: the bias's frequency matters to the tape
 /// only by being far above the audio), then [`Flutter`] (a measured
 /// transport, not the paper's unpublished TC-260 one), then
-/// [`Playback`].
+/// [`Playback`]; given, a [`Capstan`] (speed drift, start and stop,
+/// splices) and a [`Spacing`] (dropouts, joints, wear) follow the play
+/// head, in the tape's coordinates (DSP.md H5): off unless given, and
+/// then bit-identical to the machine without them.
 ///
 /// # Verified
 /// `crates/stave-test/tests/tape_matches_reference.rs::loss_filter_matches_the_gap_loss_formula_at_every_speed`
@@ -220,11 +234,15 @@ const BIAS_SAMPLES: u32 = 14;
 /// names), `crates/stave-test/tests/tape_matches_reference.rs::harmonics_against_bias`,
 /// `crates/stave-test/tests/tape_matches_reference.rs::aliasing_at_the_host_rate`
 /// and `crates/stave-test/tests/tape_matches_reference.rs::the_same_tape_at_every_rate`
-/// (44.1–192 kHz against 48 kHz: gain and third harmonic within 0.001 dB).
+/// (44.1–192 kHz against 48 kHz: gain and third harmonic within 0.001 dB);
+/// `crates/stave-test/tests/tape_matches_reference.rs::transport_off_is_bit_identical`
+/// (an unconfigured capstan and condition change nothing).
 ///
 /// # Cost
 /// Datasheet `"Chowdhury tape (TC-260, 7.5 ips)"` (15× inside at 48 kHz),
-/// and its parts `"Playback losses (7.5 ips)"` and `"Flutter (Akai 4000D)"`.
+/// and its parts `"Playback losses (7.5 ips)"` and `"Flutter (Akai 4000D)"`;
+/// H5's `"Capstan (steady, studio motor, edited)"` and `"Spacing (used tape)"`
+/// when given.
 ///
 /// # Aliasing
 /// The hysteresis runs at about 720 kHz, the bias on an even number of
@@ -245,6 +263,8 @@ pub struct Chowdhury {
     record: Oversampled<Recording>,
     flutter: Flutter,
     playback: Playback,
+    capstan: Option<Capstan>,
+    spacing: Option<Spacing>,
     rate: f32,
 }
 
@@ -258,6 +278,8 @@ impl Chowdhury {
             record: Oversampled::linear(recording, 1),
             flutter: Flutter::new(Transport::AKAI_4000D),
             playback: Playback::new(machine.play, machine.formulation.thickness, machine.speed, Phase::Linear),
+            capstan: None,
+            spacing: None,
             rate: 0.0,
         };
         c.prepare(48_000.0);
@@ -273,11 +295,44 @@ impl Chowdhury {
         self.record.factor()
     }
 
+    /// The transport's speed after the play head: drift, start and
+    /// stop, splices (DSP.md H5). Prepares it at this machine's rate
+    /// and speed; its latency joins the machine's.
+    pub fn with_capstan(mut self, mut capstan: Capstan) -> Self {
+        capstan.set_speed(self.machine.speed);
+        capstan.prepare(self.rate);
+        self.capstan = Some(capstan);
+        self
+    }
+
+    /// The tape's condition: dropouts, splice joints, wear (DSP.md H5).
+    /// Prepares it at this machine's rate and speed.
+    pub fn with_spacing(mut self, mut spacing: Spacing) -> Self {
+        spacing.set_speed(self.machine.speed);
+        spacing.prepare(self.rate);
+        self.spacing = Some(spacing);
+        self
+    }
+
+    pub fn capstan(&mut self) -> Option<&mut Capstan> {
+        self.capstan.as_mut()
+    }
+
+    pub fn spacing(&mut self) -> Option<&mut Spacing> {
+        self.spacing.as_mut()
+    }
+
     /// Tape speed, metres per second (see [`Machine::ips`]): redesigns
     /// the play head's losses (realtime).
     pub fn set_speed(&mut self, metres_per_second: f64) {
         self.machine.speed = metres_per_second;
         self.playback.set_speed(metres_per_second);
+        if let Some(c) = self.capstan.as_mut() {
+            c.set_speed(metres_per_second);
+        }
+        if let Some(s) = self.spacing.as_mut() {
+            s.set_speed(metres_per_second);
+        }
     }
 
     /// Bias current over the full-scale signal current (0 is unbiased:
@@ -311,19 +366,52 @@ impl Stage for Chowdhury {
         self.record.prepare(sample_rate);
         self.flutter.prepare(sample_rate);
         self.playback.prepare(sample_rate);
+        if let Some(c) = self.capstan.as_mut() {
+            c.prepare(sample_rate);
+        }
+        if let Some(s) = self.spacing.as_mut() {
+            s.prepare(sample_rate);
+        }
     }
     fn reset(&mut self) {
         self.record.reset();
         self.flutter.reset();
         self.playback.reset();
+        if let Some(c) = self.capstan.as_mut() {
+            c.reset();
+        }
+        if let Some(s) = self.spacing.as_mut() {
+            s.reset();
+        }
     }
     fn tick(&mut self, x: f32) -> f32 {
         let m = self.record.tick(x);
         let m = self.flutter.tick(m);
-        self.playback.tick(m)
+        let mut y = self.playback.tick(m);
+        let mut ratio = 1.0;
+        let mut spliced = false;
+        if let Some(c) = self.capstan.as_mut() {
+            y = c.tick(y);
+            if c.is_enabled() {
+                ratio = c.speed_ratio();
+                spliced = c.spliced();
+            }
+        }
+        if let Some(s) = self.spacing.as_mut() {
+            if spliced {
+                s.splice();
+            }
+            s.set_speed_ratio(ratio);
+            y = s.tick(y);
+        }
+        y
     }
     fn latency(&self) -> u32 {
-        self.record.latency() + self.flutter.latency() + self.playback.latency()
+        self.record.latency()
+            + self.flutter.latency()
+            + self.playback.latency()
+            + self.capstan.as_ref().map_or(0, |c| c.latency())
+            + self.spacing.as_ref().map_or(0, |s| s.latency())
     }
     fn tail(&self) -> Tail {
         Tail::Samples(2 * self.latency() + 4096)

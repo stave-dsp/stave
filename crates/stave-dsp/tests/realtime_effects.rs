@@ -429,3 +429,45 @@ fn instruments_never_allocate_after_prepare() {
     });
     assert_eq!(n, 0, "instrument setters allocated {n} times");
 }
+
+/// The tape transport (DSP.md H5): the capstan and the spacing — `tick`,
+/// `reset` and every realtime call (stop, start, splices, speed, wear)
+/// never allocate after `prepare`.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn tape_transport_never_allocates_after_prepare() {
+    use stave_dsp::physical::tape::{Capstan, Condition, Drift, Machine, Motor, Spacing, Splices};
+
+    let full = || Capstan::new(3).with_drift(Drift::LOOSE).with_motor(Motor::CONSUMER).with_splices(Splices::EDITED);
+    no_allocation("Capstan", &mut full());
+    no_allocation("Spacing", &mut Spacing::new(Condition::WORN, 3));
+
+    let mut capstan = full();
+    capstan.prepare(48_000.0);
+    let mut spacing = Spacing::new(Condition::WORN, 3);
+    spacing.prepare(48_000.0);
+    let n = allocations_in(|| {
+        for i in 0..400 {
+            match i % 100 {
+                10 => capstan.stop(),
+                60 => capstan.start(),
+                _ => {}
+            }
+            if i % 7 == 0 {
+                capstan.splice();
+                spacing.splice();
+            }
+            capstan.set_speed(Machine::ips(if i % 2 == 0 { 7.5 } else { 15.0 }));
+            spacing.set_speed(Machine::ips(7.5));
+            spacing.set_wear((i % 10) as f64 / 10.0);
+            for _ in 0..256 {
+                let y = capstan.tick(0.1);
+                spacing.set_speed_ratio(capstan.speed_ratio());
+                spacing.tick(y);
+            }
+        }
+        capstan.reset();
+        spacing.reset();
+    });
+    assert_eq!(n, 0, "the tape transport allocated {n} times");
+}

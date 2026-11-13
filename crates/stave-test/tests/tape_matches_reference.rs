@@ -1,7 +1,9 @@
 //! Tape (DSP.md E8) against its published references: the play head's
 //! loss formula and Chowdhury's figures (DAFx-19), a measured transport's
 //! flutter spectrum (Mikkonen et al., DAFx-23), and the measurement
-//! design's aliasing (A4) and sample-rate invariance (C11).
+//! design's aliasing (A4) and sample-rate invariance (C11); the transport
+//! (DSP.md H5) against its own processes' laws — drift, the motor's
+//! curves, dropouts' statistics — and the spacing loss against eq. 13.
 //!
 //! The figures are digitised in `crates/stave-test/datasheet/`
 //! (`chowdhury2019_fig2_loop`, `chowdhury2019_fig3_loss`,
@@ -9,7 +11,8 @@
 //! a **known gap**: asserted still a miss and no worse than recorded.
 
 use stave_dsp::physical::tape::{
-    Chowdhury, Flutter, Formulation, Machine, Phase, Playback, Recording, Transport,
+    Capstan, Chowdhury, Condition, Drift, Flutter, Formulation, Machine, Motor, Phase, Playback,
+    PlayHead, Recording, Spacing, Stop, Transport,
 };
 use stave_dsp::Oversampled;
 use stave_dsp::circuit::devices::magnetic::{JilesAtherton, JilesAthertonCore};
@@ -307,4 +310,286 @@ fn flutter_matches_the_measured_spectrum() {
     println!("E8 | flutter rms {:.4} ms against {:.4} ms | {:+.1}% | budget 5% | pass", got_rms * 1e3, rms * 1e3, 100.0 * rms_err);
     assert!(worst <= 1.5, "{worst}");
     assert!(rms_err.abs() <= 0.05, "{got_rms} vs {rms}");
+}
+
+// ---- H5: the transport ----
+
+/// Mean and (population) variance.
+fn moments(x: &[f64]) -> (f64, f64) {
+    let mean = x.iter().sum::<f64>() / x.len() as f64;
+    let var = x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / x.len() as f64;
+    (mean, var)
+}
+
+#[test]
+fn transport_off_is_bit_identical() {
+    // The machine as E8 left it, composed by hand: record (15× inside at
+    // 48 kHz, the bias on 14 inner samples), flutter, play head.
+    let machine = Machine::TC260;
+    let mut recording = Recording::new(machine);
+    recording.set_bias_samples(14);
+    let mut record = Oversampled::linear(recording, 15);
+    let mut flutter = Flutter::new(Transport::AKAI_4000D);
+    let mut play = Playback::new(machine.play, machine.formulation.thickness, machine.speed, Phase::Linear);
+    record.prepare(48_000.0);
+    flutter.prepare(48_000.0);
+    play.prepare(48_000.0);
+    let mut plain = Chowdhury::new(machine);
+    let mut off = Chowdhury::new(machine)
+        .with_capstan(Capstan::new(5))
+        .with_spacing(Spacing::new(Condition::NONE, 5));
+    off.prepare(48_000.0);
+    assert_eq!(off.latency(), plain.latency());
+    let mut differ = 0;
+    for n in 0..24_000 {
+        let x = 0.5 * (std::f32::consts::TAU * 997.0 * n as f32 / 48e3).sin();
+        let today = play.tick(flutter.tick(record.tick(x)));
+        let (a, b) = (plain.tick(x), off.tick(x));
+        differ += usize::from(a.to_bits() != today.to_bits()) + usize::from(b.to_bits() != today.to_bits());
+    }
+    println!("H5 | everything off against E8's chain, 24 000 samples | {differ} differing | budget 0 (bit-identical) | pass");
+    assert_eq!(differ, 0);
+}
+
+#[test]
+fn spacing_loss_matches_eq_13() {
+    // A held spacing (full wear of `extra` µm) as the stage's impulse
+    // response, against eq. 13 with the head moved that much further
+    // from the tape, over the eq. 13 one: the spacing law, e^(−kΔd).
+    let head = Machine::TC260.play;
+    let thickness = Formulation::FERRIC.thickness;
+    let mut worst: f64 = 0.0;
+    for ips in [3.75, 7.5, 15.0] {
+        let speed = Machine::ips(ips);
+        for rate in [44_100.0f64, 48_000.0, 96_000.0] {
+            for extra in [0.5, 2.0, 5.0, 10.0, 19.0] {
+                if extra * 1e-6 / speed > 1e-4 {
+                    continue; // beyond 100 µs of travel: the valid range
+                }
+                let held = Condition { wear: 1.0, wear_um: extra, ..Condition::NONE };
+                let mut s = Spacing::new(held, 1);
+                s.set_speed(speed);
+                s.prepare(rate as f32);
+                let taps: Vec<f64> = (0..2 * s.latency() as usize + 1)
+                    .map(|n| f64::from(s.tick(if n == 0 { 1.0 } else { 0.0 })))
+                    .collect();
+                assert_eq!(s.clamps(), 0);
+                let near = Playback::new(head, thickness, speed, Phase::Linear);
+                let far = Playback::new(PlayHead { spacing: head.spacing + extra * 1e-6, ..head }, thickness, speed, Phase::Linear);
+                let mut case: f64 = 0.0;
+                let mut hz = 20.0;
+                while hz <= 20_000.0 {
+                    let base = near.loss(hz);
+                    if base.abs() > 1e-6 {
+                        let want = 20.0 * (far.loss(hz) / base).abs().log10();
+                        if want > FLOOR_DB {
+                            case = case.max((fir_db(&taps, hz, rate) - want).abs());
+                        }
+                    }
+                    hz *= 2f64.powf(1.0 / 24.0);
+                }
+                worst = worst.max(case);
+                assert!(case <= LOSS_DB, "{ips} ips, {rate} Hz, {extra} µm: {case} dB");
+            }
+        }
+    }
+    println!("H5 | spacing loss against eq. 13, 0.5–19 µm, 3.75–15 ips, 44.1–96 kHz | worst {worst:.3} dB | budget {LOSS_DB} dB | pass");
+
+    // A splice joint's peak on a 10 kHz tone at 7.5 ips against Wallace's
+    // 54.6·d/λ dB: a 20 mm joint (105 ms), its middle 5 ms read.
+    let speed = Machine::ips(7.5);
+    for depth in [1.0, 3.0, 8.0] {
+        let joint = Condition { joint_um: depth, joint_mm: 20.0, ..Condition::NONE };
+        let mut s = Spacing::new(joint, 1);
+        s.set_speed(speed);
+        s.prepare(48_000.0);
+        let d = s.latency() as usize;
+        let length = (20e-3 / speed * 48_000.0) as usize;
+        let tone = |n: usize| (std::f64::consts::TAU * 10_000.0 * n as f64 / 48_000.0).sin();
+        let mut y = Vec::new();
+        for n in 0..length + 4 * d {
+            if n == 2 * d {
+                s.splice();
+            }
+            y.push(f64::from(s.tick(tone(n) as f32)));
+        }
+        // The joint's middle in the output: begun at 2d, delayed d.
+        let middle = 3 * d + length / 2;
+        let window = &y[middle - 120..middle + 120];
+        let (re, im) = window.iter().enumerate().fold((0.0, 0.0), |(re, im), (i, v)| {
+            let w = std::f64::consts::TAU * 10_000.0 * i as f64 / 48_000.0;
+            (re + v * w.cos(), im + v * w.sin())
+        });
+        let got = 20.0 * (2.0 * (re * re + im * im).sqrt() / 240.0).log10();
+        let want = -54.6 * depth * 1e-6 / (speed / 10_000.0);
+        println!("H5 | joint of {depth} µm at 10 kHz, 7.5 ips | {got:.2} dB against 54.6·d/λ = {want:.2} dB | budget 0.5 dB | pass");
+        assert!((got - want).abs() < 0.5, "{depth} µm: {got} vs {want}");
+    }
+}
+
+#[test]
+fn dropouts_have_their_process_statistics() {
+    // 2000 s at 8 kHz, ten dropouts a second: about 20 000 events.
+    let c = Condition {
+        dropouts_per_minute: 600.0,
+        depth_um: 1.5,
+        duration_ms: 4.0,
+        duration_spread: 0.5,
+        ..Condition::NONE
+    };
+    let rate = 8_000.0;
+    let mut s = Spacing::new(c, 11);
+    s.prepare(rate as f32);
+    let seconds = 2_000.0;
+    let (mut starts, mut depths, mut logs) = (Vec::new(), Vec::new(), Vec::new());
+    for n in 0..(seconds * rate) as usize {
+        s.tick(0.0);
+        if let Some(d) = s.started() {
+            starts.push(n as f64 / rate);
+            depths.push(d.depth_um);
+            logs.push(d.seconds.ln());
+        }
+    }
+    assert_eq!(s.clamps(), 0);
+    let n = starts.len() as f64;
+    let expect = 10.0 * seconds;
+    let rate_z = (n - expect) / expect.sqrt();
+    let gaps: Vec<f64> = starts.windows(2).map(|w| w[1] - w[0]).collect();
+    let (gap_mean, gap_var) = moments(&gaps);
+    let gap_cv = gap_var.sqrt() / gap_mean;
+    let (depth_mean, _) = moments(&depths);
+    let tail = depths.iter().filter(|&&d| d > 3.0).count() as f64 / n;
+    let (log_mean, log_var) = moments(&logs);
+    let p = (-2f64).exp();
+    println!("H5 | dropouts: {n} in {seconds} s against {expect} | z {rate_z:+.2} | budget 3 | pass");
+    println!("H5 | gaps: mean {gap_mean:.5} s against 0.1, CV {gap_cv:.4} against 1 | budget 2 % / 5 % | pass");
+    println!("H5 | depth: mean {depth_mean:.4} µm against 1.5, P(> 2·mean) {tail:.4} against {p:.4} | budget 3 SE | pass");
+    println!("H5 | duration: ln mean {log_mean:.4} against {:.4}, spread {:.4} against 0.5 | budget 3 SE / 3 % | pass", (4e-3f64).ln(), log_var.sqrt());
+    assert!(rate_z.abs() < 3.0, "{rate_z}");
+    assert!((gap_mean / 0.1 - 1.0).abs() < 0.02, "{gap_mean}");
+    assert!((gap_cv - 1.0).abs() < 0.05, "{gap_cv}");
+    assert!((depth_mean - 1.5).abs() < 3.0 * 1.5 / n.sqrt(), "{depth_mean}");
+    assert!((tail - p).abs() < 3.0 * (p * (1.0 - p) / n).sqrt(), "{tail}");
+    assert!((log_mean - (4e-3f64).ln()).abs() < 3.0 * 0.5 / n.sqrt(), "{log_mean}");
+    assert!((log_var.sqrt() / 0.5 - 1.0).abs() < 0.03, "{}", log_var.sqrt());
+}
+
+#[test]
+fn capstan_drift_has_its_process_statistics() {
+    // σ = 0.2 %, τ = 50 ms, the loop's τs = 200 ms, at 1 kHz for 2²²
+    // samples: about 20 000 of the loop's time constants.
+    let (sigma, tau, servo, rate) = (2e-3, 0.05, 0.2, 1_000.0);
+    let mut c = Capstan::new(21).with_drift(Drift { rms: sigma, tau_s: tau }).with_servo(servo);
+    c.prepare(rate as f32);
+    let base = f64::from(c.latency()) / rate;
+    let n = 1 << 22;
+    let (mut eps, mut delivered, mut lag) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
+    for _ in 0..n {
+        c.tick(0.0);
+        eps.push(c.speed_error());
+        delivered.push(c.speed_ratio() - 1.0);
+        lag.push(c.lag() - base);
+    }
+    assert_eq!(c.clamps(), 0);
+    let (_, var) = moments(&eps);
+    let (_, var_delivered) = moments(&delivered);
+    let (_, var_lag) = moments(&lag);
+    let want_delivered = sigma * sigma * servo / (tau + servo);
+    let want_lag = sigma * sigma * tau * servo * servo / (tau + servo);
+    let e = var / (sigma * sigma) - 1.0;
+    let ed = var_delivered / want_delivered - 1.0;
+    let el = var_lag / want_lag - 1.0;
+    println!("H5 | drift: speed error variance {:+.2} % of σ² | budget 4 % | pass", 100.0 * e);
+    println!("H5 | drift: delivered speed variance {:+.2} % of σ²·τs/(τ + τs) | budget 6 % | pass", 100.0 * ed);
+    println!("H5 | drift: lag variance {:+.2} % of σ²·τ·τs²/(τ + τs) | budget 6 % | pass", 100.0 * el);
+    assert!(e.abs() < 0.04, "{var}");
+    assert!(ed.abs() < 0.06, "{var_delivered} vs {want_delivered}");
+    assert!(el.abs() < 0.06, "{var_lag} vs {want_lag}");
+    for lag_samples in [25usize, 50, 100] {
+        let r = eps[..n - lag_samples].iter().zip(&eps[lag_samples..]).map(|(a, b)| a * b).sum::<f64>()
+            / (n - lag_samples) as f64
+            / var;
+        let want = (-(lag_samples as f64) / (tau * rate)).exp();
+        println!("H5 | drift: correlation at {lag_samples} ms {r:.4} against {want:.4} | budget 0.03 | pass");
+        assert!((r - want).abs() < 0.03, "{lag_samples}: {r} vs {want}");
+    }
+}
+
+#[test]
+fn capstan_ramps_follow_their_time_constants() {
+    let rate = 48_000.0;
+    // The motor's curves, sample by sample, against the closed forms.
+    for motor in [Motor::STUDIO, Motor::CONSUMER] {
+        let mut c = Capstan::new(4).with_motor(motor);
+        c.prepare(rate as f32);
+        let mut worst: f64 = 0.0;
+        c.stop();
+        let mut k = 0;
+        while !c.is_stopped() {
+            c.tick(0.0);
+            k += 1;
+            let t = k as f64 / rate;
+            let want = match motor.stop {
+                Stop::Coast { tau_s } => (-t / tau_s).exp(),
+                Stop::Brake { seconds } => (1.0 - t / seconds).max(0.0),
+            };
+            if !c.is_stopped() {
+                worst = worst.max((c.motor_ratio() - want).abs());
+            }
+        }
+        let stop_s = k as f64 / rate;
+        c.start();
+        for k in 1..(10.0 * motor.start_s * rate) as usize {
+            c.tick(0.0);
+            let want = 1.0 - (-(k as f64) / (rate * motor.start_s)).exp();
+            worst = worst.max((c.motor_ratio() - want).abs());
+        }
+        println!("H5 | motor {motor:?}: stopped in {stop_s:.3} s, curves within {worst:.1e} | budget 1e-9 | pass");
+        assert!(worst < 1e-9, "{worst}");
+    }
+
+    // A 1 kHz tone through a spin-up from rest: its pitch, period by
+    // period from upward zero crossings, against the speed delivered
+    // over that period.
+    let motor = Motor::CONSUMER;
+    let mut c = Capstan::new(4).with_motor(motor);
+    c.prepare(rate as f32);
+    let d = f64::from(c.latency());
+    let total = (rate * 8.0) as usize;
+    let (mut y, mut r) = (Vec::with_capacity(total), Vec::with_capacity(total));
+    let mut n = 0usize;
+    let sine = |n: usize| (std::f64::consts::TAU * 1e3 * n as f64 / rate).sin() as f32;
+    c.stop();
+    while !c.is_stopped() {
+        c.tick(sine(n));
+        n += 1;
+    }
+    c.start();
+    for _ in 0..total {
+        y.push(f64::from(c.tick(sine(n))));
+        r.push(c.speed_ratio());
+        n += 1;
+    }
+    let crossings: Vec<f64> = (1..y.len())
+        .filter(|&i| y[i - 1] < 0.0 && y[i] >= 0.0)
+        .map(|i| (i - 1) as f64 + y[i - 1] / (y[i - 1] - y[i]))
+        .collect();
+    let mut worst: f64 = 0.0;
+    let mut periods = 0;
+    for w in crossings.windows(2) {
+        let (a, b) = (w[0].ceil() as usize, w[1].floor() as usize);
+        let speed = r[a..=b].iter().sum::<f64>() / (b - a + 1) as f64;
+        if speed < 0.2 {
+            continue;
+        }
+        let hz = rate / (w[1] - w[0]);
+        worst = worst.max((hz / (1e3 * speed) - 1.0).abs());
+        periods += 1;
+    }
+    let settled = (c.lag() * rate - d).abs();
+    println!("H5 | spin-up from rest (τ = {} s): pitch against the speed over {periods} periods, worst {:.3} % | budget 0.5 % | pass", motor.start_s, 100.0 * worst);
+    println!("H5 | spin-up: lag {settled:.2e} samples off its base after {:.0} τ | budget 0.01 | pass", 8.0 / motor.start_s);
+    assert!(worst < 5e-3, "{worst}");
+    assert!(settled < 0.01, "{settled}");
+    assert_eq!(c.clamps(), 0);
 }

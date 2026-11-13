@@ -947,6 +947,38 @@ is a stage of its own ([`Recording`](stave_dsp::physical::tape::Recording),
 [`Flutter`](stave_dsp::physical::tape::Flutter),
 [`Playback`](stave_dsp::physical::tape::Playback)).
 
+The transport beyond the flutter (DSP.md H5) follows the play head, in
+the tape's own coordinates, and is off until given. A
+[`Capstan`](stave_dsp::physical::tape::Capstan) moves the tape: slow
+speed [`Drift`](stave_dsp::physical::tape::Drift) (an Ornstein–Uhlenbeck
+process held in place by a position loop), a
+[`Motor`](stave_dsp::physical::tape::Motor) that spins up with a
+first-order time constant and coasts or brakes to rest, and
+[`Splices`](stave_dsp::physical::tape::Splices) whose diagonal cut
+crossfades the two pieces as it crosses the gap. A
+[`Spacing`](stave_dsp::physical::tape::Spacing) lifts the tape off the
+head: a [`Condition`](stave_dsp::physical::tape::Condition)'s dropouts
+(a Poisson process with exponential depths and log-normal lengths),
+splice joints and wear, each costing a wavelength `λ` Wallace's
+54.6·d/λ dB — the spacing term of the play head's own loss. Every draw
+is seeded; each stage adds its latency only when configured.
+
+```rust
+use stave_dsp::physical::tape::{Capstan, Chowdhury, Condition, Drift, Machine, Motor, Spacing};
+use stave_dsp::Stage;
+
+let mut deck = Chowdhury::new(Machine::TC260)
+    .with_capstan(Capstan::new(7).with_drift(Drift::LOOSE).with_motor(Motor::CONSUMER))
+    .with_spacing(Spacing::new(Condition::USED, 7));
+deck.prepare(48_000.0);
+// A tape stop: the pitch falls with the coasting motor, then silence.
+deck.capstan().unwrap().stop();
+for _ in 0..48_000 * 4 {
+    deck.tick(0.25);
+}
+assert!(deck.capstan().unwrap().is_stopped());
+```
+
 ```rust
 use stave_dsp::circuit::devices::photocell::{LedDriver, Najnudel, Vactrol};
 use stave_dsp::physical::tape::{Chowdhury, Machine};
