@@ -94,12 +94,12 @@
 //! block form. A rotor with its back-wall image at two microphones 487
 //! ns, a 122H cabinet (crossover, horn, drum) 980.
 //!
-//! E9, H7 (the reference machine, 2026-11-13, load 3.9): a loudspeaker
-//! driver's fixed linear step 12.6 ns/sample; with Klippel's curves,
-//! Newton on the 4-state trapezoid (two to three iterations) 287. Two
-//! microphones of 8192-tap captures at zero latency 100; a close
-//! microphone on the linear driver with its breakup 49; the live room's
-//! six reflections and its late network 293.
+//! E9, H7 (the reference machine, 2026-11-13, load 2.4): a loudspeaker
+//! driver's fixed linear step 12.0 ns/sample; with Klippel's curves,
+//! Newton on the 4-state trapezoid (two to three iterations) 268. Two
+//! microphones of 8192-tap captures at zero latency 95; a close
+//! microphone on the linear driver with its breakup 54; the live room's
+//! six reflections and its late network 278.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
