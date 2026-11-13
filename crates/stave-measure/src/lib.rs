@@ -7,6 +7,7 @@
 //! signal      stimuli as pure functions of (channel, frame)
 //! level       dB, peak, RMS, DC, correlation, a streaming meter
 //! loudness    level measures as strategies: peak, true peak, RMS, LUFS
+//! listening   ABX and rating statistics: binomial p, power, d′, MUSHRA summaries
 //! stats       order statistics (timings)
 //! system      what measurements drive: closures, plugins, DSP modules
 //! spectrum    FFT and Goertzel
@@ -62,6 +63,7 @@ pub mod compare;
 pub mod dynamics;
 pub mod latency;
 pub mod level;
+pub mod listening;
 pub mod loudness;
 pub mod modulation;
 pub mod nonlinear;

@@ -143,8 +143,9 @@ Its tabs are the plugin's editor, measured response profiles of the
 plugin as currently set, the live response from its taps, a
 spectrogram, scope, spectrum, meters, phase, the raw telemetry
 (debugger), the validation suite run one check per frame, a perf view
-(load track against the budget, deadline misses, a sampled flamegraph)
-and the debug log.
+(load track against the budget, deadline misses, a sampled flamegraph),
+the debug log, and **Voicing**: loudness-matched comparisons, blind ABX
+and rating trials ([Voicing and listening tests](crate::howto::voicing)).
 
 On macOS it captures a picture and exits after the window settles
 (about 90 frames), so an agent can see the editor:

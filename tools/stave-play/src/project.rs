@@ -53,11 +53,13 @@ pub enum ViewId {
     Validate,
     Perf,
     Debug,
+    Voicing,
 }
 
 impl ViewId {
-    pub const ALL: [ViewId; 12] = [
+    pub const ALL: [ViewId; 13] = [
         ViewId::Plugin,
+        ViewId::Voicing,
         ViewId::Profiles,
         ViewId::Response,
         ViewId::Spectrogram,
@@ -85,6 +87,7 @@ impl ViewId {
             ViewId::Validate => "Validate",
             ViewId::Perf => "Perf",
             ViewId::Debug => "Debug",
+            ViewId::Voicing => "Voicing",
         }
     }
 }

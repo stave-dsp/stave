@@ -678,7 +678,7 @@ other references; a model with a capture is held to it within budget.
   control corners, and writes captures in the same table format as the
   ngspice references.
 
-- [ ] **R21** Voicing tools in stave-play: loudness-matched A/B against a
+- [x] **R21** (stave-play's Voicing tab: candidates run offline, latency-compensated and offset-checked, matched to ≤ 0.1 LU BS.1770 integrated; click-free switching and loop; blind ABX at 40 trials by default with p, power, d′ and verdicts that never say "inaudible" (`stave_measure::listening`, checked against Leventhal's figures); MUSHRA-style rating with hidden reference and 3.5 kHz anchor; built-in synthesised program material; a JSON + text session log outside the repo; "bless" pins settings, material and take, `--verify-blessed` nulls them against the current build, and the fingerprint field waits for R18) Voicing tools in stave-play: loudness-matched A/B against a
   reference (model, fingerprint, capture, bypass), blind ABX and preference
   trials with a session log, and "bless this sound" writing the
   fingerprint.

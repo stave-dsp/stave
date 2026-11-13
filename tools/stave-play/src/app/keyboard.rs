@@ -86,6 +86,15 @@ impl HostApp {
         self.keyboard.held = now;
     }
 
+    /// Let go of every note (the Voicing view has the keys).
+    pub(super) fn release_held_notes(&mut self) {
+        for ev in transitions(&self.keyboard.held, &HashSet::new()) {
+            self.push_note(ev);
+        }
+        self.keyboard.held.clear();
+        self.keyboard.mouse = None;
+    }
+
     pub(super) fn draw_keyboard_panel(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let kb = &mut self.keyboard;

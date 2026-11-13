@@ -13,6 +13,9 @@ impl HostApp {
             for v in ViewId::ALL {
                 let active = self.project.active_view == v;
                 if ui.selectable_label(active, v.label()).clicked() && !active {
+                    if self.project.active_view == ViewId::Voicing {
+                        self.leave_voicing();
+                    }
                     self.project.active_view = v;
                     self.mark_dirty();
                 }
@@ -22,6 +25,9 @@ impl HostApp {
     }
 
     pub(super) fn draw_central(&mut self, ui: &mut egui::Ui, dt: f32) {
+        if self.project.active_view == ViewId::Voicing {
+            return self.draw_voicing(ui);
+        }
         let rate = self.project.sample_rate.hz() as f32;
         let config = self.host_config();
         let (input, output) = (&self.shared.input_tap, &self.shared.output_tap);
@@ -85,6 +91,7 @@ impl HostApp {
                     state: &mut v.perf,
                 },
             ),
+            ViewId::Voicing => {}
             ViewId::Debug => views::debug::ui(
                 ui,
                 views::debug::DebugInfo {

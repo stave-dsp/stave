@@ -13,6 +13,7 @@ mod project;
 mod samples;
 mod synth;
 mod views;
+mod voicing;
 
 use std::path::PathBuf;
 
@@ -21,7 +22,15 @@ use stave_host::config::{HostConfig, SampleRate};
 const USAGE: &str = "stave-play [PLUGIN.vst3] [--sample-rate HZ] [--block-size N] \
                      [--set NAME=VALUE ...] \
                      [--screenshot PATH [--note PITCH] [--editor-only]] \
-                     [--face-trace PATH]";
+                     [--face-trace PATH]
+       stave-play --compare CANDIDATE --compare CANDIDATE ... [--material MATERIAL] \
+                     [--trim DB] [--abx-trials N] [--voicing-dir DIR]
+       stave-play --verify-blessed RECORD_OR_DIR [--tolerance-db DB]
+       stave-play --list-material [--export-material DIR]
+
+A CANDIDATE is dry, PLUGIN.vst3, stage:NAME, wav:FILE or blessed:RECORD,
+then ;name=value settings, ;preset=NAME, ;label=TEXT or ;ref (quote it).
+MATERIAL is a built-in name (see --list-material) or a WAV path.";
 
 fn main() -> std::process::ExitCode {
     let launch = match parse(std::env::args().skip(1)) {
@@ -35,6 +44,34 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     };
+    if launch.list_material {
+        for b in voicing::BUILTINS {
+            println!("{:<14} {}", b.name, b.about);
+        }
+    }
+    if let Some(dir) = &launch.export_material {
+        match voicing::export_builtins(dir, launch.app.sample_rate.hz()) {
+            Ok(paths) => paths.iter().for_each(|p| println!("{}", p.display())),
+            Err(e) => {
+                eprintln!("stave-play: {e}");
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+    }
+    if launch.list_material || launch.export_material.is_some() {
+        return std::process::ExitCode::SUCCESS;
+    }
+    if let Some(path) = &launch.verify_blessed {
+        return verify_blessed(path, launch.tolerance_db);
+    }
+    let voicing = match voicing::Voicing::new(&launch.app.voicing) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("stave-play: {e}");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    let launch = launch.app;
     if let (Some(path), app::CaptureRegion::Editor) = (&launch.screenshot, launch.screenshot_region) {
         // A stave plugin's face writes its own picture there, offscreen,
         // once it has run a second (no screen capture, so no other
@@ -53,7 +90,7 @@ fn main() -> std::process::ExitCode {
     let result = eframe::run_native(
         "stave-play",
         options,
-        Box::new(move |cc| Box::new(app::HostApp::new(cc, launch))),
+        Box::new(move |cc| Box::new(app::HostApp::new(cc, launch, voicing))),
     );
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -62,6 +99,52 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::FAILURE
         }
     }
+}
+
+/// Re-run every blessed candidate under `path` with this build and null
+/// it against its blessed take; fails when any residual is above
+/// `tolerance_db` (relative to the take).
+fn verify_blessed(path: &std::path::Path, tolerance_db: f64) -> std::process::ExitCode {
+    let records = voicing::bless_records(path);
+    if records.is_empty() {
+        eprintln!("stave-play: no bless records at {}", path.display());
+        return std::process::ExitCode::from(2);
+    }
+    let mut failed = false;
+    for r in records {
+        match voicing::verify_blessed(&r) {
+            Ok(v) => {
+                let ok = v.residual_db <= tolerance_db;
+                failed |= !ok;
+                let what = if v.bit_identical {
+                    "bit-identical".to_string()
+                } else {
+                    format!("residual {:.1} dB", v.residual_db)
+                };
+                println!("{}  {}  {what}  ({})", if ok { "same   " } else { "CHANGED" }, v.label, v.record.display());
+            }
+            Err(e) => {
+                failed = true;
+                println!("ERROR    {}: {e}", r.display());
+            }
+        }
+    }
+    if failed {
+        std::process::ExitCode::FAILURE
+    } else {
+        std::process::ExitCode::SUCCESS
+    }
+}
+
+/// What the command line asks for: the app, or a headless voicing task.
+struct Cli {
+    app: app::Launch,
+    verify_blessed: Option<PathBuf>,
+    /// A blessed take counts as changed above this residual (dB re the
+    /// take): numerical noise across machines passes, a real change fails.
+    tolerance_db: f64,
+    list_material: bool,
+    export_material: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -77,7 +160,7 @@ enum ArgError {
 }
 
 /// `Ok(None)` for --help.
-fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<app::Launch>, ArgError> {
+fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError> {
     let mut l = app::Launch {
         plugin: None,
         sample_rate: HostConfig::default().sample_rate,
@@ -86,7 +169,10 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<app::Launch>, 
         screenshot: None,
         screenshot_note: None,
         screenshot_region: app::CaptureRegion::Window,
+        voicing: voicing::Launch::default(),
     };
+    let (mut verify_blessed, mut tolerance_db, mut list_material) = (None, -120.0, false);
+    let mut export_material = None;
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         let mut value = |flag| it.next().ok_or(ArgError::MissingValue(flag));
@@ -126,12 +212,44 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<app::Launch>, 
                 l.sets
                     .push((k.to_string(), x.parse().map_err(|_| bad("--set", &v))?));
             }
+            "--compare" => {
+                let v = value("--compare")?;
+                voicing::Candidate::parse(&v).map_err(|_| bad("--compare", &v))?;
+                l.voicing.candidates.push(v);
+            }
+            "--material" => l.voicing.material = Some(value("--material")?),
+            "--trim" => {
+                let v = value("--trim")?;
+                l.voicing.trim_db = Some(v.parse().map_err(|_| bad("--trim", &v))?);
+            }
+            "--abx-trials" => {
+                let v = value("--abx-trials")?;
+                let n: u32 = v.parse().map_err(|_| bad("--abx-trials", &v))?;
+                if n == 0 {
+                    return Err(bad("--abx-trials", &v));
+                }
+                l.voicing.abx_trials = Some(n);
+            }
+            "--voicing-dir" => l.voicing.dir = Some(PathBuf::from(value("--voicing-dir")?)),
+            "--verify-blessed" => verify_blessed = Some(PathBuf::from(value("--verify-blessed")?)),
+            "--tolerance-db" => {
+                let v = value("--tolerance-db")?;
+                tolerance_db = v.parse().map_err(|_| bad("--tolerance-db", &v))?;
+            }
+            "--list-material" => list_material = true,
+            "--export-material" => export_material = Some(PathBuf::from(value("--export-material")?)),
             s if s.starts_with('-') => return Err(ArgError::UnknownOption(arg)),
             _ if l.plugin.is_none() => l.plugin = Some(PathBuf::from(arg)),
             _ => return Err(ArgError::UnexpectedArgument(arg)),
         }
     }
-    Ok(Some(l))
+    Ok(Some(Cli {
+        app: l,
+        verify_blessed,
+        tolerance_db,
+        list_material,
+        export_material,
+    }))
 }
 
 #[cfg(test)]
@@ -139,7 +257,7 @@ mod tests {
     use super::*;
 
     fn p(s: &str) -> Result<Option<app::Launch>, ArgError> {
-        parse(s.split_whitespace().map(String::from))
+        parse(s.split_whitespace().map(String::from)).map(|c| c.map(|c| c.app))
     }
 
     #[test]
@@ -189,5 +307,24 @@ mod tests {
             Some(ArgError::UnexpectedArgument("B".into()))
         );
         assert!(p("--help").unwrap().is_none());
+        assert_eq!(p("--abx-trials 0").err(), invalid("--abx-trials", "0"));
+        assert_eq!(p("--compare x.vst3;drive").err(), invalid("--compare", "x.vst3;drive"));
+    }
+
+    #[test]
+    fn parses_voicing_options() {
+        let args = ["--compare", "dry;ref", "--compare", "stage:clipper/diode;drive=0.6", "--material",
+            "drum loop", "--trim", "-6", "--abx-trials", "60", "--voicing-dir", "/tmp/v"];
+        let c = parse(args.into_iter().map(String::from)).unwrap().unwrap();
+        let v = &c.app.voicing;
+        assert_eq!(v.candidates, ["dry;ref", "stage:clipper/diode;drive=0.6"]);
+        assert_eq!(v.material.as_deref(), Some("drum loop"));
+        assert_eq!((v.trim_db, v.abx_trials), (Some(-6.0), Some(60)));
+        assert_eq!(v.dir, Some(PathBuf::from("/tmp/v")));
+        assert!(v.wants_voicing());
+        let c = parse(["--verify-blessed", "b", "--tolerance-db", "-90"].into_iter().map(String::from))
+            .unwrap()
+            .unwrap();
+        assert_eq!((c.verify_blessed, c.tolerance_db), (Some(PathBuf::from("b")), -90.0));
     }
 }

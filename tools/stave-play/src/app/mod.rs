@@ -8,6 +8,7 @@
 //! central.rs     the view tabs and the active view
 //! keyboard.rs    piano + sample pads; held-note bookkeeping
 //! screenshot.rs  headless --screenshot capture
+//! voicing.rs     the Voicing view's place in the app (device hand-over)
 //! ```
 
 mod central;
@@ -16,6 +17,7 @@ pub(crate) mod library;
 mod panels;
 mod screenshot;
 mod session;
+mod voicing;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU32;
@@ -31,8 +33,9 @@ use stave_host::config::{HostConfig, SampleRate};
 use crate::analysis::AnalysisRing;
 use crate::audio::{self, Shared, MAX_EVENTS};
 use crate::debug_log::DebugLog;
-use crate::project::{self, Project};
+use crate::project::{self, Project, ViewId};
 use crate::views;
+use crate::voicing::{self as voicing_view, Voicing};
 
 use keyboard::Keyboard;
 pub use screenshot::CaptureRegion;
@@ -73,6 +76,10 @@ pub struct HostApp {
     screenshot: Option<Screenshot>,
     /// `--set` pairs, applied through the controller once the plugin is up.
     pending_sets: Vec<(String, f64)>,
+    voicing: Voicing,
+    /// The main plugin was dropped so a comparison could take the device;
+    /// leaving the Voicing view brings it back.
+    suspended_for_voicing: bool,
 }
 
 /// What the command line hands the app.
@@ -84,10 +91,11 @@ pub struct Launch {
     pub screenshot: Option<PathBuf>,
     pub screenshot_note: Option<i16>,
     pub screenshot_region: CaptureRegion,
+    pub voicing: voicing_view::Launch,
 }
 
 impl HostApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, launch: Launch) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, launch: Launch, voicing: Voicing) -> Self {
         let project_dir = project::projects_dir();
         let projects = project::list_projects(&project_dir);
         let log = DebugLog::new();
@@ -123,13 +131,33 @@ impl HostApp {
                 .screenshot
                 .map(|p| Screenshot::new(p, launch.screenshot_note, launch.screenshot_region)),
             pending_sets: launch.sets,
+            voicing,
+            suspended_for_voicing: false,
         };
-        app.reload();
+        if launch.voicing.wants_voicing() {
+            // Straight to the comparison: no main plugin to load, but the
+            // device still decides the rate the takes run at.
+            app.project.active_view = ViewId::Voicing;
+            app.suspended_for_voicing = true;
+            match audio::pick_device_profile(app.project.sample_rate) {
+                Ok(p) => {
+                    app.project.sample_rate = p.sample_rate;
+                    app.device_name = p.device_name;
+                }
+                Err(e) => app.fail(format!(
+                    "audio device probe failed: {}",
+                    crate::errors::with_causes(&e)
+                )),
+            }
+        } else {
+            app.reload();
+        }
         app
     }
 
     /// Tear the current plugin down and bring the project's up.
     fn reload(&mut self) {
+        self.voicing.release_device(); // one stream on the device at a time
         self.session = None; // Session::drop: editor first, then the plugin
         self.keyboard.release_all();
         let profile = match audio::pick_device_profile(self.project.sample_rate) {
@@ -198,29 +226,41 @@ impl eframe::App for HostApp {
         self.last_frame = now;
         self.apply_pending_sets();
         self.tick_screenshot(ctx);
-        self.octave_shortcuts(ctx);
+        // The Voicing view owns the letter and digit keys.
+        let voicing = self.project.active_view == ViewId::Voicing;
+        if !voicing {
+            self.octave_shortcuts(ctx);
+        }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.draw_topbar(ui));
         egui::TopBottomPanel::bottom("bottom").show(ctx, |ui| self.draw_statusbar(ui));
-        // Declared after `bottom`, so egui stacks it above the status row.
-        egui::TopBottomPanel::bottom("keyboard")
-            .resizable(false)
-            .min_height(208.0)
-            .show(ctx, |ui| self.draw_keyboard_panel(ui));
+        if !voicing {
+            // Declared after `bottom`, so egui stacks it above the status row.
+            egui::TopBottomPanel::bottom("keyboard")
+                .resizable(false)
+                .min_height(208.0)
+                .show(ctx, |ui| self.draw_keyboard_panel(ui));
+        }
         egui::SidePanel::left("sidebar")
             .default_width(170.0)
             .show(ctx, |ui| self.draw_sidebar(ui));
-        egui::SidePanel::right("params")
-            .resizable(true)
-            .default_width(300.0)
-            .min_width(220.0)
-            .show(ctx, |ui| self.draw_params(ui));
+        if !voicing {
+            egui::SidePanel::right("params")
+                .resizable(true)
+                .default_width(300.0)
+                .min_width(220.0)
+                .show(ctx, |ui| self.draw_params(ui));
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             self.draw_view_tabs(ui);
             self.draw_central(ui, dt);
         });
 
-        self.sync_held_notes(ctx);
+        if voicing {
+            self.release_held_notes();
+        } else {
+            self.sync_held_notes(ctx);
+        }
         self.place_editor(ctx);
         ctx.request_repaint();
     }
