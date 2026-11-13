@@ -410,6 +410,32 @@ circuit/
 - [ ] **R10** Kani/proptest for the pure kernels added here (FFT index
   maths, partition schedules, interpolator weights sum to one).
 
+- [ ] **R11** Device capacitances: junction (Cjo/M/Vj, Cje/Cjc, Cgs/Cgd) and
+  transit-time charge for diodes, BJTs and FETs, and interelectrode
+  capacitances for tubes (Cgk, Cgp, Cpk), in the devices and the DK method,
+  with ngspice decks that keep them. Today's transistor decks use only the
+  DC part of each card on both sides, and diode `Cjo` is read but ignored,
+  so the high-frequency behaviour that Miller capacitance gives a fuzz or a
+  tube stage is in neither model nor reference.
+- [ ] **R12** Shipping-rate accuracy: every circuit case also measured at
+  1× and 2× the host rate (today most transients run at 4–16×), with its
+  own budget, and both numbers shown in the model catalogue, so an
+  author sees the error the plugin will actually have.
+- [ ] **R13** Hardware truth beyond SPICE: compare each device model to
+  published datasheet curves (Ic–Vce families, tube plate curves, diode
+  I–V, op-amp slew) digitised once with their source cited, then to
+  captures (R8). ngspice proves we solve the model; this proves the model.
+- [ ] **R14** A second independent simulator (Xyce, or LTspice in CI if its
+  licence allows) on the key decks, to rule out ngspice-specific numerics.
+- [ ] **R15** Dynamic checks for topologies verified only on their static
+  transfer (push-pull, triode stage): transients and small-signal AC
+  against ngspice.
+- [ ] **R16** Budgets in audibility terms: state each budget as a null-test
+  residual (dB below the signal, or below a masking threshold) with the
+  reasoning, instead of a number that happened to fit; regenerate fixtures
+  under the pinned ngspice 42 so version noise (up to 5e-6 of peak today)
+  doesn't eat the margin.
+
 ### P — profiling and performance
 
 - [x] **P1** (67108c3: `crates/stave-dsp/datasheet.json` from stave-mini via `scripts/datasheet.sh`, held to the benched stages by the test itself; the docs site's Cost page) The datasheet as data: `datasheet.rs` writes JSON
