@@ -243,10 +243,10 @@ circuit/
 
 ### E — devices
 
-- [ ] **E1** BJT: Ebers–Moll, then Gummel–Poon (early effect, β roll-off),
+- [x] **E1** (b71d292: `devices::bjt` — `EbersMoll`, `GummelPoon` as ngspice's bjtload.c with RB/RE/RC, `Polarity`; parts `N2N3904`, `N2N5088`, germanium `AC128`, `OC44` (Holmes et al., DAFx-17); `Q` elements; DC families at 5e-7–2e-6, CE stage (transient and AC), Fuzz Face and Rangemaster against ngspice; no Big Muff deck yet) BJT: Ebers–Moll, then Gummel–Poon (early effect, β roll-off),
   NPN/PNP, with silicon and germanium presets (Fuzz Face, Big Muff,
   Rangemaster).
-- [ ] **E2** JFET (Shichman–Hodges) and MOSFET (square law, then EKV for
+- [x] **E2** (b71d292: `devices::jfet::ShichmanHodges` — `J201`, `N2N5457`, `N2N5460`, `J175`; `devices::mosfet::ShichmanHodges`, the level-1 square law with body effect — `VN10KM`, `BSS138`, `CD4007_N`/`_P`; `J`/`M` elements; Id(Vds) families at 1e-7 and J201/VN10KM boosters against ngspice; EKV is not done) JFET (Shichman–Hodges) and MOSFET (square law, then EKV for
   subthreshold) for boosters, FET compressors and buffers.
 - [ ] **E3** Pentode and beam tetrode (Koren pentode, Cohen–Hélie) with
   screen current: EL34, 6L6, KT88, EL84. Check which device the push-pull
