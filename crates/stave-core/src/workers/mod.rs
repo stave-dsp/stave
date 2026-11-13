@@ -1,6 +1,6 @@
 //! Worker threads for a [`Convolver`]'s deferred runs (DSP.md F3b): one
 //! thread per partition size, each with a deadline of one period, fed
-//! and drained through a lock-free, allocation-free [`handoff`].
+//! and drained through a lock-free, allocation-free [`handoff()`].
 //!
 //! stave-dsp is pure (no threads, atomics or clocks), so it defines the
 //! [`Worker`] contract and computes deferred runs [`Inline`]; this is
@@ -146,7 +146,7 @@ struct Port {
 /// thread, inside the convolver.
 ///
 /// The audio thread's side of [`exchange`](Worker::exchange) is two
-/// swaps through [`handoff`] rings, a clock read and, when the worker is
+/// swaps through [`handoff()`] rings, a clock read and, when the worker is
 /// asleep, an unpark (a futex or ulock wake): no lock, no allocation, no
 /// waiting under [`Deadline::Realtime`]. A missed deadline plays that
 /// run's block as silence and is counted; nothing is ever played late or

@@ -1,4 +1,4 @@
-//! [`handoff`]: a single-producer, single-consumer ring of preallocated
+//! [`handoff()`]: a single-producer, single-consumer ring of preallocated
 //! values, exchanged by swapping — lock-free, wait-free and
 //! allocation-free after construction. The loom model (`tests/loom.rs`)
 //! runs this very type: under `cfg(loom)` its atomics, cells and `Arc`
@@ -81,7 +81,7 @@ pub fn handoff<T: Send>(slots: Vec<T>) -> (Sender<T>, Receiver<T>) {
     )
 }
 
-/// The sending side of a [`handoff`].
+/// The sending side of a [`handoff()`].
 pub struct Sender<T> {
     inner: Arc<Inner<T>>,
     /// Our count of values published (the shared `head`'s only writer).
@@ -114,7 +114,7 @@ impl<T> Sender<T> {
     }
 }
 
-/// The receiving side of a [`handoff`].
+/// The receiving side of a [`handoff()`].
 pub struct Receiver<T> {
     inner: Arc<Inner<T>>,
     /// Our count of values released (the shared `tail`'s only writer).
