@@ -19,11 +19,15 @@
 //! (Atkinson 2025, "Slimmable NAM"): a WaveNet trained for channel
 //! slicing (`"slimmable": {"method": "slice_channels_uniform", …}`, what
 //! the 0.13 trainer exports) and a `SlimmableContainer` of whole
-//! submodels, both offered as [`Nam::sizes`]. Refused with
+//! submodels (any architecture above, selected by `max_value` as
+//! NeuralAmpModelerCore's `NAM/container.cpp` does: a [`Container`]),
+//! both offered as [`Nam::sizes`]. Refused with
 //! [`LoadError::Unsupported`] or [`LoadError::Architecture`], never
 //! silently ignored: FiLM, grouped convolutions, a condition DSP, a
-//! WaveNet post-head, packed WaveNets, a container submodel field other
-//! than `model`, `ConvNet`, `Linear`, and multi-channel networks.
+//! WaveNet post-head, packed WaveNets, a container inside a container
+//! or a slimmable WaveNet inside one, a container field other than
+//! `submodels`, `max_value` and `model`, `ConvNet`, `Linear`, and
+//! multi-channel networks.
 //!
 //! ```
 //! use stave_dsp::learned::nam;
@@ -54,6 +58,37 @@
 //! cost, and [`Nam::network_at`] (or [`Nam::slimmed`], NAM's own 0–1
 //! slider) hands over a smaller one. Every size was built by [`parse`],
 //! so choosing one only clones; swap it in off the audio thread.
+//!
+//! A `SlimmableContainer` also switches in place: its network is a
+//! [`Network::Container`] holding every submodel, and
+//! [`Network::set_size`] picks one on the audio thread without
+//! allocating.
+//!
+//! ```
+//! use stave_dsp::learned::nam;
+//! use stave_dsp::Stage;
+//!
+//! // y = s·tanh(2x), a one-layer WaveNet scaled by `s`.
+//! let wavenet = |s: f32| format!(r#"{{"version": "0.7.0", "architecture": "WaveNet",
+//!   "sample_rate": 48000, "config": {{"layers": [{{"input_size": 1, "condition_size": 1,
+//!     "channels": 1, "head_size": 1, "head_bias": false, "kernel_size": 1,
+//!     "dilations": [1], "activation": "Tanh", "gated": false}}], "head": null,
+//!     "head_scale": {s}}}, "weights": [1, 2, 0, 0, 0, 0, 1, {s}]}}"#);
+//! let file = format!(r#"{{"version": "0.7.0", "architecture": "SlimmableContainer",
+//!   "config": {{"submodels": [{{"max_value": 0.5, "model": {}}},
+//!                            {{"max_value": 1.0, "model": {}}}]}}}}"#,
+//!   wavenet(0.25), wavenet(0.5));
+//! let mut amp = nam::parse(&file)?.network;
+//! assert_eq!(amp.breakpoints(), &[0.5]);
+//! amp.prepare(48_000.0);
+//! let t = 0.5f32.tanh();
+//! assert!((amp.tick(0.25) - 0.5 * t).abs() < 1e-6); // full size by default
+//! amp.set_size(0.4); // below 0.5: the first submodel (no allocation)
+//! assert!((amp.tick(0.25) - 0.25 * t).abs() < 1e-6);
+//! amp.set_size(0.5); // a breakpoint selects the next submodel
+//! assert!((amp.tick(0.25) - 0.5 * t).abs() < 1e-6);
+//! # Ok::<(), stave_dsp::learned::LoadError>(())
+//! ```
 //!
 //! ```
 //! use stave_dsp::learned::nam;
@@ -86,7 +121,10 @@
 //! # Ok::<(), stave_dsp::learned::LoadError>(())
 //! ```
 
+mod container;
 mod wavenet;
+
+pub use container::Container;
 
 use super::error::LoadError;
 use super::json::Json;
@@ -122,7 +160,9 @@ pub struct Nam {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Size {
     /// The lowest value of NAM's 0–1 size slider that selects this size
-    /// (`i / sizes`): [`Nam::slimmed`] takes the same values.
+    /// (`i / sizes` for a slimmable WaveNet; for a container's submodel
+    /// the previous submodel's `max_value`, rounded up to `f32`, and 0
+    /// for the first): [`Nam::slimmed`] takes the same values.
     pub ratio: f32,
     /// Multiply-adds per sample ([`Network::multiply_adds`]): the cost
     /// sizes compare by.
@@ -136,22 +176,27 @@ impl Nam {
     /// Every size the file offers in slider order, the last being the
     /// default [`network`](Self::network). A plain file offers one; a
     /// slimmable WaveNet its `allowed_channels` in order; a container
-    /// its submodels, smallest first by multiply-adds.
+    /// its submodels in the file's (ascending `max_value`) order.
     pub fn sizes(&self) -> &[Size] {
         &self.sizes
     }
 
     /// The network at [`sizes`](Self::sizes)`()[index]`, unprepared
     /// (allocates a clone: call off the audio thread). An index past the
-    /// end is the full size.
+    /// end is the full size. A container's submodel comes alone, not in
+    /// a [`Container`].
     pub fn network_at(&self, index: usize) -> Network {
         self.networks[index.min(self.networks.len() - 1)].clone()
     }
 
-    /// The network NAM's size slider selects at `ratio` (0–1):
-    /// `sizes[min(⌊ratio · n⌋, n − 1)]`, the trainer's own index rule for
-    /// channel slicing, applied to a container's submodels in cost order.
+    /// The network NAM's size slider selects at `ratio` (0–1): for a
+    /// slimmable WaveNet `sizes[min(⌊ratio · n⌋, n − 1)]`, the trainer's
+    /// own index rule for channel slicing; for a container the submodel
+    /// [`Container::size_for`] picks, alone.
     pub fn slimmed(&self, ratio: f32) -> Network {
+        if let Network::Container(c) = &self.network {
+            return self.network_at(c.size_for(f64::from(ratio)));
+        }
         let n = self.networks.len();
         let i = (ratio.clamp(0.0, 1.0) * n as f32).floor() as usize;
         self.network_at(i.min(n - 1))
@@ -185,7 +230,8 @@ pub struct Metadata {
 ///
 /// Whatever the capture was: a [`WaveNet`] or an [`Lstm`] trained on a
 /// device's input/output recordings, chosen by the file's
-/// `architecture`.
+/// `architecture`, or a [`Container`] of such submodels at several
+/// sizes.
 ///
 /// # Derivation
 ///
@@ -202,7 +248,8 @@ pub struct Metadata {
 /// (`crates/stave-dsp/tests/nam_parity.rs::legacy_keys_read_the_same_network`);
 /// every width of two slimmable WaveNets against the trainer slimmed to
 /// it (`crates/stave-dsp/tests/nam_parity.rs::slimmable_widths_match_the_trainer`)
-/// and every submodel of a `SlimmableContainer`
+/// and every submodel of a `SlimmableContainer`, selected by
+/// `max_value`
 /// (`crates/stave-dsp/tests/nam_parity.rs::container_submodels_match_the_trainer`).
 /// Budget: max abs error ≤ 1e-5 (measured ≤ 6e-7 on the plain files).
 ///
@@ -211,7 +258,8 @@ pub struct Metadata {
 /// The network it holds, plus one match per sample: see [`WaveNet`]
 /// (`"WaveNet (NAM standard)"`) and [`Lstm`] (`"LSTM (1 x 16)"`) on the
 /// datasheet; [`multiply_adds`](Self::multiply_adds) compares the sizes
-/// of a slimmable file.
+/// of a slimmable file. A container runs its chosen submodel and keeps
+/// every other resident.
 ///
 /// # Aliasing
 ///
@@ -231,11 +279,13 @@ pub struct Metadata {
 /// LSTM (half to sixteen times the trained rate). Features the loader
 /// refuses (FiLM, grouped convolutions, condition DSP, post-head,
 /// packed WaveNets, unknown container fields) fail at [`parse`] by
-/// name.
+/// name. A container's size switch is a hard cut (see [`Container`]).
 #[derive(Clone, Debug)]
 pub enum Network {
     WaveNet(WaveNet),
     Lstm(Lstm),
+    /// A `SlimmableContainer`: every submodel, one running.
+    Container(Container),
 }
 
 impl Network {
@@ -244,6 +294,7 @@ impl Network {
         match self {
             Network::WaveNet(n) => n.sample_rate(),
             Network::Lstm(n) => n.sample_rate(),
+            Network::Container(n) => n.sample_rate(),
         }
     }
 
@@ -252,15 +303,17 @@ impl Network {
         match self {
             Network::WaveNet(n) => n.rate_mismatch(),
             Network::Lstm(n) => n.rate_mismatch(),
+            Network::Container(n) => n.rate_mismatch(),
         }
     }
 
     /// Multiply-adds per sample (see [`WaveNet::multiply_adds`],
-    /// [`Lstm::multiply_adds`]).
+    /// [`Lstm::multiply_adds`]; a container's running submodel's).
     pub fn multiply_adds(&self) -> usize {
         match self {
             Network::WaveNet(n) => n.multiply_adds(),
             Network::Lstm(n) => n.multiply_adds(),
+            Network::Container(n) => n.multiply_adds(),
         }
     }
 
@@ -272,6 +325,27 @@ impl Network {
         match self {
             Network::WaveNet(n) => n.set_rate_policy(policy),
             Network::Lstm(n) => n.set_rate_policy(policy),
+            Network::Container(n) => n.set_rate_policy(policy),
+        }
+    }
+
+    /// NAM's size value (0–1, `SetSlimmableSize`): a [`Container`]
+    /// switches to the submodel it selects ([`Container::set_size`];
+    /// real-time safe). Any other network has one size here and ignores
+    /// it: a slimmable WaveNet's widths are separate networks
+    /// ([`Nam::slimmed`]).
+    pub fn set_size(&mut self, value: f64) {
+        if let Network::Container(c) = self {
+            c.set_size(value);
+        }
+    }
+
+    /// The size values at which [`set_size`](Self::set_size) changes
+    /// the network ([`Container::breakpoints`]); empty for any other.
+    pub fn breakpoints(&self) -> &[f64] {
+        match self {
+            Network::Container(c) => c.breakpoints(),
+            _ => &[],
         }
     }
 }
@@ -281,12 +355,14 @@ impl Stage for Network {
         match self {
             Network::WaveNet(n) => n.prepare(sample_rate),
             Network::Lstm(n) => n.prepare(sample_rate),
+            Network::Container(n) => n.prepare(sample_rate),
         }
     }
     fn reset(&mut self) {
         match self {
             Network::WaveNet(n) => n.reset(),
             Network::Lstm(n) => n.reset(),
+            Network::Container(n) => n.reset(),
         }
     }
     #[inline]
@@ -294,12 +370,14 @@ impl Stage for Network {
         match self {
             Network::WaveNet(n) => n.tick(x),
             Network::Lstm(n) => n.tick(x),
+            Network::Container(n) => n.tick(x),
         }
     }
     fn process(&mut self, block: &mut [f32]) {
         match self {
             Network::WaveNet(n) => n.process(block),
             Network::Lstm(n) => n.process(block),
+            Network::Container(n) => n.process(block),
         }
     }
     fn latency(&self) -> u32 {
@@ -309,6 +387,7 @@ impl Stage for Network {
         match self {
             Network::WaveNet(n) => n.tail(),
             Network::Lstm(n) => n.tail(),
+            Network::Container(n) => n.tail(),
         }
     }
 }
@@ -316,27 +395,36 @@ impl Stage for Network {
 /// Read a `.nam` file's text (the caller reads the file; this crate
 /// does no I/O). Allocates: call it off the audio thread, then hand the
 /// network over. A slimmable file builds every size it offers here, so
-/// [`Nam::network_at`] only clones.
+/// [`Nam::network_at`] only clones; a container's network holds every
+/// submodel, so [`Network::set_size`] only switches.
 pub fn parse(text: &str) -> Result<Nam, LoadError> {
     let json = Json::parse(text).map_err(|e| LoadError::Json {
         offset: e.offset,
         reason: e.reason,
     })?;
-    let file = model(&json, false)?;
+    let file = model(&json, false, DEFAULT_SAMPLE_RATE)?;
     let count = file.networks.len();
     let sizes = file
         .networks
         .iter()
         .enumerate()
         .map(|(i, (channels, n))| Size {
-            ratio: i as f32 / count as f32,
+            ratio: match (&file.max_values, i) {
+                (None, _) => i as f32 / count as f32,
+                (Some(_), 0) => 0.0,
+                (Some(m), _) => at_least(m[i - 1]),
+            },
             multiply_adds: n.multiply_adds(),
             channels: *channels,
         })
         .collect();
     let networks: Vec<Network> = file.networks.into_iter().map(|(_, n)| n).collect();
+    let network = match file.max_values {
+        Some(max_values) => Network::Container(Container::new(networks.clone(), max_values)),
+        None => networks[count - 1].clone(),
+    };
     Ok(Nam {
-        network: networks[count - 1].clone(),
+        network,
         version: file.version,
         sample_rate: file.sample_rate,
         metadata: metadata(json.field("metadata")),
@@ -345,15 +433,34 @@ pub fn parse(text: &str) -> Result<Nam, LoadError> {
     })
 }
 
+/// The least `f32` not below `v`, so that a ratio read back as `f64`
+/// still selects what `v` does.
+fn at_least(v: f64) -> f32 {
+    let r = v as f32;
+    if f64::from(r) < v {
+        r.next_up()
+    } else {
+        r
+    }
+}
+
 /// One `.nam` document: its version, recorded rate, and the networks it
 /// offers in slider order (never empty; one for a plain file).
 struct File {
     version: String,
     sample_rate: Option<f32>,
     networks: Vec<(Option<usize>, Network)>,
+    /// A container's `max_value`s, one per network.
+    max_values: Option<Vec<f64>>,
 }
 
-fn model(json: &Json, nested: bool) -> Result<File, LoadError> {
+/// A container's submodels in file order, their `max_value`s, and the
+/// rate they agree on.
+type Submodels = (Vec<Network>, Vec<f64>, Option<f32>);
+
+/// One document; `rate` is the training rate assumed when it records
+/// none (NAM's default, or a container's shared rate for a submodel).
+fn model(json: &Json, nested: bool, rate: f32) -> Result<File, LoadError> {
     let version = json
         .field("version")
         .and_then(Json::as_str)
@@ -367,27 +474,22 @@ fn model(json: &Json, nested: bool) -> Result<File, LoadError> {
     let config = json
         .field("config")
         .ok_or_else(|| LoadError::Config("missing \"config\"".into()))?;
-    let sample_rate =
-        match json.field("sample_rate") {
-            None => None,
-            Some(v) => Some(v.as_f64().filter(|r| *r > 0.0).ok_or_else(|| {
-                LoadError::Config("\"sample_rate\" must be a positive number".into())
-            })? as f32),
-        };
-    let rate = sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE);
+    let sample_rate = sample_rate(json)?;
     if architecture == "SlimmableContainer" {
         if nested {
             return Err(LoadError::Unsupported(
                 "a SlimmableContainer inside a SlimmableContainer".into(),
             ));
         }
-        let networks = container(json, config, rate)?;
+        let (networks, max_values, sample_rate) = container(json, config, sample_rate)?;
         return Ok(File {
             version,
             sample_rate,
-            networks,
+            networks: networks.into_iter().map(|n| (None, n)).collect(),
+            max_values: Some(max_values),
         });
     }
+    let rate = sample_rate.unwrap_or(rate);
     let weights = weights(json)?;
     let networks = match architecture {
         "WaveNet" => wavenet::build(config, &weights, rate)?
@@ -413,20 +515,29 @@ fn model(json: &Json, nested: bool) -> Result<File, LoadError> {
         version,
         sample_rate,
         networks,
+        max_values: None,
     })
 }
 
-/// A `SlimmableContainer`: `config.submodels`, each `{"model": <a whole
-/// .nam document>}`, the layout Neural Amp Modeler 0.13's export hooks
-/// walk. Each submodel loads as its own file; they are offered smallest
-/// first by multiply-adds (a stable sort: equal costs keep file order).
-/// Any other submodel field is refused by name: this reader does not
-/// know what it would select.
-fn container(
-    json: &Json,
-    config: &Json,
-    rate: f32,
-) -> Result<Vec<(Option<usize>, Network)>, LoadError> {
+/// A document's `sample_rate`, when it records one.
+fn sample_rate(json: &Json) -> Result<Option<f32>, LoadError> {
+    match json.field("sample_rate") {
+        None => Ok(None),
+        Some(v) => {
+            Ok(Some(v.as_f64().filter(|r| *r > 0.0).ok_or_else(|| {
+                LoadError::Config("\"sample_rate\" must be a positive number".into())
+            })? as f32))
+        }
+    }
+}
+
+/// A `SlimmableContainer` (NeuralAmpModelerCore's `NAM/container.cpp`):
+/// `config.submodels`, a non-empty list of `{"max_value": number,
+/// "model": <a whole .nam document>}`, strictly ascending by
+/// `max_value`, the last at least 1. Every rate recorded (the
+/// container's and each submodel's) must agree; a submodel recording
+/// none runs at the agreed one. Any other field is refused by name.
+fn container(json: &Json, config: &Json, own_rate: Option<f32>) -> Result<Submodels, LoadError> {
     if json.field("weights").is_some() {
         return Err(LoadError::Config(
             "a SlimmableContainer holds no weights of its own".into(),
@@ -444,43 +555,81 @@ fn container(
         .ok_or_else(|| {
             LoadError::Config("a SlimmableContainer needs a non-empty \"submodels\" list".into())
         })?;
-    let mut networks = Vec::with_capacity(submodels.len());
+    // The cheap checks first: shape, ordering, rates.
+    let mut inners = Vec::with_capacity(submodels.len());
+    let mut max_values: Vec<f64> = Vec::with_capacity(submodels.len());
+    let mut agreed = own_rate.map(|r| (r, "the container".to_string()));
     for (i, entry) in submodels.iter().enumerate() {
+        let path = submodel_path(i);
         if !matches!(entry, Json::Object(_)) {
-            return Err(LoadError::Config(format!(
-                "SlimmableContainer submodel {i} must be an object"
-            )));
+            return Err(LoadError::Config(format!("{path} must be an object")));
         }
-        if let Some(key) = entry.keys().find(|k| *k != "model") {
+        if let Some(key) = entry.keys().find(|k| !["max_value", "model"].contains(k)) {
             return Err(LoadError::Unsupported(format!(
-                "SlimmableContainer submodel {i}: field \"{key}\" (this reader knows only \"model\")"
+                "{path}: field \"{key}\" (a submodel holds \"max_value\" and \"model\")"
             )));
         }
-        let inner = entry.field("model").ok_or_else(|| {
-            LoadError::Config(format!("SlimmableContainer submodel {i} has no \"model\""))
-        })?;
-        let file = model(inner, true).map_err(|e| in_submodel(i, e))?;
+        let max_value = entry
+            .field("max_value")
+            .and_then(Json::as_f64)
+            .ok_or_else(|| LoadError::Config(format!("{path} needs a numeric \"max_value\"")))?;
+        if let Some(&previous) = max_values.last() {
+            if max_value <= previous {
+                return Err(LoadError::Config(format!(
+                    "{path}: \"max_value\" {max_value} is not above the previous submodel's \
+                     {previous} (submodels must be sorted strictly ascending)"
+                )));
+            }
+        }
+        max_values.push(max_value);
+        let inner = entry
+            .field("model")
+            .ok_or_else(|| LoadError::Config(format!("{path} has no \"model\"")))?;
+        if let Some(r) = sample_rate(inner).map_err(|e| in_submodel(i, e))? {
+            match &agreed {
+                Some((a, from)) if *a != r => {
+                    return Err(LoadError::Config(format!(
+                        "{path}.model was trained at {r} Hz, {from} at {a} Hz"
+                    )));
+                }
+                Some(_) => {}
+                None => agreed = Some((r, format!("{path}.model"))),
+            }
+        }
+        inners.push(inner);
+    }
+    let last = max_values[max_values.len() - 1];
+    if last < 1.0 {
+        return Err(LoadError::Config(format!(
+            "the last SlimmableContainer submodel's \"max_value\" is {last}; it must be at \
+             least 1 so every size value selects a submodel"
+        )));
+    }
+    let rate = agreed.map(|(r, _)| r);
+    let mut networks = Vec::with_capacity(inners.len());
+    for (i, inner) in inners.into_iter().enumerate() {
+        let file = model(inner, true, rate.unwrap_or(DEFAULT_SAMPLE_RATE))
+            .map_err(|e| in_submodel(i, e))?;
         let mut sizes = file.networks.into_iter();
         let (Some((_, network)), None) = (sizes.next(), sizes.next()) else {
             return Err(LoadError::Unsupported(format!(
-                "SlimmableContainer submodel {i}: a slimmable network inside a container"
+                "{}.model: a slimmable network inside a container",
+                submodel_path(i)
             )));
         };
-        if network.sample_rate() != rate {
-            return Err(LoadError::Config(format!(
-                "SlimmableContainer submodel {i} was trained at {} Hz, the container at {rate} Hz",
-                network.sample_rate()
-            )));
-        }
-        networks.push((None, network));
+        networks.push(network);
     }
-    networks.sort_by_key(|(_, n)| n.multiply_adds());
-    Ok(networks)
+    Ok((networks, max_values, rate))
 }
 
-/// A submodel's error, saying which submodel.
+/// Where submodel `i` sits in a container file.
+fn submodel_path(i: usize) -> String {
+    format!("SlimmableContainer config.submodels[{i}]")
+}
+
+/// A submodel's error, saying where the submodel is.
 fn in_submodel(i: usize, e: LoadError) -> LoadError {
-    let at = |what: String| format!("SlimmableContainer submodel {i}: {what}");
+    let at = |what: String| format!("{}.model: {what}", submodel_path(i));
     match e {
         LoadError::Version(v) => LoadError::Config(at(format!("unsupported file version {v}"))),
         LoadError::Architecture(a) => LoadError::Architecture(at(a)),

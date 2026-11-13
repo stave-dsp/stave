@@ -24,8 +24,9 @@ Slimmable networks (DSP.md M7): `slimmable_*.nam` are WaveNets trained
 for channel slicing (Atkinson 2025), exported by NAM's exporter, and each
 `slimmable_*_c<N>.txt` is NAM's forward pass slimmed to N channels
 (`set_slimming`). `container.nam` is a `SlimmableContainer` holding
-NAM-exported submodels in the layout the trainer's export hooks read
-(`config.submodels[i].model`, a whole `.nam` dict each), with each
+NAM-exported submodels in the layout NeuralAmpModelerCore's
+`NAM/container.cpp` reads (`config.submodels[i]` = `{"max_value", "model"}`,
+a whole `.nam` dict each, ascending by `max_value`), with each
 `container_<i>.txt` the trainer's forward pass of submodel i.
 
     uv run scripts/nam-reference.py
@@ -223,6 +224,11 @@ def write_slimmable(x: np.ndarray) -> None:
         assert np.array_equal(full, forward(nam, x, slimming=1.0))
 
 
+# The container's size breakpoints: values below 0.3 select submodel 0,
+# below 0.7 submodel 1, the rest submodel 2.
+MAX_VALUES = (0.3, 0.7, 1.0)
+
+
 def write_container(x: np.ndarray) -> None:
     """A SlimmableContainer of three NAM-exported submodels, smallest
     first: a 2-channel WaveNet, a 5-channel gated WaveNet and a 2 x 8
@@ -249,7 +255,11 @@ def write_container(x: np.ndarray) -> None:
         "version": submodels[0]["version"],
         "metadata": {},
         "architecture": "SlimmableContainer",
-        "config": {"submodels": [{"model": m} for m in submodels]},
+        "config": {
+            "submodels": [
+                {"max_value": v, "model": m} for v, m in zip(MAX_VALUES, submodels)
+            ]
+        },
         "sample_rate": RATE,
     }
     (OUT / "container.nam").write_text(json.dumps(container, separators=(",", ":")) + "\n")

@@ -12,8 +12,10 @@ pub enum LoadError {
     /// The file's format version is outside the versions this reader
     /// implements.
     Version(String),
-    /// An architecture this reader does not implement (`SlimmableContainer`,
-    /// `ConvNet`, `Linear` …).
+    /// An architecture this reader does not implement (`ConvNet`,
+    /// `Linear` …), at the top level or as a container's submodel (then
+    /// prefixed with the submodel's path, `SlimmableContainer
+    /// config.submodels[i].model: …`).
     Architecture(String),
     /// A field that is missing or malformed.
     Config(String),

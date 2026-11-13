@@ -222,8 +222,9 @@ fn slimmable_widths_match_the_trainer() {
 }
 
 /// DSP.md M7: a `SlimmableContainer` of three NAM-exported submodels
-/// (two WaveNets and an LSTM): each submodel against the trainer's
-/// forward pass of it, offered smallest first, the default the largest.
+/// (two WaveNets and an LSTM, `max_value` 0.3, 0.7, 1): each submodel
+/// against the trainer's forward pass of it, alone and running inside
+/// the container where its size value selects it; the default the last.
 #[test]
 #[cfg_attr(miri, ignore)]
 fn container_submodels_match_the_trainer() {
@@ -237,10 +238,14 @@ fn container_submodels_match_the_trainer() {
     assert_eq!(file.sample_rate, Some(RATE));
     let sizes = file.sizes();
     assert_eq!(sizes.len(), 3);
-    assert!(sizes
-        .windows(2)
-        .all(|w| w[0].multiply_adds <= w[1].multiply_adds));
-    // The file lists its submodels smallest first, so slider order is file order.
+    let ratios: Vec<f32> = sizes.iter().map(|s| s.ratio).collect();
+    assert_eq!(ratios, [0.0, 0.3, 0.7f32.next_up()]);
+    assert!(f64::from(ratios[2]) >= 0.7);
+    let nam::Network::Container(container) = &file.network else {
+        panic!("a container file's network is a Container");
+    };
+    assert_eq!(container.breakpoints(), &[0.3, 0.7]);
+    assert_eq!(container.active(), 2);
     for (i, reference) in expected.iter().enumerate() {
         assert_eq!(sizes[i].channels, None);
         size_matches(
@@ -248,25 +253,72 @@ fn container_submodels_match_the_trainer() {
             file.network_at(i),
             reference,
         );
+        // The slider at the size's own ratio selects it.
+        assert_eq!(
+            file.slimmed(sizes[i].ratio).multiply_adds(),
+            sizes[i].multiply_adds
+        );
+        let mut inside = file.network.clone();
+        inside.set_size(f64::from(sizes[i].ratio));
+        size_matches(&format!("container at size {i}"), inside, reference);
     }
     assert!(matches!(file.network_at(2), nam::Network::Lstm(_)));
     size_matches("container default", file.network, expected[2]);
 
-    // Listed largest first, the sizes are the same, still smallest first.
+    // Listed out of order, the file is refused.
     let reversed = reverse_submodels(text);
-    let file = nam::parse(&reversed).unwrap();
-    for (i, reference) in expected.iter().enumerate() {
-        size_matches(
-            &format!("reversed submodel {i}"),
-            file.network_at(i),
-            reference,
-        );
+    let err = nam::parse(&reversed).unwrap_err().to_string();
+    assert!(err.contains("ascending"), "{err}");
+}
+
+/// The size switch is a hard cut, as in NAM: measured here on the
+/// trainer-exported container (a 330 Hz sine at 0.3, switched from full
+/// size to submodel 1 and back) against the largest step either
+/// submodel takes on its own (measured 0.39 against 0.0016: the
+/// fixture's submodels share no training target). The figures are
+/// quoted in `Container`'s docs.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn container_switch_is_a_measured_cut() {
+    let file = nam::parse(include_str!("reference/nam/container.nam")).unwrap();
+    let input: Vec<f32> = (0..9600)
+        .map(|t| 0.3 * (std::f32::consts::TAU * 330.0 * t as f32 / RATE).sin())
+        .collect();
+    let largest_step = |y: &[f32]| {
+        y.windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max)
+    };
+    let mut alone = 0.0f32;
+    for i in [1, 2] {
+        let mut net = file.network_at(i);
+        net.prepare(RATE);
+        let y: Vec<f32> = input.iter().map(|&x| net.tick(x)).collect();
+        // The first samples are the warm-up from silence: skip them.
+        alone = alone.max(largest_step(&y[1000..]));
     }
+    let mut net = file.network.clone();
+    net.prepare(RATE);
+    let mut cut = 0.0f32;
+    let mut y = Vec::with_capacity(input.len());
+    for (t, &x) in input.iter().enumerate() {
+        match t {
+            3000 => net.set_size(0.5),
+            6000 => net.set_size(1.0),
+            _ => {}
+        }
+        y.push(net.tick(x));
+        if t == 3000 || t == 6000 {
+            cut = cut.max((y[t] - y[t - 1]).abs());
+        }
+    }
+    println!("container switch: a step of {cut:.4} against {alone:.4} for either submodel alone");
+    assert!(cut.is_finite() && alone > 0.0);
 }
 
 /// The container's submodel list, reversed (each entry is one
-/// `{"model":…}` object; the split points are where one ends and the
-/// next begins).
+/// `{"max_value":…,"model":…}` object; the split points are where one
+/// ends and the next begins).
 fn reverse_submodels(text: &str) -> String {
     let start = text.find("\"submodels\":[").unwrap() + "\"submodels\":[".len();
     let mut depth = 0;
@@ -312,24 +364,27 @@ fn slimmable_fields_are_refused_by_name() {
     ))
     .contains("min_channels"));
     let container = include_str!("reference/nam/container.nam");
-    assert!(
-        refused(container.replacen("{\"model\":", "{\"max_value\":0.5,\"model\":", 1))
-            .contains("max_value")
-    );
+    assert!(refused(container.replacen("\"model\":", "\"gain\":1,\"model\":", 1)).contains("gain"));
     assert!(
         refused(container.replace("\"submodels\":", "\"selector\":\"x\",\"submodels\":"))
             .contains("selector")
     );
     // A container inside a container, and a slimmable WaveNet inside one.
     let nested = container.replacen(
-        "{\"model\":",
-        &format!("{{\"model\":{}}},{{\"model\":", container.trim()),
+        "{\"max_value\":0.3,",
+        &format!(
+            "{{\"max_value\":0.1,\"model\":{}}},{{\"max_value\":0.3,",
+            container.trim()
+        ),
         1,
     );
     assert!(refused(nested).contains("inside a SlimmableContainer"));
     let inner = container.replacen(
-        "{\"model\":",
-        &format!("{{\"model\":{}}},{{\"model\":", slim.trim()),
+        "{\"max_value\":0.3,",
+        &format!(
+            "{{\"max_value\":0.1,\"model\":{}}},{{\"max_value\":0.3,",
+            slim.trim()
+        ),
         1,
     );
     assert!(refused(inner).contains("inside a container"));

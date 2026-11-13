@@ -154,3 +154,32 @@ fn slimmed_networks_process_without_allocating() {
         assert_no_alloc("slimmable_gated", &mut net);
     }
 }
+
+/// A `SlimmableContainer` switches size on the audio thread: every
+/// submodel was built and prepared up front, and the switch resets the
+/// chosen one without touching the allocator (NAM's own switch is
+/// "thread-safe, not real-time safe").
+#[test]
+#[cfg_attr(miri, ignore)]
+fn container_switches_without_allocating() {
+    let mut net = nam::parse(include_str!("reference/nam/container.nam"))
+        .unwrap()
+        .network;
+    assert_no_alloc("container", &mut net);
+    net.prepare(48_000.0);
+    let mut block = [0.0f32; 64];
+    let n = allocations_in(|| {
+        for (k, value) in [0.0, 0.5, 1.0, 0.3, 0.7, 0.29, 0.2, 2.0, -1.0]
+            .into_iter()
+            .enumerate()
+        {
+            net.set_size(value);
+            for (i, x) in block.iter_mut().enumerate() {
+                *x = ((i + 64 * k) as f32 * 0.05).sin() * 0.7;
+            }
+            net.process(&mut block);
+            std::hint::black_box(net.tick(0.1));
+        }
+    });
+    assert_eq!(n, 0, "the container's switch allocated {n} times");
+}
