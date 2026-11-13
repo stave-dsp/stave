@@ -26,6 +26,7 @@ pub mod solver_taps;
 pub mod runtime;
 pub mod state;
 pub mod units;
+pub mod workers;
 
 pub use block::{LaneFrame, Lanes, Peaks};
 pub use buffer::{InputBuffer, OutputBuffer};

@@ -7,7 +7,7 @@
 //! new convolution, with no settling (Wefers 2015, §5.5, filter
 //! exchange in the frequency domain with an output crossfade).
 
-use super::{dot, Convolver, Head, HeadPath, Segment, SegmentPath, Split};
+use super::{dot, Convolver, Head, HeadPath, Segment, SegmentPath, Split, Worker};
 
 /// How a convolver's direct head runs: not at all, plain, or through a
 /// swap's crossfade.
@@ -208,7 +208,7 @@ impl Segment {
     }
 }
 
-impl Convolver {
+impl<W: Worker> Convolver<W> {
     /// The direct head for one sample while its swap is waiting or
     /// fading (kept off the steady-state path); back to the plain head
     /// when the fade completes.
@@ -244,11 +244,17 @@ impl Convolver {
     ///
     /// # Panics
     ///
-    /// Unless the response is mono (one lane, one path).
+    /// Unless the response is mono (one lane, one path) and nothing is
+    /// [deferred](Convolver::deferred) (a worker's runs are swapped with
+    /// [`Crossfade`](super::Crossfade) instead).
     pub fn reserve_swaps(&mut self) {
         assert!(
             self.lanes == 1 && self.segments.iter().all(|s| s.paths.len() <= 1),
             "Convolver::reserve_swaps: only a mono response can be swapped"
+        );
+        assert!(
+            self.ports.is_empty(),
+            "Convolver::reserve_swaps: deferred runs swap through Crossfade"
         );
         for segment in &mut self.segments {
             let spectra = segment.parts * (segment.size + 1);

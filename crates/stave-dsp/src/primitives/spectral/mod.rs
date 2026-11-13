@@ -15,7 +15,7 @@ pub mod impulse_response;
 pub mod stft;
 pub mod window;
 
-pub use convolve::{Convolver, Head};
+pub use convolve::{Convolver, Crossfade, Head, Inline, Run, Worker};
 pub use fft::{Complex, Fft, FftFloat};
 pub use fir::{Band, Fir, FrequencySampling, Passband};
 pub use impulse_response::{ImpulseResponse, IrError, IrLayout, Normalization};
