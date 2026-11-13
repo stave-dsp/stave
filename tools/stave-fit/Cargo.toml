@@ -1,0 +1,21 @@
+[package]
+name = "stave-fit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Capture and fit block-oriented models: the stimulus to play through a device, and a Wiener-Hammerstein or polynomial Hammerstein model from its recording or from a stave circuit"
+publish = false
+
+[dependencies]
+stave-dsp.workspace = true
+stave-measure.workspace = true
+# WAV in and out.
+stave-host.workspace = true
+# The R17 decks and plans a circuit reference is read from.
+stave-test.workspace = true
+
+[lints]
+workspace = true

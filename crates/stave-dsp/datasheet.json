@@ -206,6 +206,10 @@
     { "stage": "LSTM (1 x 16) Interpolated 48 -> 44.1 kHz", "ns_per_sample": 422.777, "spread_pct": 0.2, "rate_hz": 48000 },
     { "stage": "GRU (1 x 16) Interpolated 48 -> 44.1 kHz", "ns_per_sample": 293.919, "spread_pct": 0.1, "rate_hz": 48000 },
     { "stage": "WaveNet slimmable 1 x 20 layers at 4 of 16 channels", "ns_per_sample": 1671.391, "spread_pct": 0.5, "rate_hz": 48000 },
-    { "stage": "WaveNet slimmable 1 x 20 layers at 16 of 16 channels", "ns_per_sample": 3583.913, "spread_pct": 0.9, "rate_hz": 48000 }
+    { "stage": "WaveNet slimmable 1 x 20 layers at 16 of 16 channels", "ns_per_sample": 3583.913, "spread_pct": 0.9, "rate_hz": 48000 },
+    { "stage": "WienerHammerstein (2 + 2 sections, 24-knot spline)", "ns_per_sample": 40.937, "spread_pct": 0.3, "rate_hz": 48000 },
+    { "stage": "WienerHammerstein (2 + 2 sections, 24-knot spline, ADAA)", "ns_per_sample": 31.847, "spread_pct": 0.7, "rate_hz": 48000 },
+    { "stage": "ParallelHammerstein (order 5, 2 sections a branch)", "ns_per_sample": 18.147, "spread_pct": 2.8, "rate_hz": 48000 },
+    { "stage": "ParallelHammerstein (order 5, 256 taps a branch)", "ns_per_sample": 709.332, "spread_pct": 0.0, "rate_hz": 48000 }
   ]
 }

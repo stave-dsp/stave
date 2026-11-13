@@ -183,3 +183,32 @@ fn container_switches_without_allocating() {
     });
     assert_eq!(n, 0, "the container's switch allocated {n} times");
 }
+
+/// Block models (DSP.md M3) are realtime once built: preparing at any
+/// rate (the sections re-derived in place), resetting to rest, ADAA on
+/// or off, and running never allocate.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn block_models_process_without_allocating() {
+    use stave_dsp::learned::block::{Linear, Nonlinearity, ParallelHammerstein, Section, WienerHammerstein};
+    let section = Section {
+        b: [0.2, 0.4, 0.2],
+        a: [-0.6, 0.2],
+    };
+    let mut wh = WienerHammerstein::new(
+        48_000.0,
+        Linear::Rational(vec![section; 2]),
+        Nonlinearity::Spline {
+            knots: vec![-2.0, -0.5, 0.0, 0.4, 2.0],
+            values: vec![-0.9, -0.4, 0.05, 0.4, 0.95],
+        },
+        Linear::Fir(vec![0.5, 0.3, 0.2]),
+    );
+    wh.set_rate_policy(RatePolicy::Any);
+    assert_no_alloc("wiener_hammerstein", &mut wh);
+    wh.set_antialiasing(true);
+    assert_no_alloc("wiener_hammerstein with ADAA", &mut wh);
+    let mut ph = ParallelHammerstein::new(48_000.0, vec![Linear::Rational(vec![section]), Linear::Fir(vec![0.1; 16])])
+        .with_limit(1.0);
+    assert_no_alloc("parallel_hammerstein", &mut ph);
+}

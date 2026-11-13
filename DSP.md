@@ -41,6 +41,10 @@ is one piece of work with an id; tick it with the commit that lands it.
 - **Behavioural** (`behavioral/`): ADAA (1st and 2nd order, memoryless
   shapes), tabulated curves, shapes (knee, asym, fold, Chebyshev), smooth
   saturation, slew, hysteresis, nonlinear RC.
+- **Learned** (`learned/`): Neural Amp Modeler WaveNet, LSTM and GRU
+  inference; block-oriented models (Wiener–Hammerstein, polynomial
+  Hammerstein), fitted by `stave_measure::identify` from a capture or a
+  circuit (`tools/stave-fit`).
 - **Primitives**: f64 biquad, ZDF SVF, one-pole, allpass, Linkwitz–Riley
   crossovers, delay line, comb, polyBLEP oscillator, LFO, ADSR, envelope,
   random, smoothing.

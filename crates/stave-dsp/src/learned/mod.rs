@@ -14,6 +14,8 @@
 //! * [`Lstm`] — a stacked LSTM with a linear head.
 //! * [`Gru`] — a stacked GRU with a linear head.
 //! * [`nam`] — Neural Amp Modeler's `.nam` file → a [`nam::Network`].
+//! * [`block`] — Wiener, Hammerstein and Wiener–Hammerstein models and
+//!   the parallel (polynomial) Hammerstein model, and their file.
 //!
 //! Every network is a [`Stage`](crate::Stage): f32, one sample per
 //! tick, no allocation, locks or unbounded loops after it is built (the
@@ -21,8 +23,10 @@
 //! over). Each knows the rate it was trained at and refuses another
 //! unless told otherwise ([`RatePolicy`]): resample to the network,
 //! never the reverse. Training stays in Python, out of tree; inference
-//! is here. Wiener–Hammerstein blocks land here next (DSP.md M3). It
-//! may use every layer above it.
+//! is here. Block-oriented models ([`block`]: Wiener, Hammerstein,
+//! Wiener–Hammerstein, parallel Hammerstein) are fitted in Rust
+//! (`stave_measure::identify`) and keep their filters' analog
+//! prototypes at any rate. It may use every layer above it.
 //!
 //! # A recurrent network at the host's rate
 //!
@@ -51,6 +55,7 @@
 //! ```
 
 mod activation;
+pub mod block;
 mod conv;
 mod error;
 mod gru;
