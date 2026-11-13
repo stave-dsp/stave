@@ -148,11 +148,22 @@ circuit/
 ## Measurement design
 
 What we measure decides what we can claim. The aim is the richest picture
-of a model per CPU-second, held to two references: **the equations**
-(ngspice, high-precision solutions — proves we solve the model) and **the
-hardware** (calibrated captures — proves the model is the unit). Every
-model, circuit and plugin is measured with the *same* stimulus suite, so
-results compare across models, across commits and against hardware.
+of a model per CPU-second, held to three references:
+
+- **The equations** — ngspice and high-precision solutions. Proves we solve
+  the model; available for every circuit, automated.
+- **The ear** — most models are voiced by listening, because hardware is
+  not at hand for most of what we build. Voicing is a first-class,
+  structured activity (level-matched A/B, blind ABX, recorded decisions),
+  and its result is pinned as a fingerprint so a voiced sound never drifts
+  by accident.
+- **Program material** — real instruments from the user's sample library,
+  so every model is heard and measured on the material it will process.
+
+Hardware captures, where a unit is available, join as a fourth reference.
+Every model, circuit and plugin is measured with the *same* stimulus suite,
+so results compare across models, across commits and, when they exist,
+against captures.
 
 ### Principles
 
@@ -232,14 +243,52 @@ fingerprints as plots: frequency response, harmonic spectra against level,
 compression curves, aliasing, with the reference overlaid. No plugin
 vendor publishes this; we can.
 
-### Hardware captures (where we beat the field)
+### Voicing by ear
+
+Most models are tuned by listening. The tooling makes that rigorous:
+
+- **Audition in stave-play** against a reference — another model, an
+  earlier fingerprint, a capture when one exists, or bypass — always
+  **loudness-matched** (LUFS), since louder reads as better.
+- **Blind ABX and preference trials** with randomised order, logged per
+  session with the settings, program material and verdicts, so a voicing
+  decision has a record and can be revisited.
+- **Measured targets where no capture exists:** published datasheet curves
+  (tube plate curves, transistor families, op-amp slew), published
+  frequency responses of classic circuits, and the designer's own target
+  curves, as reference tables in the same format as ngspice data.
+- **Pinning the result:** once a sound is chosen, its fingerprint (C2–C10
+  at the control corners) is blessed, so later refactors that change it
+  fail review instead of silently drifting from what was chosen by ear.
+
+### Reference program material
+
+From the user's sample library (`/Volumes/Crucial X8/Sample Library`):
+
+- `Test Corpus/` — 58 deterministic 48 kHz/24-bit picks in 13 sets (drum
+  loops, kicks, snares, hats, percussion, piano and synth notes, vocals and
+  vocal phrases, tonal loops, textures, fx, guitar), curated for stave.
+- `Stems/` — real multitracks (guitars, bass, drums, vocals in context).
+- Clean **DI guitar and bass** for amps, pedals and cabs — a gap today:
+  the corpus's guitar files are already processed. Record DI takes (single
+  coil, humbucker; picked, strummed, palm-muted, chords, single notes) and
+  pull DI tracks from stems where they exist.
+
+The audio is never committed (its licences allow use, not redistribution).
+A committed manifest names each file with a checksum and its role;
+`STAVE_SAMPLE_LIBRARY` points at the library; tests that need it run when it
+is present (on the machine with the drive, or a synced copy on a build host)
+and report "skipped: library absent" otherwise. Program-material results
+(C13) are judged by NMR on the null residual against the pinned fingerprint
+or reference, and auditioned.
+
+### Hardware captures (when a unit is available)
 
 The same stimulus suite (C2–C12) is played through the real unit with a
 reamp/interface rig, calibrated in volts (dBu), with loopback compensation
 of the interface's own response and latency, at every control corner
-(C14). Captures live outside git with checksums committed (R8); tests use
-them when present. A model ships only when its fingerprint matches the
-hardware's within budget — measured, not voiced by ear alone.
+(C14). Captures live outside git with checksums committed (R8) and join the
+other references; a model with a capture is held to it within budget.
 
 ## Ledger
 
@@ -547,10 +596,23 @@ hardware's within budget — measured, not voiced by ear alone.
 - [ ] **R19** NMR (noise-to-mask ratio) and ERB-band spectral error in
   stave-measure, used for C13 residuals and for budgets stated in
   audibility terms (R16).
-- [ ] **R20** The capture rig: a stave-host tool that plays the suite
+- [ ] **R20** (when a unit is available) The capture rig: a stave-host tool that plays the suite
   through an interface, calibrates in dBu, compensates loopback, steps
   control corners, and writes captures in the same table format as the
   ngspice references.
+
+- [ ] **R21** Voicing tools in stave-play: loudness-matched A/B against a
+  reference (model, fingerprint, capture, bypass), blind ABX and preference
+  trials with a session log, and "bless this sound" writing the
+  fingerprint.
+- [ ] **R22** The reference corpus: a committed manifest (path, checksum,
+  role, instrument, technique) over the sample library's Test Corpus,
+  stems and DI takes; `STAVE_SAMPLE_LIBRARY`; a sync script for a build
+  host's copy; tests that use it when present. Close the DI gap (record or
+  extract clean guitar and bass DI).
+- [ ] **R23** Measured targets without hardware: digitised datasheet curves
+  and published responses as reference tables, sources cited, in the ngspice
+  table format, so a model can be held to a target where no capture exists.
 
 ### P — profiling and performance
 
