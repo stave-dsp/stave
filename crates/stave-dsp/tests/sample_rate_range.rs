@@ -110,8 +110,12 @@ fn the_convolver_returns_its_response_at_every_rate() {
         .collect();
     let ir = ImpulseResponse::mono(&h);
     for rate in RATES {
-        for head in [Head::Partitioned, Head::Direct] {
-            let mut conv = Convolver::uniform(&ir, 64, head);
+        for (head, largest) in [
+            (Head::Partitioned, 64),
+            (Head::Direct, 64),
+            (Head::Direct, 256),
+        ] {
+            let mut conv = Convolver::non_uniform(&ir, 64, largest, head);
             conv.prepare(rate);
             let latency = conv.latency() as usize;
             let Tail::Samples(tail) = conv.tail() else {

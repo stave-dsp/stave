@@ -196,9 +196,15 @@ circuit/
   plugin copies and `primitives/resample.rs`'s local radix-2.
 - [x] **F2** (7b3cf69: `Convolver::uniform` with an `ImpulseResponse`, mono/stereo/true-stereo, latency one partition or zero with `Head::Direct`) Uniform partitioned convolution (overlap-save, frequency-domain
   delay line), zero allocation after `prepare`, any IR length.
-- [ ] **F3** Non-uniform partitioned convolution (Gardner / Garcia
+- [x] **F3** (this commit: `Convolver::non_uniform(&ir, block, largest, head)`: power-of-two sizes up to `largest`, counts by dynamic programming over a measured cost model (García); 96 k taps at zero latency 68 ns/sample against 132 for uniform at a 256-sample latency) Non-uniform partitioned convolution (Gardner / Garcia
   schedules) for long IRs at low latency; worker-thread tail partitions
   with a lock-free handoff.
+- [ ] **F3b** The worker-thread half of F3: the large partitions' steps
+  computed off the audio thread (or spread over their block), handed
+  back lock-free, so the worst block costs what the average does (today
+  1.2 µs/sample against 68 average for 96 k taps). The schedule search
+  must then keep one block of slack (`skip ≥ 1`) on the runs it moves;
+  tests stay deterministic by running the worker inline.
 - [ ] **F4** `ImpulseResponse` loading: WAV, resampled to the prepared
   rate, normalised, mono/stereo/true-stereo; minimum-phase conversion.
 - [ ] **F5** STFT (analysis/synthesis with COLA windows) as a stage, the

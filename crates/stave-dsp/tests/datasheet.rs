@@ -229,6 +229,39 @@ fn primitive_datasheet() {
         );
         bench(&name, &input, |x| conv.tick(x));
     }
+
+    // F3: the same lengths with a direct head and doubling partitions
+    // up to 8192; the worst 64-sample block shows the spike where the
+    // large partitions step.
+    for (taps, block, largest) in [(16_384, 64, 4_096), (96_000, 64, 8_192)] {
+        let ir = ImpulseResponse::mono(&input[..taps]);
+        let mut conv = Convolver::non_uniform(&ir, block, largest, Head::Direct);
+        conv.prepare(sr);
+        let name = format!("Convolver {taps} taps B={block}..{largest} non-uniform");
+        bench(&name, &input, |x| conv.tick(x));
+        worst_block(&name, &input, 64, |b| conv.process(b));
+    }
+}
+
+/// The slowest `block`-sample call of `process` over the input, after a
+/// warm-up pass: the spike a host's deadline sees.
+fn worst_block(name: &str, input: &[f32], block: usize, mut process: impl FnMut(&mut [f32])) {
+    let mut buf = input.to_vec();
+    for chunk in buf.chunks_mut(block) {
+        process(chunk);
+    }
+    let mut buf = input.to_vec();
+    let mut worst = 0.0f64;
+    for chunk in buf.chunks_mut(block) {
+        let t0 = Instant::now();
+        process(black_box(chunk));
+        worst = worst.max(t0.elapsed().as_secs_f64());
+    }
+    println!(
+        "  {:<28} {:>7.2} ns/sample  (worst {block}-sample block)",
+        format!("  {name}"),
+        worst / block as f64 * 1e9
+    );
 }
 
 /// A netlist as `Circuit<Dk>`, its `V1` driven by the input.

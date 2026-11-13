@@ -217,6 +217,10 @@ afterwards.
   [`Stage`](stave_dsp::Stage), so it nests in any form; stereo and
   true-stereo responses run through
   [`tick_stereo`](stave_dsp::Convolver::tick_stereo).
+- [`Convolver::non_uniform`](stave_dsp::Convolver::non_uniform) keeps
+  that latency but covers a long response with larger partitions too,
+  sized for the least work: a two-second hall at zero latency costs about
+  half of what the uniform schedule costs at 256 samples of latency.
 
 Convolving with a short response, checked against the direct sum:
 

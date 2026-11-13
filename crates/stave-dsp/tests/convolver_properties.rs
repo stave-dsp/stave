@@ -1,7 +1,8 @@
 //! The [`Convolver`] against direct-form convolution (DSP.md F2, R10):
 //! random responses and partitions, ragged blocks (blocks of one
 //! included), responses shorter and longer than a partition, mono,
-//! stereo and true stereo, with and without the direct head.
+//! stereo and true stereo, with and without the direct head, uniform
+//! (F2) and non-uniform (F3) schedules.
 //!
 //! The reference is `y[t] = Σ h[j]·x[t − j]` summed in `f64`. The
 //! convolver runs an `f32` FFT, so the bound is relative: the error at
@@ -209,6 +210,89 @@ fn true_stereo_sums_both_inputs_into_each_output() {
         assert_close(&out.0, &want_l, latency, bound, "true-stereo left");
         assert_close(&out.1, &want_r, latency, bound, "true-stereo right");
     }
+}
+
+/// F3: the non-uniform schedule against direct convolution at the same
+/// budget, over blocks, largest partitions, heads and response lengths
+/// that end inside every run of the schedule.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn non_uniform_matches_direct_convolution() {
+    let mut rng = Xorshift32::new(0x6A2D);
+    let (mut cases, mut worst) = (0, 0.0f64);
+    for &(block, largest) in &[(1usize, 8usize), (4, 4), (4, 64), (16, 128), (32, 1024)] {
+        for &len in &[0usize, 1, block, 3 * block + 1, 7 * block, 23 * block + 5, 2_500] {
+            for head in [Head::Partitioned, Head::Direct] {
+                let h = response(len, &mut rng);
+                let ir = ImpulseResponse::mono(&h);
+                let mut conv = Convolver::non_uniform(&ir, block, largest, head);
+                conv.prepare(48_000.0);
+                let latency = conv.latency() as usize;
+                let x = noise(len + 2 * largest + 64, &mut rng);
+                let y = run_ragged(&mut conv, &x, &mut rng);
+                let want = direct(&x[..x.len() - latency], &h);
+                let what = format!("B = {block}, largest = {largest}, len = {len}, {head:?}");
+                let bound = TOLERANCE * l2(&h) + 1e-30;
+                worst = worst.max(assert_close(&y, &want, latency, bound, &what));
+                cases += 1;
+            }
+        }
+    }
+    assert!(cases >= 70);
+    println!("worst error: {:.2e} · ‖h‖₂ · max|x|", worst * TOLERANCE);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn non_uniform_true_stereo_matches_direct_convolution() {
+    let mut rng = Xorshift32::new(0x7E57);
+    let paths: Vec<Vec<f32>> = [1_500, 40, 900, 1_200].map(|n| response(n, &mut rng)).into();
+    let ir = ImpulseResponse::true_stereo(&paths[0], &paths[1], &paths[2], &paths[3]);
+    for head in [Head::Partitioned, Head::Direct] {
+        let mut conv = Convolver::non_uniform(&ir, 16, 256, head);
+        conv.prepare(48_000.0);
+        assert!(conv.schedule().count() >= 2, "{:?}", conv.schedule().collect::<Vec<_>>());
+        let latency = conv.latency() as usize;
+        let (xl, xr) = (noise(2_000, &mut rng), noise(2_000, &mut rng));
+        let (mut yl, mut yr) = (xl.clone(), xr.clone());
+        let mut at = 0;
+        for b in ragged(2_000, 300, &mut rng) {
+            conv.process_stereo(&mut yl[at..at + b], &mut yr[at..at + b]);
+            at += b;
+        }
+        let n = 2_000 - latency;
+        let sum = |a: Vec<f64>, b: Vec<f64>| -> Vec<f64> {
+            a.iter().zip(&b).map(|(a, b)| a + b).collect()
+        };
+        let want_l = sum(direct(&xl[..n], &paths[0]), direct(&xr[..n], &paths[2]));
+        let want_r = sum(direct(&xl[..n], &paths[1]), direct(&xr[..n], &paths[3]));
+        let bound = TOLERANCE * paths.iter().map(|p| l2(p)).sum::<f64>();
+        assert_close(&yl, &want_l, latency, bound, "non-uniform left");
+        assert_close(&yr, &want_r, latency, bound, "non-uniform right");
+    }
+}
+
+#[test]
+fn non_uniform_with_one_size_is_uniform_bit_for_bit() {
+    let mut rng = Xorshift32::new(0x5A3E);
+    let ir = ImpulseResponse::mono(&response(300, &mut rng));
+    let x = noise(800, &mut rng);
+    for head in [Head::Partitioned, Head::Direct] {
+        let mut a = Convolver::uniform(&ir, 32, head);
+        let mut b = Convolver::non_uniform(&ir, 32, 32, head);
+        a.prepare(48_000.0);
+        b.prepare(48_000.0);
+        assert_eq!(a.schedule().collect::<Vec<_>>(), b.schedule().collect::<Vec<_>>());
+        let ya: Vec<f32> = x.iter().map(|&s| a.tick(s)).collect();
+        let yb: Vec<f32> = x.iter().map(|&s| b.tick(s)).collect();
+        assert_eq!(ya, yb);
+    }
+}
+
+#[test]
+#[should_panic(expected = "largest partition")]
+fn a_largest_partition_below_the_block_is_refused() {
+    let _ = Convolver::non_uniform(&ImpulseResponse::mono(&[1.0]), 64, 32, Head::Direct);
 }
 
 #[test]
