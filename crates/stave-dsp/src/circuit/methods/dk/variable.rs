@@ -297,6 +297,7 @@ impl Dk {
         }
         let row = &o[(nv + nx) * cols..(nv + nx + 1) * cols];
         split(row, 1.0, &mut self.ex, &mut self.eu, &mut self.eq, 0);
+        self.work.recheck(&self.k);
     }
 
     /// The reduced matrices, for comparing an updated circuit with a

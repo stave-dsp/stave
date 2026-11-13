@@ -599,6 +599,7 @@ impl<'a> Builder<'a> {
             m
         };
         let nx = self.capacitors.len() + self.inductors.len();
+        let work = Workspace::new(nv, nq, &self.devices);
         Ok(Dk {
             n,
             nodes: node_total,
@@ -635,7 +636,7 @@ impl<'a> Builder<'a> {
             x_next: vec![0.0; nx],
             u: vec![0.0; nu],
             p: vec![0.0; nv],
-            work: Workspace::new(nv, nq),
+            work,
             samples: 0,
             output: 0.0,
             settings,

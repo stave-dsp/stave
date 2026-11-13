@@ -450,6 +450,13 @@ impl Dk {
         self.output
     }
 
+    /// The blocks the per-sample solve runs, in order, as their sizes in
+    /// controlling voltages: one, the whole subsystem, unless it splits
+    /// (`solve`'s block-triangular decomposition).
+    pub fn solve_blocks(&self) -> Vec<usize> {
+        self.work.block_sizes().collect()
+    }
+
     /// `(MNA unknowns, states, controlling voltages, device outputs)`:
     /// the nonlinear subsystem's size is the third.
     pub fn dimensions(&self) -> (usize, usize, usize, usize) {

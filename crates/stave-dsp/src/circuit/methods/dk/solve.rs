@@ -16,11 +16,35 @@
 //!   starting from the last, where `p₀ = v₀ − K·q(v₀)` is the prediction
 //!   `v₀` solves exactly; at the operating point the same idea is source
 //!   stepping.
-//! - **Honest convergence**: a solve has converged when its last step is
+//! - **Honest convergence**: a solve has converged when its error is
 //!   below `tolerance` *and* the equations hold to a microvolt per volt —
-//!   a stalled step in an ill-conditioned system is not convergence.
+//!   a stalled step in an ill-conditioned system is not convergence. The
+//!   error is the size of the last step — or, per sample, the next Newton
+//!   correction, which the monotonicity test has already computed at the
+//!   accepted point (Deuflhard's simplified correction `J⁻¹·r(v + δ)`):
+//!   where a full step contracts it at least twofold (the quadratic
+//!   regime, where it is the true next step to first order) and it is
+//!   below tolerance, it is applied as a chord step, the device outputs
+//!   moved along their Jacobian with it, and the solve stops — without
+//!   the iteration that would only confirm convergence. The operating
+//!   point is solved to a step below tolerance.
+//! - **Sparse device Jacobian**: each device's outputs depend only on its
+//!   own controls, so `K·Jq` is assembled from the structural nonzeros of
+//!   `Jq` (found once from the devices), not as a dense product.
+//! - **Block-triangular decomposition** (the strongly connected components
+//!   of the subsystem's dependency graph, found at prepare): where
+//!   a stage drives the next without being loaded by it — an op-amp's
+//!   output, an ideal source — `K` has no coupling back, and the subsystem
+//!   is solved block by block in dependency order, each block's Newton on
+//!   its own controls with the blocks before it held. The same solution
+//!   (the couplings left out are `K`'s rounding, below 1e-13 of their
+//!   row), from small factorisations, each block iterating only as much as
+//!   it needs. A block that fails sends the sample to the whole system's
+//!   continuation; a part's value that couples blocks after all ends the
+//!   split until the next prepare.
 //! - **Reported, bounded**: at most
-//!   `max_iterations · (1 + continuation_steps)` iterations a sample, each
+//!   `max_iterations · (1 + continuation_steps)` iterations a sample (per
+//!   block: a split solve reports the most any block took), each
 //!   at most `1 + log2(1/min_damping)` device evaluations; a solve that
 //!   ends unconverged is counted in [`NewtonStats::capped`], never
 //!   hidden.
@@ -137,6 +161,30 @@ pub(crate) struct Outcome {
     pub residual: f64,
 }
 
+/// Below this fraction of its row's largest entry, a `K` entry is taken as
+/// no coupling when the subsystem is split into blocks: the rounding an
+/// ideal source's decoupling leaves in `K` sits near 1e-16 of the row.
+const DECOUPLED: f64 = 1e-13;
+
+/// Controls solved together and the devices they read: one strongly
+/// connected component of the subsystem's dependency graph.
+#[derive(Clone, Debug, Default)]
+struct Block {
+    /// Its unknowns, global control indices, ascending.
+    controls: Vec<usize>,
+    /// The first of them when they are a contiguous run.
+    first: Option<usize>,
+    /// The devices it evaluates, ascending.
+    devices: Vec<usize>,
+    /// Their outputs, indices into `q`.
+    outputs: Vec<usize>,
+    /// `Jq`'s structural nonzeros on the block's own controls, `(output,
+    /// control, column in the block)`, outputs ascending.
+    columns: Vec<(usize, usize, usize)>,
+    /// Every `Jq` entry its devices write, `(output, control)`.
+    pattern: Vec<(usize, usize)>,
+}
+
 /// The solve's buffers, sized once so a sample never allocates.
 #[derive(Clone, Debug)]
 pub(crate) struct Workspace {
@@ -157,10 +205,28 @@ pub(crate) struct Workspace {
     p_step: Vec<f64>,
     p_start: Vec<f64>,
     v_start: Vec<f64>,
+    /// Every control and device as one block (the operating point's
+    /// solve, continuation, and any subsystem that does not split).
+    whole: Block,
+    /// The blocks in dependency order, when the subsystem splits into
+    /// more than one ([`decompose`](Self::decompose)).
+    blocks: Vec<Block>,
+    /// The `K` entries `(control, output)` the order takes as no coupling:
+    /// an output of a later block on an earlier block's control.
+    decoupled: Vec<(usize, usize)>,
+    /// Whether the per-sample solve runs block by block.
+    split: bool,
+    /// Which `Jq` entries a device may write (the whole block's pattern
+    /// as a mask: the debug check that no device writes outside it).
+    #[cfg(debug_assertions)]
+    written: Vec<bool>,
 }
 
 impl Workspace {
-    pub fn new(nv: usize, nq: usize) -> Self {
+    /// Buffers for `devices`, whose outputs are `nq` and controls `nv`.
+    pub fn new(nv: usize, nq: usize, devices: &[Nonlinear]) -> Self {
+        let all_devices: Vec<usize> = (0..devices.len()).collect();
+        let whole = block(&(0..nv).collect::<Vec<_>>(), &all_devices, devices, nq);
         Self {
             nv,
             nq,
@@ -179,6 +245,16 @@ impl Workspace {
             p_step: vec![0.0; nv],
             p_start: vec![0.0; nv],
             v_start: vec![0.0; nv],
+            blocks: Vec::new(),
+            decoupled: Vec::new(),
+            split: false,
+            #[cfg(debug_assertions)]
+            written: {
+                let mut mask = vec![false; nq * nv];
+                whole.pattern.iter().for_each(|&(j, c)| mask[j * nv + c] = true);
+                mask
+            },
+            whole,
         }
     }
 
@@ -189,7 +265,91 @@ impl Workspace {
 
     /// Evaluate the devices at the current `v` into `q` and its Jacobian.
     pub fn evaluate(&mut self, devices: &mut [Nonlinear], time: f64) {
-        evaluate(devices, &self.v, &mut self.q, &mut self.jq, self.nv, time);
+        let whole = std::mem::take(&mut self.whole);
+        self.evaluate_block(&whole, devices, time, false);
+        self.whole = whole;
+    }
+
+    /// Split the subsystem `v = p + K·q(v)` into blocks solved in turn:
+    /// the strongly connected components of its dependency graph (a
+    /// device reads its controls; a control reads the outputs its row of
+    /// `K` weighs above [`DECOUPLED`] of its largest), in dependency
+    /// order. An op-amp's output stage drives what follows it without
+    /// being loaded by it, so a pedal's stages decouple: the DS-1's 13
+    /// controls are four blocks, the Phase 90's 20 are ten. At prepare
+    /// (it allocates); a subsystem that does not split is solved whole.
+    pub fn decompose(&mut self, k: &[f64], devices: &[Nonlinear]) {
+        let (nv, nq, nd) = (self.nv, self.nq, devices.len());
+        let outputs = |d: usize| devices[d].output..devices.get(d + 1).map_or(nq, |n| n.output);
+        let scale: Vec<f64> = (0..nv).map(|c| row_scale(k, c, nq)).collect();
+        // Nodes: controls 0..nv, then devices; an edge runs from what is
+        // read to what reads it.
+        let mut reads: Vec<Vec<usize>> = vec![Vec::new(); nv + nd];
+        for (d, device) in devices.iter().enumerate() {
+            for &(c, _) in &device.controls {
+                if !reads[c].contains(&(nv + d)) {
+                    reads[c].push(nv + d);
+                }
+            }
+            for c in 0..nv {
+                if outputs(d).any(|j| k[c * nq + j].abs() > DECOUPLED * scale[c]) {
+                    reads[nv + d].push(c);
+                }
+            }
+        }
+        let components = strongly_connected(&reads);
+        let mut order = vec![0; nv + nd];
+        self.blocks = components
+            .iter()
+            .enumerate()
+            .map(|(b, nodes)| {
+                nodes.iter().for_each(|&n| order[n] = b);
+                let mut controls: Vec<usize> = nodes.iter().copied().filter(|&n| n < nv).collect();
+                let mut members: Vec<usize> = nodes.iter().filter(|&&n| n >= nv).map(|&n| n - nv).collect();
+                controls.sort_unstable();
+                members.sort_unstable();
+                block(&controls, &members, devices, nq)
+            })
+            .collect();
+        self.decoupled.clear();
+        for c in 0..nv {
+            for d in 0..nd {
+                if order[nv + d] > order[c] {
+                    self.decoupled.extend(outputs(d).filter(|&j| k[c * nq + j] != 0.0).map(|j| (c, j)));
+                }
+            }
+        }
+        self.split = self.blocks.len() > 1;
+    }
+
+    /// After `K` moved (a part's value, N6): keep the blocks only while
+    /// every coupling their order takes as none still is. Realtime.
+    pub fn recheck(&mut self, k: &[f64]) {
+        let nq = self.nq;
+        if self.split
+            && self.decoupled.iter().any(|&(c, j)| k[c * nq + j].abs() > DECOUPLED * row_scale(k, c, nq))
+        {
+            self.split = false;
+        }
+    }
+
+    /// Solve whole from now on (a test's reference for the split solve).
+    #[cfg(test)]
+    pub fn unsplit(&mut self) {
+        self.split = false;
+    }
+
+    /// The couplings the block order takes as none, `(control, output)`.
+    #[cfg(test)]
+    pub fn decoupled(&self) -> &[(usize, usize)] {
+        &self.decoupled
+    }
+
+    /// The blocks the per-sample solve runs, in order: their sizes in
+    /// controls (one block, the whole subsystem, when it does not split).
+    pub fn block_sizes(&self) -> impl Iterator<Item = usize> + '_ {
+        let blocks = if self.split { &self.blocks[..] } else { std::slice::from_ref(&self.whole) };
+        blocks.iter().map(|b| b.controls.len())
     }
 
     /// Solve `v = p + K·q(v)` from the current `v`, falling back to
@@ -208,15 +368,22 @@ impl Workspace {
     ) {
         let Prediction { p, k } = prediction;
         if self.nv == 0 {
-            evaluate(devices, &self.v, &mut self.q, &mut self.jq, 0, time);
+            self.evaluate(devices, time);
             return;
         }
         self.v_start.copy_from_slice(&self.v);
-        let mut outcome = self.newton(p, k, devices, time, &settings.newton);
+        let mut outcome = if self.split {
+            self.solve_blocks(p, k, devices, time, &settings.newton)
+        } else {
+            let whole = std::mem::take(&mut self.whole);
+            let outcome = self.iterate(&whole, p, k, devices, time, &settings.newton, true);
+            self.whole = whole;
+            outcome
+        };
         if !outcome.converged && settings.continuation_steps > 0 {
             health.continuations += 1;
             self.v.copy_from_slice(&self.v_start);
-            evaluate(devices, &self.v, &mut self.q, &mut self.jq, self.nv, time);
+            self.evaluate(devices, time);
             // p₀ = v₀ − K·q(v₀): the prediction the start solves exactly.
             let nq = self.nq;
             for i in 0..self.nv {
@@ -228,25 +395,77 @@ impl Workspace {
             }
             let steps = settings.continuation_steps;
             let mut total = outcome.iterations;
+            let whole = std::mem::take(&mut self.whole);
             for s in 1..=steps {
                 let f = f64::from(s) / f64::from(steps);
                 for i in 0..self.nv {
                     self.p_step[i] = self.p_start[i] + f * (p[i] - self.p_start[i]);
                 }
                 let p_step = std::mem::take(&mut self.p_step);
-                outcome = self.newton(&p_step, k, devices, time, &settings.newton);
+                outcome = self.iterate(&whole, &p_step, k, devices, time, &settings.newton, true);
                 self.p_step = p_step;
                 total += outcome.iterations;
                 if !outcome.converged {
                     break;
                 }
             }
+            self.whole = whole;
             outcome.iterations = total;
         }
         health.record(outcome.iterations, outcome.converged, outcome.final_step, outcome.residual);
     }
 
-    /// Damped Newton from the current `v`.
+    /// Each block in order, the ones before it already solved: the
+    /// iterations the longest took, converged when every block did.
+    fn solve_blocks(
+        &mut self,
+        p: &[f64],
+        k: &[f64],
+        devices: &mut [Nonlinear],
+        time: f64,
+        settings: &NewtonSettings,
+    ) -> Outcome {
+        // A block's trials read the solved blocks before it through the
+        // trial buffers: they agree with the solution outside the block.
+        self.v_try.copy_from_slice(&self.v);
+        self.q_try.copy_from_slice(&self.q);
+        self.jq_try.copy_from_slice(&self.jq);
+        let blocks = std::mem::take(&mut self.blocks);
+        let mut total = Outcome {
+            iterations: 0,
+            converged: true,
+            final_step: 0.0,
+            residual: 0.0,
+        };
+        for b in &blocks {
+            let o = self.iterate(b, p, k, devices, time, settings, true);
+            total.iterations = total.iterations.max(o.iterations);
+            total.final_step = total.final_step.max(o.final_step);
+            total.residual = if total.residual.is_nan() || o.residual.is_nan() {
+                f64::NAN
+            } else {
+                total.residual.max(o.residual)
+            };
+            if !o.converged {
+                total.converged = false;
+                break;
+            }
+            for &c in &b.controls {
+                self.v_try[c] = self.v[c];
+            }
+            for &j in &b.outputs {
+                self.q_try[j] = self.q[j];
+            }
+            for &(j, c) in &b.pattern {
+                self.jq_try[j * self.nv + c] = self.jq[j * self.nv + c];
+            }
+        }
+        self.blocks = blocks;
+        total
+    }
+
+    /// Damped Newton from the current `v`, to a step below tolerance
+    /// (the operating point's solve, run once: no early stop).
     pub fn newton(
         &mut self,
         p: &[f64],
@@ -255,108 +474,293 @@ impl Workspace {
         time: f64,
         settings: &NewtonSettings,
     ) -> Outcome {
-        let (nv, nq) = (self.nv, self.nq);
-        evaluate(devices, &self.v, &mut self.q, &mut self.jq, nv, time);
-        residual(p, k, &self.q, &self.v, &mut self.r, nq);
-        let (mut iterations, mut step) = (0, f64::INFINITY);
-        while iterations < settings.max_iterations && (step.is_nan() || step >= settings.tolerance) {
-            // J = K·Jq − I; solve J·δ = −r.
-            for i in 0..nv {
-                for c in 0..nv {
-                    let mut s = if i == c { -1.0 } else { 0.0 };
-                    for j in 0..nq {
-                        s += k[i * nq + j] * self.jq[j * nv + c];
-                    }
-                    self.jacobian[i * nv + c] = s;
-                }
-                self.delta[i] = -self.r[i];
+        let whole = std::mem::take(&mut self.whole);
+        let outcome = self.iterate(&whole, p, k, devices, time, settings, false);
+        self.whole = whole;
+        outcome
+    }
+
+    /// The block's devices at `v` (or the trial `v`) into `q` and `Jq`
+    /// (or their trial buffers); `Jq` is zero outside the devices'
+    /// pattern, and only the block's entries are cleared.
+    fn evaluate_block(&mut self, b: &Block, devices: &mut [Nonlinear], time: f64, trial: bool) {
+        let nv = self.nv;
+        let (v, q, jq) = if trial {
+            (&self.v_try, &mut self.q_try, &mut self.jq_try)
+        } else {
+            (&self.v, &mut self.q, &mut self.jq)
+        };
+        for &(j, c) in &b.pattern {
+            jq[j * nv + c] = 0.0;
+        }
+        for &d in &b.devices {
+            devices[d].evaluate(v, q, jq, nv, time);
+        }
+        #[cfg(debug_assertions)]
+        debug_assert!(
+            jq.iter().zip(&self.written).all(|(&x, &written)| written || x == 0.0),
+            "a device wrote outside its Jacobian pattern"
+        );
+    }
+
+    /// The block's rows of `r = p + K·q − v` (or of the trial's).
+    fn residual_block(&mut self, b: &Block, p: &[f64], k: &[f64], trial: bool) {
+        let nq = self.nq;
+        let (v, q, r) = if trial {
+            (&self.v_try, &self.q_try[..nq], &mut self.r_try)
+        } else {
+            (&self.v, &self.q[..nq], &mut self.r)
+        };
+        for &i in &b.controls {
+            let mut s = p[i] - v[i];
+            for (a, b) in k[i * nq..(i + 1) * nq].iter().zip(q) {
+                s += a * b;
             }
-            if !lu(&mut self.jacobian, nv, &mut self.pivots) {
+            r[i] = s;
+        }
+    }
+
+    /// Damped Newton on block `b`'s controls from the current `v`, the
+    /// blocks before it held; with `early`, a solve in the quadratic
+    /// regime stops on the correction it has already computed (module
+    /// docs) and takes it as a chord step.
+    #[allow(clippy::too_many_arguments)]
+    fn iterate(
+        &mut self,
+        b: &Block,
+        p: &[f64],
+        k: &[f64],
+        devices: &mut [Nonlinear],
+        time: f64,
+        settings: &NewtonSettings,
+        early: bool,
+    ) -> Outcome {
+        let (nv, nq, m) = (self.nv, self.nq, b.controls.len());
+        self.evaluate_block(b, devices, time, false);
+        self.residual_block(b, p, k, false);
+        let (mut iterations, mut step) = (0, f64::INFINITY);
+        if m == 0 {
+            step = 0.0;
+        }
+        while iterations < settings.max_iterations && (step.is_nan() || step >= settings.tolerance) {
+            // J = K·Jq − I on the block's controls, over Jq's structural
+            // nonzeros (each device's outputs read its own controls only);
+            // solve J·δ = −r.
+            let jacobian = &mut self.jacobian[..m * m];
+            jacobian.iter_mut().for_each(|x| *x = 0.0);
+            for (a, &c) in b.controls.iter().enumerate() {
+                jacobian[a * m + a] = -1.0;
+                self.delta[a] = -self.r[c];
+            }
+            for &(j, c, column) in &b.columns {
+                let slope = self.jq[j * nv + c];
+                if slope == 0.0 {
+                    continue;
+                }
+                if let Some(first) = b.first {
+                    // Contiguous controls (the whole subsystem, and most
+                    // blocks): strided runs, no lookups.
+                    for a in 0..m {
+                        jacobian[a * m + column] += k[(first + a) * nq + j] * slope;
+                    }
+                } else {
+                    for (a, &row) in b.controls.iter().enumerate() {
+                        jacobian[a * m + column] += k[row * nq + j] * slope;
+                    }
+                }
+            }
+            if !lu(jacobian, m, &mut self.pivots) {
                 break;
             }
-            lu_solve(&self.jacobian, nv, &self.pivots, &mut self.delta);
-            let largest = self.delta.iter().fold(0.0f64, |m, d| m.max(d.abs()));
+            lu_solve(&self.jacobian, m, &self.pivots, &mut self.delta);
+            let largest = self.delta[..m].iter().fold(0.0f64, |s, d| s.max(d.abs()));
             if largest > settings.max_step {
                 let scale = settings.max_step / largest;
-                self.delta.iter_mut().for_each(|d| *d *= scale);
+                self.delta[..m].iter_mut().for_each(|d| *d *= scale);
             }
             // Natural monotonicity (Deuflhard): a step is accepted when the
             // Newton correction at the trial point, J⁻¹·r(v + λδ) with this
             // iteration's J, is smaller than δ. Unlike the residual's norm it
             // is blind to how the equations are scaled — a plate's volts-per-
             // amp row would otherwise veto good full steps.
-            let size = self.delta.iter().fold(0.0f64, |m, d| m.max(d.abs()));
+            let size = self.delta[..m].iter().fold(0.0f64, |s, d| s.max(d.abs()));
             let mut damping = 1.0;
-            let accepted = loop {
-                for i in 0..nv {
-                    self.v_try[i] = self.v[i] + damping * self.delta[i];
+            let (accepted, next) = loop {
+                for (a, &c) in b.controls.iter().enumerate() {
+                    self.v_try[c] = self.v[c] + damping * self.delta[a];
                 }
-                for d in devices.iter() {
-                    d.limit(&mut self.v_try, &self.v);
+                for &d in &b.devices {
+                    devices[d].limit(&mut self.v_try, &self.v);
                 }
-                evaluate(devices, &self.v_try, &mut self.q_try, &mut self.jq_try, nv, time);
-                residual(p, k, &self.q_try, &self.v_try, &mut self.r_try, nq);
-                for i in 0..nv {
-                    self.correction[i] = -self.r_try[i];
+                self.evaluate_block(b, devices, time, true);
+                self.residual_block(b, p, k, true);
+                for (a, &c) in b.controls.iter().enumerate() {
+                    self.correction[a] = -self.r_try[c];
                 }
-                lu_solve(&self.jacobian, nv, &self.pivots, &mut self.correction);
-                let next = self.correction.iter().fold(0.0f64, |m, d| m.max(d.abs()));
+                lu_solve(&self.jacobian, m, &self.pivots, &mut self.correction);
+                let next = self.correction[..m].iter().fold(0.0f64, |s, d| s.max(d.abs()));
                 if next < size || size == 0.0 || (next.is_finite() && damping <= settings.min_damping) {
-                    break true;
+                    break (true, next);
                 }
                 if damping <= settings.min_damping {
-                    break false;
+                    break (false, next);
                 }
                 damping *= 0.5;
             };
             if !accepted {
                 break;
             }
-            step = 0.0;
-            for i in 0..nv {
-                step = f64::max(step, (self.v_try[i] - self.v[i]).abs());
+            step = b.controls.iter().fold(0.0f64, |s, &c| s.max((self.v_try[c] - self.v[c]).abs()));
+            // A full step that contracted the correction at least twofold
+            // is in Newton's quadratic regime: the correction just computed
+            // is the next step to first order. Below tolerance — and where
+            // the equations hold — it is taken as a chord step (this
+            // iteration's J), the outputs moved along their Jacobian to
+            // match, its own error second order in it: the iteration that
+            // would only confirm convergence is not run.
+            if early
+                && damping == 1.0
+                && next <= 0.5 * step
+                && next < settings.tolerance
+                && holds(&b.controls, &self.r_try, &self.v_try)
+            {
+                for (a, &c) in b.controls.iter().enumerate() {
+                    self.v_try[c] += self.correction[a];
+                }
+                for &(j, c, column) in &b.columns {
+                    self.q_try[j] += self.jq_try[j * nv + c] * self.correction[column];
+                }
+                step = next;
             }
-            std::mem::swap(&mut self.v, &mut self.v_try);
-            std::mem::swap(&mut self.q, &mut self.q_try);
-            std::mem::swap(&mut self.jq, &mut self.jq_try);
-            std::mem::swap(&mut self.r, &mut self.r_try);
+            for &c in &b.controls {
+                self.v[c] = self.v_try[c];
+                self.r[c] = self.r_try[c];
+            }
+            for &j in &b.outputs {
+                self.q[j] = self.q_try[j];
+            }
+            for &(j, c) in &b.pattern {
+                self.jq[j * nv + c] = self.jq_try[j * nv + c];
+            }
             iterations += 1;
         }
         // A step below tolerance is convergence only where the equations
         // hold too: an ill-conditioned system can stall with a tiny step
         // and a residual of volts.
-        let scale = 1.0 + self.v.iter().fold(0.0f64, |m, v| m.max(v.abs()));
-        let residual = self.r.iter().fold(0.0f64, |m, r| {
-            if m.is_nan() || r.is_nan() {
-                f64::NAN
-            } else {
-                m.max(r.abs())
-            }
-        });
         Outcome {
             iterations,
-            converged: step < settings.tolerance && residual <= RESIDUAL * scale,
+            converged: step < settings.tolerance && holds(&b.controls, &self.r, &self.v),
             final_step: step,
-            residual,
+            residual: largest_residual(&b.controls, &self.r),
         }
     }
 }
 
-/// Every device's outputs and their Jacobian at `v`.
-fn evaluate(devices: &mut [Nonlinear], v: &[f64], q: &mut [f64], jq: &mut [f64], nv: usize, time: f64) {
-    jq.iter_mut().for_each(|x| *x = 0.0);
-    for d in devices.iter_mut() {
-        d.evaluate(v, q, jq, nv, time);
+/// A block of `controls` and `devices`: its outputs and `Jq` entries.
+fn block(controls: &[usize], devices: &[usize], all: &[Nonlinear], nq: usize) -> Block {
+    let contiguous = controls.windows(2).all(|w| w[1] == w[0] + 1);
+    let mut b = Block {
+        controls: controls.to_vec(),
+        first: controls.first().copied().filter(|_| contiguous),
+        devices: devices.to_vec(),
+        ..Block::default()
+    };
+    for &d in devices {
+        // A device owns the outputs from its first to the next device's
+        // (its currents, then its charges), each read from its controls.
+        let end = all.get(d + 1).map_or(nq, |next| next.output);
+        let mut columns: Vec<usize> = all[d].controls.iter().map(|&(g, _)| g).collect();
+        columns.sort_unstable();
+        columns.dedup();
+        for j in all[d].output..end {
+            b.outputs.push(j);
+            for &c in &columns {
+                b.pattern.push((j, c));
+                if let Some(column) = controls.iter().position(|&x| x == c) {
+                    b.columns.push((j, c, column));
+                }
+            }
+        }
     }
+    b.pattern.sort_unstable();
+    b.columns.sort_unstable();
+    b
 }
 
-/// `r = p + K·q − v`.
-fn residual(p: &[f64], k: &[f64], q: &[f64], v: &[f64], r: &mut [f64], nq: usize) {
-    for i in 0..r.len() {
-        let mut s = p[i] - v[i];
-        for j in 0..nq {
-            s += k[i * nq + j] * q[j];
-        }
-        r[i] = s;
+/// The largest `|K|` in row `c`.
+fn row_scale(k: &[f64], c: usize, nq: usize) -> f64 {
+    k[c * nq..(c + 1) * nq].iter().fold(0.0f64, |m, x| m.max(x.abs()))
+}
+
+/// The strongly connected components of the graph `edges` (node → the
+/// nodes reading it), sources first (Tarjan 1972, whose components come
+/// out sinks first).
+fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    struct Search<'a> {
+        edges: &'a [Vec<usize>],
+        index: Vec<Option<usize>>,
+        low: Vec<usize>,
+        on_stack: Vec<bool>,
+        stack: Vec<usize>,
+        next: usize,
+        components: Vec<Vec<usize>>,
     }
+    fn visit(s: &mut Search<'_>, v: usize) {
+        s.index[v] = Some(s.next);
+        s.low[v] = s.next;
+        s.next += 1;
+        s.stack.push(v);
+        s.on_stack[v] = true;
+        for &w in &s.edges[v] {
+            match s.index[w] {
+                None => {
+                    visit(s, w);
+                    s.low[v] = s.low[v].min(s.low[w]);
+                }
+                Some(i) if s.on_stack[w] => s.low[v] = s.low[v].min(i),
+                Some(_) => {}
+            }
+        }
+        if Some(s.low[v]) == s.index[v] {
+            let mut component = Vec::new();
+            while let Some(w) = s.stack.pop() {
+                s.on_stack[w] = false;
+                component.push(w);
+                if w == v {
+                    break;
+                }
+            }
+            s.components.push(component);
+        }
+    }
+    let n = edges.len();
+    let mut s = Search {
+        edges,
+        index: vec![None; n],
+        low: vec![0; n],
+        on_stack: vec![false; n],
+        stack: Vec::new(),
+        next: 0,
+        components: Vec::new(),
+    };
+    for v in 0..n {
+        if s.index[v].is_none() {
+            visit(&mut s, v);
+        }
+    }
+    s.components.reverse();
+    s.components
+}
+
+/// The largest `|r|` over `rows`, NaN if any is.
+fn largest_residual(rows: &[usize], r: &[f64]) -> f64 {
+    rows.iter()
+        .fold(0.0f64, |m, &i| if m.is_nan() || r[i].is_nan() { f64::NAN } else { m.max(r[i].abs()) })
+}
+
+/// Whether the equations of `rows` hold at `v` to [`RESIDUAL`] of its
+/// scale.
+fn holds(rows: &[usize], r: &[f64], v: &[f64]) -> bool {
+    let scale = 1.0 + rows.iter().fold(0.0f64, |m, &i| m.max(v[i].abs()));
+    largest_residual(rows, r) <= RESIDUAL * scale
 }

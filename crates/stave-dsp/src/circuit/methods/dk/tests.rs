@@ -220,3 +220,64 @@ wrdata out v(a)
     let no_probe = deck("t\nV1 a 0 1\nR1 a 0 1\n");
     assert_eq!(Dk::new(&no_probe).unwrap_err(), NetlistError::NoProbe);
 }
+
+/// A topology's netlist, its `vin` driven, at 48 kHz.
+fn driven(netlist: Netlist) -> Dk {
+    let mut dk = Dk::new(&netlist).unwrap();
+    dk.drive("vin").unwrap();
+    dk.prepare(48_000.0);
+    dk
+}
+
+/// Each op-amp stage drives the next without being loaded by it, so the
+/// pedals' subsystems split into their stages; a Big Muff's transistor
+/// stages load each other and stay whole.
+#[test]
+fn op_amp_pedals_split_into_their_stages() {
+    use crate::circuit::topologies;
+    assert_eq!(driven(topologies::boss_ds1()).solve_blocks(), [5, 2, 2, 4]);
+    assert_eq!(driven(topologies::mxr_phase90(3.4)).solve_blocks(), [2; 10]);
+    assert_eq!(driven(topologies::big_muff_rams_head()).solve_blocks(), [12]);
+}
+
+/// Block by block or whole, the same solution: driven hot by noise, the
+/// outputs agree to well inside the solve's tolerance.
+#[test]
+fn the_split_solve_is_the_whole_solve() {
+    use crate::circuit::topologies;
+    for netlist in [
+        topologies::boss_ds1(),
+        topologies::mxr_phase90(3.4),
+        topologies::tube_screamer_ts808(),
+        topologies::klon_centaur(0.5, 0.5),
+    ] {
+        let mut split = driven(netlist);
+        let blocks = split.solve_blocks();
+        assert!(blocks.len() > 1, "{blocks:?}");
+        let mut whole = split.clone();
+        whole.work.unsplit();
+        let mut lcg: u32 = 7;
+        let mut worst: f64 = 0.0;
+        for _ in 0..4_800 {
+            lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
+            let x = (f64::from(lcg >> 8) / f64::from(1u32 << 23) - 1.0) * 0.5;
+            worst = worst.max((split.step(x) - whole.step(x)).abs());
+        }
+        assert!(worst < 1e-8, "{blocks:?}: {worst:e} V apart");
+        assert_eq!(split.health().newton.capped, 0);
+    }
+}
+
+/// A part whose value couples two blocks (here, `K` changed by hand)
+/// ends the split: the solve runs whole until the next prepare.
+#[test]
+fn a_coupling_between_blocks_ends_the_split() {
+    let mut dk = driven(crate::circuit::topologies::boss_ds1());
+    let (c, j) = dk.work.decoupled()[0];
+    let mut k = dk.k.clone();
+    k[c * dk.nq + j] = 1.0;
+    dk.work.recheck(&k);
+    assert_eq!(dk.solve_blocks(), [13]);
+    dk.prepare(48_000.0);
+    assert_eq!(dk.solve_blocks(), [5, 2, 2, 4]);
+}

@@ -468,6 +468,7 @@ impl Wdf {
             capacitors.push((e.cell, c.a, c.b));
         }
         let (nu, nq, nv) = (mna.inputs.len(), mna.nq, mna.controls.len());
+        let work = Workspace::new(nv, nq, &mna.devices);
         let mut wdf = Self {
             forest,
             ports,
@@ -500,7 +501,7 @@ impl Wdf {
             z: Vec::new(),
             p: vec![0.0; nv],
             values: Vec::new(),
-            work: Workspace::new(nv, nq),
+            work,
             root: NonlinearRoot::Newton,
             linearised: None,
             scattering: Vec::new(),

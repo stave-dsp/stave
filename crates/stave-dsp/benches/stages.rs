@@ -1,8 +1,9 @@
 //! A representative set of stave-dsp stages as one runnable harness
 //! (DSP.md P2, P3): a filter, the SVF, the oversampler, the FFT and the
-//! convolver, the triode stage and the diode clipper, and one
-//! plugin-sized chain, each run block by block over the same seeded
-//! noise.
+//! convolver, the triode stage and the diode clipper, one plugin-sized
+//! chain, and the expensive models — the tape machine and the two
+//! op-amp pedals solved whole by `Circuit<Dk>` — each run block by block
+//! over the same seeded noise.
 //!
 //! ```text
 //! stages list                   the stage ids, one per line, with what each is
@@ -21,6 +22,9 @@ use std::hint::black_box;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use stave_dsp::circuit::methods::dk::Dk;
+use stave_dsp::circuit::{topologies, Circuit, Netlist};
+use stave_dsp::physical::tape::{Chowdhury, Machine};
 use stave_dsp::primitives::spectral::{Complex, Head};
 use stave_dsp::{
     Biquad, Convolver, DiodeClipper, DiodeClipperConfig, FilterSpec, Fft, ImpulseResponse,
@@ -99,6 +103,14 @@ fn tone_stack() -> PassiveToneStack {
     });
     stack.set_controls(PassiveToneControlPositions::new(0.5, 0.5, 0.5));
     stack
+}
+
+/// A classic circuit's topology as `Circuit<Dk>`, its `vin` driven by
+/// the input (the datasheet's `Circuit<Dk>` lines).
+fn driven(netlist: Netlist) -> Process {
+    let mut c = Circuit::<Dk>::new(&netlist).expect("the topology builds");
+    c.drive("vin").expect("the topology has vin");
+    stage(c)
 }
 
 const STAGES: &[Entry] = &[
@@ -188,6 +200,24 @@ const STAGES: &[Entry] = &[
                 Convolver::uniform(&ir, 256, Head::Partitioned),
             )))
         },
+    },
+    Entry {
+        id: "tape",
+        what: "Chowdhury tape (TC-260, 7.5 ips): record side 15x, flutter, play head",
+        block: BLOCK,
+        build: || stage(Chowdhury::new(Machine::TC260)),
+    },
+    Entry {
+        id: "boss-ds1",
+        what: "Circuit<Dk> Boss DS-1 (NJM2904), the whole netlist",
+        block: BLOCK,
+        build: || driven(topologies::boss_ds1()),
+    },
+    Entry {
+        id: "mxr-phase90",
+        what: "Circuit<Dk> MXR Phase 90 (LM741) at 3.4 V gates, the whole netlist",
+        block: BLOCK,
+        build: || driven(topologies::mxr_phase90(3.4)),
     },
 ];
 
