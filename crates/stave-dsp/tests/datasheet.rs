@@ -7,9 +7,19 @@
 //! desktop hardware.
 //!
 //! Run: `cargo test --release -p stave-dsp --test datasheet -- --nocapture`
-//! Debug builds skip (opt-level lies about release cost).
 //!
-//! Datasheet anchors (M4, apple-m1 target-cpu, 2026-07-06): most
+//! The datasheet is data (DSP.md P1): `crates/stave-dsp/datasheet.json`
+//! holds every row as measured on the reference machine it names, and
+//! the docs site's Cost page is generated from it. Refresh it with
+//! `scripts/datasheet.sh`. It cannot drift from this file: every run —
+//! a debug one too, which times nothing (opt-level lies about release
+//! cost) and runs each stage a few samples only to name it — fails when
+//! a stage benched here is missing from the data or the data holds one
+//! no longer benched. A new `bench(..)` line lands with refreshed data.
+//! The machinery is `datasheet/sheet.rs`.
+//!
+//! The current numbers are the data's; as a shape (M4, apple-m1
+//! target-cpu, 2026-07-06): most
 //! primitives sit in the ones of ns/sample — Lfo 2.1, DelayLine
 //! write+read_cubic 2.4, RandomWalk 2.6, Slew 2.9, Lag 4.1, Curve f_at
 //! 4.4 (f_and_slope_at the same fetch), Allpass1 5.7, Biquad 7.1,
@@ -34,6 +44,10 @@ use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
 use stave_dsp::learned::{nam, Gru, LoadError};
+#[path = "datasheet/sheet.rs"]
+mod sheet;
+
+use sheet::{bench, bench_points, N, RATE};
 use stave_dsp::FilterSpec;
 use stave_dsp::RcClipperConfig;
 use stave_dsp::{AdaaOrder, AdsrConfig};
@@ -59,9 +73,6 @@ use stave_dsp::{
     CommonCathode, CommonCathodeConfig, Koren, OpAmpClipper, OpAmpClipperConfig,
     PassiveToneControlPositions, PassiveToneStack, PassiveToneStackComponents, Tube,
 };
-
-const N: usize = 1 << 17;
-const REPEATS: usize = 5;
 
 /// LCG noise in ±0.3 — the same stimulus family as the perf report.
 fn noise(buf: &mut [f32]) {
@@ -96,45 +107,6 @@ fn network(template: &str) -> nam::Network {
         .network
 }
 
-/// Median ns/sample over `REPEATS` timed passes (one warm-up pass),
-/// printed with the spread.
-fn bench(name: &str, input: &[f32], mut tick: impl FnMut(f32) -> f32) {
-    let mut run = || {
-        let t0 = Instant::now();
-        let mut acc = 0.0f32;
-        for &x in input {
-            acc += tick(black_box(x));
-        }
-        black_box(acc);
-        t0.elapsed().as_secs_f64() / input.len() as f64 * 1e9
-    };
-    run(); // warm
-    let mut samples: Vec<f64> = (0..REPEATS).map(|_| run()).collect();
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = samples[REPEATS / 2];
-    let spread = (samples[REPEATS - 1] - samples[0]) / median * 100.0;
-    println!("  {name:<28} {median:>7.2} ns/sample  (spread {spread:.0}%)");
-}
-
-/// Median ns per point of a whole-buffer operation over `REPEATS`
-/// timed batches, for the transforms (cost per transform ÷ length).
-fn bench_points(name: &str, points: usize, mut run_once: impl FnMut()) {
-    let calls = (N / points).max(8);
-    let mut run = || {
-        let t0 = Instant::now();
-        for _ in 0..calls {
-            run_once();
-        }
-        t0.elapsed().as_secs_f64() / (calls * points) as f64 * 1e9
-    };
-    run();
-    let mut samples: Vec<f64> = (0..REPEATS).map(|_| run()).collect();
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = samples[REPEATS / 2];
-    let spread = (samples[REPEATS - 1] - samples[0]) / median * 100.0;
-    println!("  {name:<28} {median:>7.2} ns/sample  (spread {spread:.0}%)");
-}
-
 /// A [`Delay`] whose time glides 10 → 15 ms and jumps back, so every
 /// read is fractional.
 fn modulated_delay<I: Interpolator>(name: &str, input: &[f32], sample_rate: f32) {
@@ -150,14 +122,10 @@ fn modulated_delay<I: Interpolator>(name: &str, input: &[f32], sample_rate: f32)
 
 #[test]
 fn primitive_datasheet() {
-    if cfg!(debug_assertions) {
-        eprintln!("datasheet SKIPPED (debug build — run under `cargo test --release`)");
-        return;
-    }
-    let sr = 48_000.0;
+    sheet::start();
+    let sr = RATE;
     let mut input = vec![0.0f32; N];
     noise(&mut input);
-    println!("stave-dsp primitive datasheet ({N} samples, median of {REPEATS})");
 
     let mut biquad = Biquad::new(FilterSpec::Lowpass {
         hz: 1_000.0,
@@ -430,11 +398,15 @@ fn primitive_datasheet() {
     .unwrap();
     gru.prepare(sr);
     bench("GRU (1 x 16)", &input, |x| gru.tick(x));
+    sheet::finish();
 }
 
 /// The slowest `block`-sample call of `process` over the input, after a
 /// warm-up pass: the spike a host's deadline sees.
 fn worst_block(name: &str, input: &[f32], block: usize, mut process: impl FnMut(&mut [f32])) {
+    if !sheet::timed() {
+        return;
+    }
     let mut buf = input.to_vec();
     for chunk in buf.chunks_mut(block) {
         process(chunk);
@@ -527,7 +499,9 @@ wrdata out v(o)
 /// at the host rate, on the same ±0.3 V noise (scaled into each
 /// circuit's working range).
 fn circuit_datasheet(sr: f32, input: &[f32]) {
-    println!("  circuits: hand-derived topology, then Circuit<Dk> on its netlist");
+    if sheet::timed() {
+        println!("  circuits: hand-derived topology, then Circuit<Dk> on its netlist");
+    }
 
     let mut wdf = DiodeClipper::new(DiodeClipperConfig {
         input_ohms: 2.2e3,

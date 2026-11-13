@@ -7,12 +7,18 @@
 #   scripts/offload.sh HOST -- cargo nextest run -p stave-dsp
 #   scripts/offload.sh HOST -- scripts/gates.sh
 #   STAVE_OFFLOAD_NAME=fft scripts/offload.sh HOST -- cargo clippy --workspace
+#   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh HOST -- scripts/profile.sh stage biquad
 #
 # HOST is any ssh destination with rustup and cargo-nextest installed (the
 # pinned toolchain installs itself from rust-toolchain.toml). Each tree
 # gets its own directory and build cache on the host, named after the
 # local directory unless STAVE_OFFLOAD_NAME says otherwise, so parallel
 # agents never share a build.
+#
+# STAVE_OFFLOAD_FETCH names paths (relative to the tree, space-separated)
+# the command writes on the host; after it exits, pass or fail, each one
+# that exists is copied back into the local tree (scripts/profile.sh's
+# profiles, scripts/datasheet.sh's data, target/icount).
 set -euo pipefail
 HOST="${1:?usage: $0 HOST -- COMMAND...}"
 shift
@@ -43,4 +49,20 @@ if [[ -f "$ROOT/.git" ]]; then
 fi
 
 printf -v CMD '%q ' "$@"
-exec ssh "$HOST" "cd '$DIR' && . ~/.cargo/env && $GITENV CARGO_TERM_COLOR=always nice -n 10 $CMD"
+RUN="cd '$DIR' && . ~/.cargo/env && $GITENV CARGO_TERM_COLOR=always nice -n 10 $CMD"
+if [[ -z "${STAVE_OFFLOAD_FETCH:-}" ]]; then
+  exec ssh "$HOST" "$RUN"
+fi
+status=0
+ssh "$HOST" "$RUN" || status=$?
+for path in $STAVE_OFFLOAD_FETCH; do
+  path="${path%/}"
+  if ssh "$HOST" "test -e '$DIR/$path'"; then
+    mkdir -p "$ROOT/$(dirname "$path")"
+    rsync -az "$HOST:$DIR/$path" "$ROOT/$(dirname "$path")/"
+    echo "offload: fetched $path" >&2
+  else
+    echo "offload: $path was not written on $HOST" >&2
+  fi
+done
+exit "$status"

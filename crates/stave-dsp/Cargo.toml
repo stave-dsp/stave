@@ -15,3 +15,9 @@ workspace = true
 # Tests measure through the shared metrics (T60, true peak); never a
 # runtime dependency.
 stave-measure.workspace = true
+
+# The stage harness for instruction counts (scripts/icount.sh) and
+# profiles (scripts/profile.sh); `cargo bench` prints a rough ns/sample.
+[[bench]]
+name = "stages"
+harness = false

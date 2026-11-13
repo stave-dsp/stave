@@ -14,7 +14,8 @@
 //!   matrix from `cargo metadata` and the workflows, the units from
 //!   `Unit::format`, the themes and the catalogue drawn from the real
 //!   parts, the CLI pages by running each binary's `--help`, the plugin
-//!   checks from `plugin_checks!`'s source, the changelog from git tags;
+//!   checks from `plugin_checks!`'s source, the changelog from git tags,
+//!   the cost of each DSP stage from its committed measurements;
 //! * the API is rustdoc's own output, restyled (`assets/rustdoc-*.html`
 //!   are passed to rustdoc by the script);
 //! * search covers the guide, the reference pages and every API item;
@@ -22,6 +23,7 @@
 //!   exits.
 
 mod check;
+mod cost;
 mod guide;
 mod home;
 mod html;
@@ -110,6 +112,7 @@ fn build(doc: &Path, out: &Path) -> Result<usize> {
         catalogue,
         reference::themes(&cx)?,
         reference::units(&cx)?,
+        cost::page(&cx)?,
         checks,
         reference::cli(&cx)?,
         reference::changelog(&cx)?,

@@ -99,3 +99,11 @@ debug = false
 [profile.debugging]
 inherits = "dev"
 debug = true
+
+# scripts/profile.sh: the release build with line tables and symbols
+# kept, so a flamegraph names functions and inlined frames (its own
+# target directory, so it never invalidates a release build).
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = "none"

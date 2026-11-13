@@ -36,4 +36,8 @@ for pair in stave-ui-win32:x86_64-pc-windows-msvc stave-ui-x11:x86_64-unknown-li
   done
 done
 unset RUSTDOCFLAGS
+# The Cost page shows crates/stave-dsp/datasheet.json: the datasheet
+# test (a debug build names every stage without timing) fails when the
+# stages it benches and the committed data differ.
+cargo test --locked -p stave-dsp --test datasheet --quiet
 cargo run --locked -p stave-docsite -- --doc "$CARGO_TARGET_DIR/doc" --out "$OUT"

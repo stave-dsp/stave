@@ -43,7 +43,7 @@ pub struct Generated {
     pub wide: bool,
 }
 
-fn src_link(path: &str) -> String {
+pub fn src_link(path: &str) -> String {
     format!("<a href=\"{GITHUB}/blob/main/{path}\"><code>{}</code></a>", esc(path))
 }
 

@@ -1,0 +1,95 @@
+# Deterministic performance regression (DSP.md P2): the instructions per
+# sample of a representative set of stave-dsp stages (the biquad, SVF,
+# oversampler, FFT and convolver, triode stage and diode clipper, and a
+# plugin-sized amp chain: crates/stave-dsp/benches/stages.rs), counted
+# under valgrind's cachegrind and held to the committed baseline
+# crates/stave-dsp/benches/stages.icount. A stage more than 5% dearer
+# fails; `scripts/icount.sh bless` moves the baseline on purpose. Wall
+# clock on a shared runner is noise; an instruction count is not.
+#
+# It runs when stave-dsp, stave-core or the toolchain change. Path-
+# filtered, so NOT a required check: a required check that never reports
+# blocks every other pull request. A red run here is a finding about the
+# change that touched the DSP.
+#
+# The counts depend on rustc, valgrind, glibc's libm and the CPU family,
+# so the runner is pinned (ubuntu-24.04: glibc 2.39, valgrind 3.22) and a
+# different valgrind fails the install step: a version change is a
+# re-bless. Every run uploads what it measured (target/icount), which is
+# also a baseline ready to commit.
+#
+# About two minutes warm: valgrind from apt, the stages bench built in
+# the release profile, two short cachegrind runs per stage.
+name: perf
+
+on:
+  push:
+    branches: [main, "release/**"]
+    paths:
+      - crates/stave-dsp/**
+      - crates/stave-core/**
+      - Cargo.lock
+      - Cargo.toml
+      - rust-toolchain.toml
+      - .cargo/**
+      - scripts/icount.sh
+      - .github/workflows/perf.yml
+  pull_request:
+    paths:
+      - crates/stave-dsp/**
+      - crates/stave-core/**
+      - Cargo.lock
+      - Cargo.toml
+      - rust-toolchain.toml
+      - .cargo/**
+      - scripts/icount.sh
+      - .github/workflows/perf.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  VALGRIND_VERSION: valgrind-3.22.0
+
+jobs:
+  icount:
+    name: instruction counts (cachegrind)
+    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install valgrind (${{ env.VALGRIND_VERSION }})
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends valgrind
+          test "$(valgrind --version)" = "$VALGRIND_VERSION" || { echo "::error::valgrind is $(valgrind --version), the baseline is $VALGRIND_VERSION's: re-bless"; exit 1; }
+      - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: icount
+          save-if: "${{ github.ref == 'refs/heads/main' }}"
+      - name: Every stage within +5% of the baseline
+        run: scripts/icount.sh check
+      # The threshold catches a real change: a baseline 10% cheaper than
+      # the code must fail the check.
+      - name: A 10% regression fails the check
+        run: |
+          awk -F'\t' -v OFS='\t' '$1 == "biquad" { $2 = $2 * 0.9 } 1' crates/stave-dsp/benches/stages.icount > target/icount/perturbed
+          cp target/icount/perturbed crates/stave-dsp/benches/stages.icount
+          if ICOUNT_OUT=target/icount-perturbed scripts/icount.sh check biquad; then
+            echo "::error::a 10% regression passed the check"
+            exit 1
+          fi
+          git checkout crates/stave-dsp/benches/stages.icount
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: icount
+          path: target/icount
+          if-no-files-found: ignore
