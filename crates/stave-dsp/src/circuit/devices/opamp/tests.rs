@@ -74,7 +74,7 @@ fn a_follower_reads_back_the_datasheet_gain_and_bandwidth() {
 /// rails.
 #[test]
 fn the_stage_partials_are_the_derivatives() {
-    let stage = Macromodel::JRC4558.prepare(0.0, 9.0);
+    let stage = Macromodel::JRC4558_TABLE.prepare(0.0, 9.0);
     for (vd, vn) in [
         (0.0, 4.5),
         (0.01, 7.9),
@@ -96,4 +96,32 @@ fn the_stage_partials_are_the_derivatives() {
         );
     }
     assert_eq!((stage.low, stage.high), (1.0, 8.0));
+}
+
+/// A part that slews faster falling than rising (the TL072) saturates
+/// its gain stage at each edge's own current, and the two branches meet
+/// smoothly: the partials hold either side of the joint.
+#[test]
+fn an_asymmetric_stage_saturates_at_each_edge_s_current() {
+    let part = Macromodel {
+        slew_rate_falling: 2.0 * Macromodel::TL072_SLOS080J.slew_rate,
+        ..Macromodel::TL072_SLOS080J
+    };
+    let stage = part.prepare(-15.0, 15.0);
+    let leak = stage.leak * stage.middle;
+    // Ten volts of overdrive leaves each tanh within 1e-6 of its limit.
+    let near = |a: f64, b: f64| (a - b).abs() <= 1e-5 * b.abs();
+    assert!(near(stage.current(10.0, 0.0).amps - leak, stage.slew_amps));
+    assert!(near(stage.current(-10.0, 0.0).amps - leak, -stage.fall_amps));
+    assert!((stage.fall_amps / stage.slew_amps - 2.0).abs() < 1e-12);
+    for vd in [-0.5, -3.1e-3, -2.9e-3, -1e-3, 1e-3, 0.3] {
+        let c = stage.current(vd, 0.0);
+        let h = 1e-8;
+        let dvd = (stage.current(vd + h, 0.0).amps - stage.current(vd - h, 0.0).amps) / (2.0 * h);
+        assert!(
+            (c.per_input_volt - dvd).abs() <= 1e-5 * dvd.abs() + 1e-12,
+            "{vd}: {} vs {dvd}",
+            c.per_input_volt
+        );
+    }
 }

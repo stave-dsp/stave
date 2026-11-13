@@ -85,7 +85,8 @@ impl Diode for Shockley {
 /// Against the parts (DSP.md R13):
 /// `crates/stave-test/tests/matches_datasheet.rs::diodes::n4148`
 /// (Vishay's 1N4148 forward curve: 37.5 mV at worst against 35.1 mV, a
-/// known gap at 20 mA) and
+/// known gap at 20 mA; [`Shockley::N4148_VISHAY`], fitted to it, 2.1 mV:
+/// `crates/stave-test/tests/matches_datasheet.rs::diodes::n4148_vishay`) and
 /// `crates/stave-test/tests/matches_datasheet.rs::diodes::n34a` (the
 /// 1N34A within MCC's 1.00 V maximum at 5 mA).
 ///
@@ -164,6 +165,19 @@ impl Shockley {
             ..Depletion::NONE
         },
         transit_seconds: 20e-9,
+        ..Self::DEFAULT
+    };
+
+    /// 1N4148 fitted to Vishay's forward curve (document 81857, Fig. 2,
+    /// Tj = 25 °C, 1 µA to 100 mA) by least squares
+    /// (`crates/stave-test/tests/fit_datasheet.rs::n4148`): `IS`, `N` and
+    /// `RS` free, the rest the [`N4148`](Self::N4148) card's. The LTspice
+    /// card sits 37.5 mV low at the curve's high-current end; this one
+    /// holds the whole curve to its reading (DSP.md E11).
+    pub const N4148_VISHAY: Self = Self {
+        saturation_amps: 5.279006e-9,
+        emission: 1.942045,
+        series_ohms: 0.3339269,
         ..Self::DEFAULT
     };
 

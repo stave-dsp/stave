@@ -138,7 +138,7 @@ fn tube_screamer_with_a_jrc4558_element_matches_ngspice() {
         plus: at(&netlist, "in"),
         minus: at(&netlist, "fb"),
         output: at(&netlist, "out"),
-        amp: Amp::Macromodel(Macromodel::JRC4558),
+        amp: Amp::Macromodel(Macromodel::JRC4558_TABLE),
         supply: (0.0, 9.0),
     };
     netlist.add("u1", kind).unwrap();

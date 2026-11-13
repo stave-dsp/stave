@@ -29,9 +29,11 @@
 ///
 /// Against the part (DSP.md R13):
 /// `crates/stave-test/tests/matches_datasheet.rs::tubes::ecc83_koren`,
-/// the T12AX7 on Philips' ECC83 plate curves — 11.7% of the peak reading
-/// at worst against a 6.3% budget, a known gap (the other parts have no
-/// digitised curves yet).
+/// Koren's T12AX7 on Philips' ECC83 plate curves — 11.7% of the peak
+/// reading at worst against a 6.3% budget, a known gap — and
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::ecc83_philips`,
+/// the [`Koren::ECC83_PHILIPS`] fit to that sheet (DSP.md E11): 2.4%, a
+/// pass (the other parts have no digitised curves yet).
 ///
 /// # Cost
 /// Per evaluation inside its circuit's line:
@@ -56,6 +58,8 @@ pub struct Koren {
 }
 
 impl Koren {
+    /// 12AX7: Koren's published parameters (Glass Audio, 1996). The fit
+    /// to Philips' ECC83 sheet is [`Self::ECC83_PHILIPS`].
     pub const T12AX7: Self = Self {
         name: "12AX7",
         mu: 100.0,
@@ -63,6 +67,20 @@ impl Koren {
         kg1: 1060.0,
         kp: 600.0,
         kvb: 300.0,
+        typical_grid_bias: -1.5,
+    };
+    /// 12AX7/ECC83 fitted to Philips' average plate curves (Electronic
+    /// Tube Handbook, "ECC83", sheet B p.10, drawing 7R03833) by least
+    /// squares (`crates/stave-test/tests/fit_datasheet.rs::ecc83`, DSP.md
+    /// E11). [`Self::T12AX7`] is Koren's own published fit, which misses
+    /// this sheet by 11.7% of its peak.
+    pub const ECC83_PHILIPS: Self = Self {
+        name: "ECC83 (Philips)",
+        mu: 112.1234,
+        ex: 1.0,
+        kg1: 797.1541,
+        kp: 630.2743,
+        kvb: 6041.059,
         typical_grid_bias: -1.5,
     };
     pub const T12AT7: Self = Self {

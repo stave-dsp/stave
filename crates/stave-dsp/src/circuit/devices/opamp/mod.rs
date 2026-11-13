@@ -3,7 +3,8 @@
 //! (finite gain and gain-bandwidth, slew limit, input offset and rail
 //! clipping), with parts as constants of the macromodel
 //! ([`Macromodel::TL072`], [`Macromodel::JRC4558`], [`Macromodel::LM308`],
-//! [`Macromodel::LM741`], [`Macromodel::NJM2904`]).
+//! [`Macromodel::LM741`], [`Macromodel::NJM2904`], and the table-figure
+//! cards [`Macromodel::TL072_SLOS080J`] and [`Macromodel::JRC4558_TABLE`]).
 //! [`Amp`] is the run-time choice a netlist element holds.
 //!
 //! A netlist places an op-amp with

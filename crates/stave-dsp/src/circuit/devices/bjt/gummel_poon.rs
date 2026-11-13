@@ -85,7 +85,14 @@ use crate::circuit::devices::junction;
 /// `crates/stave-test/tests/matches_datasheet.rs::transistors::ac128_transfer`,
 /// `crates/stave-test/tests/matches_datasheet.rs::transistors::ac128_input`
 /// (Mullard's typical AC128, 12–45% of the peak reading: known gaps; the
-/// card is a measured vintage part).
+/// card is a measured vintage part). The E11 fits:
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::ac128_mullard`
+/// passes all four (2.7–4.4%, budgets 6.0–6.1%, inside the hFE limits);
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::n2n3904_onsemi`
+/// narrows the 2N3904's: hFE roll-off 33.8% of value (budget 13.3%,
+/// against 206%), the saturation edge 78.8% (Fig. 16's 1 mA curve
+/// contradicts the table), ON voltages 25.3% (the Fairchild card's
+/// 24.3%), inside every table hFE limit: known gaps.
 ///
 /// # Cost
 ///
@@ -422,6 +429,57 @@ impl GummelPoon {
         },
         substrate: Substrate::Lateral,
         ..Self::DEFAULT_NPN
+    };
+
+    /// 2N3904 fitted to onsemi's typical curves (2N3903/D: Fig. 15 DC
+    /// current gain, Fig. 16 saturation region, Fig. 17 "ON" voltages)
+    /// within the same sheet's hFE limits, by least squares
+    /// (`crates/stave-test/tests/fit_datasheet.rs::n2n3904`, DSP.md E11):
+    /// `IS`, `BF`, `BR`, `VAF`, `IKF`, `ISE`, `NE`, `RB`, `RE`, `RC` free
+    /// (`BR`, `VAF` and `RE` end at their lower bounds, 0.1, 20 V and
+    /// 1 mΩ: the saturation and ON-voltage figures pull them there), the
+    /// rest the [`N2N3904`](Self::N2N3904) card's. Its hFE rolls off as the
+    /// sheet's does (`IKF` 13.1 mA against the Fairchild card's 66.8);
+    /// Fig. 16's 1 mA curve contradicts the table's hFE ≥ 70 and is not
+    /// fitted.
+    pub const N2N3904_ONSEMI: Self = Self {
+        saturation_amps: 8.484792e-15,
+        forward_beta: 328.6898,
+        reverse_beta: 0.1,
+        forward_early_volts: 20.0,
+        forward_knee_amps: 13.14824e-3,
+        emitter_leakage_amps: 2.520957e-11,
+        emitter_leakage_emission: 2.039,
+        base_ohms: 9.127769,
+        emitter_ohms: 1e-3,
+        collector_ohms: 3.18162,
+        ..Self::N2N3904
+    };
+
+    /// AC128, a typical part: fitted to Mullard's typical curves (the
+    /// output family, hFE, transfer and input characteristics, Tamb =
+    /// 25 °C) within the sheet's static hFE limits, by least squares
+    /// (`crates/stave-test/tests/fit_datasheet.rs::ac128`, DSP.md E11), at
+    /// Vt for 25 °C. The forward terms and ohmic resistances are fitted;
+    /// the reverse region and base–collector leakage are the
+    /// [`AC128`](Self::AC128) card's, which the sheet's curves do not
+    /// reach. `IKF`, `ISE`, `NE` and `RE` end at their bounds (no
+    /// high-injection knee below 20 A in the curves' range; the base
+    /// current carried by a near-ideal leakage junction). Both cards are
+    /// AC128s: [`AC128`](Self::AC128) is one measured vintage unit, this
+    /// the datasheet's typical one.
+    pub const AC128_MULLARD: Self = Self {
+        saturation_amps: 7.370898e-6,
+        forward_beta: 962.2763,
+        forward_emission: 0.9889878,
+        forward_early_volts: 24.45182,
+        forward_knee_amps: 20.0,
+        emitter_leakage_amps: 1.368001e-7,
+        emitter_leakage_emission: 1.050772,
+        base_ohms: 13.94908,
+        emitter_ohms: 1.837828e-3,
+        thermal_volts: 1.380_649e-23 * 298.15 / 1.602_176_634e-19,
+        ..Self::AC128
     };
 
     /// OC44, germanium PNP, from the same extraction as [`Self::AC128`]

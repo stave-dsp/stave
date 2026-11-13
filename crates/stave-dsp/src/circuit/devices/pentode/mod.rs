@@ -1,5 +1,7 @@
 //! The pentode family — beam tetrodes included: the [`Pentode`] trait
-//! and its published model, [`koren::Koren`] (plate and screen current).
+//! and its published models, [`koren::Koren`] (plate and screen current)
+//! and [`reefman::Reefman`] (the same, with the screen current's rise at
+//! low plate voltage).
 //!
 //! A beam tetrode (6L6GC, KT88) has no suppressor grid; its beam-forming
 //! plates do the suppressor's job, and its plate curves are a pentode's,
@@ -11,6 +13,7 @@
 
 pub mod interelectrode;
 pub mod koren;
+pub mod reefman;
 
 pub use interelectrode::Interelectrode;
 

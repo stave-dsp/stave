@@ -27,7 +27,9 @@ use crate::circuit::netlist::Netlist;
 /// network 2 whole — the clean blend alone; at 1 the reverse. `treble`
 /// at 1 puts the treble wiper at the 1k8 end (the most boost). The first
 /// TL072 runs on 0–9 V and the second on the charge pump's −9 and 18 V;
-/// all four halves are [`Macromodel::TL072`]; [`Shockley::N34A`].
+/// all four halves are [`Macromodel::TL072_SLOS080J`] (SLOS080J's table
+/// figures, symmetric slew, as the decks write them; the curve-fitted
+/// [`Macromodel::TL072`] slews asymmetrically); [`Shockley::N34A`].
 ///
 /// # Derivation
 /// Transcribed from Aion FX's "Refractor" schematic (p. 8), a
@@ -126,7 +128,7 @@ RV out 0 10k
 wrdata out v(out)
 .endc"
     ));
-    let part = Macromodel::TL072;
+    let part = Macromodel::TL072_SLOS080J;
     op_amp(&mut netlist, "u1a", ("p1", "bf", "bf"), part, (0.0, 9.0));
     op_amp(&mut netlist, "u1b", ("d", "m2", "o2"), part, (0.0, 9.0));
     op_amp(&mut netlist, "u2a", ("vr", "s", "o3"), part, (-9.0, 18.0));

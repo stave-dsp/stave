@@ -477,7 +477,31 @@ other references; a model with a capture is held to it within budget.
   version; promote what generalises).
 - [ ] **E10** Component tolerance and ageing: seeded per-instance variation
   of a netlist's values, so two "units" differ like hardware does.
-- [ ] **E11** Refit the presets R13 found off their datasheets, each known
+- [x] **E11** (cb1749db: `crates/stave-test/tests/fit_datasheet.rs`, ignored tests that refit each preset to the R23 tables: Levenberg–Marquardt inside bounded parameters, every residual in units of the R13 budget (the table's uncertainty plus the model tolerance), the model read as `matches_datasheet.rs` reads it, least squares then an L_p continuation (p = 4, 8, 16) toward the minimax the test judges. Cited presets keep their names and meaning; the fits are new constants (`triode::Koren::ECC83_PHILIPS`; `pentode::Koren::EL34_PHILIPS`, `T6L6GC_TUNGSOL`, `KT88_GEC`; `GummelPoon::N2N3904_ONSEMI`, `AC128_MULLARD` beside the DAFx-17 vintage card; `Shockley::N4148_VISHAY`) except the op-amps, where `Macromodel::TL072` and `JRC4558` now follow their sheets' typical curves and the table figures they held are `TL072_SLOS080J` and `JRC4558_TABLE` (the JRC4558 sheet contradicts itself; the curves are what the part does to a signal, so they win; headroom stays the table's 1 V into 10 kΩ). New: the TL072's asymmetric slew (`Macromodel::slew_rate_falling`), and Reefman's pentode law (`pentode::Reefman`, uTracer models §4.4–4.5: the screen's share of a constant space charge falls with plate voltage, so it rises toward the knee) fitted to plate and screen together. ngspice: `opamp_slew.cir`, `tube_screamer.cir` and their tests stay on `JRC4558_TABLE`; `tube_screamer_ts808.cir` follows `topologies::tube_screamer_ts808` to the fitted JRC4558, regenerated under ngspice 42. Topology defaults otherwise keep the cited cards: rewiring them to the fits waits on listening. Before → after, worst error against budget:)
+
+  | Part | Curve | Before (preset) | After (preset) | Budget |
+  |---|---|---|---|---|
+  | 12AX7/ECC83 | Philips plate | 11.7% (`T12AX7`) | 2.4% (`ECC83_PHILIPS`) | 6.3% |
+  | EL34 | Philips plate | 12.1% (`EL34`) | 3.6% (Koren `EL34_PHILIPS`), 3.0% (Reefman) | 6.1% |
+  | EL34 | screen | 53.7% | 20.5% (Koren), 1.5% (Reefman) | 9.2% |
+  | 6L6GC | Tung-Sol plate | 10.0% (`T6L6GC`) | 3.9% (Koren `T6L6GC_TUNGSOL`), 11.3% (Reefman, gap) | 6.5% |
+  | 6L6GC | screen | 38.4% | 39.6% (Koren), 12.9% (Reefman, gap) | 7.3% |
+  | KT88 | GEC plate | 14.1% (`KT88`) | 5.4% (`KT88_GEC`) | 6.6% |
+  | EL84 | Philips plate | 5.6% (`EL84`) | 4.6% (Reefman `EL84_PHILIPS`) | 6.3% |
+  | EL84 | Mullard screen | 89.0% | 4.8% (Reefman) | 6.4% |
+  | 2N3904 | onsemi hFE roll-off | +206% (`N2N3904`) | 33.8% (`N2N3904_ONSEMI`, gap) | 13.3% |
+  | 2N3904 | ON voltages | 24.3% | 25.3% (gap) | 6.0% |
+  | 2N3904 | saturation region | 85.9% | 78.8% (gap: Fig. 16's 1 mA curve contradicts the table's hFE ≥ 70) | 6.1% |
+  | AC128 | Mullard output, hFE, transfer, input | 25.0, 11.9, 24.3, 45.2% (`AC128`, vintage) | 3.9, 4.2, 4.4, 2.7% (`AC128_MULLARD`) | 6.0–6.1% |
+  | 1N4148 | Vishay forward | 37.5 mV (`N4148`) | 2.1 mV (`N4148_VISHAY`) | 34.1–35.1 mV |
+  | TL072 | follower pulse rising, falling | 31.8%, 1.2% | 0.0%, 0.0% | 19.9%, 21.9% |
+  | TL072 | open loop | 38.0% | 22.0% (gap: drawn as asymptotes) | 15.5% |
+  | TL072 | table SR 20 V/µs | 35.0% | 50.7% (gap: its own pulse shows 9.9/12.8) | 10% |
+  | JRC4558 | open loop | +214% | 10.4% | 15.5% |
+  | JRC4558 | full-power swing | 40.8% | 7.4% (gap: the implied slew climbs with frequency) | 6.1% |
+  | JRC4558 | table SR 1 V/µs | 0.1% | 90.1% (gap: the plots' 1.9 V/µs chosen; `JRC4558_TABLE` passes) | 10% |
+
+  Refit the presets R13 found off their datasheets, each known
   gap in `matches_datasheet.rs` promoted to a pass as it closes:
   - tubes: Koren `T12AX7`, `EL34`, `T6L6GC`, `KT88` refitted to the
     digitised plate curves (10–14% of peak today); a screen-current law
