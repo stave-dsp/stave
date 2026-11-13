@@ -194,7 +194,7 @@ circuit/
 - [x] **F1** (e2fc31d: our own, `stave_dsp::Fft` — rustfft measured 1.6–3.3× faster, short of 10×; resample, the triode tests, stave-measure, stave-face and stave-play use it; the plugin copies migrate after the next release) One real FFT for the workspace, either our own (radix-2/4 split, power-of-two,
   f32 and f64) or a vetted dependency, behind one `Fft` type. It replaces the eleven
   plugin copies and `primitives/resample.rs`'s local radix-2.
-- [ ] **F2** Uniform partitioned convolution (overlap-save, frequency-domain
+- [x] **F2** (7b3cf69: `Convolver::uniform` with an `ImpulseResponse`, mono/stereo/true-stereo, latency one partition or zero with `Head::Direct`) Uniform partitioned convolution (overlap-save, frequency-domain
   delay line), zero allocation after `prepare`, any IR length.
 - [ ] **F3** Non-uniform partitioned convolution (Gardner / Garcia
   schedules) for long IRs at low latency; worker-thread tail partitions
