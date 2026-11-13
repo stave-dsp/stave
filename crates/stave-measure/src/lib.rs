@@ -8,6 +8,7 @@
 //! level       dB, peak, RMS, DC, correlation, a streaming meter
 //! loudness    level measures as strategies: peak, true peak, RMS, LUFS
 //! listening   ABX and rating statistics: binomial p, power, d′, MUSHRA summaries
+//! perceptual  NMR and ANMR (BS.1387), ERB-band error, Rnonlin, GedLee (DSP.md R19)
 //! stats       order statistics (timings)
 //! system      what measurements drive: closures, plugins, DSP modules
 //! spectrum    FFT and Goertzel
@@ -67,6 +68,7 @@ pub mod listening;
 pub mod loudness;
 pub mod modulation;
 pub mod nonlinear;
+pub mod perceptual;
 pub mod signal;
 pub mod spectrum;
 pub mod stats;

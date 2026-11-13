@@ -43,6 +43,7 @@
 //! ```
 
 pub mod compare;
+pub mod fingerprint;
 pub mod model;
 pub mod plan;
 pub mod table;
@@ -53,6 +54,7 @@ use stave_dsp::circuit::netlist::Netlist;
 use stave_measure::suite::period::SHIPPING_RATES;
 
 pub use compare::{Check, Measurement};
+pub use fingerprint::Fingerprint;
 pub use model::Model;
 pub use plan::{Input, Plan, Tier};
 pub use table::{Table, Target};
@@ -118,6 +120,8 @@ pub struct Characterise {
     oversample: u32,
     budgets: Vec<(Check, Rates, Budget)>,
     model: Option<Model>,
+    deck_name: String,
+    catalogue: Option<String>,
 }
 
 impl Characterise {
@@ -141,6 +145,17 @@ impl Characterise {
             oversample: 8,
             budgets: Vec::new(),
             model: None,
+            deck_name: name.to_string(),
+            catalogue: None,
+        }
+    }
+
+    /// The catalogued model this case pins (its `stave_dsp` path), for
+    /// the fingerprint and the model catalogue's plots.
+    pub fn catalogue(self, path: &str) -> Self {
+        Self {
+            catalogue: Some(path.into()),
+            ..self
         }
     }
 
@@ -252,6 +267,10 @@ impl Characterise {
                     skipped: Some(skip),
                     capped: 0,
                     seconds: 0.0,
+                    plan: self.plan,
+                    reference: None,
+                    model: String::new(),
+                    catalogue: self.catalogue,
                 }
             }
         };
@@ -314,6 +333,11 @@ impl Characterise {
                 tables.push((rate, table));
             }
         }
+        let what = match model {
+            Model::Circuit(_) => "Circuit<Dk>",
+            Model::Wdf(_) => "Circuit<Wdf>",
+            Model::Stage { .. } => "a hand topology",
+        };
         Characterisation {
             name: self.name,
             against: format!("{} ({})", reference.source, self.target.regenerate()),
@@ -323,6 +347,10 @@ impl Characterise {
             skipped: None,
             capped,
             seconds: started.elapsed().as_secs_f64(),
+            model: format!("{what} on spice/{}.cir", self.deck_name),
+            reference: Some((format!("{} ({})", reference.source, self.target.regenerate()), reference)),
+            plan: self.plan,
+            catalogue: self.catalogue,
         }
     }
 }
@@ -386,6 +414,12 @@ pub struct Characterisation {
     pub capped: u64,
     /// Wall-clock seconds the model took over every rate.
     pub seconds: f64,
+    pub plan: Plan,
+    /// The reference the rows were compared with, and its description.
+    pub reference: Option<(String, Table)>,
+    /// What ran, for the fingerprint.
+    pub model: String,
+    pub catalogue: Option<String>,
 }
 
 impl Characterisation {
@@ -407,6 +441,38 @@ impl Characterisation {
             .reduce(f64::max)
     }
 
+    /// The model's T0 tables as its fingerprint (DSP.md R18): the first
+    /// table is the oversampled rate's (both, when the model ran at one
+    /// rate), the rest the shipping rates'. Metrics and plots are not
+    /// computed here ([`Fingerprint::pin`] does when blessing).
+    pub fn fingerprint(&self) -> Fingerprint {
+        let tables = self
+            .tables
+            .iter()
+            .enumerate()
+            .map(|(i, (rate, t))| {
+                let role = match (i, self.tables.len()) {
+                    (_, 1) => fingerprint::Role::Both,
+                    (0, _) => fingerprint::Role::Oversampled,
+                    _ => fingerprint::Role::Shipping,
+                };
+                (*rate, role, t.clone())
+            })
+            .collect();
+        Fingerprint::new(&self.name, &self.model, self.catalogue.as_deref(), tables, self.reference.as_ref().map(|r| r.0.as_str()), None, None)
+    }
+
+    /// Hold the T0 matrix to the committed fingerprint (re-bless with
+    /// `STAVE_BLESS=1`): panics naming every characteristic that moved.
+    /// Nothing to pin for a skipped case or another tier.
+    #[track_caller]
+    pub fn pinned(self) -> Self {
+        if self.skipped.is_none() && self.tier == Tier::T0 {
+            self.fingerprint().pin(&self.plan, self.reference.as_ref().map(|r| &r.1));
+        }
+        self
+    }
+
     /// Print the matrix and panic if any check is over its budget or any
     /// solve hit its cap.
     #[track_caller]
@@ -417,7 +483,7 @@ impl Characterisation {
 }
 
 fn number(x: f64, unit: &str) -> String {
-    if unit == "dBc" {
+    if unit == "dBc" || unit == "dB NMR" {
         format!("{x:.1} {unit}")
     } else {
         format!("{x:.2e} {unit}")

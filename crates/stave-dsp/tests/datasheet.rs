@@ -503,6 +503,29 @@ fn primitive_datasheet() {
         });
     }
 
+    // R19's perceptual metrics, per analysed sample at 48 kHz (offline:
+    // the cost of a fingerprint or a budget, not of a plugin): half a
+    // second of programme against a copy with a little distortion.
+    {
+        use stave_measure::perceptual::{erb::ErbError, gedlee::GedLee, nmr::Nmr, rnonlin::rnonlin, Playback};
+        let len = 24_000;
+        let a: Vec<f64> = input[..len].iter().map(|&x| f64::from(x)).collect();
+        let b: Vec<f64> = a.iter().map(|x| x + 0.05 * x * x * x).collect();
+        bench_points("Nmr (BS.1387 basic, 48 kHz)", len, || {
+            black_box(Nmr::new(Playback::default()).between(&a, &b, 48_000.0));
+        });
+        bench_points("ErbError (ERB bands, 48 kHz)", len, || {
+            black_box(ErbError::between(&a, &b, 48_000.0));
+        });
+        bench_points("Rnonlin (40 gammatone bands, 48 kHz)", len, || {
+            black_box(rnonlin(&a, &b, 48_000.0));
+        });
+        let harmonics: Vec<Complex<f64>> = (1..=15).map(|h| Complex::new(1.0 / f64::from(h * h), 0.1 / f64::from(h))).collect();
+        bench_points("GedLee (15 harmonics)", 1, || {
+            black_box(GedLee::of_harmonics(&harmonics));
+        });
+    }
+
     // Per sample of mono audio; IR lengths of a cabinet, a room and a
     // two-second hall at 48 kHz.
     for (taps, block, head) in [

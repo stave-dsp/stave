@@ -166,6 +166,50 @@ pub fn aliasing(x: &[f64], period: Period, rate: f64, bin: u32) -> f64 {
     (rest / fundamental).sqrt()
 }
 
+/// Kahles et al.'s ANMR of a tone run's period (DSP.md C10, R19): the
+/// inharmonic remainder (aliases, noise) under the mask its harmonics of
+/// `bin` set, A-weighted, in dB — audible above −10 dB. The period is
+/// played with its peak (about its mean) at full scale, 92 dB SPL
+/// ([`aliasing::anmr`](crate::aliasing::anmr)'s rule).
+pub fn anmr(x: &[f64], period: Period, rate: f64, bin: u32) -> f64 {
+    let n = x.len();
+    let mean = x.iter().sum::<f64>() / n as f64;
+    let harmonics: Vec<u32> = (1..).map(|h| h * bin).take_while(|&k| 2 * (k as usize) < n).collect();
+    let masker = waveform(&bins(x, period, rate, &harmonics), period, rate);
+    let noise: Vec<f64> = x.iter().zip(&masker).map(|(v, m)| v - mean - m).collect();
+    let peak = x.iter().fold(0.0f64, |p, v| p.max((v - mean).abs())).max(1e-30);
+    let len = (rate / 2.0) as usize;
+    let (masker, noise) = (crate::perceptual::tiled(&masker, len), crate::perceptual::tiled(&noise, len));
+    crate::perceptual::nmr::Nmr::anmr(crate::perceptual::Playback::full_scale(peak), &masker, &noise, rate).total_db
+}
+
+/// One period at `rate` of the waveform `spectrum`'s bins describe
+/// (this module's convention: `x(t) = c₀ + Σ Re(c_k·e^{j2πkt/T})`). A
+/// table holds only measured bins, so this is the signal those bins
+/// carry: what a perceptual metric compares when it compares tables.
+pub fn waveform(spectrum: &Spectrum, period: Period, rate: f64) -> Vec<f64> {
+    let n = period.samples(rate);
+    let w = std::f64::consts::TAU / n as f64;
+    let mut x = vec![0.0; n];
+    for &(k, c) in &spectrum.bins {
+        if k == 0 {
+            x.iter_mut().for_each(|v| *v += c.re);
+            continue;
+        }
+        let step = k as usize % n;
+        let mut idx = 0usize;
+        for v in x.iter_mut() {
+            let a = w * idx as f64;
+            *v += c.re * a.cos() - c.im * a.sin();
+            idx += step;
+            if idx >= n {
+                idx -= n;
+            }
+        }
+    }
+    x
+}
+
 /// Periodic steady state: the RMS change between the last two periods
 /// over the last period's RMS about its mean. Zero once settled.
 pub fn steady_state(previous: &[f64], last: &[f64]) -> f64 {
@@ -307,6 +351,37 @@ impl Recovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A period's bins, back to the waveform: exact for a line spectrum.
+    #[test]
+    fn waveforms_round_trip_through_bins() {
+        let period = Period::units(6);
+        let rate = 48_000.0;
+        let n = period.samples(rate);
+        let x: Vec<f64> = (0..n)
+            .map(|i| {
+                let t = i as f64 / rate;
+                0.3 + 0.5 * (std::f64::consts::TAU * 50.0 * 3.0 * t + 0.4).sin() + 0.1 * (std::f64::consts::TAU * 50.0 * 7.0 * t).cos()
+            })
+            .collect();
+        let s = bins(&x, period, rate, &[0, 3, 7]);
+        let y = waveform(&s, period, rate);
+        assert!(x.iter().zip(&y).all(|(a, b)| (a - b).abs() < 1e-12));
+    }
+
+    /// A clean tone's ANMR sits at the floor; a hard clip's at the host
+    /// rate does not.
+    #[test]
+    fn anmr_of_a_period() {
+        let period = Period::units(6);
+        let rate = 48_000.0;
+        let bin = super::super::period::tone_bin(period, 3_000.0, 15, &[rate]).unwrap();
+        let n = period.samples(rate);
+        let tone: Vec<f64> = (0..n).map(|i| (std::f64::consts::TAU * f64::from(bin) * i as f64 / n as f64).sin()).collect();
+        assert!(anmr(&tone, period, rate, bin) < -60.0);
+        let clipped: Vec<f64> = tone.iter().map(|v| (4.0 * v).clamp(-1.0, 1.0)).collect();
+        assert!(anmr(&clipped, period, rate, bin) > -10.0);
+    }
     use crate::suite::period::tone_bin;
 
     fn process(e: &Excitation, rate: f64, from: f64, f: impl Fn(f64) -> f64) -> Vec<f64> {

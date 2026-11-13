@@ -54,6 +54,8 @@ pub mod howto {
     pub mod performance {}
     #[doc = include_str!("howto/voicing.md")]
     pub mod voicing {}
+    #[doc = include_str!("howto/fingerprints.md")]
+    pub mod fingerprints {}
     #[doc = include_str!("howto/model-placement.md")]
     pub mod model_placement {}
     #[doc = include_str!("howto/release.md")]

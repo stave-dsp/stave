@@ -114,14 +114,23 @@ fn verify_blessed(path: &std::path::Path, tolerance_db: f64) -> std::process::Ex
     for r in records {
         match voicing::verify_blessed(&r) {
             Ok(v) => {
-                let ok = v.residual_db <= tolerance_db;
+                let moved = v.fingerprint_moved.as_ref().map_or(0, Vec::len);
+                let ok = v.residual_db <= tolerance_db && moved == 0;
                 failed |= !ok;
-                let what = if v.bit_identical {
+                let mut what = if v.bit_identical {
                     "bit-identical".to_string()
                 } else {
                     format!("residual {:.1} dB", v.residual_db)
                 };
+                match &v.fingerprint_moved {
+                    Some(m) if m.is_empty() => what.push_str(", fingerprint holds"),
+                    Some(m) => what.push_str(&format!(", fingerprint moved in {} characteristics", m.len())),
+                    None => {}
+                }
                 println!("{}  {}  {what}  ({})", if ok { "same   " } else { "CHANGED" }, v.label, v.record.display());
+                for line in v.fingerprint_moved.iter().flatten() {
+                    println!("         {line}");
+                }
             }
             Err(e) => {
                 failed = true;

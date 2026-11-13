@@ -76,10 +76,12 @@ fn plans_are_current() {
     );
 }
 
-/// `name`'s T0 matrix on `Circuit<Dk>`, with its budgets.
+/// `name`'s T0 matrix on `Circuit<Dk>`, with its budgets, held to its
+/// fingerprint (`fingerprints/<name>.fingerprint`, DSP.md R18).
 fn circuit(name: &str) {
     budgets(name, Tier::T0, Characterise::ngspice(name).tier(Tier::T0).circuit())
         .run()
+        .pinned()
         .assert();
 }
 

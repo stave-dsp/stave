@@ -24,6 +24,17 @@
 //! the harmonics: a stage that distorts heavily has a lower ASR than its
 //! dB-re-fundamental figure suggests.
 //!
+//! The audibility figure is the **A-weighted noise-to-mask ratio**
+//! ([`anmr`]; Kahles, Esqueda & Välimäki 2019): the inharmonic bins in
+//! the audible band as the noise, the harmonics as the masker, through
+//! BS.1387's ear model with A-weighting ([`Nmr::anmr`]). Aliasing is
+//! audible above −10 dB ([`AUDIBLE_ANMR_DB`], Lehtonen et al. 2012).
+//! Absolute level matters to the ear model, so the capture is played
+//! with its peak at full scale, 92 dB SPL: as loud as a listener
+//! would hear it, never quieter. [`SteppedTone::piano`] steps a tone
+//! over the piano's range (27.5 Hz – 4186 Hz), where Kahles et al. and
+//! the measurement design read it.
+//!
 //! ```
 //! use stave_measure::aliasing::SteppedTone;
 //!
@@ -36,6 +47,8 @@
 //! assert!(clean.worst().inharmonic_db < -120.0);
 //! ```
 
+use crate::perceptual::nmr::{Nmr, AUDIBLE_ANMR_DB};
+use crate::perceptual::{tiled, Playback};
 use crate::spectrum::fft;
 use crate::system::System;
 use crate::tone_window::ToneWindow;
@@ -114,6 +127,76 @@ pub fn classify(capture: &[f64], carrier_bin: usize, sample_rate: f64) -> AliasP
     }
 }
 
+/// Kahles et al.'s ANMR of one capture (`n` samples, a power of two, a
+/// tone at the odd bin `carrier_bin`), in dB: the inharmonic bins at or
+/// below 20 kHz under the mask the harmonics set, both A-weighted, the
+/// capture's peak (about its mean) at full scale (92 dB SPL). The ear model needs a few
+/// frames, so the (periodic) capture is repeated to half a second.
+pub fn anmr(capture: &[f64], carrier_bin: usize, sample_rate: f64) -> f64 {
+    let n = capture.len();
+    let m = carrier_bin;
+    assert!(m > 0 && m < n / 2, "carrier bin {m} outside (0, {})", n / 2);
+    let mut re = capture.to_vec();
+    let mut im = vec![0.0f64; n];
+    fft(&mut re, &mut im);
+    let bin_hz = sample_rate / n as f64;
+    // Split the one-sided spectrum and rebuild each part as a signal.
+    let part = |keep: &dyn Fn(usize) -> bool| -> Vec<f64> {
+        let (mut r, mut i) = (vec![0.0; n], vec![0.0; n]);
+        for b in 1..n / 2 {
+            if keep(b) {
+                r[b] = re[b];
+                i[b] = -im[b]; // conjugate: the forward FFT computes the inverse
+                r[n - b] = re[b];
+                i[n - b] = im[b];
+            }
+        }
+        fft(&mut r, &mut i);
+        r.iter().map(|v| v / n as f64).collect()
+    };
+    let masker = part(&|b| b % m == 0);
+    let noise = part(&|b| b % m != 0 && b as f64 * bin_hz <= AUDIBLE_MAX_HZ);
+    let mean = capture.iter().sum::<f64>() / n as f64;
+    let peak = capture.iter().fold(0.0f64, |p, v| p.max((v - mean).abs())).max(1e-30);
+    let len = (sample_rate / 2.0) as usize;
+    let (masker, noise) = (tiled(&masker, len), tiled(&noise, len));
+    Nmr::anmr(Playback::full_scale(peak), &masker, &noise, sample_rate).total_db
+}
+
+/// One step's ANMR.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct AnmrPoint {
+    pub hz: f64,
+    pub anmr_db: f64,
+}
+
+/// A stepped ANMR measurement.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnmrSweep {
+    pub points: Vec<AnmrPoint>,
+}
+
+impl AnmrSweep {
+    /// The step with the highest ANMR.
+    pub fn worst(&self) -> AnmrPoint {
+        *self
+            .points
+            .iter()
+            .max_by(|a, b| a.anmr_db.total_cmp(&b.anmr_db))
+            .expect("a measurement has at least one step")
+    }
+
+    /// Every step at or under `threshold_db` (−10 dB: inaudible).
+    pub fn inaudible(&self, threshold_db: f64) -> bool {
+        self.points.iter().all(|p| p.anmr_db <= threshold_db)
+    }
+
+    /// The steps above the audibility threshold.
+    pub fn audible(&self) -> Vec<AnmrPoint> {
+        self.points.iter().copied().filter(|p| p.anmr_db > AUDIBLE_ANMR_DB).collect()
+    }
+}
+
 /// Tones stepped from `low_hz` to `high_hz`, log-spaced, each snapped to
 /// an odd bin of `window`, each played into a fresh system for
 /// `warmup_windows` and captured for one.
@@ -146,6 +229,64 @@ impl Default for SteppedTone {
 }
 
 impl SteppedTone {
+    /// The piano's range, 27.5 Hz (A0) to 4186 Hz (C8), in `steps`
+    /// log-spaced steps (88: every semitone; the window resolves fewer
+    /// in the lowest octave, where neighbouring keys share an odd bin).
+    pub fn piano(sample_rate: f64, steps: usize) -> Self {
+        Self {
+            sample_rate,
+            low_hz: 27.5,
+            high_hz: 4_186.0,
+            steps,
+            ..Self::default()
+        }
+    }
+
+    /// Each step's tone through a fresh system from `make`: its ANMR.
+    pub fn anmr_through<S: System>(&self, mut make: impl FnMut() -> S) -> AnmrSweep {
+        let points = self
+            .bins()
+            .into_iter()
+            .map(|bin| {
+                let tone = ToneWindow {
+                    bin,
+                    window: self.window,
+                    sample_rate: self.sample_rate,
+                    amplitude: self.amplitude,
+                    warmup_windows: self.warmup_windows,
+                };
+                AnmrPoint {
+                    hz: bin as f64 * self.sample_rate / self.window as f64,
+                    anmr_db: anmr(&tone.capture(make()), bin, self.sample_rate),
+                }
+            })
+            .collect();
+        AnmrSweep { points }
+    }
+
+    /// A generator stepped across its range: each step's ANMR.
+    pub fn anmr_generated<G: System>(&self, mut make: impl FnMut(f64) -> G) -> AnmrSweep {
+        let points = self
+            .bins()
+            .into_iter()
+            .map(|bin| {
+                let hz = bin as f64 * self.sample_rate / self.window as f64;
+                let mut g = make(hz);
+                let silence = vec![0.0f32; self.window];
+                let mut out = vec![0.0f32; self.window];
+                for _ in 0..=self.warmup_windows {
+                    g.process(&silence, &mut out);
+                }
+                let capture: Vec<f64> = out.into_iter().map(f64::from).collect();
+                AnmrPoint {
+                    hz,
+                    anmr_db: anmr(&capture, bin, self.sample_rate),
+                }
+            })
+            .collect();
+        AnmrSweep { points }
+    }
+
     /// The steps' carrier bins: log-spaced, odd, distinct, ascending.
     pub fn bins(&self) -> Vec<usize> {
         assert!(
@@ -317,6 +458,41 @@ mod tests {
         assert_eq!(bins.len(), 8);
         assert!(bins.iter().all(|b| b % 2 == 1));
         assert!(bins.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    /// Kahles et al.'s figure 10, in shape: a hard clip (threshold 0.1)
+    /// at 44.1 kHz with no oversampling aliases audibly (ANMR above
+    /// −10 dB) over the upper piano range; a gain makes no aliases and
+    /// reads at the floor; a clean tone at the floor too.
+    #[test]
+    fn anmr_flags_a_hard_clip_and_passes_a_gain() {
+        let sweep = SteppedTone {
+            low_hz: 500.0,
+            high_hz: 4_186.0,
+            steps: 4,
+            ..SteppedTone::piano(44_100.0, 4)
+        };
+        let clip = sweep.anmr_through(|| |x: f32| x.clamp(-0.1, 0.1));
+        assert!(clip.worst().anmr_db > AUDIBLE_ANMR_DB, "{clip:?}");
+        assert!(clip.points.last().unwrap().anmr_db > 0.0, "{clip:?}");
+        let gain = sweep.anmr_through(|| |x: f32| 0.5 * x);
+        assert!(gain.worst().anmr_db < -60.0, "{gain:?}");
+    }
+
+    /// ANMR rises with the aliased energy dB for dB: the same fold at
+    /// half the level reads 6 dB lower.
+    #[test]
+    fn anmr_follows_the_alias_level() {
+        let n = 8192;
+        let fs = 48_000.0;
+        let m = 1001; // ≈ 5.86 kHz
+        let tone = |b: usize, a: f64| (0..n).map(move |i| a * (std::f64::consts::TAU * (b * i) as f64 / n as f64).sin());
+        // A fundamental, a harmonic, and an alias between them.
+        let make = |alias: f64| -> Vec<f64> {
+            tone(m, 0.5).zip(tone(2 * m, 0.1)).zip(tone(1500, alias)).map(|((a, b), c)| a + b + c).collect()
+        };
+        let (hi, lo) = (anmr(&make(1e-3), m, fs), anmr(&make(5e-4), m, fs));
+        assert!((hi - lo - 6.02).abs() < 0.05, "{hi} {lo}");
     }
 
     /// A naive saw from a phase accumulator aliases; the measurement

@@ -233,6 +233,23 @@ pre.terminal { white-space: pre; }
 .graph .node:hover rect, .graph .node.hot rect { stroke: var(--accent); stroke-width: 1.5; }
 .cfg { font: 500 11px var(--mono); color: var(--ink-3); }
 table.models td { font-size: 13.5px; min-width: 11em; }
+section.fingerprint { margin: 28px 0; border-top: 1px solid var(--rule); padding-top: 8px; }
+section.fingerprint p { color: var(--ink-2); font-size: 13.5px; }
+.fp-plots { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 12px 0; }
+.fp-plot { display: block; width: 100%; height: auto; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; font: 500 9px var(--mono); }
+.fp-plot .title { fill: var(--ink); font-size: 10.5px; }
+.fp-plot .tick, .fp-plot .axis { fill: var(--ink-3); }
+.fp-plot .grid { stroke: var(--rule); stroke-width: 0.6; }
+.fp-plot .limit { stroke: var(--accent); stroke-width: 0.8; stroke-dasharray: 2 2; opacity: 0.7; }
+.fp-plot .limit-text { fill: var(--accent-ink); }
+.fp-plot polyline { fill: none; stroke-width: 1.5; }
+.fp-plot .ship { stroke: var(--accent); fill: var(--accent); }
+.fp-plot .os { stroke: var(--ink-2); fill: var(--ink-2); }
+.fp-plot .ref { stroke: var(--ink); fill: var(--ink); }
+.fp-plot .faint { opacity: 0.4; }
+.fp-plot polyline.ship, .fp-plot polyline.os, .fp-plot polyline.ref { fill: none; }
+table.fp-metrics td, table.fp-metrics th { font-size: 12.5px; }
+.fp-versions { font-size: 12px; }
 table.models td:first-child { min-width: 0; white-space: nowrap; }
 table.matrix td.yes { color: var(--accent-ink); font-weight: 600; }
 

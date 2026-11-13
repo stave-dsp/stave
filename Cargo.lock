@@ -3142,6 +3142,7 @@ dependencies = [
  "stave-host",
  "stave-measure",
  "stave-telemetry",
+ "stave-test",
  "stave-vst3-sys",
  "thiserror 2.0.18",
 ]

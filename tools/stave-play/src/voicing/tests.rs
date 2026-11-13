@@ -106,15 +106,21 @@ fn a_blessed_sound_replays_identically_and_compares_as_a_candidate() {
     let p = session("power chords", &["dry", "stage:clipper/diode", "stage:coupler"]);
     let dir = temp("bless");
     let record = bless::bless(&p, 1, "test-session", "the hot one", &dir).unwrap();
-    // The record pins the settings and material; the hook is empty until R18.
+    // The record pins the settings, the material and the fingerprint
+    // (DSP.md R18): the candidate's T0 characterisation as a black box.
     let (rec, audio) = bless::load(&record).unwrap();
     assert_eq!(rec.candidate.label, "stage:clipper/diode");
     assert_eq!(rec.material.pcm_sha256, p.material.pcm_sha256);
-    assert!(rec.fingerprint.is_none());
+    let fp = rec.fingerprint.as_ref().expect("a stage candidate is fingerprinted");
+    assert_eq!(fp["format"], bless::FINGERPRINT_FORMAT);
+    assert!(fp["knee"].as_f64().unwrap() > 0.0);
+    let text = fp["text"].as_str().unwrap();
+    assert!(text.contains("metric 48000 tone/1k/+12 gedlee") && text.contains("plot harmonics"), "{text}");
     assert_eq!(audio.channels[0].len(), p.material.frames());
     // This build reproduces it bit for bit.
     let v = bless::verify(&record).unwrap();
     assert!(v.bit_identical, "residual {} dB", v.residual_db);
+    assert_eq!(v.fingerprint_moved, Some(Vec::new()), "the fingerprint holds");
     // As a candidate on the same material it is the same sound as the
     // live stage: same loudness, same take.
     let blessed = Candidate::blessed(record.clone());

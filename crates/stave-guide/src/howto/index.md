@@ -1,7 +1,8 @@
 # How-to guides
 
 Task-oriented recipes for work around a plugin: driving the host tools,
-laying out a project, measuring performance, voicing by ear, placing a
+laying out a project, measuring performance, voicing by ear, pinning a
+model's sound with fingerprints, placing a
 DSP model, and cutting a release.
 Each assumes you know the [concepts](crate::concepts).
 
@@ -19,6 +20,9 @@ Each assumes you know the [concepts](crate::concepts).
 - [Voicing and listening tests](crate::howto::voicing): loudness-matched
   A/B, blind ABX and rating trials in `stave-play`, session logs, and
   blessing a sound.
+- [Fingerprints and perceptual metrics](crate::howto::fingerprints):
+  pinning a model's measured character in CI, re-blessing it, and the
+  NMR, ANMR, ERB-band error, Rnonlin and GedLee.
 - [Place a new DSP model](crate::howto::model_placement): where a model
   goes in stave-dsp, what it is called, and how it is verified.
 - [Cut a release](crate::howto::release): the release script, semver

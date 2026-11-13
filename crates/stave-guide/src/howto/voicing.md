@@ -266,9 +266,11 @@ record:
 A blessed record is plain JSON with no machine-specific content beyond
 the material's path. To make a blessed sound part of review, commit the
 record and its WAV next to the model or plugin and run
-`--verify-blessed` on it. When fingerprints (DSP.md R18) land, blessing
-will also write the candidate's fingerprint into the record's
-`fingerprint` field, and CI will diff it.
+`--verify-blessed` on it. Blessing a plugin or stage candidate also
+writes its fingerprint (DSP.md R18) into the record's `fingerprint`
+field: the candidate's measured character as a black box, which
+`--verify-blessed` measures again, naming every characteristic that
+moved ([Fingerprints and perceptual metrics](crate::howto::fingerprints)).
 
 ## A session that holds up
 

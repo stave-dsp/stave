@@ -11,10 +11,16 @@
 //! - `stave-play --verify-blessed`, which runs the candidate again with
 //!   the current build and reports the null residual against the take.
 //!
-//! When fingerprints (DSP.md R18) land, blessing also writes the
-//! candidate's fingerprint into the record's `fingerprint` field, the one
-//! hook below, and CI diffs it; until then the record and its take are the
-//! pin.
+//! Blessing a plugin or stage candidate also writes its **fingerprint**
+//! (DSP.md R18) into the record's `fingerprint` field: the T0
+//! characterisation of the candidate as a black box at the session's
+//! rate — its knee, the multisine and tone runs re its knee, the
+//! response, harmonics, compression and aliasing, and its own R19
+//! metrics (Rnonlin, GedLee, ANMR) — in the fingerprint format the
+//! repository commits (`stave_test::characterise::fingerprint`). The take
+//! pins the sound on one piece of material; the fingerprint pins it on
+//! the measurement suite, and `--verify-blessed` re-measures it and names
+//! every characteristic that moved.
 
 use std::path::{Path, PathBuf};
 
@@ -55,8 +61,8 @@ pub struct BlessRecord {
     pub take_wav: String,
     pub take_sha256: String,
     pub take_lufs: f64,
-    /// DSP.md R18's fingerprint of the candidate; `null` until
-    /// fingerprints land (see [`fingerprint`]).
+    /// DSP.md R18's fingerprint of the candidate (see [`fingerprint`]);
+    /// `null` for a recording or blessed take, which cannot be re-run.
     pub fingerprint: Option<serde_json::Value>,
     #[serde(default)]
     pub notes: String,
@@ -88,9 +94,79 @@ pub enum BlessError {
     NotACandidate,
 }
 
-/// The R18 hook: the candidate's fingerprint, once fingerprints exist.
-pub fn fingerprint(_candidate: &Candidate) -> Option<serde_json::Value> {
-    None
+/// The fingerprint's JSON: its format, case, knee and the fingerprint
+/// file's text.
+pub const FINGERPRINT_FORMAT: &str = "stave fingerprint v1";
+
+/// The silence a candidate gets before each fingerprint run: a plugin
+/// cannot be reset through the host API, so each run starts from rest.
+const REST_SECONDS: f64 = 0.1;
+
+/// A plugin or stage candidate as a ticker: one instance, opened once,
+/// processed a sample at a time (mono in to every input, the first
+/// output out); each fresh ticker first plays [`REST_SECONDS`] of
+/// silence.
+fn ticker_of(instance: Box<dyn stave_host::instance::Instance + Send>, rate: f64) -> impl Fn(f64) -> stave_test::characterise::model::Ticker {
+    let layout = instance.layout();
+    let shared = std::rc::Rc::new(std::cell::RefCell::new(instance));
+    let (n_in, n_out) = (layout.inputs.max(1), layout.outputs.max(1));
+    move |_rate| {
+        let inst = shared.clone();
+        let mut ins = vec![[0.0f32; 1]; n_in];
+        let mut outs = vec![[0.0f32; 1]; n_out];
+        let mut tick = move |x: f64| {
+            for i in &mut ins {
+                i[0] = x as f32;
+            }
+            let in_refs: Vec<&[f32]> = ins.iter().map(|b| &b[..]).collect();
+            let mut out_refs: Vec<&mut [f32]> = outs.iter_mut().map(|b| &mut b[..]).collect();
+            inst.borrow_mut().process(&in_refs, &mut out_refs, &[]);
+            f64::from(outs[0][0])
+        };
+        for _ in 0..(REST_SECONDS * rate) as usize {
+            tick(0.0);
+        }
+        Box::new(tick)
+    }
+}
+
+/// The R18 hook: the candidate's fingerprint at `sample_rate`, as JSON
+/// (`{format, case, knee, text}`), or `None` for a candidate that does
+/// not run (dry, a recording, a blessed take) or fails to open. Knee
+/// `None` finds the knee; a blessed record's knee re-measures at the
+/// same levels.
+pub fn fingerprint_at(
+    candidate: &Candidate,
+    material: &Material,
+    trim_db: f64,
+    sample_rate: f64,
+    knee: Option<stave_measure::suite::levels::Knee>,
+) -> Option<stave_test::characterise::Fingerprint> {
+    use stave_test::characterise::fingerprint::of_stage;
+    if !matches!(candidate.source, super::candidate::Source::Plugin { .. }) {
+        return None;
+    }
+    let config = HostConfig {
+        sample_rate: stave_host::config::SampleRate::new(sample_rate).ok()?,
+        max_block: std::num::NonZeroUsize::new(1).expect("non-zero"),
+        ..HostConfig::default()
+    };
+    let mut jobs = takes::open_jobs(std::slice::from_ref(candidate), material, trim_db, config).ok()?;
+    let Some(Job::Instance { instance, .. }) = jobs.pop() else { return None };
+    let model = format!("stave-play candidate `{}`", candidate.label);
+    let (fp, plan) = of_stage(&slug(&candidate.label), &model, None, ticker_of(instance, sample_rate), sample_rate, knee);
+    Some(fp.derived(&plan, None))
+}
+
+/// [`fingerprint_at`] as the record's JSON.
+pub fn fingerprint(candidate: &Candidate, material: &Material, trim_db: f64, sample_rate: f64) -> Option<serde_json::Value> {
+    let fp = fingerprint_at(candidate, material, trim_db, sample_rate, None)?;
+    Some(serde_json::json!({
+        "format": FINGERPRINT_FORMAT,
+        "case": fp.case,
+        "knee": fp.knee.map(|k| k.amplitude),
+        "text": fp.describe(),
+    }))
 }
 
 /// Bless candidate `index` of `prepared` into `dir`; returns the record's
@@ -143,7 +219,7 @@ pub fn bless(
         take_wav: wav_name,
         take_sha256: t.sha256.clone(),
         take_lufs: prepared.matching.raw_lufs[take],
-        fingerprint: fingerprint(candidate),
+        fingerprint: fingerprint(candidate, m, prepared.trim_db, prepared.sample_rate),
         notes: notes.into(),
     };
     let path = dir.join(format!("{stem}.json"));
@@ -179,6 +255,10 @@ pub struct Verification {
     /// bit-identical).
     pub residual_db: f64,
     pub bit_identical: bool,
+    /// The characteristics whose fingerprint moved (DSP.md R18), each
+    /// with its size; empty when it holds, `None` when the record has no
+    /// fingerprint.
+    pub fingerprint_moved: Option<Vec<String>>,
 }
 
 /// Run the blessed candidate again and null it against its take.
@@ -218,11 +298,25 @@ pub fn verify(record: &Path) -> Result<Verification, String> {
     } else {
         10.0 * (diff / sig.max(1e-30)).log10()
     };
+    let fingerprint_moved = rec.fingerprint.as_ref().and_then(|f| f["text"].as_str()).map(|text| {
+        use stave_test::characterise::fingerprint::{diff, Fingerprint};
+        match Fingerprint::parse(text) {
+            Ok(then) => match fingerprint_at(&rec.candidate, &material, rec.material.trim_db, rec.sample_rate, then.knee) {
+                Some(now) => {
+                    let plan = stave_test::characterise::fingerprint::stage_plan(&then.case, then.knee.expect("a black box's knee"), then.settle.unwrap_or(0.05));
+                    diff(&then, &now, &plan)
+                }
+                None => vec!["the candidate no longer opens".to_string()],
+            },
+            Err(e) => vec![format!("the record's fingerprint does not parse: {e}")],
+        }
+    });
     Ok(Verification {
         record: record.into(),
         label: rec.candidate.label,
         residual_db,
         bit_identical: identical,
+        fingerprint_moved,
     })
 }
 

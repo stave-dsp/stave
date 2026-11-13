@@ -132,7 +132,14 @@ pub fn hand(case: &str, tier: Tier) {
         (stage, plate)
     }
     let circuit = case.split('/').next().unwrap();
-    let base = Characterise::ngspice(circuit).named(case).tier(tier);
+    let catalogue = match case {
+        "diode_clipper/hand" => "stave_dsp::circuit::topologies::diode_clipper::DiodeClipper",
+        "opamp_clipper/hand" => "stave_dsp::circuit::topologies::opamp_clipper::OpAmpClipper",
+        "common_cathode/hand" | "common_cathode_grid_current/hand" => "stave_dsp::circuit::topologies::common_cathode::CommonCathode",
+        "power_supply/hand" => "stave_dsp::circuit::topologies::power_supply::PowerSupply",
+        other => panic!("no hand topology {other}"),
+    };
+    let base = Characterise::ngspice(circuit).named(case).tier(tier).catalogue(catalogue);
     let c = match case {
         "diode_clipper/hand" => base
             .stage(|rate| {
@@ -178,5 +185,6 @@ pub fn hand(case: &str, tier: Tier) {
         }),
         other => panic!("no hand topology {other}"),
     };
-    budgets(case, tier, c).run().assert();
+    // Each hand topology pins its fingerprint (DSP.md R18) at T0.
+    budgets(case, tier, c).run().pinned().assert();
 }

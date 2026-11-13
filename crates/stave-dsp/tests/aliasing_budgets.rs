@@ -1,6 +1,15 @@
 //! Anti-aliasing budgets (DSP.md R5): every nonlinear stage and every
 //! oscillator, at 44.1 and 48 kHz with its default anti-aliasing, held to
-//! a budget on the worst inharmonic energy of a stepped tone (A4,
+//! a budget by audibility first: the A-weighted noise-to-mask ratio
+//! (ANMR, Kahles et al. 2019; DSP.md R19) of a tone stepped over the
+//! piano's range (27.5 Hz – 4186 Hz, 15 steps; 8 for the circuits) at or
+//! under −10 dB, where aliasing becomes audible
+//! ([`stave_measure::aliasing::anmr`]). A row above it is a finding
+//! listed in `ANMR_FINDINGS` with its recorded ANMR and a budget 3 dB
+//! above, so it cannot get worse unnoticed: mostly the comparison rows at
+//! 1× and 2×, the polyBLEP oscillators, the ADAA curves at 1× and two of
+//! the learned fixtures. Second, every row keeps its budget on the worst
+//! inharmonic energy of a stepped tone (A4,
 //! [`stave_measure::aliasing`]), in dB below the fundamental.
 //!
 //! The budget binds the inharmonic energy at or below 20 kHz, the
@@ -50,7 +59,9 @@ use stave_dsp::{
     Oversampled2x, PairSolver, Shockley, SmoothSat, Stage, Triode, Waveform, Wavetable,
 };
 use stave_dsp::learned::{nam, Gru, LoadError, RatePolicy};
-use stave_measure::aliasing::{Aliasing, SteppedTone};
+use stave_measure::aliasing::{Aliasing, AnmrSweep, SteppedTone};
+use stave_measure::perceptual::nmr::AUDIBLE_ANMR_DB;
+use stave_measure::system::System;
 
 /// One stage's budget at one rate: the worst step's inharmonic energy
 /// at or below 20 kHz must stay at or below `budget_db`. The record:
@@ -229,6 +240,79 @@ const CIRCUITS: &[Budget] = &[
     row("Circuit<Dk> tube screamer 4x ADAA", 48_000.0, -38.0, -40.0, -40.0),
 ];
 
+/// The rows whose ANMR over the piano is above −10 dB — aliasing a
+/// listener hears with the stage's defaults: `(stage, rate, budget,
+/// recorded)`, the budget 3 dB above the recording. Every other row is
+/// held to −10 dB. Most worst steps are the top of the piano, where a
+/// hot tone's upper harmonics fold back below 20 kHz; the second-order
+/// ADAA's is its lowest (27–29 Hz): broadband error that an A-weighted
+/// low tone cannot mask. Measured 2026-11-13.
+const ANMR_FINDINGS: &[(&str, f64, f64, f64)] = &[
+    ("Triode (ADAA 1st order, 1x)", 44_100.0, 36.9, 33.9), // at 4194 Hz
+    ("Triode (ADAA 1st order, 1x)", 48_000.0, 29.0, 26.0), // at 4189 Hz
+    ("DiodeClipper x10 (Newton, 4x)", 44_100.0, -6.5, -9.5), // at 2923 Hz
+    ("CurveStage tanh(6x) (ADAA 1st order, 1x)", 44_100.0, 14.3, 11.3), // at 4194 Hz
+    ("Adaa 2nd order tanh(6x) (1x)", 44_100.0, 3.0, 0.0), // at 27 Hz
+    ("Adaa 2nd order tanh(6x) (1x)", 48_000.0, 0.6, -2.4), // at 29 Hz
+    ("DiodeClipper x10 (WDF) 1x", 44_100.0, 55.6, 52.6), // at 4194 Hz
+    ("DiodeClipper x10 (WDF) 1x", 48_000.0, 52.9, 49.9), // at 4189 Hz
+    ("DiodeClipper x10 (WDF) 1x ADAA", 44_100.0, 32.5, 29.5), // at 4194 Hz
+    ("DiodeClipper x10 (WDF) 1x ADAA", 48_000.0, 26.9, 23.9), // at 4189 Hz
+    ("DiodeClipper x10 (WDF) 2x", 44_100.0, 9.1, 6.1), // at 2040 Hz
+    ("DiodeClipper x10 (WDF) 2x", 48_000.0, 17.6, 14.6), // at 4189 Hz
+    ("DiodeClipper x10 (WDF) 2x ADAA", 48_000.0, -1.1, -4.1), // at 4189 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 1x", 44_100.0, 55.4, 52.4), // at 4194 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 1x", 48_000.0, 52.9, 49.9), // at 4189 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 1x ADAA", 44_100.0, 22.7, 19.7), // at 4194 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 1x ADAA", 48_000.0, 36.0, 33.0), // at 4189 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 2x", 44_100.0, 8.9, 5.9), // at 2040 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 2x", 48_000.0, 16.4, 13.4), // at 4189 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 2x ADAA", 44_100.0, -0.8, -3.8), // at 2040 Hz
+    ("Circuit<Dk> diode clipper x10 (RS) 2x ADAA", 48_000.0, 5.9, 2.9), // at 4189 Hz
+    ("Circuit<Dk> op-amp clipper 1x", 44_100.0, 51.8, 48.8), // at 4194 Hz
+    ("Circuit<Dk> op-amp clipper 1x", 48_000.0, 51.9, 48.9), // at 4189 Hz
+    ("Circuit<Dk> op-amp clipper 1x ADAA", 44_100.0, 28.8, 25.8), // at 4194 Hz
+    ("Circuit<Dk> op-amp clipper 1x ADAA", 48_000.0, 18.5, 15.5), // at 4189 Hz
+    ("Circuit<Dk> op-amp clipper 2x", 44_100.0, 10.6, 7.6), // at 2040 Hz
+    ("Circuit<Dk> op-amp clipper 2x", 48_000.0, 24.9, 21.9), // at 4189 Hz
+    ("Circuit<Dk> op-amp clipper 4x", 44_100.0, -5.1, -8.1), // at 2040 Hz
+    ("Circuit<Dk> op-amp clipper 4x", 48_000.0, 2.0, -1.0), // at 4189 Hz
+    ("Circuit<Dk> fuzz face 1x", 44_100.0, 61.7, 58.7), // at 4194 Hz
+    ("Circuit<Dk> fuzz face 1x", 48_000.0, 56.2, 53.2), // at 4189 Hz
+    ("Circuit<Dk> fuzz face 1x ADAA", 44_100.0, 55.6, 52.6), // at 4194 Hz
+    ("Circuit<Dk> fuzz face 1x ADAA", 48_000.0, 52.1, 49.1), // at 4189 Hz
+    ("Circuit<Dk> fuzz face 2x", 44_100.0, 37.1, 34.1), // at 4194 Hz
+    ("Circuit<Dk> fuzz face 2x", 48_000.0, 44.8, 41.8), // at 4189 Hz
+    ("Circuit<Dk> fuzz face 2x ADAA", 44_100.0, 35.2, 32.2), // at 4194 Hz
+    ("Circuit<Dk> fuzz face 2x ADAA", 48_000.0, 42.3, 39.3), // at 4189 Hz
+    ("Circuit<Dk> fuzz face 4x", 44_100.0, 34.4, 31.4), // at 4194 Hz
+    ("Circuit<Dk> fuzz face 4x", 48_000.0, 42.5, 39.5), // at 4189 Hz
+    ("Circuit<Dk> fuzz face 4x ADAA", 44_100.0, 32.1, 29.1), // at 4194 Hz
+    ("Circuit<Dk> fuzz face 4x ADAA", 48_000.0, 40.5, 37.5), // at 4189 Hz
+    ("Circuit<Dk> tube screamer 1x", 44_100.0, 54.1, 51.1), // at 4194 Hz
+    ("Circuit<Dk> tube screamer 1x", 48_000.0, 53.8, 50.8), // at 4189 Hz
+    ("Circuit<Dk> tube screamer 1x ADAA", 44_100.0, 44.5, 41.5), // at 4194 Hz
+    ("Circuit<Dk> tube screamer 1x ADAA", 48_000.0, 44.7, 41.7), // at 4189 Hz
+    ("Circuit<Dk> tube screamer 2x", 44_100.0, 24.7, 21.7), // at 2040 Hz
+    ("Circuit<Dk> tube screamer 2x", 48_000.0, 31.8, 28.8), // at 4189 Hz
+    ("Circuit<Dk> tube screamer 2x ADAA", 44_100.0, 18.3, 15.3), // at 2040 Hz
+    ("Circuit<Dk> tube screamer 2x ADAA", 48_000.0, 21.7, 18.7), // at 4189 Hz
+    ("Circuit<Dk> tube screamer 4x", 44_100.0, 13.2, 10.2), // at 2040 Hz
+    ("Circuit<Dk> tube screamer 4x", 48_000.0, 13.9, 10.9), // at 4189 Hz
+    ("Circuit<Dk> tube screamer 4x ADAA", 44_100.0, -4.3, -7.3), // at 2040 Hz
+    ("Circuit<Dk> tube screamer 4x ADAA", 48_000.0, 2.2, -0.8), // at 4189 Hz
+    ("Osc saw (polyBLEP)", 44_100.0, 9.9, 6.9), // at 4194 Hz
+    ("Osc saw (polyBLEP)", 48_000.0, 7.6, 4.6), // at 4189 Hz
+    ("Osc square (polyBLEP)", 44_100.0, 8.5, 5.5), // at 4194 Hz
+    ("Osc square (polyBLEP)", 48_000.0, 7.8, 4.8), // at 4189 Hz
+    ("Osc saw hard sync (polyBLEP)", 44_100.0, 12.6, 9.6), // at 4194 Hz
+    ("Osc saw hard sync (polyBLEP)", 48_000.0, 10.1, 7.1), // at 4189 Hz
+    ("WaveNet packed (fixture)", 44_100.0, 33.3, 30.3), // at 4194 Hz
+    ("WaveNet packed (fixture)", 48_000.0, 28.3, 25.3), // at 4189 Hz
+    ("WaveNet mixed (fixture)", 44_100.0, 49.5, 46.5), // at 4194 Hz
+    ("WaveNet mixed (fixture)", 48_000.0, 46.2, 43.2), // at 4189 Hz
+];
+
 /// The oscillators, stepped from 110 Hz to 5 kHz.
 const OSCILLATORS: &[Budget] = &[
     row("Osc saw (polyBLEP)", 44_100.0, -21.0, -23.2, -23.2),
@@ -319,17 +403,17 @@ fn tanh_curve() -> CurveStage {
     c
 }
 
-fn measure_stage(name: &str, rate: f64) -> Aliasing {
-    let sweep = stage_sweep(rate);
+fn measure_stage(name: &str, rate: f64, mode: Mode) -> Measured {
+    let sweep = sweep_for(mode, stage_sweep(rate), ANMR_STEPS);
     let fs = rate as f32;
     match name {
-        "Triode (ADAA 1st order, 1x)" => sweep.through(|| {
+        "Triode (ADAA 1st order, 1x)" => through(&sweep, mode, || {
             let mut t = Triode::new();
             t.prepare(fs);
             t.set_grid_drive(77.0);
             move |x: f32| t.tick(x)
         }),
-        "DiodeClipper x10 (Newton, 4x)" => sweep.through(|| {
+        "DiodeClipper x10 (Newton, 4x)" => through(&sweep, mode, || {
             let clipper = DiodeClipper::new(DiodeClipperConfig {
                 input_ohms: 2.2e3,
                 capacitor_farads: 10e-9,
@@ -340,7 +424,7 @@ fn measure_stage(name: &str, rate: f64) -> Aliasing {
             os.prepare(fs);
             move |x: f32| os.tick(10.0 * x)
         }),
-        "SmoothSat (drive 1.6, 4x)" => sweep.through(|| {
+        "SmoothSat (drive 1.6, 4x)" => through(&sweep, mode, || {
             let mut s = SmoothSat::new();
             s.prepare(fs);
             s.set_drive(1.6);
@@ -352,12 +436,12 @@ fn measure_stage(name: &str, rate: f64) -> Aliasing {
                 s.tick_post(shaped)
             }
         }),
-        "CurveStage tanh(6x) (ADAA 1st order, 1x)" => sweep.through(|| {
+        "CurveStage tanh(6x) (ADAA 1st order, 1x)" => through(&sweep, mode, || {
             let mut c = tanh_curve();
             c.prepare(fs);
             move |x: f32| c.tick(x)
         }),
-        "Adaa 2nd order tanh(6x) (1x)" => sweep.through(|| {
+        "Adaa 2nd order tanh(6x) (1x)" => through(&sweep, mode, || {
             let c = tanh_curve();
             let mut adaa = Adaa::new(AdaaOrder::Second);
             move |x: f32| {
@@ -366,13 +450,13 @@ fn measure_stage(name: &str, rate: f64) -> Aliasing {
             }
         }),
         "Ladder (Huovilainen, +12 dB, 4x)" => {
-            filter(sweep, fs, 4, Huovilainen::new(hz(8_000.0), 0.5))
+            filter(sweep, mode, fs, 4, Huovilainen::new(hz(8_000.0), 0.5))
         }
         "Ladder (Stinchcombe, +12 dB, 4x)" => {
-            filter(sweep, fs, 4, Stinchcombe::new(hz(8_000.0), 0.5))
+            filter(sweep, mode, fs, 4, Stinchcombe::new(hz(8_000.0), 0.5))
         }
-        "SallenKey (+12 dB, 4x)" => filter(sweep, fs, 4, SallenKey::new(hz(8_000.0), 0.5)),
-        "Korg35 (+12 dB, 2x)" => filter(sweep, fs, 2, Korg35::new(hz(8_000.0), 0.5)),
+        "SallenKey (+12 dB, 4x)" => filter(sweep, mode, fs, 4, SallenKey::new(hz(8_000.0), 0.5)),
+        "Korg35 (+12 dB, 2x)" => filter(sweep, mode, fs, 2, Korg35::new(hz(8_000.0), 0.5)),
         other => panic!("no stage {other}"),
     }
 }
@@ -382,11 +466,12 @@ fn measure_stage(name: &str, rate: f64) -> Aliasing {
 /// `factor` 2, `front(nested(..))` at 4.
 fn filter<F: Stage + Clone + Drive + 'static>(
     sweep: SteppedTone,
+    mode: Mode,
     fs: f32,
     factor: u32,
     f: F,
-) -> Aliasing {
-    sweep.through(move || {
+) -> Measured {
+    through(&sweep, mode, move || {
         let mut f = f.clone();
         f.drive(db(12.0));
         let mut region: Box<dyn Stage> = if factor == 4 {
@@ -415,11 +500,11 @@ macro_rules! drive {
 }
 drive!(Huovilainen, Stinchcombe, SallenKey, Korg35);
 
-fn measure_oscillator(name: &str, rate: f64) -> Aliasing {
-    let sweep = oscillator_sweep(rate);
+fn measure_oscillator(name: &str, rate: f64, mode: Mode) -> Measured {
+    let sweep = sweep_for(mode, oscillator_sweep(rate), ANMR_STEPS);
     let fs = rate as f32;
     let osc = |make: fn(Waveform) -> Osc, shape: Waveform, sync: bool| {
-        sweep.generated(move |hz| {
+        generated(&sweep, mode, move |hz| {
             let mut o = make(shape);
             o.prepare(fs);
             if sync {
@@ -443,7 +528,7 @@ fn measure_oscillator(name: &str, rate: f64) -> Aliasing {
         "Osc saw hard sync (minBLEP)" => osc(Osc::min_blep, Waveform::Saw, true),
         "Wavetable saw" => {
             let table = Wavetable::new(Waveform::Saw);
-            sweep.generated(move |hz| {
+            generated(&sweep, mode, move |hz| {
                 let mut w = table.clone();
                 w.prepare(fs);
                 w.set_hz(hz as f32);
@@ -455,7 +540,7 @@ fn measure_oscillator(name: &str, rate: f64) -> Aliasing {
 }
 
 /// A circuit row's name: `"<circuit> <factor>x[ ADAA]"`.
-fn measure_circuit(name: &str, rate: f64) -> Aliasing {
+fn measure_circuit(name: &str, rate: f64, mode: Mode) -> Measured {
     let (circuit, adaa) = match name.strip_suffix(" ADAA") {
         Some(c) => (c, true),
         None => (name, false),
@@ -467,10 +552,10 @@ fn measure_circuit(name: &str, rate: f64) -> Aliasing {
     } else {
         Antialiasing::None
     };
-    let sweep = stage_sweep(rate);
+    let sweep = sweep_for(mode, stage_sweep(rate), CIRCUIT_ANMR_STEPS);
     let fs = rate as f32;
     if circuit == "DiodeClipper x10 (WDF)" {
-        return sweep.through(|| {
+        return through(&sweep, mode, || {
             let mut clipper = DiodeClipper::new(DiodeClipperConfig {
                 input_ohms: 2.2e3,
                 capacitor_farads: 10e-9,
@@ -519,7 +604,7 @@ fn measure_circuit(name: &str, rate: f64) -> Aliasing {
         other => panic!("no circuit {other}"),
     };
     let netlist = Netlist::parse_spice(deck).unwrap();
-    sweep.through(|| {
+    through(&sweep, mode, || {
         let mut c = Circuit::<Dk>::new(&netlist).unwrap();
         c.drive(source).unwrap();
         c.set_antialiasing(antialiasing);
@@ -647,7 +732,7 @@ fn learned(name: &str) -> Learned {
 /// A row ending "Interpolated" runs a 48 kHz network at the row's rate
 /// through `RatePolicy::Interpolated`; any other runs the network as if
 /// trained at the row's rate (`RatePolicy::Any`).
-fn measure_learned(name: &str, rate: f64) -> Aliasing {
+fn measure_learned(name: &str, rate: f64, mode: Mode) -> Measured {
     let policy = if name.ends_with("Interpolated") {
         RatePolicy::Interpolated
     } else {
@@ -655,24 +740,115 @@ fn measure_learned(name: &str, rate: f64) -> Aliasing {
     };
     let network = learned(name);
     let fs = rate as f32;
-    stage_sweep(rate).through(move || {
+    through(&sweep_for(mode, stage_sweep(rate), ANMR_STEPS), mode, move || {
         let mut net = network.with(policy);
         net.prepare(fs);
         move |x: f32| net.tick(x)
     })
 }
 
-fn check(rows: &[Budget], measure: impl Fn(&str, f64) -> Aliasing) {
+fn check(rows: &[Budget], measure: impl Fn(&str, f64, Mode) -> Measured) {
     check_rows(rows.iter(), measure);
+}
+
+/// What a row measures: the stepped tone's figures in dB (the recorded
+/// rows), or its ANMR over the piano (the audibility budget).
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum Mode {
+    Db,
+    Anmr,
+}
+
+enum Measured {
+    Db(Aliasing),
+    Anmr(AnmrSweep),
+}
+
+impl Measured {
+    fn db(self) -> Aliasing {
+        match self {
+            Measured::Db(a) => a,
+            Measured::Anmr(_) => unreachable!("measured the ANMR"),
+        }
+    }
+
+    fn anmr(self) -> AnmrSweep {
+        match self {
+            Measured::Anmr(a) => a,
+            Measured::Db(_) => unreachable!("measured in dB"),
+        }
+    }
+}
+
+/// The ANMR's steps over the piano's range: about one every half
+/// octave (every semitone is the characterisation's T1 sweep), and
+/// about one an octave for the circuits, whose Newton solves at 4×
+/// cost the most.
+const ANMR_STEPS: usize = 15;
+const CIRCUIT_ANMR_STEPS: usize = 8;
+
+/// The row's sweep for `mode`: its own, or the piano's range in `steps`
+/// with the row's amplitude, window and warm-up.
+fn sweep_for(mode: Mode, base: SteppedTone, steps: usize) -> SteppedTone {
+    match mode {
+        Mode::Db => base,
+        Mode::Anmr => SteppedTone {
+            low_hz: 27.5,
+            high_hz: 4_186.0,
+            steps,
+            ..base
+        },
+    }
+}
+
+fn through<S: System>(sweep: &SteppedTone, mode: Mode, make: impl FnMut() -> S) -> Measured {
+    match mode {
+        Mode::Db => Measured::Db(sweep.through(make)),
+        Mode::Anmr => Measured::Anmr(sweep.anmr_through(make)),
+    }
+}
+
+fn generated<G: System>(sweep: &SteppedTone, mode: Mode, make: impl FnMut(f64) -> G) -> Measured {
+    match mode {
+        Mode::Db => Measured::Db(sweep.generated(make)),
+        Mode::Anmr => Measured::Anmr(sweep.anmr_generated(make)),
+    }
+}
+
+/// The ANMR a row is held to: −10 dB (inaudible, Kahles et al. 2019),
+/// or its finding's budget.
+fn anmr_budget(stage: &str, rate: f64) -> (f64, Option<f64>) {
+    ANMR_FINDINGS
+        .iter()
+        .find(|f| f.0 == stage && f.1 == rate)
+        .map_or((AUDIBLE_ANMR_DB, None), |f| (f.2, Some(f.3)))
 }
 
 fn check_rows<'a>(
     rows: impl Iterator<Item = &'a Budget>,
-    measure: impl Fn(&str, f64) -> Aliasing,
+    measure: impl Fn(&str, f64, Mode) -> Measured,
 ) {
     let mut failures = Vec::new();
     for b in rows {
-        let report = measure(b.stage, b.rate);
+        let anmr = measure(b.stage, b.rate, Mode::Anmr).anmr();
+        let worst = anmr.worst();
+        let (budget, recorded) = anmr_budget(b.stage, b.rate);
+        println!(
+            "{:<42} {:>4.1} kHz  ANMR {:>6.1} dB at {:>5.0} Hz (budget {:>6.1}{})",
+            b.stage,
+            b.rate / 1e3,
+            worst.anmr_db,
+            worst.hz,
+            budget,
+            recorded.map_or(String::new(), |r| format!(", FINDING recorded {r:.1}"))
+        );
+        if worst.anmr_db > budget {
+            failures.push(format!(
+                "{} at {} Hz: ANMR {:.1} dB at {:.0} Hz over its {:.1} dB budget",
+                b.stage, b.rate, worst.anmr_db, worst.hz, budget
+            ));
+        }
+        let report = measure(b.stage, b.rate, Mode::Db).db();
         let (audible, full) = (report.worst_audible(), report.worst());
         println!(
             "{:<42} {:>4.1} kHz  audible {:>7.1} dB at {:>5.0} Hz (budget {:>6.1}, recorded {:>6.1})  full band {:>7.1} dB (recorded {:>6.1}), loudest bin {:>6.1} dB at {:>5.0} Hz, ASR {:.2e} at {:>5.0} Hz",

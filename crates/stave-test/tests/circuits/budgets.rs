@@ -1,7 +1,11 @@
 //! Every case's budgets, per tier: the measured error with a margin
 //! (three times, rounded up to 1-2-5; aliasing ceilings 5 dB above the
 //! measured level; group delay at the audibility budget, 0.2 ms from
-//! 500 Hz to 4 kHz), as `(check, rates, first, second)` — the second is
+//! 500 Hz to 4 kHz; ANMR at Kahles et al.'s audibility threshold, −10 dB,
+//! where the model is under it, else 5 dB above the measured level,
+//! rounded up to 5 — every circuit here runs unoversampled at the host
+//! rate, so a hot tone's aliases are heard: the case for the plugin's
+//! oversampling or ADAA, recorded, not a budget to chase), as `(check, rates, first, second)` — the second is
 //! degrees (dB of probe level for dynamics), `NAN` where the check has
 //! none. Measured against the ngspice 42 tables; rows marked "R11" were
 //! re-measured when the transistor decks gained their cards' charge (their
@@ -24,6 +28,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("diode_clipper", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -65.0, NAN), // -73.8 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -34.6 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.491
             (Bla, Shipping, 20.0, 50.0), // 4.07 / 9.65 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 5e-4, 0.02), // 0.000109 / 0.0054
@@ -44,6 +49,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("ce_stage", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -101
             (Aliasing, Shipping, -60.0, NAN), // -65.5 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -13.2 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.1), // 0.00143 / 0.0271
             (Bla, Shipping, 0.5, 2.0), // 0.0977 / 0.458
             (Compression, Oversampled, 2e-5, 0.001), // 4.34e-06 / 0.000254
@@ -64,6 +70,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("ce_stage_static", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -101
             (Aliasing, Shipping, -60.0, NAN), // -65.5 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -13.1 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.1), // 0.00143 / 0.0271
             (Bla, Shipping, 0.5, 2.0), // 0.0977 / 0.458
             (Compression, Oversampled, 2e-5, 0.001), // 4.34e-06 / 0.000254
@@ -84,6 +91,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode", Tier::T0) => &[
             (Aliasing, Oversampled, -105.0, NAN), // -112
             (Aliasing, Shipping, -95.0, NAN), // -104 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -25.5 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000373
             (Bla, Shipping, 0.005, 0.02), // 0.00097 / 0.00649
             (Compression, Oversampled, 1e-5, 1e-4), // 3.03e-06 / 2.14e-05
@@ -104,6 +112,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("fuzz_face", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -37.0 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
             (Bla, Shipping, 20.0, 50.0), // 4.27 / 13 (R11: the whole card)
             (Compression, Oversampled, 0.5, 0.05), // 0.12 / 0.0162 — FINDING: +0.12 dB of gain from the operating point
@@ -124,6 +133,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("fuzz_face_static", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -94.2 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
             (Bla, Shipping, 0.5, 1.0), // 0.121 / 0.227
             (Compression, Oversampled, 0.5, 0.05), // 0.12 / 0.0162 — FINDING: +0.12 dB of gain from the operating point
@@ -144,6 +154,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode/hand", Tier::T0) => &[
             (Aliasing, Oversampled, -105.0, NAN), // -113
             (Aliasing, Shipping, -95.0, NAN), // -104 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -25.5 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.002), // 0.000995 / 0.000462
             (Bla, Shipping, 0.005, 0.05), // 0.0011 / 0.00669
             (Compression, Oversampled, 1e-5, 1e-4), // 2.99e-06 / 2.88e-05
@@ -204,6 +215,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("diode_clipper/hand", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -65.0, NAN), // -73.8 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -34.6 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.49
             (Bla, Shipping, 20.0, 50.0), // 4.07 / 9.65 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 0.01, 0.02), // 0.00257 / 0.00541
@@ -232,6 +244,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("jfet_booster", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -100
             (Aliasing, Shipping, -85.0, NAN), // -91.2 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -10.6 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00494
             (Bla, Shipping, 0.1, 0.5), // 0.0213 / 0.144
             (Compression, Oversampled, 5e-5, 2e-4), // 1.22e-05 / 3.99e-05
@@ -252,6 +265,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("jfet_booster_static", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -100
             (Aliasing, Shipping, -85.0, NAN), // -91.2 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -10.6 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00494
             (Bla, Shipping, 0.1, 0.5), // 0.0213 / 0.144
             (Compression, Oversampled, 5e-5, 2e-4), // 1.22e-05 / 3.99e-05
@@ -272,6 +286,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("opamp_clipper/hand", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -90.0, NAN), // -97.5 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -55.0 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.001, 0.1), // 0.000317 / 0.021
             (Bla, Shipping, 2.0, 50.0), // 0.489 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 1e-4, 5e-4), // 1.9e-05 / 0.000118
@@ -292,6 +307,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("mosfet_booster", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -104
             (Aliasing, Shipping, -40.0, NAN), // -46.1 — aliasing at the host rate
+            (Anmr, Shipping, 15.0, NAN), // 9.1 — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
             (Bla, Shipping, 1.0, 5.0), // 0.205 / 1.13
             (Compression, Oversampled, 2e-5, 0.001), // 3.34e-06 / 0.000228
@@ -312,6 +328,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("mosfet_booster_static", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -104
             (Aliasing, Shipping, -40.0, NAN), // -46.1 — aliasing at the host rate
+            (Anmr, Shipping, 15.0, NAN), // 9.1 — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
             (Bla, Shipping, 1.0, 5.0), // 0.205 / 1.13
             (Compression, Oversampled, 2e-5, 0.001), // 3.34e-06 / 0.000228
@@ -332,6 +349,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("ota_vca", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -121.3 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00105
             (Bla, Shipping, 0.2, 1.0), // 0.053 / 0.177
             (Compression, Oversampled, 2e-5, 1e-5), // 5.2e-06 / 1.36e-07
@@ -352,6 +370,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("opamp_clipper", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -90.0, NAN), // -97.5 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -55.0 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.001, 0.1), // 0.000317 / 0.021
             (Bla, Shipping, 2.0, 50.0), // 0.489 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 1e-4, 5e-4), // 1.9e-05 / 0.000118
@@ -380,6 +399,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("push_pull", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -118.9 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.2, 2.0), // 0.0517 / 0.367
             (Bla, Shipping, 0.2, 2.0), // 0.0517 / 0.367
             (Compression, Oversampled, 5e-5, 1e-5), // 8.39e-06 / 3.25e-07
@@ -400,6 +420,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("push_pull_pentode", Tier::T0) => &[
             (Aliasing, Oversampled, -85.0, NAN), // -91.4
             (Aliasing, Shipping, -85.0, NAN), // -91.4 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -27.4 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.2, 0.5), // 0.0426 / 0.149
             (Bla, Shipping, 0.2, 0.5), // 0.0426 / 0.149
             (Compression, Oversampled, 5e-5, 1e-5), // 9.12e-06 / 4.32e-08
@@ -420,6 +441,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("triode_stage", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -121.2 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.02, 0.1), // 0.0057 / 0.0244
             (Bla, Shipping, 0.02, 0.1), // 0.0057 / 0.0244
             (Compression, Oversampled, 2e-5, 1e-5), // 3.34e-06 / 2.54e-08
@@ -440,6 +462,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("rangemaster", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -52.1 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.5, 1.0), // 0.137 / 0.325
             (Bla, Shipping, 1.0, 20.0), // 0.189 / 3.37
             (Compression, Oversampled, 0.2, 1.0), // 0.0495 / 0.249
@@ -460,6 +483,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("rangemaster_static", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -52.9 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.5, 1.0), // 0.137 / 0.325
             (Bla, Shipping, 1.0, 20.0), // 0.189 / 3.37
             (Compression, Oversampled, 0.2, 1.0), // 0.0495 / 0.249
@@ -480,6 +504,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("tube_screamer", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Anmr, Shipping, -10.0, NAN), // -103.7 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.2, 0.5), // 0.0455 / 0.109
             (Bla, Shipping, 20.0, 50.0), // 4.33 / 8.4 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 5e-4, 0.005), // 7.09e-05 / 0.000779
@@ -500,6 +525,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("diode_clipper", Tier::T1) => &[
             (Aliasing, Oversampled, -55.0, NAN), // -62
             (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
+            (Anmr, Shipping, 75.0, NAN), // 68.3 / 57.6 / 28.6 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.493
             (Bla, Shipping, 20.0, 50.0), // 5.33 / 11.8 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 0.1, 0.5), // 0.0247 / 0.16
@@ -524,6 +550,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("ce_stage", Tier::T1) => &[
             (Aliasing, Oversampled, -40.0, NAN), // -48.6
             (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
+            (Anmr, Shipping, 65.0, NAN), // 58.8 / 47.9 / 37.8 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.02, 0.05), // 0.00389 / 0.0141
             (Bla, Shipping, 1.0, 5.0), // 0.224 / 0.691
             (Compression, Oversampled, 0.001, 0.01), // 0.000244 / 0.0022
@@ -548,6 +575,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("ce_stage_static", Tier::T1) => &[
             (Aliasing, Oversampled, -40.0, NAN), // -48.6
             (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
+            (Anmr, Shipping, 65.0, NAN), // 58.8 / 47.7 / 37.8 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.02, 0.05), // 0.00389 / 0.0141
             (Bla, Shipping, 1.0, 5.0), // 0.224 / 0.691
             (Compression, Oversampled, 0.001, 0.01), // 0.000244 / 0.0022
@@ -572,6 +600,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode", Tier::T1) => &[
             (Aliasing, Oversampled, -90.0, NAN), // -96.5
             (Aliasing, Shipping, -25.0, NAN), // -32.7 — aliasing at the host rate
+            (Anmr, Shipping, 20.0, NAN), // 12.7 / 3.2 / -3.5 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000382
             (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
@@ -596,6 +625,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode/hand", Tier::T1) => &[
             (Aliasing, Oversampled, -85.0, NAN), // -92.6
             (Aliasing, Shipping, -25.0, NAN), // -32.7 — aliasing at the host rate
+            (Anmr, Shipping, 20.0, NAN), // 12.7 / 3.2 / -3.5 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000381
             (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
@@ -620,6 +650,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("fuzz_face", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -35.0, NAN), // -44.6 — aliasing at the host rate
+            (Anmr, Shipping, 5.0, NAN), // -0.6 / -20.0 / -19.9 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
             (Bla, Shipping, 20.0, 100.0), // 5.61 / 16.8 (R11: the whole card)
             (Compression, Oversampled, 0.5, 1.0), // 0.121 / 0.227 — FINDING: +0.12 dB of gain from the operating point
@@ -644,6 +675,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("fuzz_face_static", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -35.0, NAN), // -44.6 — aliasing at the host rate
+            (Anmr, Shipping, 15.0, NAN), // 8.1 / -25.5 / -78.7 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
             (Bla, Shipping, 0.5, 1.0), // 0.121 / 0.227
             (Compression, Oversampled, 0.5, 1.0), // 0.121 / 0.227 — FINDING: +0.12 dB of gain from the operating point
@@ -668,6 +700,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("diode_clipper/hand", Tier::T1) => &[
             (Aliasing, Oversampled, -55.0, NAN), // -62.1
             (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
+            (Anmr, Shipping, 75.0, NAN), // 68.5 / 57.8 / 29.7 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.493
             (Bla, Shipping, 20.0, 50.0), // 5.33 / 11.8 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 0.1, 0.5), // 0.027 / 0.159
@@ -700,6 +733,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode_grid_current", Tier::T1) => &[
             (Aliasing, Oversampled, -55.0, NAN), // -60.3
             (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
+            (Anmr, Shipping, 65.0, NAN), // 59.9 / 42.6 / 23.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.02), // 0.000968 / 0.00432
             (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000211
@@ -724,6 +758,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("common_cathode_grid_current/hand", Tier::T1) => &[
             (Aliasing, Oversampled, -55.0, NAN), // -60.3
             (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
+            (Anmr, Shipping, 65.0, NAN), // 59.9 / 42.6 / 23.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.02), // 0.000969 / 0.00432
             (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.00021
@@ -748,6 +783,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("jfet_booster", Tier::T1) => &[
             (Aliasing, Oversampled, -45.0, NAN), // -54.8
             (Aliasing, Shipping, -10.0, NAN), // -16.7 — aliasing at the host rate
+            (Anmr, Shipping, 60.0, NAN), // 52.7 / 41.9 / 33.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.05), // 0.00131 / 0.0101
             (Bla, Shipping, 0.1, 1.0), // 0.0331 / 0.236
             (Compression, Oversampled, 0.001, 0.002), // 0.000256 / 0.000358
@@ -772,6 +808,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("jfet_booster_static", Tier::T1) => &[
             (Aliasing, Oversampled, -45.0, NAN), // -54.8
             (Aliasing, Shipping, -10.0, NAN), // -16.7 — aliasing at the host rate
+            (Anmr, Shipping, 60.0, NAN), // 52.7 / 41.9 / 33.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.05), // 0.00131 / 0.0101
             (Bla, Shipping, 0.1, 1.0), // 0.0331 / 0.236
             (Compression, Oversampled, 0.001, 0.002), // 0.000256 / 0.000358
@@ -796,6 +833,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("opamp_clipper/hand", Tier::T1) => &[
             (Aliasing, Oversampled, -105.0, NAN), // -110
             (Aliasing, Shipping, -5.0, NAN), // -13.3 — aliasing at the host rate
+            (Anmr, Shipping, 70.0, NAN), // 64.5 / 54.1 / 26.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
             (Bla, Shipping, 5.0, 50.0), // 0.737 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 0.001, 0.05), // 0.000216 / 0.0137
@@ -820,6 +858,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("mosfet_booster", Tier::T1) => &[
             (Aliasing, Oversampled, -35.0, NAN), // -41.7
             (Aliasing, Shipping, 0.0, NAN), // -7.7 — aliasing at the host rate
+            (Anmr, Shipping, 80.0, NAN), // 70.7 / 62.0 / 47.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
             (Bla, Shipping, 1.0, 10.0), // 0.294 / 2.26
             (Compression, Oversampled, 0.002, 0.05), // 0.000406 / 0.00731 (R11: the whole card)
@@ -844,6 +883,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("mosfet_booster_static", Tier::T1) => &[
             (Aliasing, Oversampled, -35.0, NAN), // -41.7
             (Aliasing, Shipping, 0.0, NAN), // -7.7 — aliasing at the host rate
+            (Anmr, Shipping, 80.0, NAN), // 71.2 / 62.5 / 46.9 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
             (Bla, Shipping, 1.0, 10.0), // 0.294 / 2.26
             (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000652
@@ -876,6 +916,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("ota_vca", Tier::T1) => &[
             (Aliasing, Oversampled, -80.0, NAN), // -88
             (Aliasing, Shipping, -5.0, NAN), // -11.1 — aliasing at the host rate
+            (Anmr, Shipping, 75.0, NAN), // 65.7 / 48.4 / 8.4 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00123
             (Bla, Shipping, 0.5, 5.0), // 0.1 / 0.733
             (Compression, Oversampled, 0.001, 0.002), // 0.000332 / 0.000346
@@ -900,6 +941,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("opamp_clipper", Tier::T1) => &[
             (Aliasing, Oversampled, -105.0, NAN), // -110
             (Aliasing, Shipping, -5.0, NAN), // -13.3 — aliasing at the host rate
+            (Anmr, Shipping, 70.0, NAN), // 64.5 / 54.1 / 26.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
             (Bla, Shipping, 5.0, 50.0), // 0.737 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 0.001, 0.05), // 0.000216 / 0.0137
@@ -924,6 +966,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("rangemaster", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -20.0, NAN), // -25.3 — aliasing at the host rate
+            (Anmr, Shipping, 40.0, NAN), // 34.6 / 3.4 / -8.2 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.5, 10.0), // 0.137 / 2.84
             (Bla, Shipping, 5.0, 200.0), // 1.66 / 35.9
             (Compression, Oversampled, 0.5, 1.0), // 0.131 / 0.293
@@ -948,6 +991,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("rangemaster_static", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -20.0, NAN), // -25.3 — aliasing at the host rate
+            (Anmr, Shipping, 45.0, NAN), // 37.3 / 12.6 / -9.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.5, 10.0), // 0.137 / 2.84
             (Bla, Shipping, 5.0, 200.0), // 1.66 / 35.9
             (Compression, Oversampled, 0.5, 1.0), // 0.131 / 0.293
@@ -972,6 +1016,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("triode_stage", Tier::T1) => &[
             (Aliasing, Oversampled, -70.0, NAN), // -78.6
             (Aliasing, Shipping, -15.0, NAN), // -20.9 — aliasing at the host rate
+            (Anmr, Shipping, 50.0, NAN), // 42.0 / 28.3 / 16.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.000992
             (Bla, Shipping, 0.05, 1.0), // 0.0163 / 0.261
             (Compression, Oversampled, 0.001, 5e-5), // 0.000243 / 1.03e-05
@@ -996,6 +1041,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("push_pull", Tier::T1) => &[
             (Aliasing, Oversampled, -45.0, NAN), // -52.8
             (Aliasing, Shipping, -5.0, NAN), // -14.8 — aliasing at the host rate
+            (Anmr, Shipping, 60.0, NAN), // 49.0 / 53.1 / 30.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.05), // 0.00166 / 0.0114
             (Bla, Shipping, 0.5, 2.0), // 0.0912 / 0.48
             (Compression, Oversampled, 0.002, 5e-4), // 0.000455 / 0.000105
@@ -1020,6 +1066,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("push_pull_pentode", Tier::T1) => &[
             (Aliasing, Oversampled, -55.0, NAN), // -63.7
             (Aliasing, Shipping, -10.0, NAN), // -18.7 — aliasing at the host rate
+            (Anmr, Shipping, 65.0, NAN), // 59.6 / 31.2 / 18.3 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.005, 0.02), // 0.00112 / 0.0061
             (Bla, Shipping, 0.2, 2.0), // 0.0629 / 0.588
             (Compression, Oversampled, 0.002, 5e-4), // 0.000426 / 0.000146
@@ -1044,6 +1091,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
         ("tube_screamer", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -15.0, NAN), // -20.6 — aliasing at the host rate
+            (Anmr, Shipping, 70.0, NAN), // 60.5 / 43.2 / -7.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.1), // 0.0101 / 0.0265
             (Bla, Shipping, 20.0, 50.0), // 5.62 / 10.6 — FINDING: bilinear warping at 1× (no prewarp)
             (Compression, Oversampled, 0.01, 0.05), // 0.00198 / 0.0115

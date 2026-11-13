@@ -24,6 +24,7 @@ use std::fs;
 
 use serde_json::Value;
 
+use crate::fingerprints;
 use crate::html::{esc, rel, text_of};
 use crate::reference::{Ctx, Generated, GITHUB};
 use crate::rustdoc::{self, Item};
@@ -239,6 +240,14 @@ pub fn catalogue(cx: &Ctx<'_>) -> Result<(Generated, usize)> {
     const PATH: &str = "reference/models/index.html";
     let (measured, machine) = datasheet(cx)?;
     let models = models(cx, &measured)?;
+    let prints = fingerprints::read(cx.repo)?;
+    let unknown: Vec<String> = prints
+        .iter()
+        .filter_map(|f| f.catalogue.as_ref().filter(|c| !models.iter().any(|m| &m.item.path == *c)).map(|c| format!("{}: names {c}", f.file)))
+        .collect();
+    if !unknown.is_empty() {
+        return Err(format!("fingerprints name catalogued models the catalogue lacks:\n  {}", unknown.join("\n  ")).into());
+    }
     let mut body = format!(
         "<p>Every model in <code>stave-dsp</code>: what it models, how it was derived, the test that holds it to its reference, what it costs and how it handles aliasing. Each row is read from the model's own rustdoc, whose sections are the same everywhere (DSP.md, naming rule 7); this page fails to build when a model lacks one, names a test that does not exist, or quotes a datasheet stage that is not measured. Costs are the committed datasheet's, measured on {}. A model is a stage or a device in a model layer, or any type whose docs open a <em>Models</em> section. Where a new model goes: <a href=\"{}\">Where does my model go?</a></p>",
         esc(&machine),
@@ -266,6 +275,12 @@ pub fn catalogue(cx: &Ctx<'_>) -> Result<(Generated, usize)> {
                         cell = cell.replacen(&format!("<code>{}</code>", esc(written)), &link, 1);
                     }
                 }
+                if SECTIONS[k] == "Verified" {
+                    // Each fingerprint that pins this model, as a link to its plots.
+                    for f in prints.iter().filter(|f| f.catalogue.as_deref() == Some(m.item.path.as_str())) {
+                        let _ = write!(cell, " Fingerprint: <a href=\"#{}\"><code>{}</code></a>.", f.anchor(), esc(&f.case));
+                    }
+                }
                 if SECTIONS[k] == "Cost" {
                     // Each quoted stage gets its committed ns/sample beside it.
                     for (stage, ns) in &m.costs {
@@ -279,6 +294,16 @@ pub fn catalogue(cx: &Ctx<'_>) -> Result<(Generated, usize)> {
             body.push_str("</tr>");
         }
         body.push_str("</tbody></table>");
+    }
+    let _ = write!(
+        body,
+        "<h2 id=\"fingerprints\">Fingerprints</h2><p>Each model's committed fingerprint (DSP.md R18): its T0 characterisation as data, which CI re-measures on every commit and fails when any characteristic moves beyond a numerical tolerance, until it is re-blessed on purpose (<code>STAVE_BLESS=1</code>). Drawn here at build time from the fingerprint files in <a href=\"{GITHUB}/tree/main/{}\"><code>{}</code></a>: the small-signal response, the harmonics of a 1 kHz tone at the two hottest levels, its compression and its aliasing (the inharmonic floor in dBc, dashed, and the A-weighted noise-to-mask ratio, audible above −10 dB), each against the reference where there is one (ngspice, dashed). The model at the shipping rate is the accent line; oversampled, grey. Below each, its perceptual metrics at the shipping rate (DSP.md R19): the NMR and ERB-band error against the reference, Rnonlin (1 is no distortion) and GedLee on its own; a guide section explains them: <a href=\"{}\">Fingerprints and perceptual metrics</a>.</p>",
+        fingerprints::DIR,
+        fingerprints::DIR,
+        rel(PATH, "howto/fingerprints/index.html")
+    );
+    for f in &prints {
+        body.push_str(&fingerprints::section(f));
     }
     body.push_str("<h2 id=\"not-models\">Stages that are not models</h2><ul>");
     for (path, why) in NOT_MODELS {

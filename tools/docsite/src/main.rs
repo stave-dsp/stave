@@ -26,6 +26,7 @@
 
 mod check;
 mod cost;
+mod fingerprints;
 mod guide;
 mod home;
 mod html;

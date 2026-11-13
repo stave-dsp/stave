@@ -9,7 +9,7 @@ use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
 use stave_dsp::kernel::node::Tail;
 use stave_measure::suite::analysis::{
-    aliasing, bins, gain, steady_state, thd_n, Harmonics, Spectrum,
+    aliasing, anmr, bins, gain, steady_state, thd_n, Harmonics, Spectrum,
 };
 use stave_measure::suite::excitation::Excitation;
 use stave_measure::suite::levels::{find_knee, Knee};
@@ -186,6 +186,11 @@ fn simulate(run: &Run, rate: f64, tick: &mut dyn FnMut(f64) -> f64) -> Vec<Vec<f
     out.chunks(n).map(<[f64]>::to_vec).collect()
 }
 
+/// The highest rate the ANMR is read at: a host rate, where aliasing is
+/// what a listener hears (an oversampled solver's figure says nothing
+/// about the plugin).
+pub const ANMR_MAX_RATE: f64 = 96_000.0;
+
 /// A run's measurements from its simulated periods (the first is the
 /// one before the measured ones).
 pub fn measure_run(run: &Run, rate: f64, periods: &[Vec<f64>]) -> Measured {
@@ -194,17 +199,22 @@ pub fn measure_run(run: &Run, rate: f64, periods: &[Vec<f64>]) -> Measured {
         .iter()
         .map(|x| bins(x, p, rate, &run.bins))
         .collect();
-    let (thdn, floor) = match run.kind {
+    let (thdn, floor, anmr) = match run.kind {
         Kind::Tone { bin, .. } => {
             let last = &periods[1];
-            (Some(thd_n(last, p, rate, bin)), Some(aliasing(last, p, rate, bin)))
+            (
+                Some(thd_n(last, p, rate, bin)),
+                Some(aliasing(last, p, rate, bin)),
+                (rate <= ANMR_MAX_RATE).then(|| anmr(last, p, rate, bin)),
+            )
         }
-        _ => (None, None),
+        _ => (None, None, None),
     };
     Measured {
         steady: steady_state(&periods[0], &periods[1]),
         thdn,
         floor,
+        anmr,
         periods: spectra,
     }
 }
@@ -376,4 +386,36 @@ pub fn knee(deck: &Netlist, input: &Input, settle: f64) -> Knee {
         (db(gain(&run.excitation.tones[0], h.fundamental()).norm()), h.thd())
     };
     find_knee(measure, 1e-6, 100.0).rounded()
+}
+
+/// A black box's knee at 1 kHz (DSP.md principle 3), as [`knee`] finds a
+/// circuit's: a fresh ticker from `make` at `rate` for each level, a
+/// sine climbing from 10 µ to 100 (of full scale) until the gain moves
+/// 1 dB or THD reaches 1 %, rounded to 0.1 dB.
+pub fn stage_knee(make: &dyn Fn(f64) -> Ticker, rate: f64, settle: f64) -> Knee {
+    let period = Period::units(6);
+    let bin = tone_bin(period, 1_000.0, HARMONICS, &SHIPPING_RATES).unwrap();
+    let settle_periods = (settle / period.seconds()).ceil() as u32 + 1;
+    let mut wanted = vec![0];
+    wanted.extend(harmonic_bins(bin, HARMONICS).iter().map(|&b| b as u32));
+    let measure = |amplitude: f64| {
+        let run = Run {
+            id: "knee".into(),
+            tier: Tier::T0,
+            kind: Kind::Tone {
+                bin,
+                offset_db: 0.0,
+            },
+            settle: settle_periods,
+            measure: 1,
+            bins: wanted.clone(),
+            excitation: Excitation::sine(period, bin, amplitude).faded_in(0.5 * settle.max(1e-3)),
+        };
+        let mut tick = make(rate);
+        let periods = simulate(&run, rate, &mut *tick);
+        let s = bins(&periods[1], period, rate, &wanted);
+        let h = Harmonics::of(&s, bin, HARMONICS);
+        (db(gain(&run.excitation.tones[0], h.fundamental()).norm()), h.thd())
+    };
+    find_knee(measure, 1e-5, 100.0).rounded()
 }

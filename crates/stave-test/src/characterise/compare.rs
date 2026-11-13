@@ -49,10 +49,14 @@ pub enum Check {
     /// C10: inharmonic energy on empty bins, dBc — the model's alone,
     /// held to a ceiling.
     Aliasing,
+    /// C10 by audibility: the model's A-weighted noise-to-mask ratio at
+    /// a shipping rate, dB (Kahles et al. 2019; audible above −10 dB) —
+    /// its own, held to a ceiling.
+    Anmr,
 }
 
 impl Check {
-    pub const ALL: [Check; 11] = [
+    pub const ALL: [Check; 12] = [
         Check::OperatingPoint,
         Check::Response,
         Check::GroupDelay,
@@ -64,6 +68,7 @@ impl Check {
         Check::Intermodulation,
         Check::Dynamics,
         Check::Aliasing,
+        Check::Anmr,
     ];
 
     pub fn name(self) -> &'static str {
@@ -79,6 +84,7 @@ impl Check {
             Check::Intermodulation => "C7 IMD",
             Check::Dynamics => "C8 dynamics",
             Check::Aliasing => "C10 aliasing",
+            Check::Anmr => "C10 ANMR",
         }
     }
 
@@ -89,6 +95,7 @@ impl Check {
             Check::OperatingPoint => "V",
             Check::Dynamics => "V",
             Check::Aliasing => "dBc",
+            Check::Anmr => "dB NMR",
             Check::GroupDelay => "s",
             _ => "dB",
         }
@@ -316,6 +323,14 @@ pub fn compare(
                         )
                     });
                 }
+            }
+        }
+        Check::Anmr => {
+            m.first.error = f64::NEG_INFINITY;
+            for (run, _, md) in pairs() {
+                let Some(a) = md.anmr else { continue };
+                m.points += 1;
+                m.first.offer(a, || format!("{}: ANMR {a:.1} dB", run.id));
             }
         }
         Check::Aliasing => {

@@ -8,7 +8,9 @@
 //! # stave characterisation table v1: <circuit>
 //! op <node> <volts>                       C1: the operating point
 //! ac <hz> <re> <im>                       C2: the small-signal response
-//! run <id> steady <x> thdn <x> floor <x>  per run: steady state, THD+N, inharmonic floor
+//! run <id> steady <x> thdn <x> floor <x> [anmr <x>]
+//!                                         per run: steady state, THD+N, inharmonic floor,
+//!                                         and a model's ANMR at a shipping rate
 //! <k> <re> <im>                           then each bin's complex amplitude (8 digits)
 //! period <j>                              a burst's next measured period, its bins after
 //! ```
@@ -34,6 +36,11 @@ pub struct Measured {
     /// A tone run's inharmonic floor (audible band, off every harmonic),
     /// as a ratio: aliasing for a model, numerical noise for a simulator.
     pub floor: Option<f64>,
+    /// A tone run's ANMR at a shipping rate (≤ 96 kHz), dB: its
+    /// inharmonic remainder under the harmonics' mask, A-weighted
+    /// ([`anmr`](stave_measure::suite::analysis::anmr)). A model's own
+    /// figure; references carry none.
+    pub anmr: Option<f64>,
     /// Each measured period's spectrum.
     pub periods: Vec<Spectrum>,
 }
@@ -84,6 +91,10 @@ impl Table {
                     m.steady = num(w.get(3))?;
                     m.thdn = opt(num(w.get(5))?);
                     m.floor = opt(num(w.get(7))?);
+                    m.anmr = match w.get(8) {
+                        Some(&"anmr") => opt(num(w.get(9))?),
+                        _ => None,
+                    };
                     current = Some(w[1].to_string());
                     period = 0;
                 }
@@ -119,13 +130,17 @@ impl Table {
             let _ = writeln!(s, "ac {hz:.9e} {:.9e} {:.9e}", c.re, c.im);
         }
         for (id, m) in &self.runs {
-            let _ = writeln!(
+            let _ = write!(
                 s,
                 "run {id} steady {} thdn {} floor {}",
                 f(Some(m.steady)),
                 f(m.thdn),
                 f(m.floor)
             );
+            if let Some(a) = m.anmr {
+                let _ = write!(s, " anmr {a:.6e}");
+            }
+            s.push('\n');
             for (j, p) in m.periods.iter().enumerate() {
                 if j > 0 {
                     let _ = writeln!(s, "period {j}");
@@ -193,8 +208,9 @@ pub enum Target {
     /// `spice/<name>.table`: ngspice on `spice/<name>.cir`, run through
     /// `spice/<name>.plan` by `scripts/ngspice-simulate.py`.
     Ngspice { name: String },
-    /// `fingerprints/<name>.table`: a model's own results, pinned on
-    /// purpose (`STAVE_BLESS=1`), so a change in sound fails review.
+    /// `fingerprints/<name>.fingerprint`'s shipping-rate table: a model's
+    /// own results, pinned on purpose (`STAVE_BLESS=1`), so a change in
+    /// sound fails review (DSP.md R18).
     Fingerprint { name: String },
     /// A measured target in the table format — a digitised datasheet
     /// curve or a published response — committed with its source cited.
@@ -221,9 +237,7 @@ impl Target {
     pub fn path(&self) -> Option<PathBuf> {
         match self {
             Target::Ngspice { name } => Some(fixtures().join(format!("spice/{name}.table"))),
-            Target::Fingerprint { name } => {
-                Some(fixtures().join(format!("fingerprints/{name}.table")))
-            }
+            Target::Fingerprint { name } => Some(super::fingerprint::path(name)),
             Target::Measured { path, .. } => Some(fixtures().join(path)),
             Target::Capture { path } => {
                 std::env::var_os("STAVE_CAPTURES").map(|root| PathBuf::from(root).join(path))
@@ -250,6 +264,9 @@ impl Target {
             return Err("skipped: STAVE_CAPTURES is not set (captures live outside git)".into());
         };
         match std::fs::read_to_string(&path) {
+            Ok(text) if matches!(self, Target::Fingerprint { .. }) => super::fingerprint::Fingerprint::parse(&text)
+                .and_then(|f| f.shipping().cloned().ok_or_else(|| "no shipping table".to_string()))
+                .map_err(|e| format!("{}: {e}", path.display())),
             Ok(text) => Table::parse(&text).map_err(|e| format!("{}: {e}", path.display())),
             Err(e) if matches!(self, Target::Capture { .. }) => {
                 Err(format!("skipped: {}: {e}", path.display()))
@@ -282,6 +299,7 @@ mod tests {
                 steady: 1e-9,
                 thdn: Some(0.01),
                 floor: None,
+                anmr: Some(-42.5),
                 periods: vec![Spectrum {
                     bins: vec![(0, Complex::new(0.1, 0.0)), (21, Complex::new(0.25, -0.75))],
                 }],
