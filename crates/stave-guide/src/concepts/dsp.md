@@ -217,6 +217,13 @@ afterwards.
   [`Stage`](stave_dsp::Stage), so it nests in any form; stereo and
   true-stereo responses run through
   [`tick_stereo`](stave_dsp::Convolver::tick_stereo).
+- An [`ImpulseResponse`](stave_dsp::ImpulseResponse) loaded from a
+  capture ([`from_channels`](stave_dsp::ImpulseResponse::from_channels),
+  or [`stave_host::wav::read_impulse_response`] for a WAV) carries the
+  rate it was recorded at, and the convolver resamples it to the rate it
+  is prepared at. [`normalized`](stave_dsp::ImpulseResponse::normalized)
+  and [`minimum_phase`](stave_dsp::ImpulseResponse::minimum_phase)
+  prepare it further.
 - [`Convolver::non_uniform`](stave_dsp::Convolver::non_uniform) keeps
   that latency but covers a long response with larger partitions too,
   sized for the least work: a two-second hall at zero latency costs about

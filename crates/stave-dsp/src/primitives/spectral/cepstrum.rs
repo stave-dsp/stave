@@ -1,5 +1,6 @@
-//! Minimum-phase conversion by the real cepstrum, for
-//! [`Fir::minimum_phase`](super::Fir::minimum_phase).
+//! Minimum-phase conversion by the real cepstrum, shared by
+//! [`Fir::minimum_phase`](super::Fir::minimum_phase) and
+//! [`ImpulseResponse::minimum_phase`](super::ImpulseResponse::minimum_phase).
 //!
 //! The homomorphic method (Oppenheim & Schafer, *Discrete-Time Signal
 //! Processing*, 3rd ed., §13.8.1): take `ln|H|` on a fine frequency grid,

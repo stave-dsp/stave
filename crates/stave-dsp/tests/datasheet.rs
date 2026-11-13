@@ -41,6 +41,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use stave_dsp::primitives::spectral::{Complex, Fir, Head, Passband};
+use stave_dsp::units::SampleRate;
 use stave_dsp::{
     Adaa, Adsr, Allpass1, Biquad, Convolver, Curve, DelayLine, DiodeClipper, DiodeClipperConfig,
     Fft, Hysteresis, ImpulseResponse, Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley,
@@ -267,6 +268,17 @@ fn primitive_datasheet() {
         );
         bench(&name, &input, |x| conv.tick(x));
     }
+
+    // F4: loading work, off the audio thread: per output sample.
+    let hall = ImpulseResponse::mono(&input[..96_000]).recorded_at(SampleRate::new(44_100.0));
+    let out_len = hall.resampled(SampleRate::new(48_000.0)).len();
+    bench_points("ImpulseResponse resampled 44.1→48 kHz, 96 k taps", out_len, || {
+        black_box(hall.resampled(SampleRate::new(48_000.0)));
+    });
+    let cab = ImpulseResponse::mono(&input[..4_096]);
+    bench_points("ImpulseResponse minimum_phase 4096 taps", 4_096, || {
+        black_box(cab.minimum_phase());
+    });
 
     // F6: a designed FIR (80 dB Kaiser lowpass, 127 taps) run through
     // the convolver at zero latency.

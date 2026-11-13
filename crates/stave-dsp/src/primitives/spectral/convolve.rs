@@ -27,6 +27,7 @@
 use super::fft::{Complex, Fft};
 use super::impulse_response::ImpulseResponse;
 use crate::kernel::node::{Stage, Tail};
+use crate::units::SampleRate;
 
 /// How a [`Convolver`] computes the first block of its response.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -461,9 +462,12 @@ impl Segment {
 ///
 /// # Valid ranges
 ///
-/// Partitions `1..=2^30`, powers of two; any response length. The
-/// response is taken at the prepared rate as given (resampling is
-/// DSP.md F4).
+/// Partitions `1..=2^30`, powers of two; any response length. A
+/// response with a recorded rate ([`ImpulseResponse::from_channels`],
+/// [`ImpulseResponse::recorded_at`]) is resampled to the rate
+/// [`prepare`](Stage::prepare) is given, and re-planned there (prepare
+/// allocates when the rate changes); one without is taken at the
+/// prepared rate as given.
 ///
 /// ```
 /// use stave_dsp::primitives::spectral::Head;
@@ -490,6 +494,13 @@ pub struct Convolver {
     /// Position in the head's block, `0..B`.
     pos: usize,
     segments: Vec<Segment>,
+    /// The response as given, when it has a recorded rate: `prepare`
+    /// re-plans from it at the prepared rate.
+    source: Option<Box<ImpulseResponse>>,
+    /// The largest partition the schedule may use.
+    largest: usize,
+    /// The rate the current plan's response is at, when known.
+    planned: Option<SampleRate>,
 }
 
 /// The delay-line slot of the spectrum `age` blocks older than the one
@@ -552,6 +563,15 @@ impl Convolver {
             largest.is_power_of_two() && largest >= block,
             "Convolver largest partition must be a power of two of at least {block}, got {largest}"
         );
+        let mut conv = Self::plan(ir, block, largest, head);
+        if ir.sample_rate().is_some() {
+            conv.source = Some(Box::new(ir.clone()));
+        }
+        conv
+    }
+
+    /// The plan for `ir` as given (no source kept).
+    fn plan(ir: &ImpulseResponse, block: usize, largest: usize, head: Head) -> Self {
         let lanes = ir.layout().lanes();
         let ir_len = ir.len();
         let mut heads = Vec::new();
@@ -591,6 +611,9 @@ impl Convolver {
             },
             pos: 0,
             segments,
+            source: None,
+            largest,
+            planned: ir.sample_rate(),
         }
     }
 
@@ -674,10 +697,18 @@ impl Convolver {
 }
 
 impl Stage for Convolver {
-    /// Clears the state. The plan does not depend on the rate: the
-    /// response is taken at the prepared rate as given (resampling an
-    /// [`ImpulseResponse`] to it is DSP.md F4).
-    fn prepare(&mut self, _sample_rate: f32) {
+    /// Re-plans from a response with a recorded rate when the rate
+    /// differs from the current plan's (this allocates: the response is
+    /// resampled, its partitions transformed again), then clears the
+    /// state. A response without a recorded rate is taken as given.
+    fn prepare(&mut self, sample_rate: f32) {
+        if self.source.is_some() && self.planned != Some(SampleRate::new(sample_rate)) {
+            if let Some(source) = self.source.take() {
+                let ir = source.resampled(SampleRate::new(sample_rate));
+                *self = Self::plan(&ir, self.block, self.largest, self.head);
+                self.source = Some(source);
+            }
+        }
         self.reset();
     }
 

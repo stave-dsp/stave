@@ -205,7 +205,7 @@ circuit/
   1.2 µs/sample against 68 average for 96 k taps). The schedule search
   must then keep one block of slack (`skip ≥ 1`) on the runs it moves;
   tests stay deterministic by running the worker inline.
-- [ ] **F4** `ImpulseResponse` loading: WAV, resampled to the prepared
+- [x] **F4** (this commit: `ImpulseResponse::from_channels(&channels, SampleRate)` (1/2/4 channels), `recorded_at`, `resampled` (Kaiser windowed-sinc band-limited interpolation, gain kept; the crate had no arbitrary-ratio resampler), `normalized(Peak | Energy)`, `minimum_phase` (cepstrum, per path); a `Convolver` re-plans at `prepare` when a recorded response's rate differs; WAV through `stave_host::wav::read_impulse_response`, since stave-dsp sits below the host's file I/O) `ImpulseResponse` loading: WAV, resampled to the prepared
   rate, normalised, mono/stereo/true-stereo; minimum-phase conversion.
 - [ ] **F5** STFT (analysis/synthesis with COLA windows) as a stage, the
   base for spectral effects and the phase vocoder (S6).

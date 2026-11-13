@@ -17,5 +17,5 @@ pub mod window;
 pub use convolve::{Convolver, Head};
 pub use fft::{Complex, Fft, FftFloat};
 pub use fir::{Band, Fir, Passband};
-pub use impulse_response::{ImpulseResponse, IrLayout};
+pub use impulse_response::{ImpulseResponse, IrError, IrLayout, Normalization};
 pub use window::Window;

@@ -2,6 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+use stave_dsp::units::SampleRate;
+use stave_dsp::ImpulseResponse;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Audio {
     pub sample_rate: u32,
@@ -30,6 +33,12 @@ pub enum WavError {
     TooManyChannels { channels: usize },
     #[error("channels have different lengths {lengths:?}")]
     MismatchedChannelLengths { lengths: Vec<usize> },
+    #[error("{}: not an impulse response", path.display())]
+    ImpulseResponse {
+        path: PathBuf,
+        #[source]
+        source: stave_dsp::primitives::spectral::IrError,
+    },
 }
 
 /// Read any PCM/float WAV into planar f32 in [−1, 1].
@@ -104,6 +113,25 @@ pub fn read_range(path: &Path, start: usize, frames: usize) -> Result<Audio, Wav
     })
 }
 
+/// Read a WAV as an [`ImpulseResponse`] recorded at the file's rate:
+/// one channel is mono, two stereo, four true stereo (left→left,
+/// left→right, right→left, right→right). A
+/// [`Convolver`](stave_dsp::Convolver) resamples it to the rate it is
+/// prepared at.
+pub fn read_impulse_response(path: &Path) -> Result<ImpulseResponse, WavError> {
+    let audio = read(path)?;
+    let channels: Vec<&[f32]> = audio.channels.iter().map(Vec::as_slice).collect();
+    // A WAV header's rate is a positive u32; f32 holds every host rate
+    // exactly.
+    let sample_rate = SampleRate::new(audio.sample_rate.max(1) as f32);
+    ImpulseResponse::from_channels(&channels, sample_rate).map_err(|source| {
+        WavError::ImpulseResponse {
+            path: path.to_path_buf(),
+            source,
+        }
+    })
+}
+
 fn open(path: &Path) -> Result<hound::WavReader<std::io::BufReader<std::fs::File>>, WavError> {
     let reader = hound::WavReader::open(path).map_err(|source| WavError::Read {
         path: path.to_path_buf(),
@@ -170,6 +198,39 @@ mod tests {
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn an_impulse_response_reads_with_its_rate_and_layout() {
+        use stave_dsp::primitives::spectral::IrLayout;
+        let dir = TempDir::new("ir");
+        for (n, layout) in [
+            (1, Some(IrLayout::Mono)),
+            (2, Some(IrLayout::Stereo)),
+            (3, None),
+            (4, Some(IrLayout::TrueStereo)),
+        ] {
+            let p = dir.path().join(format!("ir{n}.wav"));
+            let channels: Vec<Vec<f32>> = (0..n).map(|c| vec![1.0, 0.5 / (c + 1) as f32]).collect();
+            write(
+                &p,
+                &Audio {
+                    sample_rate: 44_100,
+                    channels: channels.clone(),
+                },
+            )
+            .unwrap();
+            match (read_impulse_response(&p), layout) {
+                (Ok(ir), Some(layout)) => {
+                    assert_eq!(ir.layout(), layout);
+                    assert_eq!(ir.sample_rate(), Some(SampleRate::new(44_100.0)));
+                    let last = layout.lanes() - 1;
+                    assert_eq!(ir.path(last, last), Some(&channels[n - 1][..]));
+                }
+                (Err(WavError::ImpulseResponse { .. }), None) => {}
+                (got, want) => panic!("{n} channels: {got:?}, want {want:?}"),
+            }
         }
     }
 
