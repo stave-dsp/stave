@@ -477,6 +477,20 @@ other references; a model with a capture is held to it within budget.
   version; promote what generalises).
 - [ ] **E10** Component tolerance and ageing: seeded per-instance variation
   of a netlist's values, so two "units" differ like hardware does.
+- [ ] **E11** Refit the presets R13 found off their datasheets, each known
+  gap in `matches_datasheet.rs` promoted to a pass as it closes:
+  - tubes: Koren `T12AX7`, `EL34`, `T6L6GC`, `KT88` refitted to the
+    digitised plate curves (10–14% of peak today); a screen-current law
+    with the rise at low plate voltage (Koren's misses by 38–89%);
+  - 2N3904: `IKF` (hFE keeps 0.42 of its peak at 195 mA, the sheet 0.14),
+    `RB`/`RE` (VBE 0.87 V against 1.00 V at 195 mA);
+  - AC128: a typical-part card from Mullard's curves (the DAFx-17 card is
+    one vintage sample: Early voltage too low, roll-off too early, VBE
+    too high for the input characteristic);
+  - 1N4148: `RS` for Vishay's high-current end (37.5 mV at 20 mA);
+  - TL072: asymmetric slew (rising ~10, falling ~12.8 V/µs in the drawn
+    pulse) and the open loop's pole; JRC4558: choose the plots (110 dB,
+    ~1.8 V/µs) or the table, and say why.
 
 ### A — anti-aliasing and rates
 
@@ -643,10 +657,47 @@ other references; a model with a capture is held to it within budget.
   1× and 2× the host rate (today most transients run at 4–16×), with its
   own budget, and both numbers shown in the model catalogue, so an
   author sees the error the plugin will actually have. Trapezoidal integration rings with nonlinear elements where implicit midpoint does not (Germain 2017): compare both at the shipping rate.
-- [ ] **R13** Hardware truth beyond SPICE: compare each device model to
+- [x] **R13** (2043b2f: `stave-test/tests/matches_datasheet.rs` holds every device family to the R23 tables. Budget = the reading's uncertainty + a stated model tolerance: 5% of the table's peak reading on a linear axis, 10% of the value on a log axis or a printed figure, 20 mV of diode forward voltage; the model is read anywhere within the abscissa's uncertainty. A miss is a *known gap*: the test asserts it is still a miss and no worse than recorded, so a refit fails it until promoted. Captures (R8) are not done: no unit is at hand. Worst error against each sheet:)
+  Hardware truth beyond SPICE: compare each device model to
   published datasheet curves (Ic–Vce families, tube plate curves, diode
   I–V, op-amp slew) digitised once with their source cited, then to
   captures (R8). ngspice proves we solve the model; this proves the model.
+
+  | Part | Model | Datasheet curve | Error | Budget | |
+  |---|---|---|---|---|---|
+  | 12AX7/ECC83 | Koren `T12AX7` | Philips plate curves | 11.7% of peak | 6.3% | gap |
+  | 12AX7/ECC83 | Dempwolf `RSD_1`, `RSD_2`, `EHX_1` | Philips plate curves | 11.4, 13.8, 11.5% | 6.3% | gap |
+  | EL34 | Koren | Philips plate curves, Vg2 250 V | 12.1% | 6.1% | gap |
+  | EL34 | Koren, screen | Philips Ig2 against Vg1 | 53.7% | 9.2% | gap |
+  | 6L6GC | Koren | Tung-Sol plate curves, Vg2 250 V | 10.0% | 6.5% | gap |
+  | 6L6GC | Koren, screen | Tung-Sol Ig2 against Va | 38.4% | 7.3% | gap |
+  | KT88 | Koren | GEC plate curves, Vg2 300 V | 14.1% | 6.6% | gap |
+  | EL84 | Koren (Malcolm-Brown) | Philips plate curves, Vg2 250 V | 5.6% | 6.3% | pass |
+  | EL84 | Koren, screen | Mullard Ig2 against Va | 89.0% | 6.4% | gap |
+  | 2N3904 | Gummel–Poon | onsemi hFE (normalised) | +206% of value | 13.3% | gap |
+  | 2N3904 | Gummel–Poon | onsemi VBE, VBE(sat), VCE(sat) | 24.3% of peak | 6.0% | gap |
+  | 2N3904 | Gummel–Poon | onsemi saturation region | 85.9% | 6.1% | gap |
+  | 2N3904 | Gummel–Poon | onsemi hFE table limits, 0.1–100 mA | 96–160, inside | | pass |
+  | 2N3904 | Ebers–Moll core of the card | the same three figures | +623%, 48.1%, 88.6% | | gap |
+  | AC128 | Gummel–Poon | Mullard output family | 25.0% of peak | 6.0% | gap |
+  | AC128 | Gummel–Poon | Mullard hFE, transfer, input | 11.9, 24.3, 45.2% | 6.0–6.1% | gap |
+  | AC128 | Gummel–Poon | Mullard hFE table limits | 56–89, inside | | pass |
+  | 1N4148 | Shockley `N4148` | Vishay If–Vf, 25 °C | 37.5 mV | 35.1 mV | gap |
+  | 1N34A | Shockley `N34A` | MCC VF ≤ 1.00 V at 5 mA | 0.35 V | | pass |
+  | TL072 | Macromodel | GBW 3 MHz; falling edge 12.8 V/µs | 0.0%; 1.2% | 10%; 21.9% | pass |
+  | TL072 | Macromodel | SR 20 V/µs (SLOS080W); rising edge 9.9 V/µs | 35.0%; 31.8% | 10%; 19.9% | gap |
+  | TL072 | Macromodel | open-loop gain | 38.0% of value | 15.5% | gap |
+  | JRC4558 | Macromodel | SR 1 V/µs, GB 3 MHz (table) | 0.1%, 0.0% | 10% | pass |
+  | JRC4558 | Macromodel | open-loop gain; full-power swing | +214% of value; 40.8% of peak | 15.5%; 6.1% | gap |
+  | CA3080 | `BipolarPair` | gm against Iabc; bias-pin volts | 2.4% of value; 0.8% of peak | 16.6%; 6.4% | pass |
+  | LM13700 | `BipolarPair` | gm against Iabc; bias-pin volts | 15.7% of value; 3.2% of peak | 18.8%; 6.0% | pass |
+
+  The fits that pass were fitted to these sheets (EL84, the OTAs, the
+  op-amps' table figures); the gaps are the refit list, E11. Two sheets
+  contradict themselves, so the model follows one side: the JRC4558's
+  plots show 110 dB and ~1.8 V/µs against its table's 100 dB and 1 V/µs,
+  and onsemi's 2N3904 saturation figure implies β ≈ 52 at 1 mA against
+  its table's ≥ 70.
 - [ ] **R14** A second independent simulator (Xyce, or LTspice in CI if its
   licence allows) on the key decks, to rule out ngspice-specific numerics. ACME.jl (Holters), which implements the same DK method, is a natural second reference.
 - [ ] **R15** Dynamic checks for topologies verified only on their static
@@ -687,7 +738,7 @@ other references; a model with a capture is held to it within budget.
   stems and DI takes; `STAVE_SAMPLE_LIBRARY`; a sync script for a build
   host's copy; tests that use it when present. Close the DI gap (record or
   extract clean guitar and bass DI).
-- [ ] **R23** Measured targets without hardware: digitised datasheet curves
+- [x] **R23** (2043b2f: `stave_test::reference::Datasheet` reads `stave-test/datasheet/<name>.txt` — the R1 two-column table with a required header citing the document, URL, figure and page, the digitising method and axis calibration, and the uncertainty of each axis, curves keyed `# curve vg=-1.5`. 27 tables, 1434 lines, each digitised from the page image or the vector path with gridline-fitted axes: ECC83, EL34, 6L6GC, KT88 and EL84 plate curves and the EL34, 6L6GC and EL84 screen curves (uncertainty 0.4–1.5% of full scale); 2N3904 hFE, ON voltages and saturation region (onsemi prints no Ic–Vce family); AC128 output, hFE, transfer and input; 1N4148 forward (5% in current, 10 mV); the 1N34A's VF limit (MCC prints no curve); TL072 and JRC4558 table figures, open-loop gain and the TL072 follower pulse (the JRC4558 sheet has none; its swing against frequency instead); LM13700 and CA3080 gm and bias-pin voltage against Iabc. Static device curves, so the R1 format; R17's characterisation table holds circuit-level targets) Measured targets without hardware: digitised datasheet curves
   and published responses as reference tables, sources cited, in the ngspice
   table format, so a model can be held to a target where no capture exists.
 
