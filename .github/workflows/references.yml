@@ -1,8 +1,10 @@
-# The references the circuit models are held to (DSP.md R2): regenerate
-# every committed ngspice waveform with a pinned ngspice, and every solved
-# reference with pinned NumPy/SciPy, and fail if any differs from the
-# committed file — a stale fixture can't pass. scripts/ngspice-simulate.py
-# first checks ngspice on circuits with exact answers.
+# The references the circuit models are held to (DSP.md R2, R17):
+# regenerate every committed ngspice waveform and characterisation table
+# with a pinned ngspice, and every solved reference with pinned
+# NumPy/SciPy, and fail if any differs from the committed file — a stale
+# fixture can't pass. scripts/ngspice-simulate.py first checks ngspice on
+# circuits with exact answers. Beside it, T1 of the characterisation
+# matrix: every circuit's whole grid held to those tables.
 #
 # The fixtures are a function of the netlists, the scripts and the pinned
 # versions only, so the job runs when those change (and when the circuit
@@ -11,7 +13,9 @@
 # other pull request. The models themselves are held to the fixtures by
 # the test jobs in ci.yml and platforms.yml, on every change.
 #
-# About a minute: ngspice from apt, NumPy/SciPy wheels from a pip cache.
+# ngspice from apt, NumPy/SciPy wheels from a pip cache; the tables are
+# most of the time (one ngspice run per plan run, in parallel). T1 builds
+# stave-test (opt-level 1, a rust-cache) and runs in its own job.
 name: references
 
 on:
@@ -22,6 +26,10 @@ on:
       - crates/stave-test/reference/**
       - crates/stave-test/src/reference.rs
       - crates/stave-test/tests/matches_*.rs
+      - crates/stave-test/tests/characterise*.rs
+      - crates/stave-test/tests/circuits/**
+      - crates/stave-test/src/characterise/**
+      - crates/stave-measure/src/suite/**
       - crates/stave-dsp/src/circuit/**
       - scripts/ngspice-simulate.py
       - scripts/ja-reference.py
@@ -33,6 +41,10 @@ on:
       - crates/stave-test/reference/**
       - crates/stave-test/src/reference.rs
       - crates/stave-test/tests/matches_*.rs
+      - crates/stave-test/tests/characterise*.rs
+      - crates/stave-test/tests/circuits/**
+      - crates/stave-test/src/characterise/**
+      - crates/stave-measure/src/suite/**
       - crates/stave-dsp/src/circuit/**
       - scripts/ngspice-simulate.py
       - scripts/ja-reference.py
@@ -59,15 +71,21 @@ env:
 jobs:
   references:
     name: references (ngspice, SciPy)
-    timeout-minutes: 10
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/reference-requirements.txt
+      - run: pip install -r scripts/reference-requirements.txt
       - name: Install ngspice ${{ env.NGSPICE_PACKAGE }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends "ngspice=$NGSPICE_PACKAGE"
-      - name: ngspice's waveforms are current
+      - name: ngspice's waveforms and tables are current
         run: python3 scripts/ngspice-simulate.py --check --expect-version "$NGSPICE_VERSION"
       # The tolerance absorbs print and platform noise, not a real change:
       # a netlist value 1% off (the coupling cap) must fail the check.
@@ -75,17 +93,11 @@ jobs:
         run: |
           sed -i 's/^C1 i o 22n$/C1 i o 22.22n/' crates/stave-test/spice/coupler.cir
           git diff --quiet crates/stave-test/spice/coupler.cir && { echo "::error::the perturbation changed nothing"; exit 1; }
-          if python3 scripts/ngspice-simulate.py --check; then
+          if python3 scripts/ngspice-simulate.py --check --only coupler; then
             echo "::error::a 1% netlist change passed the check: the tolerance is too loose"
             exit 1
           fi
           git checkout crates/stave-test/spice/coupler.cir
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: scripts/reference-requirements.txt
-      - run: pip install -r scripts/reference-requirements.txt
       - name: The solved references are current
         run: python3 scripts/ja-reference.py --check
       - name: A 1% parameter change fails the check
@@ -97,3 +109,18 @@ jobs:
             exit 1
           fi
           git checkout scripts/ja-reference.py
+
+  characterise:
+    # T1 (DSP.md R17): every circuit's whole matrix against the committed
+    # tables — the grid of levels and frequencies, IMD, bursts —
+    # oversampled and at 44.1, 48 and 96 kHz. The tables' freshness is
+    # the job above's.
+    name: characterise (T1)
+    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
+      - run: cargo test -p stave-test --locked --test characterise_t1 -- --ignored

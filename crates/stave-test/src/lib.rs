@@ -7,6 +7,7 @@
 //!   - `plugin_checks!` every check a plugin owes, from one line
 //!   - `harness`        drive a `Plugin` in-process (no FFI)
 //!   - `checks`         host behaviour: block sizes, rates, cycles, automation, state
+//!   - `characterise`   a circuit's characterisation matrix against its reference (DSP.md R17)
 //!   - `validation`     stave-host's validation suite on a linked plugin
 //!   - `face`           drive a face as a person would (`FaceDriver`), its laws
 //!   - `instance`       the harness as a stave-host `Instance` (T1)
@@ -19,6 +20,7 @@
 #![forbid(unsafe_code)]
 #![deny(rust_2018_idioms)]
 
+pub mod characterise;
 pub mod checks;
 pub mod face;
 pub mod harness;

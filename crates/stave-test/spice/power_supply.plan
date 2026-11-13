@@ -1,0 +1,12 @@
+# stave characterisation plan v1: power_supply
+# Written by stave-test (STAVE_BLESS=1 cargo test -p stave-test --test characterise),
+# simulated by scripts/ngspice-simulate.py into power_supply.table. One run a line:
+# run <id> <tier> <kind…> settle <periods> measure <periods> bins <k…> | <excitation>
+input il dc 2e-2
+settle 3.5e-1
+run load/+0mA t0 load 6 settle 8 measure 1 bins 0 3 6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57 60 | period 15 dc 0e0 fade 0e0
+run load/+20mA t1 load 6 settle 8 measure 1 bins 0 3 6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57 60 | period 15 dc 2e-2 fade 0e0
+run load/+40mA t1 load 6 settle 8 measure 1 bins 0 3 6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57 60 | period 15 dc 4e-2 fade 0e0
+run load/+60mA t1 load 6 settle 8 measure 1 bins 0 3 6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57 60 | period 15 dc 6e-2 fade 0e0
+run burst/+60mA t0 burst 6 0 0 settle 8 measure 6 bins 0 3 6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57 60 | period 15 dc 0e0 fade 0e0 tone 6e-2 0 1.5707963267948966e0 4.5e-1 5.5e-1
+run burst/+20mA t1 burst 6 0 0 settle 8 measure 6 bins 0 3 6 9 12 15 18 21 24 27 30 33 36 39 42 45 48 51 54 57 60 | period 15 dc 0e0 fade 0e0 tone 2e-2 0 1.5707963267948966e0 4.5e-1 5.5e-1

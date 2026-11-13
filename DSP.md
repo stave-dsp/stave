@@ -48,7 +48,9 @@ is one piece of work with an id; tick it with the commit that lands it.
   feedback, parallel, sequence.
 - **Measurement** (`stave-measure`): levels, loudness (peak, true peak, RMS,
   LUFS), spectrum (FFT, Goertzel), THD/THD+N, latency, transfer functions,
-  tails, zipper, stereo, dynamics.
+  tails, zipper, stereo, dynamics; the measurement design's stimulus suite
+  and analysers (`suite`), and per circuit a characterisation matrix
+  against ngspice (`stave_test::characterise`, R17).
 - **Cost**: `stave-dsp/tests/datasheet.rs` prints ns/sample per primitive
   (documents, never blocks); `stave-bench` measures a built plugin.
 

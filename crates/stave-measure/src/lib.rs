@@ -15,6 +15,7 @@
 //! transfer    H(f) from input/output (H1, Welch-averaged)
 //! compare     bitwise divergence; null-test residuals
 //! tone_window   a bin-centred tone (or two) through a system: alias, gain, IMD
+//! suite       the measurement design: coherent stimuli and their analysers
 //! nonlinear   alias floor, gain surfaces, hysteresis
 //! aliasing    a stepped tone's inharmonic energy, harmonics apart (DSP.md A4)
 //! dynamics    gain trajectories, time constants, residuals, decay
@@ -68,6 +69,7 @@ pub mod signal;
 pub mod spectrum;
 pub mod stats;
 pub mod step;
+pub mod suite;
 pub mod stereo;
 pub mod system;
 pub mod tail;
