@@ -42,7 +42,7 @@ if [[ "${STAVE_OFFLOAD_SYNC:-rsync}" == tar ]]; then
   # rsync host.
   (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
     | xargs -0 -I{} sh -c 'test -e "{}" && printf "%s\0" "{}"' \
-    | tar -czf - --null -T -) \
+    | COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - --null -T -) \
     | ssh "$HOST" "rm -rf '$DIR' && mkdir -p '$DIR' && tar -xzf - -C '$DIR'"
   TARGETENV="CARGO_TARGET_DIR=\$HOME/$DIR.target"
 else
