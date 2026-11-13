@@ -6,8 +6,9 @@ use crate::circuit::netlist::Netlist;
 /// The Moog 904-A transistor ladder core on a 100 µA tail with the
 /// range-3 capacitors (0.075 µF, a corner near 2 kHz), and ideal
 /// regeneration `k`: source `vin` at node `sig` (DC 0, drive it), output
-/// `out`, the voltage across the top capacitor. `k = 0` is the open-loop
-/// four-pole core; it self-oscillates near `k = 4`.
+/// `out`, the voltage across the top capacitor taken in phase with the
+/// input, `v(r4, l4)` (a step settles at +1.014×). `k = 0` is the
+/// open-loop four-pole core; it self-oscillates at `k = 3.95`, 1980 Hz.
 ///
 /// # Models
 /// The ladder of the 904-A voltage-controlled low-pass filter: the bottom
@@ -20,7 +21,12 @@ use crate::circuit::netlist::Netlist;
 /// out, and its regeneration path through R22, whose 2N4058 PNPs have no
 /// published card, is an ideal source: the bottom pair's differential
 /// drive is `v(sig) − k · v(out)`, split ±half about 3.7 V — the
-/// Stilson–Smith and Huovilainen idealisation. (The patent's ladder with
+/// Stilson–Smith and Huovilainen idealisation. The drawing closes that
+/// loop through the output buffer's differential pair and the input
+/// buffer with the sense that makes it negative feedback (the filter
+/// resonates, it doesn't latch), so `out` is the in-phase difference:
+/// `v(l4, r4)`, the other sense, made the loop positive and latched the
+/// filter at `k = 3` (DSP.md R26). (The patent's ladder with
 /// idealised bias, any transistor and tail, is
 /// [`TransistorLadder`](super::transistor_ladder::TransistorLadder); this
 /// is the 904-A drawing's.)
@@ -34,10 +40,13 @@ use crate::circuit::netlist::Netlist;
 /// # Verified
 /// `crates/stave-test/tests/classics_match_ngspice.rs::moog_ladder_904a_matches_ngspice`:
 /// at `k = 0` `Circuit<Dk>`'s small-signal response within 5e-5 dB of
-/// ngspice's AC analysis (`moog_ladder_ac.cir`), and at `k = 3`, driven
-/// 150 mV past the pair's linear range, 1e-5 normalized RMS at 4×
-/// (measured 7.2e-6)
-/// against ngspice's transient (`moog_ladder_feedback.cir`).
+/// ngspice's AC analysis (`moog_ladder_ac.cir`); at `k = 3`, driven
+/// 150 mV past the pair's linear range, 2e-5 normalized RMS at 16×
+/// (measured 1.3e-5, falling as h² from 2.0e-4 at 4×) against ngspice's
+/// transient (`moog_ladder_feedback.cir`); and the loop's sense, which
+/// that match can't see: DC gain +1.014 open loop and G / (1 + 3G) at
+/// `k = 3`, self-oscillation at `k = 3.95` (a ladder's 4, less the
+/// 2N3392's base current), 1980 Hz (ideal `I/(8π·Vt·C)`, 2052 Hz).
 ///
 /// # Cost
 /// Datasheet `"Circuit<Dk> Moog ladder (k = 3)"`.
@@ -46,7 +55,7 @@ use crate::circuit::netlist::Netlist;
 /// The differential pair's tanh and the resonance: run it oversampled.
 ///
 /// # Valid ranges
-/// `0 ≤ k < 4` for a stable filter; inputs to a few hundred millivolts
+/// `0 ≤ k < 3.95` for a stable filter; inputs to a few hundred millivolts
 /// (the pair saturates past about 100 mV).
 ///
 /// [`GummelPoon::N2N3392`]: crate::circuit::devices::bjt::GummelPoon::N2N3392
@@ -56,8 +65,8 @@ pub fn moog_ladder_904a(k: f64) -> Netlist {
 VCC v12 0 12
 VBB bb 0 3.7
 VIN sig 0 DC 0 AC 1
-BP inp bb V = {{0.5*(V(sig) - {k}*V(l4,r4))}}
-BN inn bb V = {{-0.5*(V(sig) - {k}*V(l4,r4))}}
+BP inp bb V = {{0.5*(V(sig) - {k}*V(r4,l4))}}
+BN inn bb V = {{-0.5*(V(sig) - {k}*V(r4,l4))}}
 R29 v12 n4 68
 R28 n4 n3 220
 R27 n3 n2 220
@@ -78,7 +87,7 @@ Q14 r4 n3 r3 Q2N3392
 C4 l4 r4 0.075u
 Q15 v12 n4 l4 Q2N3392
 Q16 v12 n4 r4 Q2N3392
-EOUT out 0 l4 r4 1
+EOUT out 0 r4 l4 1
 .model Q2N3392 NPN(IS=12.03f ISE=4.958p ISC=0 BF=254.8 BR=4.379 IKF=0.1072 IKR=0 VAF=37.37 VAR=12.5 RE=0.1 RC=1 RB=10 NF=1 NR=1 NE=1.971 NC=2)
 .control
 wrdata out v(out)

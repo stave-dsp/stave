@@ -17,16 +17,17 @@
 * sources, half the input each (written as the regeneration-ready sources
 * of moog_ladder_feedback.cir, here with k = 0). The top
 * collectors go straight to +12 V and the output is the voltage across the
-* top capacitor: the output buffer Q17-Q21 and the regeneration path are
-* left out, so this is the open-loop four-pole core; the corner is about
-* Itail / (8 pi Vt C) = 2 kHz. Every transistor is the drawing's 2N3392:
-* National Semiconductor's card, DC part (stave's GummelPoon::N2N3392).
+* top capacitor, in phase with the input (V(r4,l4)): the output buffer
+* Q17-Q21 and the regeneration path are left out, so this is the
+* open-loop four-pole core; the corner is about Itail / (8 pi Vt C) =
+* 2 kHz. Every transistor is the drawing's 2N3392: National
+* Semiconductor's card, DC part (stave's GummelPoon::N2N3392).
 * Output: out.
 VCC v12 0 12
 VBB bb 0 3.7
 VIN sig 0 DC 0 AC 1
-BP inp bb V = {0.5*(V(sig) - 0*V(l4,r4))}
-BN inn bb V = {-0.5*(V(sig) - 0*V(l4,r4))}
+BP inp bb V = {0.5*(V(sig) - 0*V(r4,l4))}
+BN inn bb V = {-0.5*(V(sig) - 0*V(r4,l4))}
 R29 v12 n4 68
 R28 n4 n3 220
 R27 n3 n2 220
@@ -47,7 +48,7 @@ Q14 r4 n3 r3 Q2N3392
 C4 l4 r4 0.075u
 Q15 v12 n4 l4 Q2N3392
 Q16 v12 n4 r4 Q2N3392
-EOUT out 0 l4 r4 1
+EOUT out 0 r4 l4 1
 .model Q2N3392 NPN(IS=12.03f ISE=4.958p ISC=0 BF=254.8 BR=4.379 IKF=0.1072 IKR=0 VAF=37.37 VAR=12.5 RE=0.1 RC=1 RB=10 NF=1 NR=1 NE=1.971 NC=2)
 .options reltol=1e-9 abstol=1e-15 vntol=1e-12
 .ac dec 20 10 100k

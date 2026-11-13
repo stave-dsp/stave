@@ -221,9 +221,15 @@ fn real_tone_stacks_match_ngspice() {
 /// The Moog 904-A ladder core: open loop, `Circuit<Dk>`'s small-signal
 /// response against ngspice's AC analysis (measured 1.9e-5 dB: the two
 /// operating points' last digits); with regeneration k = 3 and driven
-/// 150 mV, the deck and the topology against ngspice's transient at 4×
-/// (measured 7.2e-6; 2.5e-5 at 2×, and a 4.0e-6 floor, the reference's,
-/// from 8×).
+/// 150 mV, the deck and the topology against ngspice's transient
+/// at 16× (measured 1.3e-5, falling as h²: 8.0e-4 at 2×, 2.0e-4 at 4×,
+/// 5.0e-5 at 8×, 3.4e-6 at 32×). Then the loop's sense, which matching
+/// ngspice can't see when deck and topology share it (DSP.md R26): the
+/// open-loop core is non-inverting (DC gain +1.014), so the regeneration
+/// `v(sig) − k·v(out)` is negative feedback — the closed loop at k = 3
+/// settles at G / (1 + 3G), 0.251 — and it self-oscillates where a
+/// ladder should, at k ≈ 4 (measured k = 3.951 at 1980 Hz; the ideal
+/// corner `I/(8π·Vt·C)` is 2052 Hz).
 #[test]
 fn moog_ladder_904a_matches_ngspice() {
     let ac = [("topology", topologies::moog_ladder_904a(0.0)), ("the deck", deck("moog_ladder_ac"))];
@@ -236,10 +242,55 @@ fn moog_ladder_904a_matches_ngspice() {
             .assert();
     }
     let name = "moog_ladder_feedback";
-    let case = || Case::ngspice(name).budget(Metric::NormalizedRms, 1e-5);
-    run(name, "the deck", &deck(name), 4, case()).assert();
+    let case = |budget| Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+    run(name, "the deck", &deck(name), 16, case(2e-5)).assert();
     let topology = stimulated(topologies::moog_ladder_904a(3.0), name, "vin");
-    run(name, "topology", &topology, 4, case()).assert();
+    let coarse = run(name, "topology", &topology, 8, case(8e-5));
+    let fine = run(name, "topology", &topology, 16, case(2e-5));
+    assert_converges(&coarse, &fine, 3.0);
+    fine.assert();
+
+    let dc_gain = |k: f64| {
+        let circuit = Circuit::<Dk>::new(&topologies::moog_ladder_904a(k)).unwrap();
+        let at = circuit.analog_response(1.0).unwrap();
+        assert!(at.im.abs() < 1e-2 * at.re.abs(), "k = {k}: not at DC yet");
+        at.re
+    };
+    let open = dc_gain(0.0);
+    let closed = dc_gain(3.0);
+    println!("904-A: DC gain {open:.4} open loop, {closed:.4} at k = 3");
+    assert!((1.0..1.03).contains(&open), "open-loop DC gain {open}: the core must not invert");
+    assert!((closed / (open / (1.0 + 3.0 * open)) - 1.0).abs() < 1e-3, "k = 3 is not negative feedback: {closed}");
+    let (onset, pitch) = onset_and_pitch(&topologies::moog_ladder_904a(0.0));
+    println!("904-A: self-oscillates at k = {onset:.4}, {pitch:.1} Hz");
+    assert!((3.9..4.1).contains(&onset), "onset at k = {onset}");
+    assert!((1900.0..2100.0).contains(&pitch), "pitch {pitch} Hz");
+}
+
+/// Where a ladder's open loop (regeneration 0) reaches −180°: the
+/// regeneration at which it self-oscillates (one over the gain there) and
+/// its pitch (that frequency), from `Circuit<Dk>`'s small-signal response.
+fn onset_and_pitch(netlist: &Netlist) -> (f64, f64) {
+    let circuit = Circuit::<Dk>::new(netlist).unwrap();
+    let at = |hz: f64| circuit.analog_response(hz).unwrap();
+    // A lowpass of positive DC gain is negative real at −180°: its
+    // imaginary part turns from negative to positive there.
+    let (mut lo, mut hi) = (100.0f64, 100.0f64);
+    while at(hi).im < 0.0 {
+        lo = hi;
+        hi *= 1.01;
+        assert!(hi < 1e5, "no −180° crossing");
+    }
+    for _ in 0..60 {
+        let mid = 0.5 * (lo + hi);
+        if at(mid).im < 0.0 {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let pitch = 0.5 * (lo + hi);
+    (1.0 / at(pitch).magnitude(), pitch)
 }
 
 /// `netlist`'s linearised response against the AC deck `name`'s
