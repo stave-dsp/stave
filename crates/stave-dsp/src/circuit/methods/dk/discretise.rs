@@ -81,6 +81,16 @@ impl Dk {
                 rhs[r * cols + nx + nu + k] = self.bq[r * nq + k];
             }
         }
+        // A stored charge's nonlinear part: the current (2/T)·Qn from a to
+        // b, beside its capacitor (module docs).
+        for link in &self.charges {
+            let c = &self.capacitors[link.capacitor];
+            for (r, sr) in [(c.a, -1.0), (c.b, 1.0)] {
+                if let Some(r) = r {
+                    rhs[r * cols + nx + nu + link.output] += sr * 2.0 / t;
+                }
+            }
+        }
         let kept = (!self.varying.stamps.is_empty()).then(|| s.clone());
         let m = self.solve_system(s, &rhs, cols, "transient")?;
         let mut row = vec![0.0; cols];
@@ -103,6 +113,9 @@ impl Dk {
         }
         for k in 0..nx {
             self.ax[k * nx + k] -= 1.0;
+        }
+        for link in &self.charges {
+            self.aq[link.capacitor * nq + link.output] += 4.0 / t;
         }
         difference_row(&m, cols, self.probe.0, self.probe.1, 1.0, &mut row);
         split(&row, &mut self.ex, &mut self.eu, &mut self.eq, 0);
@@ -197,6 +210,32 @@ impl Dk {
         }
         self.dc_v.copy_from_slice(&self.work.v);
         Ok(())
+    }
+
+    /// Size each stored charge's linear capacitor `C₀` at the operating
+    /// point (the initial conditions under `UIC`): the charge's own
+    /// capacitance there, so its nonlinear part has no slope at rest.
+    pub(super) fn linearise_charges(&mut self) {
+        if self.charges.is_empty() {
+            return;
+        }
+        let nv = self.controls.len();
+        for d in &mut self.devices {
+            d.charges.iter_mut().for_each(|c| c.linear = 0.0);
+        }
+        if self.uic {
+            self.work.v.iter_mut().for_each(|v| *v = 0.0);
+        } else {
+            self.work.v.copy_from_slice(&self.dc_v);
+        }
+        self.work.evaluate(&mut self.devices, 0.0);
+        let jq = self.work.jacobian_of_outputs();
+        for link in &self.charges {
+            let (g, sign) = link.control;
+            let farads = (jq[link.output * nv + g] * sign).max(0.0);
+            self.devices[link.device].charges[link.slot].linear = farads;
+            self.capacitors[link.capacitor].farads = farads;
+        }
     }
 
     /// The circuit linearised at its operating point, for input column

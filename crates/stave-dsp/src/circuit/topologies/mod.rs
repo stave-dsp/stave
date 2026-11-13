@@ -99,6 +99,8 @@ fn triode(
         grid: node(netlist, grid),
         cathode: node(netlist, cathode),
         tube: Tube::Dempwolf(tube),
+        // The classic decks write the tube as its static law (DSP.md R11).
+        capacitances: crate::circuit::devices::triode::Interelectrode::NONE,
     };
     if let Err(e) = netlist.add(name, kind) {
         panic!("{e}");

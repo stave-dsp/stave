@@ -3,7 +3,9 @@
 //! measured level; group delay at the audibility budget, 0.2 ms from
 //! 500 Hz to 4 kHz), as `(check, rates, first, second)` — the second is
 //! degrees (dB of probe level for dynamics), `NAN` where the check has
-//! none. Measured against the ngspice 42 tables. A row that holds a finding
+//! none. Measured against the ngspice 42 tables; rows marked "R11" were
+//! re-measured when the transistor decks gained their cards' charge (their
+//! `*_static` twins keep the static rows). A row that holds a finding
 //! says so beside it: its budget is the measured value with the same
 //! margin, so the finding cannot get worse unnoticed; DSP.md R17 lists
 //! them. Errors at shipping rates are the model run unoversampled at 44.1,
@@ -55,6 +57,26 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Oversampled, 5e-5, NAN), // 1.33e-05
             (OperatingPoint, Shipping, 5e-5, NAN), // 1.33e-05
             (Response, Oversampled, 5e-4, 0.002), // 0.00015 / 0.000361
+            (Response, Shipping, 0.002, 2.0), // 0.00064 / 0.389 (R11: the whole card)
+            (ThdN, Oversampled, 2e-4, NAN), // 6.06e-05
+            (ThdN, Shipping, 0.002, NAN), // 0.000505 — aliasing at the host rate
+        ],
+        ("ce_stage_static", Tier::T0) => &[
+            (Aliasing, Oversampled, -95.0, NAN), // -101
+            (Aliasing, Shipping, -60.0, NAN), // -65.5 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.1), // 0.00143 / 0.0271
+            (Bla, Shipping, 0.5, 2.0), // 0.0977 / 0.458
+            (Compression, Oversampled, 2e-5, 0.001), // 4.34e-06 / 0.000254
+            (Compression, Shipping, 1e-4, 0.02), // 2.48e-05 / 0.00389
+            (Detection, Oversampled, 50.0, NAN), // 9.28
+            (Detection, Shipping, 50.0, NAN), // 9.27
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.98e-10
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.15e-08
+            (Harmonics, Oversampled, 0.05, 0.05), // 0.0135 / 0.0118
+            (Harmonics, Shipping, 0.5, 0.2), // 0.0797 / 0.0573
+            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.33e-05
+            (OperatingPoint, Shipping, 5e-5, NAN), // 1.33e-05
+            (Response, Oversampled, 5e-4, 0.002), // 0.00015 / 0.000361
             (Response, Shipping, 5e-4, 0.5), // 0.000131 / 0.0723
             (ThdN, Oversampled, 2e-4, NAN), // 6.06e-05
             (ThdN, Shipping, 0.002, NAN), // 0.000505 — aliasing at the host rate
@@ -80,6 +102,26 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Shipping, 5e-4, NAN), // 9.32e-05 — aliasing at the host rate
         ],
         ("fuzz_face", Tier::T0) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
+            (Bla, Shipping, 20.0, 50.0), // 4.27 / 13 (R11: the whole card)
+            (Compression, Oversampled, 0.5, 0.05), // 0.12 / 0.0162 — FINDING: +0.12 dB of gain from the operating point
+            (Compression, Shipping, 0.5, 0.05), // 0.12 / 0.0104
+            (Detection, Oversampled, 1.0, NAN), // 0.324
+            (Detection, Shipping, 1.0, NAN), // 0.332
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.53e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.71e-07
+            (Harmonics, Oversampled, 2.0, 0.5), // 0.587 / 0.133 (R11: the whole card)
+            (Harmonics, Shipping, 2.0, 1.0), // 0.423 / 0.231 (R11: the whole card)
+            (OperatingPoint, Oversampled, 0.05, NAN), // 0.00936 — FINDING: 9.4 mV off ngspice at Q2's collector (open)
+            (OperatingPoint, Shipping, 0.05, NAN), // 0.00936
+            (Response, Oversampled, 0.5, 1.0), // 0.12 / 0.226 — FINDING: +0.12 dB of gain from the operating point
+            (Response, Shipping, 20.0, 50.0), // 4.27 / 13 (R11: the whole card)
+            (ThdN, Oversampled, 0.5, NAN), // 0.129
+            (ThdN, Shipping, 0.5, NAN), // 0.129 — aliasing at the host rate
+        ],
+        ("fuzz_face_static", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
             (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
@@ -207,6 +249,26 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 5e-6, NAN), // 1.25e-06
             (ThdN, Shipping, 0.001, NAN), // 0.000299 — aliasing at the host rate
         ],
+        ("jfet_booster_static", Tier::T0) => &[
+            (Aliasing, Oversampled, -95.0, NAN), // -100
+            (Aliasing, Shipping, -85.0, NAN), // -91.2 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00494
+            (Bla, Shipping, 0.1, 0.5), // 0.0213 / 0.144
+            (Compression, Oversampled, 5e-5, 2e-4), // 1.22e-05 / 3.99e-05
+            (Compression, Shipping, 5e-5, 0.002), // 1.15e-05 / 0.000622
+            (Detection, Oversampled, 0.05, NAN), // 0.00778
+            (Detection, Shipping, 0.5, NAN), // 0.141
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.77e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.83e-09
+            (Harmonics, Oversampled, 1.0, 0.1), // 0.245 / 0.0227
+            (Harmonics, Shipping, 5.0, 0.5), // 1.28 / 0.095
+            (OperatingPoint, Oversampled, 1e-4, NAN), // 3.21e-05 — FINDING: ngspice's gate sits 4.3 µV up (4.3 pA in 1 MΩ; not gmin)
+            (OperatingPoint, Shipping, 1e-4, NAN), // 3.21e-05
+            (Response, Oversampled, 5e-5, 5e-4), // 1.45e-05 / 7.98e-05
+            (Response, Shipping, 5e-5, 0.05), // 1.37e-05 / 0.0116
+            (ThdN, Oversampled, 5e-6, NAN), // 1.25e-06
+            (ThdN, Shipping, 0.001, NAN), // 0.000299 — aliasing at the host rate
+        ],
         ("opamp_clipper/hand", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -90.0, NAN), // -97.5 — aliasing at the host rate
@@ -228,6 +290,26 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Shipping, 0.05, NAN), // 0.0139 — aliasing at the host rate
         ],
         ("mosfet_booster", Tier::T0) => &[
+            (Aliasing, Oversampled, -95.0, NAN), // -104
+            (Aliasing, Shipping, -40.0, NAN), // -46.1 — aliasing at the host rate
+            (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
+            (Bla, Shipping, 1.0, 5.0), // 0.205 / 1.13
+            (Compression, Oversampled, 2e-5, 0.001), // 3.34e-06 / 0.000228
+            (Compression, Shipping, 5e-4, 0.005), // 7.57e-05 / 0.00163 (R11: the whole card)
+            (Detection, Oversampled, 1.0, NAN), // 0.224
+            (Detection, Shipping, 2.0, NAN), // 0.414
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.46e-09
+            (Harmonics, Oversampled, 0.2, 0.5), // 0.0406 / 0.148
+            (Harmonics, Shipping, 1.0, 10.0), // 0.193 / 2.7 (R11: the whole card)
+            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
+            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
+            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
+            (Response, Shipping, 0.01, 2.0), // 0.00262 / 0.423 (R11: the whole card)
+            (ThdN, Oversampled, 0.01, NAN), // 0.00197
+            (ThdN, Shipping, 0.02, NAN), // 0.00408 — aliasing at the host rate
+        ],
+        ("mosfet_booster_static", Tier::T0) => &[
             (Aliasing, Oversampled, -95.0, NAN), // -104
             (Aliasing, Shipping, -40.0, NAN), // -46.1 — aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
@@ -375,6 +457,26 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.1, NAN), // 0.0272
             (ThdN, Shipping, 0.05, NAN), // 0.00715 — aliasing at the host rate
         ],
+        ("rangemaster_static", Tier::T0) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Bla, Oversampled, 0.5, 1.0), // 0.137 / 0.325
+            (Bla, Shipping, 1.0, 20.0), // 0.189 / 3.37
+            (Compression, Oversampled, 0.2, 1.0), // 0.0495 / 0.249
+            (Compression, Shipping, 0.2, 1.0), // 0.0585 / 0.212
+            (Detection, Oversampled, 1.0, NAN), // 0.215
+            (Detection, Shipping, 1.0, NAN), // 0.231
+            (GroupDelay, Oversampled, 2e-4, NAN), // 7.08e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 6.65e-07
+            (Harmonics, Oversampled, 2.0, 5.0), // 0.394 / 1.35
+            (Harmonics, Shipping, 2.0, 2.0), // 0.354 / 0.549
+            (OperatingPoint, Oversampled, 0.02, NAN), // 0.0039 — FINDING: 3.9 mV off ngspice at the collector (open)
+            (OperatingPoint, Shipping, 0.02, NAN), // 0.0039
+            (Response, Oversampled, 0.5, 2.0), // 0.133 / 0.337 — FINDING: 0.13 dB of gain from the operating point
+            (Response, Shipping, 1.0, 10.0), // 0.184 / 3.22
+            (ThdN, Oversampled, 0.1, NAN), // 0.0272
+            (ThdN, Shipping, 0.05, NAN), // 0.00715 — aliasing at the host rate
+        ],
         ("tube_screamer", Tier::T0) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
@@ -420,6 +522,30 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Shipping, 500.0, NAN), // 98.9 — aliasing at the host rate
         ],
         ("ce_stage", Tier::T1) => &[
+            (Aliasing, Oversampled, -40.0, NAN), // -48.6
+            (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
+            (Bla, Oversampled, 0.02, 0.05), // 0.00389 / 0.0141
+            (Bla, Shipping, 1.0, 5.0), // 0.224 / 0.691
+            (Compression, Oversampled, 0.001, 0.01), // 0.000244 / 0.0022
+            (Compression, Shipping, 0.02, 5.0), // 0.00606 / 0.683 (R11: the whole card)
+            (Detection, Oversampled, 50.0, NAN), // 13.8
+            (Detection, Shipping, 50.0, NAN), // 13.8
+            (Dynamics, Oversampled, 5e-4, 0.02), // 8.79e-05 / 0.00601
+            (Dynamics, Shipping, 0.002, 0.2), // 0.000585 / 0.0501
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.98e-10
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.36e-08
+            (Harmonics, Oversampled, 1.0, 10.0), // 0.17 / 2.04
+            (Harmonics, Shipping, 50.0, 50.0), // 7.37 / 10.2 (R11: the whole card)
+            (Intermodulation, Oversampled, 0.2, 2.0), // 0.0265 / 0.345 (R11: the whole card)
+            (Intermodulation, Shipping, 2.0, 50.0), // 0.382 / 9.29 (R11: the whole card)
+            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.33e-05
+            (OperatingPoint, Shipping, 5e-5, NAN), // 1.33e-05
+            (Response, Oversampled, 5e-4, 0.002), // 0.00015 / 0.000361
+            (Response, Shipping, 0.005, 2.0), // 0.000916 / 0.532 (R11: the whole card)
+            (ThdN, Oversampled, 0.1, NAN), // 0.0277
+            (ThdN, Shipping, 20.0, NAN), // 5.27 — aliasing at the host rate
+        ],
+        ("ce_stage_static", Tier::T1) => &[
             (Aliasing, Oversampled, -40.0, NAN), // -48.6
             (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
             (Bla, Oversampled, 0.02, 0.05), // 0.00389 / 0.0141
@@ -492,6 +618,30 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Shipping, 5.0, NAN), // 0.924 — aliasing at the host rate
         ],
         ("fuzz_face", Tier::T1) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -35.0, NAN), // -44.6 — aliasing at the host rate
+            (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
+            (Bla, Shipping, 20.0, 100.0), // 5.61 / 16.8 (R11: the whole card)
+            (Compression, Oversampled, 0.5, 1.0), // 0.121 / 0.227 — FINDING: +0.12 dB of gain from the operating point
+            (Compression, Shipping, 2.0, 20.0), // 0.641 / 3.88 (R11: the whole card)
+            (Detection, Oversampled, 1.0, NAN), // 0.326
+            (Detection, Shipping, 2.0, NAN), // 0.336
+            (Dynamics, Oversampled, 0.002, 0.1), // 0.000505 / 0.0257
+            (Dynamics, Shipping, 0.005, 2.0), // 0.000698 / 0.566 (R11: the whole card)
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.53e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.75e-07
+            (Harmonics, Oversampled, 5.0, 2.0), // 1.04 / 0.371
+            (Harmonics, Shipping, 20.0, 50.0), // 5.17 / 8.55 (R11: the whole card)
+            (Intermodulation, Oversampled, 2.0, 5.0), // 0.462 / 0.82
+            (Intermodulation, Shipping, 100.0, 1e3), // 25.2 / 170 (R11: the whole card)
+            (OperatingPoint, Oversampled, 0.05, NAN), // 0.00936 — FINDING: 9.4 mV off ngspice at Q2's collector (open)
+            (OperatingPoint, Shipping, 0.05, NAN), // 0.00936
+            (Response, Oversampled, 0.5, 1.0), // 0.12 / 0.226 — FINDING: +0.12 dB of gain from the operating point
+            (Response, Shipping, 20.0, 100.0), // 5.61 / 16.7 (R11: the whole card)
+            (ThdN, Oversampled, 0.5, NAN), // 0.145
+            (ThdN, Shipping, 10.0, NAN), // 2.47 (R11: the whole card)
+        ],
+        ("fuzz_face_static", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -35.0, NAN), // -44.6 — aliasing at the host rate
             (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
@@ -601,6 +751,30 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Bla, Oversampled, 0.005, 0.05), // 0.00131 / 0.0101
             (Bla, Shipping, 0.1, 1.0), // 0.0331 / 0.236
             (Compression, Oversampled, 0.001, 0.002), // 0.000256 / 0.000358
+            (Compression, Shipping, 0.001, 0.1), // 0.000235 / 0.0303 (R11: the whole card)
+            (Detection, Oversampled, 0.05, NAN), // 0.0108
+            (Detection, Shipping, 5.0, NAN), // 0.759
+            (Dynamics, Oversampled, 2e-5, 0.002), // 4.77e-06 / 0.000449
+            (Dynamics, Shipping, 5e-4, 0.02), // 7.82e-05 / 0.00622
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.77e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.17e-09
+            (Harmonics, Oversampled, 2.0, 20.0), // 0.572 / 4.3 (R11: the whole card)
+            (Harmonics, Shipping, 10.0, 20.0), // 2.23 / 4.69
+            (Intermodulation, Oversampled, 5.0, 0.2), // 0.775 / 0.0482
+            (Intermodulation, Shipping, 10.0, 1.0), // 1.72 / 0.225
+            (OperatingPoint, Oversampled, 1e-4, NAN), // 3.21e-05 — FINDING: ngspice's gate sits 4.3 µV up (4.3 pA in 1 MΩ; not gmin)
+            (OperatingPoint, Shipping, 1e-4, NAN), // 3.21e-05
+            (Response, Oversampled, 5e-5, 5e-4), // 1.45e-05 / 7.98e-05
+            (Response, Shipping, 1e-4, 0.2), // 2.04e-05 / 0.06 (R11: the whole card)
+            (ThdN, Oversampled, 0.01, NAN), // 0.00309
+            (ThdN, Shipping, 50.0, NAN), // 7.42 — aliasing at the host rate
+        ],
+        ("jfet_booster_static", Tier::T1) => &[
+            (Aliasing, Oversampled, -45.0, NAN), // -54.8
+            (Aliasing, Shipping, -10.0, NAN), // -16.7 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.05), // 0.00131 / 0.0101
+            (Bla, Shipping, 0.1, 1.0), // 0.0331 / 0.236
+            (Compression, Oversampled, 0.001, 0.002), // 0.000256 / 0.000358
             (Compression, Shipping, 0.001, 0.02), // 0.000261 / 0.00648
             (Detection, Oversampled, 0.05, NAN), // 0.0108
             (Detection, Shipping, 5.0, NAN), // 0.759
@@ -644,6 +818,30 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Shipping, 500.0, NAN), // 107 — aliasing at the host rate
         ],
         ("mosfet_booster", Tier::T1) => &[
+            (Aliasing, Oversampled, -35.0, NAN), // -41.7
+            (Aliasing, Shipping, 0.0, NAN), // -7.7 — aliasing at the host rate
+            (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
+            (Bla, Shipping, 1.0, 10.0), // 0.294 / 2.26
+            (Compression, Oversampled, 0.002, 0.05), // 0.000406 / 0.00731 (R11: the whole card)
+            (Compression, Shipping, 0.05, 5.0), // 0.0136 / 0.87 (R11: the whole card)
+            (Detection, Oversampled, 50.0, NAN), // 9.93
+            (Detection, Shipping, 50.0, NAN), // 9.93
+            (Dynamics, Oversampled, 2e-4, 0.02), // 4.33e-05 / 0.00452
+            (Dynamics, Shipping, 0.002, 0.5), // 0.000351 / 0.142
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.73e-09
+            (Harmonics, Oversampled, 1.0, 2.0), // 0.275 / 0.638
+            (Harmonics, Shipping, 50.0, 200.0), // 14.4 / 65.7 (R11: the whole card)
+            (Intermodulation, Oversampled, 2.0, 1.0), // 0.639 / 0.245
+            (Intermodulation, Shipping, 50.0, 200.0), // 9.76 / 44.5 (R11: the whole card)
+            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
+            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
+            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
+            (Response, Shipping, 0.02, 2.0), // 0.00406 / 0.591 (R11: the whole card)
+            (ThdN, Oversampled, 5.0, NAN), // 1.14
+            (ThdN, Shipping, 100.0, NAN), // 21.2 — aliasing at the host rate
+        ],
+        ("mosfet_booster_static", Tier::T1) => &[
             (Aliasing, Oversampled, -35.0, NAN), // -41.7
             (Aliasing, Shipping, 0.0, NAN), // -7.7 — aliasing at the host rate
             (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
@@ -724,6 +922,30 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Shipping, 500.0, NAN), // 107 — aliasing at the host rate
         ],
         ("rangemaster", Tier::T1) => &[
+            (Aliasing, Oversampled, -115.0, NAN), // -120
+            (Aliasing, Shipping, -20.0, NAN), // -25.3 — aliasing at the host rate
+            (Bla, Oversampled, 0.5, 10.0), // 0.137 / 2.84
+            (Bla, Shipping, 5.0, 200.0), // 1.66 / 35.9
+            (Compression, Oversampled, 0.5, 1.0), // 0.131 / 0.293
+            (Compression, Shipping, 1.0, 10.0), // 0.191 / 2.03
+            (Detection, Oversampled, 2.0, NAN), // 0.365
+            (Detection, Shipping, 10.0, NAN), // 2.34
+            (Dynamics, Oversampled, 2e-4, 0.02), // 4.34e-05 / 0.00587
+            (Dynamics, Shipping, 5e-4, 0.5), // 0.000166 / 0.0976
+            (GroupDelay, Oversampled, 2e-4, NAN), // 7.08e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 7.73e-07
+            (Harmonics, Oversampled, 10.0, 10.0), // 1.79 / 1.72
+            (Harmonics, Shipping, 10.0, 50.0), // 2.51 / 10.9
+            (Intermodulation, Oversampled, 2.0, 20.0), // 0.608 / 3.89
+            (Intermodulation, Shipping, 10.0, 50.0), // 2.6 / 13.7
+            (OperatingPoint, Oversampled, 0.02, NAN), // 0.0039 — FINDING: 3.9 mV off ngspice at the collector (open)
+            (OperatingPoint, Shipping, 0.02, NAN), // 0.0039
+            (Response, Oversampled, 0.5, 2.0), // 0.133 / 0.337 — FINDING: 0.13 dB of gain from the operating point
+            (Response, Shipping, 1.0, 20.0), // 0.193 / 3.9
+            (ThdN, Oversampled, 1.0, NAN), // 0.234
+            (ThdN, Shipping, 2.0, NAN), // 0.342 — aliasing at the host rate
+        ],
+        ("rangemaster_static", Tier::T1) => &[
             (Aliasing, Oversampled, -115.0, NAN), // -120
             (Aliasing, Shipping, -20.0, NAN), // -25.3 — aliasing at the host rate
             (Bla, Oversampled, 0.5, 10.0), // 0.137 / 2.84

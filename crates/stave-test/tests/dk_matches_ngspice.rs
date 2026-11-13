@@ -135,12 +135,19 @@ fn coupler_matches_ngspice() {
 }
 
 /// Hand budget (WDF clipper): 5e-4 at 4×. DK keeps the card's 0.568 Ω
-/// series resistance the WDF leaves out; the junction capacitance and
-/// transit time stay unmodelled (`Netlist::unmodelled`).
+/// series resistance the WDF leaves out, and its junction capacitance
+/// and transit time (DSP.md R11).
 #[test]
 fn diode_clipper_matches_ngspice() {
     let case = Case::ngspice("diode_clipper").budget(Metric::NormalizedRms, 5e-4);
     transient_case("diode_clipper", 4, case).assert();
+}
+
+/// The same clipper on the card's static part, as before R11.
+#[test]
+fn diode_clipper_static_matches_ngspice() {
+    let case = Case::ngspice("diode_clipper_static").budget(Metric::NormalizedRms, 5e-4);
+    transient_case("diode_clipper_static", 4, case).assert();
 }
 
 /// Hand budget: 5e-5 at 16×, and the error falls as h² (three times or
@@ -253,6 +260,7 @@ fn pentode_plate_curves_match_ngspice() {
                 grid: at(n, "g1"),
                 cathode: Node::GROUND,
                 tube: Koren::EL34,
+                capacitances: stave_dsp::circuit::devices::pentode::Interelectrode::NONE,
             },
         )]
     });
@@ -275,6 +283,7 @@ fn push_pull_pentode_matches_ngspice() {
             grid: at(n, g),
             cathode: Node::GROUND,
             tube: Koren::EL34,
+            capacitances: stave_dsp::circuit::devices::pentode::Interelectrode::NONE,
         };
         vec![("x1", tube("p1", "s1", "g1")), ("x2", tube("p2", "s2", "g2"))]
     });

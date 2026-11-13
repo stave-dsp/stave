@@ -123,7 +123,10 @@ impl Structure {
 /// Every netlist `Circuit<Dk>` accepts (its elements, a nonsingular
 /// MNA matrix, an operating point), with positive, finite resistances,
 /// capacitances and inductances — a wave port's resistance must be, for
-/// the adaptors to be passive. Anything else is a
+/// the adaptors to be passive. Its devices are solved statically: their
+/// cards' charge storage and a tube's interelectrode capacitors (DSP.md
+/// R11) are left out ([`Netlist::without_charge`]), which only
+/// `Circuit<Dk>` integrates. Anything else is a
 /// [`NetlistError::Unsupported`] naming the element. The topology
 /// never refuses a netlist: what no tree holds the R-type root absorbs.
 ///
@@ -317,6 +320,9 @@ impl Wdf {
     }
 
     pub fn with_settings(netlist: &Netlist, settings: Settings) -> Result<Self, NetlistError> {
+        // Devices are solved statically here: their stored charge (DSP.md
+        // R11) is the DK method's alone.
+        let netlist = &netlist.without_charge();
         let operating = Dk::with_settings(netlist, settings)?;
         let elements = netlist.elements();
         // V sources an F element reads stay in the root, where their

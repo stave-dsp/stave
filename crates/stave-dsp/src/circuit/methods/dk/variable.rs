@@ -278,6 +278,12 @@ impl Dk {
             split(row, scale, &mut self.ax, &mut self.au, &mut self.aq, s);
             self.ax[s * nx + s] -= 1.0;
         }
+        // A stored charge's nonlinear part feeds its capacitor's state
+        // (DSP.md R11; `discretise`).
+        let t = self.design_step();
+        for link in &self.charges {
+            self.aq[link.capacitor * nq + link.output] += 4.0 / t;
+        }
         let row = &o[(nv + nx) * cols..(nv + nx + 1) * cols];
         split(row, 1.0, &mut self.ex, &mut self.eu, &mut self.eq, 0);
     }

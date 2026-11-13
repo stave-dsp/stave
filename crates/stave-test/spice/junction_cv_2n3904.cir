@@ -1,0 +1,24 @@
+* The 2N3904's base-collector capacitance C(v): base and emitter at
+* ground, the collector ramped from +10 V to -0.3 V in 10 us, so vbc goes
+* from -10 V to +0.3 V; the current into the collector, C(vbc)·dvbc/dt
+* less the junction's current, is written as v(m) at 1 V per uA
+* (negative: charge leaves the collector). CJC 3.638 pF, MJC 0.3085,
+* and TR = 239.5 ns once the junction conducts. RB and RC are left out,
+* so the junction sees the ramp itself.
+VR r 0 PWL(0 10 10u -0.3)
+VS r a 0
+Q1 a 0 0 Q2N3904
+F1 0 m VS 1e6
+RM m 0 1
+.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2
++ Isc=0 Ikr=0 Vaf=74.03 Cjc=3.638p Mjc=.3085 Vjc=.75 Fc=.5 Cje=4.493p Mje=.2593
++ Vje=.75 Tr=239.5n Tf=301.2p Itf=.4 Vtf=4 Xtf=2)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-9
+.tran 0.05u 10u 0 0.005u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(m)
+.endc
+.end

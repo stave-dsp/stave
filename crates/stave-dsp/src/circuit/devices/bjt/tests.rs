@@ -122,3 +122,29 @@ fn limiting_bounds_both_junctions_in_the_part_s_own_sense() {
     let n = GummelPoon::N2N3904.limit_step([3.0, 0.1], [0.6, 0.0]);
     assert!(n[0] < 3.0 && n[1] == 0.1, "{n:?}");
 }
+
+/// The charges' partials — the base–emitter charge's dependence on vbc
+/// through `qb` and `VTF` included — against finite differences, in
+/// every region, for each part with a card's charge storage.
+#[test]
+fn every_part_s_charge_partials_match_finite_differences() {
+    for part in PARTS {
+        for (vbe, vbc) in points(&part) {
+            if part.currents(vbe, vbc).collector.abs() > 0.5 {
+                continue;
+            }
+            let q = part.charges(vbe, vbc);
+            let h = 1e-7;
+            let (pe, me) = (part.charges(vbe + h, vbc), part.charges(vbe - h, vbc));
+            let (pc, mc) = (part.charges(vbe, vbc + h), part.charges(vbe, vbc - h));
+            let d = |p: f64, m: f64| (p - m) / (2.0 * h);
+            let close = |analytic: f64, numeric: f64| {
+                (analytic - numeric).abs() <= 1e-5 * analytic.abs().max(numeric.abs()) + 1e-18
+            };
+            assert!(close(q.base_emitter_per_vbe, d(pe.base_emitter, me.base_emitter)), "{vbe} {vbc} {q:?}");
+            assert!(close(q.base_emitter_per_vbc, d(pc.base_emitter, mc.base_emitter)), "{vbe} {vbc} {q:?}");
+            assert!(close(q.base_collector_per_vbc, d(pc.base_collector, mc.base_collector)), "{vbe} {vbc} {q:?}");
+            assert!(close(0.0, d(pe.base_collector, me.base_collector)), "{vbe} {vbc} {q:?}");
+        }
+    }
+}

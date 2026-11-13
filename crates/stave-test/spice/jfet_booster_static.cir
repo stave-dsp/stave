@@ -1,0 +1,26 @@
+* The static case: the cards' DC parameters only, as before device
+* capacitances (DSP.md R11); the full card is jfet_booster.cir.
+* J201 common-source booster: 9 V, 22k drain load, 1.5k self-bias
+* source resistor bypassed by 22u, 1M gate leak, 100n in, 1u out into
+* 100k (Siliconix's card, DC parameters, RD/RS included). A 400 mV,
+* 500 Hz sine drives it into the square law's asymmetry. Output: the load.
+VIN in 0 SIN(0 0.4 500)
+C1 in g 100n
+RGL g 0 1meg
+J1 d g s J201
+RS s 0 1.5k
+CS s 0 22u
+RD vdd d 22k
+C2 d out 1u
+RL out 0 100k
+VDD vdd 0 9
+.model J201 NJF(VTO=-0.90 BETA=7.00E-04 LAMBDA=.035 RD=1.12E+02 RS=1.01E+02 IS=1.58E-16)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 10m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

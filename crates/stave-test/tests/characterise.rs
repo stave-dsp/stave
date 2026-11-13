@@ -164,12 +164,44 @@ fn ota_vca() {
 /// methods discretise by the bilinear transform, so the same budgets hold.
 #[test]
 fn every_circuit_on_wdf() {
-    for c in CIRCUITS.iter() {
+    // WDF solves its devices statically (DSP.md R11): the transistor decks
+    // whose cards' charge moves the matrix run as their `*_static` twins.
+    // The diode clipper's 4 pF beside its 10 nF moves nothing it measures.
+    const CHARGED: [&str; 5] = ["fuzz_face", "rangemaster", "ce_stage", "jfet_booster", "mosfet_booster"];
+    for c in CIRCUITS.iter().filter(|c| !CHARGED.contains(&c.name)) {
         budgets(c.name, Tier::T0, Characterise::ngspice(c.name).tier(Tier::T0).wdf())
             .named(format!("{}/wdf", c.name))
             .run()
             .assert();
     }
+}
+
+// The transistor decks on their cards' DC part, as before device
+// capacitances (DSP.md R11).
+
+#[test]
+fn fuzz_face_static() {
+    circuit("fuzz_face_static");
+}
+
+#[test]
+fn rangemaster_static() {
+    circuit("rangemaster_static");
+}
+
+#[test]
+fn ce_stage_static() {
+    circuit("ce_stage_static");
+}
+
+#[test]
+fn jfet_booster_static() {
+    circuit("jfet_booster_static");
+}
+
+#[test]
+fn mosfet_booster_static() {
+    circuit("mosfet_booster_static");
 }
 
 /// The hand topologies on the same plans: each ships as its own type,

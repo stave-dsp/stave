@@ -1,0 +1,26 @@
+* The VN10KM booster of mosfet_booster.cir, small-signal: |Vout/Vin|
+* and its phase from 10 Hz to 100 MHz about the operating point. The
+* overlaps (CGDO·W = 2 pF across a gain of a few) and the bulk junctions
+* against 10k of source and the 15k drain set the top.
+VIN in 0 DC 0 AC 1
+RGS in i 10k
+C1 i g 100n
+RG1 vdd g 1meg
+RG2 g 0 470k
+M1 d g s 0 VN10KM
+RS s 0 4.7k
+RD vdd d 15k
+C2 d out 1u
+RL out 0 100k
+VDD vdd 0 9
+.model VN10KM NMOS(LEVEL=1 VTO=1.4 KP=1.55E-01 PHI=0.75 LAMBDA=2.9E-04 RD=7.60E-01 RS=7.60E-01
++ CBD=3.28E-11 CBS=3.94E-11 PB=0.80 MJ=.46 CGSO=2.40E-08 CGDO=2.00E-08 CGBO=3.36E-07)
+.options reltol=1e-9 abstol=1e-15 vntol=1e-12
+.ac dec 20 10 100meg
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(out) vp(out)
+.endc
+.end

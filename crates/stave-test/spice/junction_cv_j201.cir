@@ -1,0 +1,21 @@
+* The J201's gate capacitance C(v): drain and source at ground, the gate
+* ramped from -10 V to +0.3 V in 10 us, so both gate junctions (CGS 3
+* pF, CGD 1 pF, PB 1 V, grading 1/2) charge in parallel; the gate
+* current is written as v(m) at 1 V per uA. The card's RD and RS are
+* left out: their drop would move the junctions off the ramp.
+VR r 0 PWL(0 -10 10u 0.3)
+VS r a 0
+J1 0 a 0 J201
+F1 0 m VS 1e6
+RM m 0 1
+.model J201 NJF(VTO=-0.90 BETA=7.00E-04 LAMBDA=.035 IS=1.58E-16
++ PB=1.00 FC=.5 CGS=3.00E-12 CGD=1.00E-12)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-9
+.tran 0.05u 10u 0 0.005u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(m)
+.endc
+.end

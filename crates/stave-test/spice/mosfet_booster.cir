@@ -1,6 +1,7 @@
 * VN10KM common-source booster: 9 V, 1M/470k gate divider, 4.7k
 * unbypassed source resistor, 15k drain load, 100n in, 1u out into 100k
-* (Siliconix's level-1 card, DC parameters). A 1.5 V, 500 Hz sine
+* (Siliconix's level-1 card with its overlap and bulk-junction
+* capacitances; its IS, the bulk diodes' picoamps, is left out). A 1.5 V, 500 Hz sine
 * drives it to cutoff on one side. Output: the load.
 VIN in 0 SIN(0 1.5 500)
 C1 in g 100n
@@ -12,7 +13,8 @@ RD vdd d 15k
 C2 d out 1u
 RL out 0 100k
 VDD vdd 0 9
-.model VN10KM NMOS(LEVEL=1 VTO=1.4 KP=1.55E-01 PHI=0.75 LAMBDA=2.9E-04 RD=7.60E-01 RS=7.60E-01)
+.model VN10KM NMOS(LEVEL=1 VTO=1.4 KP=1.55E-01 PHI=0.75 LAMBDA=2.9E-04 RD=7.60E-01 RS=7.60E-01
++ CBD=3.28E-11 CBS=3.94E-11 PB=0.80 MJ=.46 CGSO=2.40E-08 CGDO=2.00E-08 CGBO=3.36E-07)
 .options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
 .tran 20.8333333u 10m 0 0.1u
 .control

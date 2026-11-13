@@ -504,7 +504,8 @@ fn measure_circuit(name: &str, rate: f64) -> Aliasing {
             0.0,
         ),
         "Circuit<Dk> fuzz face" => (
-            include_str!("../../stave-test/spice/fuzz_face.cir"),
+            // The static deck: these budgets predate device charge (DSP.md R11).
+            include_str!("../../stave-test/spice/fuzz_face_static.cir"),
             "vin",
             1.0,
             0.0,

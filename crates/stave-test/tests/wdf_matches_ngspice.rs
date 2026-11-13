@@ -88,11 +88,11 @@ const TRANSIENTS: &[(&str, u32, f64, bool)] = &[
     ("common_cathode_grid_current", 4, 2e-5, true),
     ("power_supply", 4, 2e-5, false),
     ("push_pull", 1, 2e-6, false),
-    ("ce_stage", 4, 1e-5, false),
-    ("fuzz_face", 4, 4e-5, false),
-    ("rangemaster", 4, 1e-3, false),
-    ("jfet_booster", 4, 1.5e-5, false),
-    ("mosfet_booster", 4, 1e-6, false),
+    ("ce_stage_static", 4, 1e-5, false),
+    ("fuzz_face_static", 4, 4e-5, false),
+    ("rangemaster_static", 4, 1e-3, false),
+    ("jfet_booster_static", 4, 1.5e-5, false),
+    ("mosfet_booster_static", 4, 1e-6, false),
     ("tube_screamer", 16, 6e-5, false),
     ("ota_vca", 4, 1e-5, false),
 ];
@@ -269,7 +269,7 @@ fn scattering_iterative_method_matches_ngspice() {
         healthy(name, &circuit.health());
     }
     // A transistor is no one-port: refused.
-    let mut fuzz = Circuit::<Wdf>::new(&deck("fuzz_face")).unwrap();
+    let mut fuzz = Circuit::<Wdf>::new(&deck("fuzz_face_static")).unwrap();
     assert!(fuzz.set_nonlinear_root(NonlinearRoot::Scattering).is_err());
 }
 
@@ -300,7 +300,8 @@ mod agreement {
     #[test]
     fn wdf_and_dk_agree_on_every_transient_deck() {
         for &(name, oversample, _, _) in TRANSIENTS {
-            let worst = largest(name, &deck(name), oversample);
+            // WDF solves devices statically (DSP.md R11): DK on the same.
+            let worst = largest(name, &deck(name).without_charge(), oversample);
             println!("{name}: WDF vs DK, largest difference {worst:.3e} of peak");
             assert!(worst < 1e-8, "{name}: {worst:e}");
         }
@@ -366,7 +367,7 @@ mod health {
 
     #[test]
     fn fuzz_face_at_48k_hot() {
-        let text = deck_text("fuzz_face");
+        let text = deck_text("fuzz_face_static");
         let line = text.lines().find(|l| l.to_ascii_lowercase().starts_with("vin")).expect("fuzz_face: no VIN");
         let netlist = Netlist::parse_spice(&text.replace(line, "VIN in 0 0")).unwrap();
         run("fuzz_face", &netlist, "vin", 0.0, 1.0, NonlinearRoot::Newton);

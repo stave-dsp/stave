@@ -202,6 +202,25 @@ impl Reference {
         self.waveform.value.len()
     }
 
+    /// The same reference with its values from column `column` of the
+    /// file (0 is the abscissa, 1 the default): a deck that writes several
+    /// vectors, such as an AC analysis's `vm(out) vp(out)`.
+    pub fn column(mut self, column: usize) -> Self {
+        let text = std::fs::read_to_string(&self.path).unwrap_or_else(|e| panic!("{}: {e}", self.path.display()));
+        self.waveform.value = text
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                l.split_whitespace()
+                    .nth(column)
+                    .and_then(|x| x.parse().ok())
+                    .unwrap_or_else(|| panic!("{}: no column {column} in {l:?}", self.path.display()))
+            })
+            .collect();
+        self.name = format!("{} (column {column})", self.name);
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.waveform.value.is_empty()
     }

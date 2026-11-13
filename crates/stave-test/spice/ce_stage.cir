@@ -1,4 +1,5 @@
-* Common-emitter gain stage: 2N3904 (Fairchild's card, DC parameters),
+* Common-emitter gain stage: 2N3904 (Fairchild's whole card, charge
+* storage included; ce_stage_static.cir is its DC part),
 * 12 V, 47k/10k base divider, 4.7k collector, 100 ohm emitter
 * degeneration over 1k bypassed by 47u, 1u in from a 1k source, 10u out
 * into 100k. A 60 mV, 1 kHz sine drives it near clipping (gain ~35).
@@ -16,7 +17,9 @@ RC vcc c 4.7k
 C2 c out 10u
 RL out 0 100k
 VCC vcc 0 12
-.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Rb=10 Vaf=74.03)
+.model Q2N3904 NPN(Is=6.734f Xti=3 Eg=1.11 Vaf=74.03 Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m
++ Xtb=1.5 Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Cjc=3.638p Mjc=.3085 Vjc=.75 Fc=.5 Cje=4.493p
++ Mje=.2593 Vje=.75 Tr=239.5n Tf=301.2p Itf=.4 Vtf=4 Xtf=2 Rb=10)
 .options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
 .tran 20.8333333u 10m 0 0.1u
 .control

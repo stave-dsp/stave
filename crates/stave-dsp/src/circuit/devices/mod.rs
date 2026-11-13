@@ -21,6 +21,7 @@
 
 pub mod bbd;
 pub mod bjt;
+pub mod capacitance;
 pub mod compander;
 pub mod diode;
 pub mod jfet;

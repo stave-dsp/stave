@@ -9,7 +9,10 @@
 //! form is a triode fit, and no pentode parameter set exists to check it
 //! against.
 
+pub mod interelectrode;
 pub mod koren;
+
+pub use interelectrode::Interelectrode;
 
 /// Currents into a pentode's plate and screen grid (cathode current is
 /// their sum) and their partial derivatives, at control-grid, screen and

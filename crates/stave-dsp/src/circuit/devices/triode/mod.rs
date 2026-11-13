@@ -3,7 +3,10 @@
 //! (with grid current).
 
 pub mod dempwolf;
+pub mod interelectrode;
 pub mod koren;
+
+pub use interelectrode::Interelectrode;
 
 /// ln(1 + eᶻ) and its derivative, the logistic sigmoid, in the stable
 /// form that needs no overflow cutoff: max(z, 0) + ln(1 + e^−|z|).

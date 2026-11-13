@@ -15,7 +15,8 @@ pub mod gummel_poon;
 
 pub use super::Polarity;
 pub use ebers_moll::EbersMoll;
-pub use gummel_poon::GummelPoon;
+pub use gummel_poon::{ForwardTransit, GummelPoon, Substrate};
+pub use super::capacitance::Depletion;
 
 /// The currents into a BJT's collector and base (the emitter's is minus
 /// their sum) and their partial derivatives, at the intrinsic
@@ -39,6 +40,33 @@ impl BjtCurrents {
         Self {
             collector: s * self.collector,
             base: s * self.base,
+            ..self
+        }
+    }
+}
+
+/// The charges a BJT stores at its intrinsic junctions and their
+/// partials (the base–emitter charge depends on vbc through the base
+/// charge `qb`), at the intrinsic base–emitter and base–collector
+/// voltages. Each charge is positive at the base for an NPN.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct BjtCharges {
+    pub base_emitter: f64,
+    pub base_emitter_per_vbe: f64,
+    pub base_emitter_per_vbc: f64,
+    pub base_collector: f64,
+    pub base_collector_per_vbc: f64,
+}
+
+impl BjtCharges {
+    /// The P twin's charges from the N evaluation: charges negate,
+    /// capacitances do not.
+    #[inline]
+    pub(crate) fn mirrored(self, polarity: Polarity) -> Self {
+        let s = polarity.sign();
+        Self {
+            base_emitter: s * self.base_emitter,
+            base_collector: s * self.base_collector,
             ..self
         }
     }

@@ -3,6 +3,8 @@
 //! and series resistance, and parts as constants of its parameters
 //! ([`Shockley::N4148`], [`Shockley::N34A`], the LEDs, the Zeners).
 
+pub use super::capacitance::Depletion;
+
 /// The diode family: a junction's current and conductance at a voltage,
 /// and how a Newton step on that voltage is bounded. Every diode model
 /// implements it, so a circuit solver takes any.
@@ -44,7 +46,10 @@ impl Diode for Shockley {
 ///
 /// the last two only when [`breakdown`](Self::breakdown) is set, and [`series_ohms`](Self::series_ohms) in series (a circuit
 /// method places it as a resistor; the junction methods here are the
-/// junction alone). Junction capacitance, transit time, recombination
+/// junction alone). Charge storage is the card's too: the depletion
+/// capacitance (`CJO`, `VJ`, `M`, `FC`, as [`Depletion`]) and the
+/// transit-time diffusion charge `TT·i(v)`, which a circuit method
+/// integrates ([`Junction::charge`]). Sidewall capacitance, recombination
 /// current (`ISR`), high injection (`IKF`) and temperature are not
 /// modelled: a netlist lists what its cards ask for in
 /// [`Netlist::unmodelled`](crate::circuit::netlist::Netlist::unmodelled).
@@ -69,7 +74,13 @@ impl Diode for Shockley {
 /// conduction and reverse breakdown) through `Circuit<Dk>` against ngspice
 /// on the same card, normalized RMS 2e-8 to 5e-7 by part, and every part constant equal
 /// to its card as the netlist parser reads it. Unit tests beside this file
-/// check the partials and the breakdown knee.
+/// check the partials and the breakdown knee. Its charge:
+/// `crates/stave-test/tests/capacitance_matches_ngspice.rs::junction_capacitance_matches_ngspice`
+/// (the 1N4148's `C(v)` from −10 V to +0.3 V: 1e-5, measured 3.1e-6),
+/// `crates/stave-test/tests/capacitance_matches_ngspice.rs::small_signal_responses_match_ngspice`
+/// (a reverse-biased 1N4148's pole: 1e-5 dB, 1e-4°) and
+/// `crates/stave-test/tests/capacitance_matches_ngspice.rs::diode_clipper_at_10_khz_matches_ngspice`
+/// (a clipper's recovery at 10 kHz: 1e-3 at 16×, measured 3.7e-4).
 ///
 /// Against the parts (DSP.md R13):
 /// `crates/stave-test/tests/matches_datasheet.rs::diodes::n4148`
@@ -104,6 +115,10 @@ pub struct Shockley {
     pub series_ohms: f64,
     /// Reverse breakdown, or `None` for a junction that never breaks down.
     pub breakdown: Option<Breakdown>,
+    /// `CJO`, `VJ`, `M`, `FC`: the junction's depletion capacitance.
+    pub capacitance: Depletion,
+    /// `TT`: the transit time (s), whose diffusion charge is `TT·i(v)`.
+    pub transit_seconds: f64,
 }
 
 /// Reverse breakdown as SPICE's diode card sets it.
@@ -132,6 +147,8 @@ impl Shockley {
         thermal_volts: THERMAL_VOLTS_27C,
         series_ohms: 0.0,
         breakdown: None,
+        capacitance: Depletion::NONE,
+        transit_seconds: 0.0,
     };
 
     /// 1N4148, LTspice's `standard.dio` (onsemi):
@@ -141,6 +158,12 @@ impl Shockley {
         saturation_amps: 2.52e-9,
         emission: 1.752,
         series_ohms: 0.568,
+        capacitance: Depletion {
+            zero_bias_farads: 4e-12,
+            grading: 0.4,
+            ..Depletion::NONE
+        },
+        transit_seconds: 20e-9,
         ..Self::DEFAULT
     };
 
@@ -169,6 +192,10 @@ impl Shockley {
             amps: 3e-3,
             emission: 1.6,
         }),
+        capacitance: Depletion {
+            zero_bias_farads: 0.8e-12,
+            ..Depletion::NONE
+        },
         ..Self::DEFAULT
     };
 
@@ -186,6 +213,13 @@ impl Shockley {
             amps: 10e-6,
             emission: 3.73,
         }),
+        capacitance: Depletion {
+            zero_bias_farads: 2.97e-12,
+            potential_volts: 0.75,
+            grading: 0.333,
+            ..Depletion::NONE
+        },
+        transit_seconds: 4.32e-6,
         ..Self::DEFAULT
     };
 
@@ -226,6 +260,10 @@ impl Shockley {
             amps: 1e-3,
             emission: 3.0,
         }),
+        capacitance: Depletion {
+            zero_bias_farads: 185e-12,
+            ..Depletion::NONE
+        },
         ..Self::DEFAULT
     };
 
@@ -245,6 +283,12 @@ impl Shockley {
             amps: 20.245e-3,
             emission: 1.7,
         }),
+        capacitance: Depletion {
+            zero_bias_farads: 175e-12,
+            potential_volts: 0.75,
+            grading: 0.55,
+            ..Depletion::NONE
+        },
         ..Self::DEFAULT
     };
 
@@ -298,6 +342,8 @@ impl Shockley {
             knee,
             critical: critical(knee, self.saturation_amps),
             breakdown,
+            capacitance: self.capacitance,
+            transit_seconds: self.transit_seconds,
         }
     }
 
@@ -397,6 +443,8 @@ pub struct Junction {
     knee: f64,
     critical: f64,
     breakdown: Option<JunctionBreakdown>,
+    capacitance: Depletion,
+    transit_seconds: f64,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -409,6 +457,22 @@ struct JunctionBreakdown {
 }
 
 impl Junction {
+    /// True when the junction stores charge (`CJO` or `TT` nonzero).
+    pub fn stores_charge(&self) -> bool {
+        !self.capacitance.is_none() || self.transit_seconds != 0.0
+    }
+
+    /// `(q, C)`: the stored charge and its capacitance `dq/dv` at `volts`,
+    /// given the junction's `(current, conductance)` there — depletion
+    /// plus the diffusion charge `TT·i` (ngspice's `dioload.c`, whose
+    /// diffusion charge follows the whole junction current, breakdown
+    /// included).
+    #[inline]
+    pub fn charge(&self, volts: f64, current: f64, conductance: f64) -> (f64, f64) {
+        let (q, c) = self.capacitance.charge(volts);
+        (q + self.transit_seconds * current, c + self.transit_seconds * conductance)
+    }
+
     /// `(current, conductance)` at `volts`: one exponential. With
     /// breakdown, ngspice's three regions — forward above `−3·N·Vt`, its
     /// cubic reverse form down to `−xbv`, the breakdown exponential below.

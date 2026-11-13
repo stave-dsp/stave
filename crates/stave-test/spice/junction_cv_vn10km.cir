@@ -1,0 +1,22 @@
+* The VN10KM's bulk capacitance C(v): gate, drain and source at ground,
+* the bulk ramped from -10 V to +0.3 V in 10 us, so the bulk-drain and
+* bulk-source junctions (CBD 32.8 pF, CBS 39.4 pF, PB 0.8 V, MJ 0.46)
+* and the gate-bulk overlap (CGBO·L = 33.6 pF) charge together; the bulk
+* current is written as v(m) at 1 V per uA. RD and RS are left out, so
+* the junctions see the ramp itself.
+VR r 0 PWL(0 -10 10u 0.3)
+VS r a 0
+M1 0 0 0 a VN10KM
+F1 0 m VS 1e6
+RM m 0 1
+.model VN10KM NMOS(LEVEL=1 VTO=1.4 KP=1.55E-01 PHI=0.75 LAMBDA=2.9E-04
++ CBD=3.28E-11 CBS=3.94E-11 PB=0.80 MJ=.46 CGSO=2.40E-08 CGDO=2.00E-08 CGBO=3.36E-07)
+.options interp reltol=1e-7 abstol=1e-15 vntol=1e-9
+.tran 0.05u 10u 0 0.005u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(m)
+.endc
+.end

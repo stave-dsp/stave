@@ -13,6 +13,7 @@
 //! vds < 0 drain and source swap roles.
 
 use super::{Mosfet, MosfetCurrents, Polarity};
+use crate::circuit::devices::capacitance::Depletion;
 
 /// A level-1 MOSFET: SPICE's `.model NAME NMOS(LEVEL=1 …)` / `PMOS(…)`
 /// at its DC parameters, with the element's `W/L` folded into `beta`.
@@ -23,13 +24,21 @@ use super::{Mosfet, MosfetCurrents, Polarity};
 /// transconductance (`KP·W/(L − 2·LD)`), body effect (`GAMMA`, `PHI`),
 /// channel-length modulation (`LAMBDA`), and ohmic drain and source
 /// resistances (`RD`, `RS`), realised as resistors by a circuit method.
-/// No subthreshold conduction (EKV's job), no capacitances, and no bulk
-/// junction diodes (reverse-biased in any sane bias: picoamps). `VTO` is
-/// the card's value, negative for an enhancement PMOS.
+/// Its capacitances as level 1 has them without an oxide thickness: the
+/// gate overlaps (`CGSO·W`, `CGDO·W`, `CGBO·Leff`, constant) and the bulk
+/// junctions' depletion charge (`CBD`, `CBS`, or `CJ` over `AD`/`AS`,
+/// with `PB`, `MJ`, `FC`: [`bulk_charges`](Self::bulk_charges)). Meyer's
+/// bias-dependent gate capacitance (from `TOX`), junction sidewalls
+/// (`CJSW`), subthreshold conduction (EKV's job) and the bulk junction
+/// diodes' currents (reverse-biased in any sane bias: picoamps) are not
+/// modelled. `VTO` is the card's value, negative for an enhancement
+/// PMOS.
 ///
 /// # Derivation
 ///
-/// The module's equations, as ngspice's `mos1load.c` evaluates them.
+/// The module's equations, as ngspice's `mos1load.c` evaluates them,
+/// its bulk-junction charge and overlap capacitances included (tag
+/// ngspice-42; with no `TOX` its Meyer capacitances are zero).
 ///
 /// # Verified
 ///
@@ -38,7 +47,12 @@ use super::{Mosfet, MosfetCurrents, Polarity};
 /// Id against Vds for five gate voltages, the body effect exercised by a
 /// source above the bulk: budget 1e-7 normalized RMS, measured 2.6e-8)
 /// and `crates/stave-test/tests/transistors_match_ngspice.rs::mosfet_booster_matches_ngspice` (a
-/// VN10KM common-source booster: 1e-6 at 4×, measured 4.7e-7).
+/// VN10KM common-source booster with its capacitances: 5e-6 at 16×,
+/// measured 2.2e-6, falling as h²; static, 1e-6 at 4×). Its charge on its
+/// own: `crates/stave-test/tests/capacitance_matches_ngspice.rs::junction_capacitance_matches_ngspice`
+/// (the bulk's `C(v)`, 1e-5, measured 2.5e-6) and
+/// `crates/stave-test/tests/capacitance_matches_ngspice.rs::small_signal_responses_match_ngspice`
+/// (the booster to 100 MHz: 1e-5 dB, 1e-4°, measured 7.3e-8 dB).
 /// `crates/stave-dsp/src/circuit/devices/mosfet/tests.rs::every_part_s_partials_match_finite_differences`
 /// holds the partials to finite differences.
 ///
@@ -71,6 +85,34 @@ pub struct ShichmanHodges {
     pub drain_ohms: f64,
     /// `RS` (Ω).
     pub source_ohms: f64,
+    /// `CGSO·W·M`: the gate–source overlap capacitance (F).
+    pub gate_source_overlap_farads: f64,
+    /// `CGDO·W·M`: the gate–drain overlap capacitance (F).
+    pub gate_drain_overlap_farads: f64,
+    /// `CGBO·Leff·M`: the gate–bulk overlap capacitance (F).
+    pub gate_bulk_overlap_farads: f64,
+    /// `CBD` (or `CJ·AD`), `PB`, `MJ`, `FC`: the bulk–drain junction.
+    pub bulk_drain_capacitance: Depletion,
+    /// `CBS` (or `CJ·AS`), `PB`, `MJ`, `FC`: the bulk–source junction.
+    pub bulk_source_capacitance: Depletion,
+}
+
+/// SPICE's level-1 bulk junction: `PB` = 0.8 V, `MJ` = ½, `FC` = ½.
+pub(crate) const NO_BULK_CAPACITANCE: Depletion = Depletion {
+    zero_bias_farads: 0.0,
+    potential_volts: 0.8,
+    grading: 0.5,
+    forward_coefficient: 0.5,
+};
+
+/// A bulk junction of `farads` at zero bias, at `PB` = 0.8 V and `MJ` =
+/// 0.46 (both Siliconix/Diodes cards below).
+const fn bulk(farads: f64) -> Depletion {
+    Depletion {
+        zero_bias_farads: farads,
+        grading: 0.46,
+        ..NO_BULK_CAPACITANCE
+    }
 }
 
 impl ShichmanHodges {
@@ -85,11 +127,18 @@ impl ShichmanHodges {
         surface_potential: 0.6,
         drain_ohms: 0.0,
         source_ohms: 0.0,
+        gate_source_overlap_farads: 0.0,
+        gate_drain_overlap_farads: 0.0,
+        gate_bulk_overlap_farads: 0.0,
+        bulk_drain_capacitance: NO_BULK_CAPACITANCE,
+        bulk_source_capacitance: NO_BULK_CAPACITANCE,
     };
 
     /// VN10KM, N-channel enhancement: Siliconix's level-1 card (`VTO=1.4
-    /// KP=1.55E-01 PHI=0.75 LAMBDA=2.9E-04 RD=7.60E-01 RS=7.60E-01`) at
-    /// the default W = L.
+    /// KP=1.55E-01 PHI=0.75 LAMBDA=2.9E-04 RD=7.60E-01 RS=7.60E-01
+    /// CBD=3.28E-11 CBS=3.94E-11 PB=0.80 MJ=.46 CGSO=2.40E-08
+    /// CGDO=2.00E-08 CGBO=3.36E-07`) at the default 100 µm × 100 µm
+    /// channel; its `IS` (the bulk diodes' current) is not modelled.
     pub const VN10KM: Self = Self {
         threshold_volts: 1.4,
         beta: 0.155,
@@ -97,12 +146,18 @@ impl ShichmanHodges {
         surface_potential: 0.75,
         drain_ohms: 0.76,
         source_ohms: 0.76,
+        gate_source_overlap_farads: 2.4e-12,
+        gate_drain_overlap_farads: 2.0e-12,
+        gate_bulk_overlap_farads: 33.6e-12,
+        bulk_drain_capacitance: bulk(32.8e-12),
+        bulk_source_capacitance: bulk(39.4e-12),
         ..Self::DEFAULT_N
     };
 
     /// BSS138, N-channel enhancement: Diodes Inc.'s level-1 card
     /// (`DI_BSS138`: `VTO=1.2 KP=7.50m GAMMA=1.49 PHI=.75 LAMBDA=1.25m
-    /// RD=0.196 RS=0.196 L=100U W=100U`).
+    /// RD=0.196 RS=0.196 PB=0.800 MJ=0.460 CBD=18.4p CBS=22.0p CGSO=28.8n
+    /// CGDO=24.0n CGBO=247n L=100U W=100U`); its `IS` is not modelled.
     pub const BSS138: Self = Self {
         threshold_volts: 1.2,
         beta: 7.5e-3,
@@ -111,12 +166,18 @@ impl ShichmanHodges {
         surface_potential: 0.75,
         drain_ohms: 0.196,
         source_ohms: 0.196,
+        gate_source_overlap_farads: 2.88e-12,
+        gate_drain_overlap_farads: 2.4e-12,
+        gate_bulk_overlap_farads: 24.7e-12,
+        bulk_drain_capacitance: bulk(18.4e-12),
+        bulk_source_capacitance: bulk(22.0e-12),
         ..Self::DEFAULT_N
     };
 
     /// CD4007's N device: Analog Devices' teaching card (`Level=1
     /// Kp=111u Vto=2.0 Lambda=0.01 Phi=.6 Gamma=0`) at its 30 µm / 10 µm
-    /// channel.
+    /// channel. Its capacitance is Meyer's, from `Tox=1200n`: not
+    /// modelled.
     pub const CD4007_N: Self = Self {
         threshold_volts: 2.0,
         beta: 111e-6 * 3.0,
@@ -134,6 +195,21 @@ impl ShichmanHodges {
         channel_modulation: 0.04,
         ..Self::DEFAULT_N
     };
+
+    /// Which bulk junctions store charge: (bulk–drain, bulk–source).
+    pub fn stored_charges(&self) -> [bool; 2] {
+        [!self.bulk_drain_capacitance.is_none(), !self.bulk_source_capacitance.is_none()]
+    }
+
+    /// `[(q, C); 2]`: the bulk–drain and bulk–source junctions' charges
+    /// and capacitances at the intrinsic `vbd`, `vbs` (`mos1load.c`).
+    #[inline]
+    pub fn bulk_charges(&self, vbd: f64, vbs: f64) -> [(f64, f64); 2] {
+        let s = self.polarity.sign();
+        let (qd, cd) = self.bulk_drain_capacitance.charge(s * vbd);
+        let (qs, cs) = self.bulk_source_capacitance.charge(s * vbs);
+        [(s * qd, cd), (s * qs, cs)]
+    }
 
     /// The channel at `vds ≥ 0` (N sense): `(Id, ∂/∂vgs, ∂/∂vds, ∂/∂vbs)`.
     #[inline]

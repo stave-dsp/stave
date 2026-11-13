@@ -1,7 +1,7 @@
 * The common-emitter gain stage of ce_stage.cir, small-signal: |Vout/Vin|
-* from 10 Hz to 100 kHz about its operating point (first column =
-* frequency). The coupling and bypass caps set the low corners; with no
-* device capacitances the top is flat.
+* and its phase from 10 Hz to 100 MHz about the operating point (first
+* column = frequency). The coupling and bypass caps set the low corners;
+* the 2N3904's Miller and diffusion capacitances the top.
 VIN in 0 DC 0 AC 1
 RG in i 1k
 C1 i b 1u
@@ -15,13 +15,15 @@ RC vcc c 4.7k
 C2 c out 10u
 RL out 0 100k
 VCC vcc 0 12
-.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Rb=10 Vaf=74.03)
+.model Q2N3904 NPN(Is=6.734f Xti=3 Eg=1.11 Vaf=74.03 Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m
++ Xtb=1.5 Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Cjc=3.638p Mjc=.3085 Vjc=.75 Fc=.5 Cje=4.493p
++ Mje=.2593 Vje=.75 Tr=239.5n Tf=301.2p Itf=.4 Vtf=4 Xtf=2 Rb=10)
 .options reltol=1e-9 abstol=1e-15 vntol=1e-12
-.ac dec 20 10 100k
+.ac dec 20 10 100meg
 .control
 set wr_singlescale
 set numdgt=12
 run
-wrdata OUTFILE vm(out)
+wrdata OUTFILE vm(out) vp(out)
 .endc
 .end

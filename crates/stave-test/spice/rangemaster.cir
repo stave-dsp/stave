@@ -2,8 +2,10 @@
 * ground, -9 V supply, 5n input cap, 470k/68k base divider, 3.9k emitter
 * bypassed by 47u, 10k collector load, 10n out into 100k. A 300 mV,
 * 1 kHz sine drives it. OC44 by Holmes, Holters & van Walstijn (DAFx-17)
-* at their Vt = 25.5 mV (22.7652 C, tnom equal); capacitances not
-* modelled. Output: the load.
+* at their Vt = 25.5 mV (22.7652 C, tnom equal), with the charge from
+* the Mullard datasheet: CJC its 12 pF collector capacitance, TF =
+* 1/(2 pi fT) from fT = 8 MHz (rangemaster_static.cir has none).
+* Output: the load.
 VIN in 0 SIN(0 0.3 1k)
 C1 in b 5n
 RB1 b vee 470k
@@ -15,7 +17,8 @@ RC c vee 10k
 C2 c out 10n
 RL out 0 100k
 VEE vee 0 -9
-.model OC44 PNP(IS=1.423u BF=307.0 BR=20.27 NF=1.022 NR=1.025 VAF=8.167 VAR=14.84 IKF=43.82m IKR=611.7m ISE=30.54n ISC=213.5n NE=1.316 NC=1.258 RB=32.83 RE=968.7m RC=989.9u)
+.model OC44 PNP(IS=1.423u BF=307.0 BR=20.27 NF=1.022 NR=1.025 VAF=8.167 VAR=14.84 IKF=43.82m IKR=611.7m ISE=30.54n ISC=213.5n NE=1.316 NC=1.258 RB=32.83 RE=968.7m RC=989.9u
++ CJC=12p TF=19.89n)
 .options interp reltol=1e-9 abstol=1e-15 vntol=1e-12 temp=22.7652 tnom=22.7652
 .tran 20.8333333u 10m 0 0.1u
 .control

@@ -31,7 +31,8 @@ use crate::circuit::devices::diode::Shockley;
 use crate::circuit::devices::opamp::Amp;
 use crate::circuit::devices::ota::BipolarPair;
 use crate::circuit::devices::pentode::koren::Koren as PentodeKoren;
-use crate::circuit::devices::triode::Tube;
+use crate::circuit::devices::pentode::Interelectrode as PentodeCapacitances;
+use crate::circuit::devices::triode::{Interelectrode as TriodeCapacitances, Tube};
 use crate::circuit::devices::{bjt, jfet, mosfet};
 pub use expr::Expr;
 pub use variable::{Taper, Variable};
@@ -122,11 +123,14 @@ pub enum ElementKind {
         diode: Shockley,
     },
     /// SPICE `Q`: a BJT, its card's area factor applied. The ohmic
-    /// resistances in the model become resistors to internal nodes.
+    /// resistances in the model become resistors to internal nodes;
+    /// `substrate` is where its substrate junction's capacitance (`CJS`)
+    /// returns (ground unless the element names a node).
     Bjt {
         collector: Node,
         base: Node,
         emitter: Node,
+        substrate: Node,
         bjt: bjt::GummelPoon,
     },
     /// SPICE `J`: a JFET, its area factor applied.
@@ -145,12 +149,14 @@ pub enum ElementKind {
         bulk: Node,
         mosfet: mosfet::ShichmanHodges,
     },
-    /// A triode by stave's device models (no SPICE spelling; built in code).
+    /// A triode by stave's device models (no SPICE spelling; built in
+    /// code), with its interelectrode capacitances as fixed capacitors.
     Triode {
         plate: Node,
         grid: Node,
         cathode: Node,
         tube: Tube,
+        capacitances: TriodeCapacitances,
     },
     /// A pentode or beam tetrode by stave's device models (no SPICE
     /// spelling — ngspice decks write the same law as `B` sources; built
@@ -161,6 +167,7 @@ pub enum ElementKind {
         grid: Node,
         cathode: Node,
         tube: PentodeKoren,
+        capacitances: PentodeCapacitances,
     },
     /// An op-amp (no SPICE primitive; built in code): its inputs draw no
     /// current and its output is a voltage source to ground. `supply` is
@@ -394,6 +401,45 @@ impl Netlist {
     pub fn element(&self, name: &str) -> Option<&Element> {
         let name = name.to_ascii_lowercase();
         self.elements.iter().find(|e| e.name == name)
+    }
+
+    /// The same netlist with every device's capacitance taken out: junction
+    /// depletion and transit-time charge, a MOSFET's overlaps, a tube's
+    /// interelectrode capacitors (DSP.md R11) — the cards' static part.
+    /// Capacitor elements stay.
+    pub fn without_charge(&self) -> Self {
+        use crate::circuit::devices::{pentode, triode};
+        let mut out = self.clone();
+        for e in &mut out.elements {
+            match &mut e.kind {
+                ElementKind::Diode { diode, .. } => {
+                    diode.capacitance.zero_bias_farads = 0.0;
+                    diode.transit_seconds = 0.0;
+                }
+                ElementKind::Bjt { bjt, .. } => *bjt = bjt.without_charge(),
+                ElementKind::Jfet { jfet, .. } => {
+                    jfet.gate_source_capacitance.zero_bias_farads = 0.0;
+                    jfet.gate_drain_capacitance.zero_bias_farads = 0.0;
+                }
+                ElementKind::Mosfet { mosfet, .. } => {
+                    mosfet.gate_source_overlap_farads = 0.0;
+                    mosfet.gate_drain_overlap_farads = 0.0;
+                    mosfet.gate_bulk_overlap_farads = 0.0;
+                    mosfet.bulk_drain_capacitance.zero_bias_farads = 0.0;
+                    mosfet.bulk_source_capacitance.zero_bias_farads = 0.0;
+                }
+                ElementKind::Triode { capacitances, .. } => *capacitances = triode::Interelectrode::NONE,
+                ElementKind::Pentode { capacitances, .. } => *capacitances = pentode::Interelectrode::NONE,
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// True when some device stores charge ([`without_charge`](Self::without_charge)
+    /// would change it).
+    pub fn stores_charge(&self) -> bool {
+        self.without_charge() != *self
     }
 
     /// Take the named element out (its nodes stay), returning it.

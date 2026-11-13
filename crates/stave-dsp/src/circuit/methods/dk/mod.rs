@@ -34,6 +34,49 @@
 //! `(2/T)·tan(ωT/2)`: [`Dk::analog_response`] is exact for a linear
 //! circuit, which is how the tone stack is held to ngspice's AC analysis.
 //!
+//! # Nonlinear charge
+//!
+//! A junction's charge `Q(v)` (depletion, transit time) is integrated as
+//! SPICE integrates it — the trapezoidal rule on the charge, `i_n =
+//! (2/T)·(Q(v_n) − Q(v_{n−1})) − i_{n−1}` — split so the precomputed
+//! matrices survive:
+//!
+//! ```text
+//!     Q(v) = C₀·v + Qn(v)        C₀ = dQ/dv at the operating point
+//!     i_n  = (2/T)·C₀·v_n + (2/T)·Qn(v_n) − H_n
+//!     H_{n+1} = (4/T)·C₀·v_n + (4/T)·Qn(v_n) − H_n
+//! ```
+//!
+//! `C₀` is an ordinary capacitor (its `2C₀/T` in `S`, `H` its history
+//! state), and `Qn(v)` is one more device output, read across the
+//! junction's controlling voltage, whose column in `Bq` is `∓2/T` and
+//! which feeds `H` through `Aq` with `4/T`. So `S⁻¹` is still computed
+//! once per rate, the Newton solve sees the charge's Jacobian `(2/T)·(C(v)
+//! − C₀)` through `K` like any device current's, and the states stay one
+//! per capacitor. The trade-offs:
+//!
+//! - The nonlinear subsystem grows by one output per stored charge (its
+//!   controls do not, except a BJT's external base–collector and
+//!   substrate junctions and a MOSFET's bulk–drain junction, which sit
+//!   across voltages its currents do not read): the Newton step costs
+//!   `O(nv²·nq)`.
+//! - `C₀` is the operating point's capacitance, so the small-signal
+//!   response ([`Dk::analog_response`]) is the linear part alone, exact
+//!   for the linearised circuit as ngspice's `.ac` is; the residual
+//!   cross-capacitances (a BJT's `∂qbe/∂vbc`) enter through `K·Jq` like
+//!   any device's. Re-solving the operating point (a new driven source)
+//!   re-sizes `C₀` and re-discretises.
+//! - Splitting a junction into a fixed capacitor at the operating point
+//!   plus a correction that is only *evaluated*, not integrated, would
+//!   save the outputs but lose charge conservation away from the
+//!   operating point; the charge form keeps it exactly, as SPICE does.
+//! - The trapezoidal rule's undamped mode at Nyquist is SPICE's too:
+//!   a junction whose capacitance swings over a sample rings as it would
+//!   in ngspice at that step.
+//!
+//! Fixed capacitances (a tube's interelectrode capacitors, a MOSFET's
+//! overlaps) are linear capacitors in the network.
+//!
 //! # Accepts
 //!
 //! Any netlist of R, C, L, independent V and I sources (DC, SIN, PWL, or
@@ -41,7 +84,9 @@
 //! Shockley diodes (series resistance as a resistor, breakdown
 //! included), Gummel–Poon BJTs, Shichman–Hodges JFETs and square-law
 //! MOSFETs (their ohmic resistances as resistors to internal nodes; a
-//! junction shunted like a diode's), stave triodes and pentodes, op-amps
+//! junction shunted like a diode's), each with the charge its card stores
+//! (module docs), stave triodes and pentodes with their interelectrode
+//! capacitances, op-amps
 //! (the ideal nullor, or the macromodel's gain node, compensation
 //! capacitor and output buffer), OTAs, and behavioural sources of node
 //! voltages (`B … I = {…}` or
@@ -112,6 +157,18 @@ pub(crate) struct Capacitor {
     pub initial_volts: f64,
 }
 
+/// A stored charge's place: its device and slot there, the capacitor
+/// carrying its linear part, its output in `q`, and the global control
+/// it sits across (positive in the capacitor's `a → b` sense).
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ChargeLink {
+    device: usize,
+    slot: usize,
+    capacitor: usize,
+    output: usize,
+    control: (usize, f64),
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Inductor {
     pub row: usize,
@@ -145,6 +202,7 @@ pub struct Dk {
     pub(crate) inputs: Vec<Input>,
     pub(crate) input_ac: Vec<f64>,
     pub(crate) devices: Vec<Nonlinear>,
+    pub(crate) charges: Vec<ChargeLink>,
     pub(crate) nq: usize,
     pub(crate) probe: (Pin, Pin),
     pub(crate) driven: Option<usize>,
@@ -199,9 +257,7 @@ impl Dk {
     pub fn with_settings(netlist: &Netlist, settings: Settings) -> Result<Self, NetlistError> {
         let probe = netlist.probe.ok_or(NetlistError::NoProbe)?;
         let mut dk = Builder::new(netlist).build(probe, settings)?;
-        dk.solve_operating_point()?;
-        dk.discretise()?;
-        dk.reset();
+        dk.settle_operating_point()?;
         Ok(dk)
     }
 
@@ -223,8 +279,17 @@ impl Dk {
             .position(|n| *n == name)
             .ok_or(NetlistError::UnknownElement { name })?;
         self.driven = Some(index);
-        // The driven source rests at 0 (silence): the operating point moves.
+        // The driven source rests at 0 (silence): the operating point moves,
+        // and the junction capacitances sized there with it.
+        self.settle_operating_point()
+    }
+
+    /// Solve the operating point, size the charges' linear capacitors
+    /// there, discretise and return to it.
+    fn settle_operating_point(&mut self) -> Result<(), NetlistError> {
         self.solve_operating_point()?;
+        self.linearise_charges();
+        self.discretise()?;
         self.reset();
         Ok(())
     }
@@ -360,6 +425,12 @@ impl Dk {
         self.settle();
         let t = self.design_step();
         self.samples = 0;
+        if self.uic {
+            self.work.v.iter_mut().for_each(|v| *v = 0.0);
+        } else {
+            self.work.v.copy_from_slice(&self.dc_v);
+        }
+        self.work.evaluate(&mut self.devices, 0.0);
         for (s, c) in self.capacitors.iter().enumerate() {
             let g = 2.0 * c.farads / t;
             self.x[s] = if self.uic {
@@ -373,14 +444,11 @@ impl Dk {
             let r = 2.0 * l.henries / t;
             self.x[offset + s] = r * if self.uic { l.initial_amps } else { self.dc_w[l.row] };
         }
-        if self.uic {
-            self.work.v.iter_mut().for_each(|v| *v = 0.0);
-            self.output = 0.0;
-        } else {
-            self.work.v.copy_from_slice(&self.dc_v);
-            self.output = self.operating_output();
+        // A charge at rest: H = (2/T)·(C₀·v + Qn(v)), its current zero.
+        for link in &self.charges {
+            self.x[link.capacitor] += 2.0 / t * self.work.q[link.output];
         }
-        self.work.evaluate(&mut self.devices, 0.0);
+        self.output = if self.uic { 0.0 } else { self.operating_output() };
         if self.antialiasing == Antialiasing::Adaa {
             self.reset_adaa();
         }

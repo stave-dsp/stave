@@ -81,6 +81,8 @@ impl DiodeLadder {
         thermal_volts: THERMAL_VOLTS_27C,
         series_ohms: 0.0,
         breakdown: None,
+        capacitance: crate::circuit::devices::capacitance::Depletion::NONE,
+        transit_seconds: 0.0,
     };
 
     /// The deck `stave-test/spice/diode_ladder.cir` without its
@@ -89,7 +91,9 @@ impl DiodeLadder {
         tail_amps: 100e-6,
         capacitor_farads: 150e-9,
         resonance: 0.0,
-        transistor: GummelPoon::N2N3904,
+        // The decks' 2N3904 card is its DC part (they predate device
+        // capacitances, DSP.md R11).
+        transistor: GummelPoon::N2N3904.without_charge(),
         junction: Self::JUNCTION,
     };
 
@@ -118,6 +122,7 @@ impl DiodeLadder {
             collector: c,
             base: b,
             emitter: e,
+            substrate: Node::GROUND,
             bjt: self.transistor,
         };
         let source = |a, volts| ElementKind::VoltageSource {

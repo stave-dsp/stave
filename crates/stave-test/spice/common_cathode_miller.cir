@@ -1,0 +1,26 @@
+* The 12AX7 stage of common_cathode_ac.cir in the time domain: a 0.5 V,
+* 10 kHz sine through the 68k stopper into the Miller capacitance (about
+* 100 pF), so the plate's swing and phase are the capacitances' as much
+* as the plate law's. Output: the plate.
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+VIN in 0 SIN(0 0.5 10k)
+RG in g 68k
+VB b 0 300
+RA b p 100k
+RK k 0 1.5k
+CK k 0 22u
+BE e1 0 V = {V(p,k)/kp*ln(1+exp(kp*(1/mu+V(g,k)/sqrt(kvb+V(p,k)*V(p,k)))))}
+RE e1 0 1G
+BI p k I = {V(e1) > 0 ? 2*pow(V(e1),ex)/kg1 : 0}
+CGK g k 1.6p
+CGP g p 1.7p
+CPK p k 0.46p
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 5m 0 0.05u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p)
+.endc
+.end

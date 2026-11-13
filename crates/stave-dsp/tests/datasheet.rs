@@ -883,21 +883,29 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     // The transistor circuits (DSP.md E1, E2): no hand topology, the
     // ngspice decks themselves with their sources driven by the noise.
     println!("  transistor circuits: Circuit<Dk> on the ngspice decks");
-    let mut fuzz = deck(include_str!("../../stave-test/spice/fuzz_face.cir"), sr);
+    // Each static (the cards' DC part), then with the cards' charge
+    // storage (DSP.md R11): one more device output per stored charge.
+    let mut fuzz = deck(include_str!("../../stave-test/spice/fuzz_face_static.cir"), sr);
     bench("Circuit<Dk> fuzz face", input, |x| fuzz.tick(x));
     solve_health(&fuzz);
-    let fuzz_deck = Netlist::parse_spice(include_str!("../../stave-test/spice/fuzz_face.cir")).unwrap();
+    let mut fuzz_c = deck(include_str!("../../stave-test/spice/fuzz_face.cir"), sr);
+    bench("Circuit<Dk> fuzz face (capacitances)", input, |x| fuzz_c.tick(x));
+    solve_health(&fuzz_c);
+    let fuzz_deck = Netlist::parse_spice(include_str!("../../stave-test/spice/fuzz_face_static.cir")).unwrap();
     let mut fuzz_wdf = wdf_from(&fuzz_deck, "vin", sr);
     bench("Circuit<Wdf> fuzz face", input, |x| fuzz_wdf.tick(x));
     solve_health(&fuzz_wdf);
-    let mut ce = deck(include_str!("../../stave-test/spice/ce_stage.cir"), sr);
+    let mut ce = deck(include_str!("../../stave-test/spice/ce_stage_static.cir"), sr);
     bench("Circuit<Dk> CE stage x0.2", input, |x| ce.tick(0.2 * x));
     solve_health(&ce);
-    let ce_deck = Netlist::parse_spice(include_str!("../../stave-test/spice/ce_stage.cir")).unwrap();
+    let mut ce_c = deck(include_str!("../../stave-test/spice/ce_stage.cir"), sr);
+    bench("Circuit<Dk> CE stage x0.2 (capacitances)", input, |x| ce_c.tick(0.2 * x));
+    solve_health(&ce_c);
+    let ce_deck = Netlist::parse_spice(include_str!("../../stave-test/spice/ce_stage_static.cir")).unwrap();
     let mut ce_wdf = wdf_from(&ce_deck, "vin", sr);
     bench("Circuit<Wdf> CE stage x0.2", input, |x| ce_wdf.tick(0.2 * x));
     solve_health(&ce_wdf);
-    let mut jfet = deck(include_str!("../../stave-test/spice/jfet_booster.cir"), sr);
+    let mut jfet = deck(include_str!("../../stave-test/spice/jfet_booster_static.cir"), sr);
     bench("Circuit<Dk> JFET booster", input, |x| jfet.tick(x));
     solve_health(&jfet);
 
@@ -1094,6 +1102,7 @@ fn el34_pair_netlist() -> Netlist {
             grid: n.node(g).unwrap(),
             cathode: stave_dsp::circuit::netlist::Node::GROUND,
             tube: Pentode::EL34,
+            capacitances: stave_dsp::circuit::devices::pentode::Interelectrode::NONE,
         };
         n.add(name, kind).unwrap();
     }
@@ -1166,7 +1175,13 @@ fn cathode_netlist() -> Netlist {
         ("ra", ElementKind::Resistor { a: b, b: p, ohms: 100e3 }),
         ("rk", ElementKind::Resistor { a: k, b: ground, ohms: 1.5e3 }),
         ("ck", ElementKind::Capacitor { a: k, b: ground, farads: 22e-6, initial_volts: None }),
-        ("t1", ElementKind::Triode { plate: p, grid: g, cathode: k, tube: Tube::Koren(Koren::T12AX7) }),
+        ("t1", ElementKind::Triode {
+            plate: p,
+            grid: g,
+            cathode: k,
+            tube: Tube::Koren(Koren::T12AX7),
+            capacitances: stave_dsp::circuit::devices::triode::Interelectrode::NONE,
+        }),
     ];
     for (name, kind) in parts {
         n.add(name, kind).unwrap();

@@ -74,7 +74,9 @@ impl TransistorLadder {
         tail_amps: 100e-6,
         capacitor_farads: 150e-9,
         resonance: 0.0,
-        transistor: GummelPoon::N2N3904,
+        // The decks' 2N3904 card is its DC part (they predate device
+        // capacitances, DSP.md R11).
+        transistor: GummelPoon::N2N3904.without_charge(),
     };
 
     /// The cutoff of the ideal ladder, `I / (8π·Vt·C)` at 27 °C: what
@@ -102,6 +104,7 @@ impl TransistorLadder {
             collector: c,
             base: b,
             emitter: e,
+            substrate: Node::GROUND,
             bjt: self.transistor,
         };
         add(

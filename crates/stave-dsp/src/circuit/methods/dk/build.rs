@@ -1,12 +1,13 @@
 //! From a [`Netlist`] to the MNA structure: unknowns numbered, the
 //! rate-independent stamps made, sources and devices given their columns.
 
-use super::devices::{Device, Nonlinear, SHUNT};
 use super::adaa;
+use super::devices::{Charge, Device, Nonlinear, Slot, SHUNT};
 use super::solve::{Health, Settings, Workspace};
+use super::{pin, Capacitor, ChargeLink, Dk, Inductor, Input, Pin};
+use crate::circuit::devices::bjt::Substrate;
 use crate::circuit::methods::adaa::Antialiasing;
 use super::variable::{Stamp, Varying};
-use super::{pin, Capacitor, Dk, Inductor, Input, Pin};
 use crate::circuit::variable::{BranchKind, Variables};
 use crate::circuit::devices::opamp::{Amp, Macromodel};
 use crate::circuit::netlist::expr::{Dual, Tape};
@@ -27,6 +28,7 @@ pub(super) struct Builder<'a> {
     source_names: Vec<String>,
     devices: Vec<Nonlinear>,
     nq: usize,
+    charges: Vec<ChargeLink>,
 }
 
 impl<'a> Builder<'a> {
@@ -45,6 +47,19 @@ impl<'a> Builder<'a> {
             source_names: Vec::new(),
             devices: Vec::new(),
             nq: 0,
+            charges: Vec::new(),
+        }
+    }
+
+    /// A fixed capacitor between `a` and `b` (none at zero farads).
+    fn capacitor(&mut self, a: Pin, b: Pin, farads: f64) {
+        if farads != 0.0 {
+            self.capacitors.push(Capacitor {
+                a,
+                b,
+                farads,
+                initial_volts: 0.0,
+            });
         }
     }
 
@@ -105,8 +120,19 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn device(&mut self, device: Device, controls: &[(Pin, Pin)], outputs: &[&[(Pin, f64)]]) {
-        let controls = controls.iter().map(|&(a, b)| self.control(a, b)).collect();
+    /// A nonlinear device: its controls, the network columns of its
+    /// outputs, and the charges it stores, each `(slot, a, b)` across
+    /// v(a) − v(b). A charge's output follows the currents and has no
+    /// column of its own in `Bq` (it stores no charge at DC); its linear
+    /// part is a capacitor across `(a, b)`, sized at the operating point.
+    fn device(
+        &mut self,
+        device: Device,
+        controls: &[(Pin, Pin)],
+        outputs: &[&[(Pin, f64)]],
+        charges: &[(Slot, Pin, Pin)],
+    ) {
+        let mut controls: Vec<(usize, f64)> = controls.iter().map(|&(a, b)| self.control(a, b)).collect();
         let output = self.nq;
         for (o, column) in outputs.iter().enumerate() {
             for &(row, x) in column.iter() {
@@ -116,10 +142,39 @@ impl<'a> Builder<'a> {
             }
         }
         self.nq += outputs.len();
+        let mut stored = Vec::new();
+        for &(slot, a, b) in charges {
+            let global = self.control(a, b);
+            let local = controls.iter().position(|&c| c == global).unwrap_or_else(|| {
+                controls.push(global);
+                controls.len() - 1
+            });
+            self.charges.push(ChargeLink {
+                device: self.devices.len(),
+                slot: stored.len(),
+                capacitor: self.capacitors.len(),
+                output: self.nq,
+                control: global,
+            });
+            self.capacitors.push(Capacitor {
+                a,
+                b,
+                farads: 0.0,
+                initial_volts: 0.0,
+            });
+            stored.push(Charge {
+                slot,
+                control: local,
+                output: self.nq,
+                linear: 0.0,
+            });
+            self.nq += 1;
+        }
         self.devices.push(Nonlinear {
             device,
             controls,
             output,
+            charges: stored,
         });
     }
 
@@ -273,10 +328,14 @@ impl<'a> Builder<'a> {
                     let junction = self.terminal(pin(*anode), internal[i][0], diode.series_ohms);
                     let k = pin(*cathode);
                     self.conductance(junction, k, SHUNT);
+                    let model = diode.junction();
+                    let stored: &[(Slot, Pin, Pin)] =
+                        if model.stores_charge() { &[(Slot::Junction, junction, k)] } else { &[] };
                     self.device(
-                        Device::Diode(diode.junction()),
+                        Device::Diode(model),
                         &[(junction, k)],
                         &[&[(junction, -1.0), (k, 1.0)]],
+                        stored,
                     );
                 }
                 ElementKind::Triode {
@@ -284,13 +343,18 @@ impl<'a> Builder<'a> {
                     grid,
                     cathode,
                     tube,
+                    capacitances,
                 } => {
                     let (p, g, k) = (pin(*plate), pin(*grid), pin(*cathode));
                     self.device(
                         Device::Triode(*tube),
                         &[(g, k), (p, k)],
                         &[&[(p, -1.0), (k, 1.0)], &[(g, -1.0), (k, 1.0)]],
+                        &[],
                     );
+                    self.capacitor(g, k, capacitances.grid_cathode);
+                    self.capacitor(g, p, capacitances.grid_plate);
+                    self.capacitor(p, k, capacitances.plate_cathode);
                 }
                 ElementKind::Pentode {
                     plate,
@@ -298,13 +362,19 @@ impl<'a> Builder<'a> {
                     grid,
                     cathode,
                     tube,
+                    capacitances,
                 } => {
                     let (p, s, g, k) = (pin(*plate), pin(*screen), pin(*grid), pin(*cathode));
                     self.device(
                         Device::Pentode(*tube),
                         &[(g, k), (s, k), (p, k)],
                         &[&[(p, -1.0), (k, 1.0)], &[(s, -1.0), (k, 1.0)]],
+                        &[],
                     );
+                    self.capacitor(g, k, capacitances.grid_cathode);
+                    self.capacitor(g, s, capacitances.grid_screen);
+                    self.capacitor(g, p, capacitances.grid_plate);
+                    self.capacitor(p, k, capacitances.plate_cathode);
                 }
                 ElementKind::OpAmp {
                     plus,
@@ -336,7 +406,7 @@ impl<'a> Builder<'a> {
                                 farads: Macromodel::COMPENSATION_FARADS,
                                 initial_volts: 0.0,
                             });
-                            self.device(Device::OpAmp(stage), &[(plus, minus), (n, None)], &[&[(n, 1.0)]]);
+                            self.device(Device::OpAmp(stage), &[(plus, minus), (n, None)], &[&[(n, 1.0)]], &[]);
                         }
                     }
                 }
@@ -355,12 +425,14 @@ impl<'a> Builder<'a> {
                         Device::Ota(*ota),
                         &[(plus, minus), (b, neg)],
                         &[&[(out, 1.0)], &[(b, -1.0), (neg, 1.0)]],
+                        &[],
                     );
                 }
                 ElementKind::Bjt {
                     collector,
                     base,
                     emitter,
+                    substrate,
                     bjt,
                 } => {
                     let c = self.terminal(pin(*collector), internal[i][0], bjt.collector_ohms);
@@ -368,10 +440,26 @@ impl<'a> Builder<'a> {
                     let e = self.terminal(pin(*emitter), internal[i][2], bjt.emitter_ohms);
                     self.conductance(b, e, SHUNT);
                     self.conductance(b, c, SHUNT);
+                    // bjtload.c: the external part of CJC from the external
+                    // base; the substrate junction to the intrinsic
+                    // collector (vertical) or base (lateral).
+                    let meets = match bjt.substrate {
+                        Substrate::Vertical => c,
+                        Substrate::Lateral => b,
+                    };
+                    let all = [
+                        (Slot::BaseEmitter, b, e),
+                        (Slot::BaseCollector, b, c),
+                        (Slot::ExternalBase, pin(*base), c),
+                        (Slot::Substrate, pin(*substrate), meets),
+                    ];
+                    let stored: Vec<_> =
+                        all.into_iter().zip(bjt.stored_charges()).filter(|(_, s)| *s).map(|(c, _)| c).collect();
                     self.device(
                         Device::Bjt(*bjt),
                         &[(b, e), (b, c)],
                         &[&[(c, -1.0), (e, 1.0)], &[(b, -1.0), (e, 1.0)]],
+                        &stored,
                     );
                 }
                 ElementKind::Jfet {
@@ -385,10 +473,14 @@ impl<'a> Builder<'a> {
                     let s = self.terminal(pin(*source), internal[i][2], jfet.source_ohms);
                     self.conductance(g, s, SHUNT);
                     self.conductance(g, d, SHUNT);
+                    let all = [(Slot::GateSource, g, s), (Slot::GateDrain, g, d)];
+                    let stored: Vec<_> =
+                        all.into_iter().zip(jfet.stored_charges()).filter(|(_, s)| *s).map(|(c, _)| c).collect();
                     self.device(
                         Device::Jfet(*jfet),
                         &[(g, s), (g, d)],
                         &[&[(d, -1.0), (s, 1.0)], &[(g, -1.0), (s, 1.0)]],
+                        &stored,
                     );
                 }
                 ElementKind::Mosfet {
@@ -410,11 +502,25 @@ impl<'a> Builder<'a> {
                         bulk: !tied,
                     };
                     let column: &[(Pin, f64)] = &[(d, -1.0), (s, 1.0)];
-                    if tied {
-                        self.device(device, &[(g, s), (d, s)], &[column]);
-                    } else {
-                        self.device(device, &[(g, s), (d, s), (b, s)], &[column]);
+                    // mos1load.c: the bulk junctions to the intrinsic drain
+                    // and source (none across a tied source), the overlaps
+                    // fixed.
+                    let [drain_junction, source_junction] = mosfet.stored_charges();
+                    let mut stored = Vec::new();
+                    if drain_junction {
+                        stored.push((Slot::BulkDrain, b, d));
                     }
+                    if source_junction && !tied {
+                        stored.push((Slot::BulkSource, b, s));
+                    }
+                    if tied {
+                        self.device(device, &[(g, s), (d, s)], &[column], &stored);
+                    } else {
+                        self.device(device, &[(g, s), (d, s), (b, s)], &[column], &stored);
+                    }
+                    self.capacitor(g, s, mosfet.gate_source_overlap_farads);
+                    self.capacitor(g, d, mosfet.gate_drain_overlap_farads);
+                    self.capacitor(g, b, mosfet.gate_bulk_overlap_farads);
                 }
                 ElementKind::BehaviouralCurrent { a, b, expression } => {
                     let (a, b) = (pin(*a), pin(*b));
@@ -425,7 +531,7 @@ impl<'a> Builder<'a> {
                         self.input(name, Input::Expression { tape, stack }, 0.0, &column);
                     } else {
                         let controls = control_pins(expression);
-                        self.device(device, &controls, &[&column]);
+                        self.device(device, &controls, &[&column], &[]);
                     }
                 }
                 ElementKind::BehaviouralVoltage { a, b, expression } => {
@@ -437,7 +543,7 @@ impl<'a> Builder<'a> {
                         self.input(name, Input::Expression { tape, stack }, 0.0, &column);
                     } else {
                         let controls = control_pins(expression);
-                        self.device(device, &controls, &[&column]);
+                        self.device(device, &controls, &[&column], &[]);
                     }
                 }
             }
@@ -468,6 +574,7 @@ impl<'a> Builder<'a> {
             inputs: self.inputs,
             input_ac: self.input_ac,
             devices: self.devices,
+            charges: self.charges,
             nq,
             probe: (pin(probe.plus), pin(probe.minus)),
             driven: None,

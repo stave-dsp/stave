@@ -21,7 +21,7 @@ const fn circuit(name: &'static str, input: fn() -> Input) -> Circuit {
     }
 }
 
-pub static CIRCUITS: [Circuit; 15] = [
+pub static CIRCUITS: [Circuit; 20] = [
     circuit("diode_clipper", || Input::new("v1", 0.0)),
     circuit("opamp_clipper", || Input::new("v1", 0.0)),
     // The TS808 stage rides on the 4.5 V reference.
@@ -46,6 +46,12 @@ pub static CIRCUITS: [Circuit; 15] = [
     circuit("ce_stage", || Input::new("vin", 0.0)),
     circuit("jfet_booster", || Input::new("vin", 0.0)),
     circuit("mosfet_booster", || Input::new("vin", 0.0)),
+    // The same transistor decks on their cards' DC part (DSP.md R11).
+    circuit("fuzz_face_static", || Input::new("vin", 0.0)),
+    circuit("rangemaster_static", || Input::new("vin", 0.0)),
+    circuit("ce_stage_static", || Input::new("vin", 0.0)),
+    circuit("jfet_booster_static", || Input::new("vin", 0.0)),
+    circuit("mosfet_booster_static", || Input::new("vin", 0.0)),
     // The VCA with its control held at 5 V (about 0.28 mA of bias).
     circuit("ota_vca", || Input::new("vin", 0.0).holding("vc", 5.0)),
 ];
@@ -55,11 +61,14 @@ pub static CIRCUITS: [Circuit; 15] = [
 /// `transistors_match_ngspice.rs`) — 16× where an op-amp's feedback pole
 /// is faster than a 4× step (8× for the Tube Screamer's T0, for time),
 /// 1× for a memoryless circuit's T0 (no step to refine: its "oversampled"
-/// run is its 48 kHz one; T1's 4× measures it free of aliasing), else 4×.
+/// run is its 48 kHz one; T1's 4× measures it free of aliasing), 16× for
+/// the transistor decks whose cards' charge storage puts poles far above
+/// the audio band (DSP.md R11), else 4×.
 pub fn oversample(case: &str, tier: Tier) -> u32 {
     match (case.split('/').next().unwrap(), tier) {
         ("tube_screamer", Tier::T0) => 8,
         ("opamp_clipper" | "tube_screamer", _) => 16,
+        ("fuzz_face" | "ce_stage" | "mosfet_booster", _) => 16,
         ("triode_stage" | "push_pull" | "push_pull_pentode", Tier::T0) => 1,
         _ => 4,
     }

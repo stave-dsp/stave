@@ -1,0 +1,28 @@
+* An EL34 single-ended stage, small-signal: Koren's pentode law (EL34_OLD,
+* as push_pull_pentode.cir), grid at -38 V through 47k, plate from 400 V
+* through 2.5k, screen from 400 V through 1k bypassed by 10u, with the
+* Philips sheet's capacitances (input 15.2 pF grid to cathode, output 8.4
+* pF plate to cathode, grid-plate 1.1 pF). |Vout/Vin| and its phase from
+* 10 Hz to 100 MHz: the Miller multiple of 1.1 pF with 47k is the top.
+.param mu=11 ex=1.35 kg1=650 kg2=4200 kp=60 kvb=24
+VIN in 0 DC -38 AC 1
+RG in g 47k
+VB b 0 400
+RA b p 2.5k
+VS sup 0 400
+RG2 sup s 1k
+CS s 0 10u
+BP p 0 I = {V(p) > 0 ? 2*pow(V(s)/kp*ln(1+exp(kp*(1/mu+V(g)/V(s)))), ex)/kg1*atan(V(p)/kvb) : 0}
+BS s 0 I = {V(g)+V(s)/mu > 0 ? pow(V(g)+V(s)/mu, ex)/kg2 : 0}
+CGK g 0 15.2p
+CGP g p 1.1p
+CPK p 0 8.4p
+.options reltol=1e-9 abstol=1e-15 vntol=1e-12
+.ac dec 20 10 100meg
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(p) vp(p)
+.endc
+.end

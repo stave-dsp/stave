@@ -149,55 +149,100 @@ fn mosfet_family_matches_ngspice() {
 /// the error falls as h² (three times or more at 8×), so what is left
 /// is the trapezoidal rule's, not a modelling difference.
 fn converging(name: &str, budget: f64) {
-    let coarse = case(name, 4, Metric::NormalizedRms, budget);
-    let fine = case(name, 8, Metric::NormalizedRms, budget);
+    converging_at(name, 4, budget);
+}
+
+/// [`converging`] from `oversample`×. A card with charge storage has
+/// poles far above the audio band (a transit time against an ohmic
+/// resistance), which the trapezoidal rule resolves only well
+/// oversampled: these decks converge as h² from 4× (DSP.md R11), and
+/// their budgets are held where the error is as small as the static
+/// decks'.
+fn converging_at(name: &str, oversample: u32, budget: f64) {
+    let coarse = case(name, oversample, Metric::NormalizedRms, budget);
+    let fine = case(name, 2 * oversample, Metric::NormalizedRms, budget);
     assert_converges(&coarse, &fine, 3.0);
     coarse.assert();
 }
 
-/// The 2N3904 common-emitter stage, 60 mV in, near clipping (gain ~35).
+/// The 2N3904 common-emitter stage, 60 mV in, near clipping (gain ~35),
+/// on Fairchild's whole card (charge storage included, DSP.md R11).
 #[test]
 fn ce_stage_matches_ngspice() {
-    converging("ce_stage", 1e-5);
+    converging_at("ce_stage", 16, 2e-6);
+}
+
+/// The same stage on the card's DC part, as before R11.
+#[test]
+fn ce_stage_static_matches_ngspice() {
+    converging("ce_stage_static", 1e-5);
 }
 
 /// The same stage small-signal: DK's response at the operating point,
 /// by the bilinear prewarp exact for the linearised circuit, against
-/// ngspice's AC analysis.
+/// ngspice's AC analysis — the static card, flat on top
+/// (`capacitance_matches_ngspice.rs` holds the whole card's, to 100 MHz,
+/// magnitude and phase).
 #[test]
-fn ce_stage_ac_matches_ngspice() {
-    let circuit = Circuit::<Dk>::new(&deck("ce_stage_ac")).unwrap();
-    Case::ngspice("ce_stage_ac")
-        .named("ce_stage_ac/dk")
+fn ce_stage_ac_static_matches_ngspice() {
+    let circuit = Circuit::<Dk>::new(&deck("ce_stage_ac_static")).unwrap();
+    Case::ngspice("ce_stage_ac_static")
+        .named("ce_stage_ac_static/dk")
         .budget(Metric::MaxDb, 2e-6)
         .pointwise(|hz| circuit.analog_response(hz).unwrap().magnitude())
         .assert();
 }
 
 /// Fuzz Face, two AC128s, fuzz full up, 200 mV in: hard germanium
-/// clipping through the feedback pair. 2.0e-5 at 4×, 7.7e-6 at 8×: past
-/// 4× the error nears the reference's own floor, so no h² check.
+/// clipping through the feedback pair, with the AC128's 200 pF collector
+/// capacitance and 159 ns transit time (its top end).
 #[test]
 fn fuzz_face_matches_ngspice() {
-    case("fuzz_face", 4, Metric::NormalizedRms, 4e-5).assert();
+    converging_at("fuzz_face", 16, 6e-5);
 }
 
-/// Rangemaster, one OC44, 300 mV at 1 kHz.
+/// The static Fuzz Face, as before R11: 2.0e-5 at 4×, 7.7e-6 at 8×: past
+/// 4× the error nears the reference's own floor, so no h² check.
+#[test]
+fn fuzz_face_static_matches_ngspice() {
+    case("fuzz_face_static", 4, Metric::NormalizedRms, 4e-5).assert();
+}
+
+/// Rangemaster, one OC44 with its datasheet charge, 300 mV at 1 kHz.
 #[test]
 fn rangemaster_matches_ngspice() {
     converging("rangemaster", 1e-3);
 }
 
-/// J201 common-source booster, 400 mV in: 6.8e-6 at 4×, the reference's
-/// floor (6.6e-6 at 8×).
+/// The static Rangemaster, as before R11.
+#[test]
+fn rangemaster_static_matches_ngspice() {
+    converging("rangemaster_static", 1e-3);
+}
+
+/// J201 common-source booster, 400 mV in, with its gate capacitances.
 #[test]
 fn jfet_booster_matches_ngspice() {
     case("jfet_booster", 4, Metric::NormalizedRms, 1.5e-5).assert();
 }
 
-/// VN10KM common-source booster, driven to cutoff on one side: 4.7e-7
-/// at 4×, near the reference's floor (2.6e-7 at 8×).
+/// The static booster: 6.8e-6 at 4×, the reference's floor (6.6e-6 at
+/// 8×).
+#[test]
+fn jfet_booster_static_matches_ngspice() {
+    case("jfet_booster_static", 4, Metric::NormalizedRms, 1.5e-5).assert();
+}
+
+/// VN10KM common-source booster, driven to cutoff on one side, with its
+/// overlap and bulk-junction capacitances.
 #[test]
 fn mosfet_booster_matches_ngspice() {
-    case("mosfet_booster", 4, Metric::NormalizedRms, 1e-6).assert();
+    converging_at("mosfet_booster", 16, 5e-6);
+}
+
+/// The static booster: 4.7e-7 at 4×, near the reference's floor (2.6e-7
+/// at 8×).
+#[test]
+fn mosfet_booster_static_matches_ngspice() {
+    case("mosfet_booster_static", 4, Metric::NormalizedRms, 1e-6).assert();
 }

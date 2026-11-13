@@ -85,6 +85,7 @@ impl From<EbersMoll> for GummelPoon {
             forward_beta: em.forward_beta,
             reverse_beta: em.reverse_beta,
             thermal_volts: em.thermal_volts,
+            substrate: super::Substrate::default_for(em.polarity),
             ..GummelPoon::DEFAULT_NPN
         }
     }

@@ -1,0 +1,18 @@
+* The static case: the cards' DC parameters only, as before device
+* capacitances (DSP.md R11); the full card is diode_clipper.cir.
+* Diode clipper: 2.2k into 10n to ground, shunted by an antiparallel 1N4148 pair.
+V1 in 0 SIN(0 1 1k)
+R1 in out 2.2k
+C1 out 0 10n
+D1 out 0 D1N4148
+D2 0 out D1N4148
+.model D1N4148 D(Is=2.52n N=1.752 Rs=0.568 Bv=100)
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 10m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

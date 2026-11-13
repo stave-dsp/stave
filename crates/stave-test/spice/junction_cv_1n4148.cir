@@ -1,0 +1,20 @@
+* The 1N4148's junction capacitance C(v) itself: v ramps from -10 V to
+* +0.3 V in 10 us (1.03 V/us) across the junction, and the current
+* through VS, C(v)·dv/dt + I(v), is written as v(m) at 1 V per uA.
+* Depletion (CJO 4 pF, M 0.4) dominates; past 0.2 V the 20 ns transit
+* time's diffusion capacitance and the junction current join.
+VR r 0 PWL(0 -10 10u 0.3)
+VS r a 0
+D1 a 0 D1N4148
+F1 0 m VS 1e6
+RM m 0 1
+.model D1N4148 D(Is=2.52n N=1.752 Cjo=4p M=0.4 tt=20n)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-9
+.tran 0.05u 10u 0 0.005u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(m)
+.endc
+.end

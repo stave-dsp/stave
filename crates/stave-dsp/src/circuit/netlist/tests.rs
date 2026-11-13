@@ -67,10 +67,12 @@ fn a_deck_reads_into_elements_models_analyses_and_its_probe() {
         }
         other => panic!("{other:?}"),
     }
-    assert_eq!(
-        n.unmodelled,
-        ["d1n4148: cjo", "d1n4148: m", "d1n4148: tt"]
-    );
+    // The card's charge storage is read, so nothing is left unmodelled.
+    assert!(n.unmodelled.is_empty(), "{:?}", n.unmodelled);
+    let ElementKind::Diode { diode, .. } = n.element("D1").unwrap().kind else { panic!() };
+    assert_eq!(diode.capacitance.zero_bias_farads, 4e-12);
+    assert_eq!(diode.capacitance.grading, 0.4);
+    assert_eq!(diode.transit_seconds, 20e-9);
     match &n.element("v1").unwrap().kind {
         ElementKind::VoltageSource { source, .. } => {
             assert_eq!(source.dc, 0.0);
@@ -227,11 +229,11 @@ fn transistors_read_with_their_cards_area_and_geometry() {
 Q1 c b e QN 2
 Q2 c b e sub QP
 J1 d g s JP 0.5
-M1 d g s 0 MN W=30u L=10u AD=1p
-.model QN NPN(IS=1f BF=150 VAF=0 IKF=10m RB=10 CJE=2p)
+M1 d g s 0 MN W=30u L=10u AD=1p PD=1u
+.model QN NPN(IS=1f BF=150 VAF=0 IKF=10m RB=10 CJE=2p XCJC=0.6 TF=1n KF=1e-16)
 .model QP PNP(IS=2f)
 .model JP PJF(VTO=-2 BETA=1m RD=10)
-.model MN NMOS(LEVEL=1 VTO=1 KP=100u LD=1u GAMMA=0.5)
+.model MN NMOS(LEVEL=1 VTO=1 KP=100u LD=1u GAMMA=0.5 CJ=0.5m CGSO=1n CGBO=2n)
 .temp 35
 .options tnom=35
 ",
@@ -246,6 +248,10 @@ M1 d g s 0 MN W=30u L=10u AD=1p
             assert_eq!(bjt.base_ohms, 5.0);
             assert_eq!(bjt.forward_early_volts, f64::INFINITY);
             assert_eq!(bjt.thermal_volts, thermal_volts(35.0));
+            // Charge storage: CJE by the area, XCJC and TF as written.
+            assert_eq!(bjt.emitter_capacitance.zero_bias_farads, 4e-12);
+            assert_eq!(bjt.base_collector_fraction, 0.6);
+            assert_eq!(bjt.forward_transit.seconds, 1e-9);
         }
         other => panic!("{other:?}"),
     }
@@ -253,7 +259,7 @@ M1 d g s 0 MN W=30u L=10u AD=1p
         ElementKind::Bjt { bjt, .. } => assert_eq!(bjt.polarity, Polarity::P),
         other => panic!("{other:?}"),
     }
-    // The substrate node is read, not connected.
+    // The substrate node is read, not connected: the card has no CJS.
     assert!(n.node("sub").is_none());
     match &n.element("j1").unwrap().kind {
         ElementKind::Jfet { jfet, .. } => {
@@ -268,10 +274,15 @@ M1 d g s 0 MN W=30u L=10u AD=1p
             // KP·W/(L − 2·LD) = 100µ · 30/8.
             assert!((mosfet.beta - 375e-6).abs() < 1e-15, "{}", mosfet.beta);
             assert_eq!(mosfet.body_effect, 0.5);
+            // Overlaps by W and Leff = L − 2·LD, the bulk junction CJ·AD.
+            assert!((mosfet.gate_source_overlap_farads - 30e-15).abs() < 1e-27);
+            assert!((mosfet.gate_bulk_overlap_farads - 16e-15).abs() < 1e-27);
+            assert!((mosfet.bulk_drain_capacitance.zero_bias_farads - 0.5e-15).abs() < 1e-27);
+            assert_eq!(mosfet.bulk_source_capacitance.zero_bias_farads, 0.0);
         }
         other => panic!("{other:?}"),
     }
-    assert_eq!(n.unmodelled, ["qn: cje", "m1: ad"]);
+    assert_eq!(n.unmodelled, ["qn: kf", "m1: pd"]);
 }
 
 #[test]

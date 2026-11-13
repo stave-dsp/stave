@@ -61,6 +61,7 @@ fn the_decks_elements_read_as_written() {
         cathode.element("BP").unwrap().kind,
         ElementKind::BehaviouralCurrent { .. }
     ));
-    // What the WDF clipper and DK leave out of the 1N4148 card, on record.
-    assert_eq!(find("diode_clipper").unmodelled.len(), 3);
+    // The 1N4148 card's charge storage is read (DSP.md R11): nothing of it
+    // is left unmodelled.
+    assert!(find("diode_clipper").unmodelled.is_empty());
 }

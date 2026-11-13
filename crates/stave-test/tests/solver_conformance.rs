@@ -329,4 +329,28 @@ mod dk {
             assert_eq!(st.capped, 0);
         }
     }
+
+    // Device capacitances (DSP.md R11): the decks above carry their cards'
+    // charge storage; these are the circuits where it decides the
+    // waveform, and the static Fuzz Face beside its whole card.
+
+    #[test]
+    fn fuzz_face_static_converges_at_the_host_rate() {
+        run("fuzz face (static)", &deck("fuzz_face_static"), "vin", |n| hot(n, 2.0));
+    }
+
+    #[test]
+    fn ce_stage_miller_converges_at_the_host_rate() {
+        run("CE stage (Miller)", &deck("ce_stage_miller"), "vin", |n| hot(n, 0.5));
+    }
+
+    #[test]
+    fn diode_clipper_hf_converges_at_the_host_rate() {
+        run("diode clipper (no shunt C)", &deck("diode_clipper_hf"), "v1", |n| hot(n, 8.0));
+    }
+
+    #[test]
+    fn common_cathode_miller_converges_at_the_host_rate() {
+        run("common cathode (Miller)", &deck("common_cathode_miller"), "vin", |n| hot(n, 8.0));
+    }
 }

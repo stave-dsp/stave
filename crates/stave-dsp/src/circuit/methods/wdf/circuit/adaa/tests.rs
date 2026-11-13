@@ -16,7 +16,7 @@ wrdata out v(out)
 
 /// The fuzz face, its RC left out as in the deck: two germanium PNPs,
 /// four controlling voltages, quadrature.
-const FUZZ: &str = include_str!("../../../../../../../stave-test/spice/fuzz_face.cir");
+const FUZZ: &str = include_str!("../../../../../../../stave-test/spice/fuzz_face_static.cir");
 
 fn both(text: &str, source: &str) -> (Wdf, Dk) {
     let netlist = Netlist::parse_spice(text).unwrap();

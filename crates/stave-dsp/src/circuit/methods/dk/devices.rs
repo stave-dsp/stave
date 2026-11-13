@@ -1,7 +1,11 @@
 //! The nonlinear elements as the DK solve sees them: each reads some of
 //! the global controlling voltages (with a sign, since `v(a, b)` and
 //! `v(b, a)` share one unknown) and writes some outputs — currents
-//! injected into the network, or a behavioural source's voltage.
+//! injected into the network, or a behavioural source's voltage — and,
+//! after them, the charges its junctions store (`Charge`): each the
+//! nonlinear part `q(v) − C₀·v` of a charge whose linear part `C₀·v` is a
+//! capacitor in the network (the module docs of [`super`] derive the
+//! split).
 
 use crate::circuit::devices::diode::Junction;
 use crate::circuit::devices::opamp::Prepared;
@@ -49,6 +53,38 @@ pub(crate) enum Device {
     Expression { tape: Tape, stack: Vec<Dual> },
 }
 
+/// Which of a device's stored charges a [`Charge`] is.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Slot {
+    /// A diode's junction: depletion plus transit-time charge.
+    Junction,
+    /// A BJT's intrinsic base–emitter charge (depends on vbc too).
+    BaseEmitter,
+    /// A BJT's intrinsic base–collector charge.
+    BaseCollector,
+    /// The `(1 − XCJC)` part of `CJC`, external base to intrinsic collector.
+    ExternalBase,
+    /// A BJT's substrate junction.
+    Substrate,
+    GateSource,
+    GateDrain,
+    BulkDrain,
+    BulkSource,
+}
+
+/// A charge a device stores, as the solve sees it: an output `q(v) −
+/// linear·v`, read across its own local control.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Charge {
+    pub slot: Slot,
+    /// The local control the charge sits across.
+    pub control: usize,
+    /// Its output in `q`.
+    pub output: usize,
+    /// `C₀`: the capacitance the network's capacitor carries for it.
+    pub linear: f64,
+}
+
 /// A device wired into the subsystem.
 #[derive(Clone, Debug)]
 pub(crate) struct Nonlinear {
@@ -57,6 +93,8 @@ pub(crate) struct Nonlinear {
     pub controls: Vec<(usize, f64)>,
     /// The first of its outputs in `q`.
     pub output: usize,
+    /// Its stored charges, outputs after its currents.
+    pub charges: Vec<Charge>,
 }
 
 impl Nonlinear {
@@ -69,7 +107,27 @@ impl Nonlinear {
     /// Write outputs into `q` and add their partials into `jq`
     /// (`nq`×`nv`, zeroed by the caller).
     pub fn evaluate(&mut self, v: &[f64], q: &mut [f64], jq: &mut [f64], nv: usize, time: f64) {
+        self.evaluate_device(v, q, jq, nv, time);
+        for ch in &self.charges {
+            let (g, sign) = self.controls[ch.control];
+            q[ch.output] -= ch.linear * sign * v[g];
+            jq[ch.output * nv + g] -= ch.linear * sign;
+        }
+    }
+
+    /// The device's currents and its charges whole (`q(v)`, no linear
+    /// part taken out).
+    fn evaluate_device(&mut self, v: &[f64], q: &mut [f64], jq: &mut [f64], nv: usize, time: f64) {
         let o = self.output;
+        let controls = &self.controls;
+        // Charge `ch` into `q`, its partials `(local control, dq/dv)`.
+        let mut store = |ch: &Charge, value: f64, partials: &[(usize, f64)], jq: &mut [f64]| {
+            q[ch.output] = value;
+            for &(local, slope) in partials {
+                let (g, sign) = controls[local];
+                jq[ch.output * nv + g] += slope * sign;
+            }
+        };
         match &mut self.device {
             Device::Diode(d) => {
                 let (g, sign) = self.controls[0];
@@ -77,6 +135,11 @@ impl Nonlinear {
                 let (i, slope) = d.current_and_conductance(volts);
                 q[o] = i - SHUNT * volts;
                 jq[o * nv + g] += (slope - SHUNT) * sign;
+                for ch in &self.charges {
+                    let (charge, c) = d.charge(volts, i, slope);
+                    q[ch.output] = charge;
+                    jq[ch.output * nv + g] += c * sign;
+                }
             }
             Device::Triode(t) => {
                 let (vgk, vpk) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
@@ -124,7 +187,34 @@ impl Nonlinear {
             }
             Device::Bjt(t) => {
                 let (vbe, vbc) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
-                let c = t.currents(vbe, vbc);
+                let c = if self.charges.is_empty() {
+                    t.currents(vbe, vbc)
+                } else {
+                    let (c, k) = t.currents_and_charges(vbe, vbc);
+                    for ch in &self.charges {
+                        let local = sign_read(controls, v, ch.control);
+                        match ch.slot {
+                            Slot::BaseEmitter => store(
+                                ch,
+                                k.base_emitter,
+                                &[(0, k.base_emitter_per_vbe), (1, k.base_emitter_per_vbc)],
+                                jq,
+                            ),
+                            Slot::BaseCollector => {
+                                store(ch, k.base_collector, &[(1, k.base_collector_per_vbc)], jq)
+                            }
+                            Slot::ExternalBase => {
+                                let (charge, cap) = t.external_base_charge(local);
+                                store(ch, charge, &[(ch.control, cap)], jq);
+                            }
+                            _ => {
+                                let (charge, cap) = t.substrate_charge(local);
+                                store(ch, charge, &[(ch.control, cap)], jq);
+                            }
+                        }
+                    }
+                    c
+                };
                 let ((ge, se), (gc, sc)) = (self.controls[0], self.controls[1]);
                 q[o] = c.collector + SHUNT * vbc;
                 q[o + 1] = c.base - SHUNT * (vbe + vbc);
@@ -136,6 +226,13 @@ impl Nonlinear {
             Device::Jfet(t) => {
                 let (vgs, vgd) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
                 let c = t.currents(vgs, vgd);
+                if !self.charges.is_empty() {
+                    let [gs, gd] = t.gate_charges(vgs, vgd);
+                    for ch in &self.charges {
+                        let ((charge, cap), local) = if ch.slot == Slot::GateSource { (gs, 0) } else { (gd, 1) };
+                        store(ch, charge, &[(local, cap)], jq);
+                    }
+                }
                 let ((gs, ss), (gd, sd)) = (self.controls[0], self.controls[1]);
                 q[o] = c.drain + SHUNT * vgd;
                 q[o + 1] = c.gate - SHUNT * (vgs + vgd);
@@ -148,6 +245,13 @@ impl Nonlinear {
                 let (vgs, vds) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
                 let vbs = if *bulk { sign_read(&self.controls, v, 2) } else { 0.0 };
                 let c = mosfet.currents(vgs, vds, vbs);
+                for ch in &self.charges {
+                    // Each bulk junction across its own control.
+                    let local = sign_read(controls, v, ch.control);
+                    let [bd, bs] = mosfet.bulk_charges(local, local);
+                    let (charge, cap) = if ch.slot == Slot::BulkDrain { bd } else { bs };
+                    store(ch, charge, &[(ch.control, cap)], jq);
+                }
                 let ((gg, sg), (gd, sd)) = (self.controls[0], self.controls[1]);
                 q[o] = c.drain;
                 jq[o * nv + gg] += c.drain_per_vgs * sg;
@@ -175,7 +279,9 @@ impl Nonlinear {
     /// device: a one-output law of one control with a closed-form
     /// antiderivative (stateful ADAA's one-port, `dk::adaa`).
     pub fn has_closed_form_mean(&self) -> bool {
-        matches!(self.device, Device::Diode(_))
+        // A stored charge (DSP.md R11) has no closed-form mean here: such a
+        // junction takes the quadrature.
+        matches!(self.device, Device::Diode(_)) && self.charges.is_empty()
     }
 
     /// `(mean, secant)` of the device's output over the straight line

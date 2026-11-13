@@ -1,0 +1,34 @@
+* The static case: the cards' DC parameters only, as before device
+* capacitances (DSP.md R11); the full card is fuzz_face.cir.
+* Fuzz Face (Arbiter, 1966): two AC128 germanium PNPs, positive ground,
+* -9 V supply, fuzz full up (Q2's 1k emitter resistor bypassed by 20u),
+* the 100k DC feedback from Q2's emitter to Q1's base. The guitar is a
+* 200 mV, 220 Hz sine through 1k. AC128s by Holmes, Holters & van
+* Walstijn (DAFx-17) at their Vt = 25.5 mV (22.7652 C, tnom equal);
+* capacitances not modelled. The card's RC = 1.7 uohm is left out: it is
+* nothing beside the 470 ohm load, and it stalls ngspice's timestep
+* control. Output: across the 500k volume pot.
+VIN in 0 SIN(0 0.2 220)
+RG in i 1k
+C1 i b1 2.2u
+Q1 c1 b1 0 AC128
+R1 c1 vee 33k
+RFB e2 b1 100k
+Q2 c2 c1 e2 AC128
+RFZ e2 0 1k
+CFZ e2 0 20u
+R2 c2 o 470
+R3 o vee 8.2k
+C2 o out 10n
+RV out 0 500k
+VEE vee 0 -9
+.model AC128 PNP(IS=20.66u BF=229.6 BR=14.66 NF=1.133 NR=1.140 VAF=19.68 VAR=88.28 IKF=463.0m IKR=241.5m ISE=2.190u ISC=7.546u NE=1.796 NC=1.364 RB=1.885 RE=306.4m)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12 temp=22.7652 tnom=22.7652
+.tran 20.8333333u 20m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

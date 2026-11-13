@@ -61,7 +61,12 @@ t1!(
     ce_stage,
     jfet_booster,
     mosfet_booster,
-    ota_vca
+    ota_vca,
+    fuzz_face_static,
+    rangemaster_static,
+    ce_stage_static,
+    jfet_booster_static,
+    mosfet_booster_static
 );
 
 /// The hand topologies' whole matrices.

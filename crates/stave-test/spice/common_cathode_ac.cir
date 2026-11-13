@@ -1,0 +1,28 @@
+* The 12AX7 common-cathode stage of common_cathode.cir with its
+* interelectrode capacitances (RCA's 12AX7A sheet, section 1: grid-plate
+* 1.7 pF, grid-cathode 1.6 pF, plate-cathode 0.46 pF) and a 68k grid
+* stopper, small-signal: |Vout/Vin| and its phase from 10 Hz to 100 MHz.
+* The grid-plate capacitance's Miller multiple (gain ~60) with the
+* stopper is the stage's top end.
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+VIN in 0 DC 0 AC 1
+RG in g 68k
+VB b 0 300
+RA b p 100k
+RK k 0 1.5k
+CK k 0 22u
+BE e1 0 V = {V(p,k)/kp*ln(1+exp(kp*(1/mu+V(g,k)/sqrt(kvb+V(p,k)*V(p,k)))))}
+RE e1 0 1G
+BI p k I = {V(e1) > 0 ? 2*pow(V(e1),ex)/kg1 : 0}
+CGK g k 1.6p
+CGP g p 1.7p
+CPK p k 0.46p
+.options reltol=1e-9 abstol=1e-15 vntol=1e-12
+.ac dec 20 10 100meg
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(p) vp(p)
+.endc
+.end
