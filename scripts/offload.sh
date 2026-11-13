@@ -57,7 +57,9 @@ if [[ "$SYNC" == tar ]]; then
   (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
     | xargs -0 -I{} sh -c 'test -e "{}" && printf "%s\0" "{}"' \
     | COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - --null -T -) \
-    | ssh "$HOST" "rm -rf '$DIR' && mkdir -p '$DIR' && tar -xzf - -C '$DIR'"
+    > "${TMPDIR:-/tmp}/offload-$NAME.$$.tgz"
+  TARBALL="${TMPDIR:-/tmp}/offload-$NAME.$$.tgz"
+  trap 'rm -f "$TARBALL"' EXIT
   TARGETENV="CARGO_TARGET_DIR=\$HOME/$DIR.target"
 else
   ssh "$HOST" "mkdir -p '$DIR'"
@@ -82,16 +84,27 @@ fi
 
 printf -v CMD '%q ' "$@"
 RUN="cd '$DIR' && . ~/.cargo/env && $GITENV $TARGETENV CARGO_TERM_COLOR=always nice -n 10 $CMD"
-if [[ -z "${STAVE_OFFLOAD_FETCH:-}" ]]; then
-  exec ssh "$HOST" "$RUN"
-fi
 status=0
-ssh "$HOST" "$RUN" || status=$?
+if [[ "$SYNC" == tar ]]; then
+  # Unpack and run under one lock per name: a second command with the same
+  # STAVE_OFFLOAD_NAME waits instead of unpacking over a running build.
+  ssh "$HOST" "mkdir -p stave-offload && flock -w 3600 '$DIR.lock' bash -c \"rm -rf '$DIR' && mkdir -p '$DIR' && tar -xzf - -C '$DIR' && $RUN\"" \
+    < "$TARBALL" || status=$?
+elif [[ -z "${STAVE_OFFLOAD_FETCH:-}" ]]; then
+  exec ssh "$HOST" "$RUN"
+else
+  ssh "$HOST" "$RUN" || status=$?
+fi
+[[ -z "${STAVE_OFFLOAD_FETCH:-}" ]] && exit "$status"
 for path in $STAVE_OFFLOAD_FETCH; do
   path="${path%/}"
   if ssh "$HOST" "test -e '$DIR/$path'"; then
     mkdir -p "$ROOT/$(dirname "$path")"
-    rsync -az "$HOST:$DIR/$path" "$ROOT/$(dirname "$path")/"
+    if [[ "$SYNC" == tar ]]; then
+      ssh "$HOST" "tar -czf - -C '$DIR' '$path'" | tar -xzf - -C "$ROOT"
+    else
+      rsync -az "$HOST:$DIR/$path" "$ROOT/$(dirname "$path")/"
+    fi
     echo "offload: fetched $path" >&2
   else
     echo "offload: $path was not written on $HOST" >&2
