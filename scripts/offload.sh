@@ -51,9 +51,10 @@ if [[ "$SYNC" == tar ]]; then
   # container: the session ends with an unexplained 255 after the data
   # arrives): send exactly the files git
   # tracks or would track, compressed, unpacked fresh each time, mtimes
-  # kept; the build cache lives beside the sources so it survives. Git
-  # itself is not sent, so tag/history-dependent scripts belong on an
-  # rsync host.
+  # kept; the build cache lives beside the sources so it survives. The
+  # host gets a fresh index of exactly those files (no history), so the
+  # git-grep tree checks (vocabulary, purity) check the real tree; tag- and
+  # history-dependent scripts belong on an rsync host.
   (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
     | xargs -0 -I{} sh -c 'test -e "{}" && printf "%s\0" "{}"' \
     | COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - --null -T -) \
@@ -88,7 +89,7 @@ status=0
 if [[ "$SYNC" == tar ]]; then
   # Unpack and run under one lock per name: a second command with the same
   # STAVE_OFFLOAD_NAME waits instead of unpacking over a running build.
-  ssh "$HOST" "mkdir -p stave-offload && flock -w 3600 '$DIR.lock' bash -c \"rm -rf '$DIR' && mkdir -p '$DIR' && tar -xzf - -C '$DIR' && $RUN\"" \
+  ssh "$HOST" "mkdir -p stave-offload && flock -w 3600 '$DIR.lock' bash -c \"rm -rf '$DIR' && mkdir -p '$DIR' && tar -xzf - -C '$DIR' && git -C '$DIR' init -q && git -C '$DIR' add -A && $RUN\"" \
     < "$TARBALL" || status=$?
 elif [[ -z "${STAVE_OFFLOAD_FETCH:-}" ]]; then
   exec ssh "$HOST" "$RUN"
