@@ -1,0 +1,17 @@
+* 1N750 I-V curve: a ramp -10 V -> +2 V over 20 ms through 1k into
+* the diode (quasi-static: no reactive parts), forward conduction and
+* reverse breakdown. The card is LTspice standard.dio (onsemi)'s,
+* its static parameters only (left out: Cjo=175p M=.55 Vj=.75 Isr=1.86n Nr=2 Ibvl=1.96m Nbvl=15 Tbv1=-21.3u). Output: the diode's voltage.
+V1 in 0 PWL(0 -10 20m 2)
+R1 in a 1k
+D1 a 0 1N750
+.model 1N750 D(Is=.88f Rs=.25 nbv=1.7 bv=4.7 Ibv=20.245m)
+.options interp reltol=1e-9 abstol=1e-12 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(a)
+.endc
+.end

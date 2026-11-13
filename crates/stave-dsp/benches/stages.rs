@@ -81,7 +81,7 @@ fn diode_clipper(solver: PairSolver) -> DiodeClipper {
     DiodeClipper::new(DiodeClipperConfig {
         input_ohms: 2.2e3,
         capacitor_farads: 10e-9,
-        diode: Shockley::D1N4148,
+        diode: Shockley::N4148,
         solver,
     })
 }

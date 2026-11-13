@@ -190,6 +190,46 @@ fn push_pull_static_transfer_matches_ngspice() {
     transient_case("push_pull", 1, case).assert();
 }
 
+/// E6: every diode part's I–V curve — a ramp through 1 kΩ, forward
+/// conduction and, where the card has `BV`, reverse breakdown — through
+/// `Circuit<Dk>` against ngspice on the same card; and each part constant
+/// is its card as the parser reads it. Budgets about three times the
+/// measured error (6.5e-8 1N4148, 6.4e-9 1N34A, 1.8–2.0e-7 the LEDs,
+/// 1.1e-8 BZX84C6V2L, 2.4e-8 1N750; ngspice 47 fixtures).
+#[test]
+fn diode_iv_curves_match_ngspice() {
+    use stave_dsp::circuit::netlist::ElementKind;
+    use stave_dsp::Shockley;
+    for (name, part, budget) in [
+        ("diode_iv_1n4148", Shockley::N4148, 2e-7),
+        ("diode_iv_1n34a", Shockley::N34A, 2e-8),
+        ("diode_iv_led_red", Shockley::LED_RED, 5e-7),
+        ("diode_iv_led_green", Shockley::LED_GREEN, 5e-7),
+        ("diode_iv_led_blue", Shockley::LED_BLUE, 5e-7),
+        ("diode_iv_bzx84c6v2l", Shockley::BZX84C6V2L, 5e-8),
+        ("diode_iv_1n750", Shockley::N750, 1e-7),
+    ] {
+        let netlist = deck(name);
+        let ElementKind::Diode { diode, .. } = netlist.element("d1").unwrap().kind else {
+            panic!("{name}: no diode D1");
+        };
+        // To the last bit or two: `10U` reads as 10 × 1e-6.
+        let same = |a: f64, b: f64| (a - b).abs() <= 1e-15 * a.abs().max(b.abs());
+        let card = |d: Shockley| {
+            let b = d.breakdown.map_or([0.0; 3], |b| [b.volts, b.amps, b.emission]);
+            [d.saturation_amps, d.emission, d.thermal_volts, d.series_ohms, b[0], b[1], b[2]]
+        };
+        let (ours, theirs) = (card(part), card(diode));
+        assert!(
+            ours.iter().zip(&theirs).all(|(a, b)| same(*a, *b)),
+            "{name}: the part constant is not the deck's card: {part:?} vs {diode:?}"
+        );
+        assert!(netlist.unmodelled.is_empty(), "{name}: {:?}", netlist.unmodelled);
+        let case = Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+        transient_case(name, 1, case).assert();
+    }
+}
+
 mod agreement {
     //! The hand-derived topologies against `Circuit<Dk>` on the same
     //! netlist and the same hot input, at the rate each ships at. Both
@@ -265,7 +305,7 @@ mod agreement {
         let mut hand = DiodeClipper::new(DiodeClipperConfig {
             input_ohms: 2.2e3,
             capacitor_farads: 10e-9,
-            diode: Shockley::D1N4148,
+            diode: Shockley::N4148,
             solver: NewtonSettings::DEFAULT,
         });
         hand.prepare(rate as f32);

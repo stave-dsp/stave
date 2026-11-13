@@ -37,9 +37,11 @@
 //! # Accepts
 //!
 //! Any netlist of R, C, L, independent V and I sources (DC, SIN, PWL, or
-//! a behavioural source of time alone), E and F controlled sources,
-//! Shockley diodes (series resistance as a resistor), stave triodes,
-//! and behavioural sources of node voltages (`B … I = {…}` or
+//! a behavioural source of time alone), E, F and G controlled sources,
+//! Shockley diodes (series resistance as a resistor, breakdown
+//! included), stave triodes and pentodes, op-amps (the ideal nullor, or
+//! the macromodel's gain node, compensation capacitor and output buffer),
+//! OTAs, and behavioural sources of node voltages (`B … I = {…}` or
 //! `V = {…}`, at most four node voltages each), provided its MNA matrix
 //! is nonsingular (no floating node, no loop of voltage sources). The
 //! operating point is solved with capacitors open and inductors shorted,

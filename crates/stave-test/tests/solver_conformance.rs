@@ -30,7 +30,7 @@ fn diode_clipper_converges_at_the_host_rate() {
     let mut s = DiodeClipper::new(DiodeClipperConfig {
         input_ohms: 2.2e3,
         capacitor_farads: 10e-9,
-        diode: Shockley::D1N4148,
+        diode: Shockley::N4148,
         solver: PairSolver::default(),
     });
     s.prepare(RATE as f32);

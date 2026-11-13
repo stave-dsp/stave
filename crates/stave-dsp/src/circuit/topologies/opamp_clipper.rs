@@ -31,7 +31,7 @@ impl OpAmpClipperConfig {
         ground_farads: 47e-9,
         feedback_ohms: 51e3,
         feedback_farads: 51e-12,
-        diode: Shockley::D1N4148,
+        diode: Shockley::N4148,
         newton: NewtonSettings::DEFAULT,
     };
 }

@@ -4,9 +4,10 @@
 //! - the first line is the title; `*` starts a comment line, `;` an
 //!   inline comment, `+` continues the previous line; case is ignored;
 //! - `R`, `C` and `L` (with `IC=`), `V` and `I` (`DC`, `AC`, `SIN(…)`,
-//!   `PWL(…)`), `E` (VCVS), `F` (CCCS), `D` with a `.model … D(…)` card
-//!   (`IS`, `N`, `RS`; capacitance, transit time and breakdown are
-//!   accepted and listed in [`Netlist::unmodelled`]), and `B` sources
+//!   `PWL(…)`), `E` (VCVS), `F` (CCCS), `G` (VCCS), `D` with a
+//!   `.model … D(…)` card (`IS`, `N`, `RS`, and breakdown `BV`, `IBV`,
+//!   `NBV` with ngspice's defaults; capacitance, transit time and the
+//!   rest are accepted and listed in [`Netlist::unmodelled`]), and `B` sources
 //!   (`V = {…}` or `I = {…}`, see [`Expr`]);
 //! - `.param`, `.model`, `.tran … [UIC]`, `.ac dec …`, and a `.control`
 //!   block's `wrdata FILE v(a[, b])` (or `vm(…)`) as the probe;
@@ -17,7 +18,7 @@
 
 use super::expr::{Expr, Scope};
 use super::{Ac, ElementKind, Netlist, NetlistError, Node, Probe, Signal, Source, Tran};
-use crate::circuit::devices::diode::{Shockley, THERMAL_VOLTS_27C};
+use crate::circuit::devices::diode::{Breakdown, Shockley};
 
 /// A SPICE number: `2.2k`, `1meg`, `20.8333333u`, `1e-3`, `10uF`.
 pub fn value(word: &str) -> Result<f64, String> {
@@ -190,7 +191,6 @@ fn lines(text: &str) -> Result<(String, Vec<Line>, Vec<Line>), NetlistError> {
 
 struct Model {
     diode: Shockley,
-    series_ohms: f64,
 }
 
 impl Netlist {
@@ -287,14 +287,8 @@ fn parse_model(line: &Line, netlist: &mut Netlist) -> Result<Option<(String, Mod
     if kind != "d" {
         return Ok(None);
     }
-    let mut model = Model {
-        diode: Shockley {
-            saturation_amps: 1e-14,
-            emission: 1.0,
-            thermal_volts: THERMAL_VOLTS_27C,
-        },
-        series_ohms: 0.0,
-    };
+    let mut diode = Shockley::DEFAULT;
+    let (mut bv, mut ibv, mut nbv) = (None, 1e-3, None);
     let mut i = 3;
     while i < t.len() {
         let (Some(key), Some(Token::Equals)) = (t[i].word(), t.get(i + 1)) else {
@@ -302,13 +296,23 @@ fn parse_model(line: &Line, netlist: &mut Netlist) -> Result<Option<(String, Mod
         };
         let x = number(line, t.get(i + 2), &[])?;
         match key {
-            "is" => model.diode.saturation_amps = x,
-            "n" => model.diode.emission = x,
-            "rs" => model.series_ohms = x,
+            "is" => diode.saturation_amps = x,
+            "n" => diode.emission = x,
+            "rs" => diode.series_ohms = x,
+            "bv" => bv = Some(x),
+            "ibv" | "ib" => ibv = x,
+            "nbv" => nbv = Some(x),
             _ => netlist.unmodelled.push(format!("{name}: {key}")),
         }
         i += 3;
     }
+    // ngspice's defaults: IBV 1 mA, NBV the card's N.
+    diode.breakdown = bv.map(|volts| Breakdown {
+        volts,
+        amps: ibv,
+        emission: nbv.unwrap_or(diode.emission),
+    });
+    let model = Model { diode };
     Ok(Some((name.to_string(), model)))
 }
 
@@ -461,6 +465,12 @@ fn parse_element(
             control: (node(line, t.get(3), netlist)?, node(line, t.get(4), netlist)?),
             gain: number(line, t.get(5), params)?,
         },
+        b'g' => ElementKind::VoltageControlledCurrent {
+            a: node(line, t.get(1), netlist)?,
+            b: node(line, t.get(2), netlist)?,
+            control: (node(line, t.get(3), netlist)?, node(line, t.get(4), netlist)?),
+            gain: number(line, t.get(5), params)?,
+        },
         b'f' => ElementKind::CurrentControlledCurrent {
             a: node(line, t.get(1), netlist)?,
             b: node(line, t.get(2), netlist)?,
@@ -489,7 +499,6 @@ fn parse_element(
                 anode,
                 cathode,
                 diode: model.diode,
-                series_ohms: model.series_ohms,
             }
         }
         b'b' => {
@@ -516,7 +525,7 @@ fn parse_element(
         _ => {
             return Err(syntax(
                 line,
-                &format!("element `{name}`: its type is not in the subset (R C L V I E F D B)"),
+                &format!("element `{name}`: its type is not in the subset (R C L V I E F G D B)"),
             ))
         }
     };

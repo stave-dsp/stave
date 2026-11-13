@@ -56,18 +56,20 @@ fn a_deck_reads_into_elements_models_analyses_and_its_probe() {
             anode,
             cathode,
             diode,
-            series_ohms,
         } => {
             assert_eq!((*anode, *cathode), (Node::GROUND, out));
             assert_eq!(diode.saturation_amps, 2.52e-9);
             assert_eq!(diode.emission, 1.752);
-            assert_eq!(*series_ohms, 0.568);
+            assert_eq!(diode.series_ohms, 0.568);
+            // BV given, IBV and NBV at ngspice's defaults.
+            let b = diode.breakdown.unwrap();
+            assert_eq!((b.volts, b.amps, b.emission), (100.0, 1e-3, 1.752));
         }
         other => panic!("{other:?}"),
     }
     assert_eq!(
         n.unmodelled,
-        ["d1n4148: cjo", "d1n4148: m", "d1n4148: tt", "d1n4148: bv"]
+        ["d1n4148: cjo", "d1n4148: m", "d1n4148: tt"]
     );
     match &n.element("v1").unwrap().kind {
         ElementKind::VoltageSource { source, .. } => {

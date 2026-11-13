@@ -1,0 +1,17 @@
+* 1N34A I-V curve: a ramp -30 V -> +5 V over 20 ms through 1k into
+* the diode (quasi-static: no reactive parts), forward conduction and
+* reverse breakdown. The card is the community-extended LTspice standard.dio (Bordodynov)'s,
+* its static parameters only (left out: CJO=0.8p EG=0.67). Output: the diode's voltage.
+V1 in 0 PWL(0 -30 20m 5)
+R1 in a 1k
+D1 a 0 1N34A
+.model 1N34A D(IS=2.6u RS=6.5 N=1.6 BV=25 IBV=0.003)
+.options interp reltol=1e-9 abstol=1e-12 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(a)
+.endc
+.end

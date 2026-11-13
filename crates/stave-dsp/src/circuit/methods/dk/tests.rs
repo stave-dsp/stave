@@ -84,7 +84,7 @@ fn the_diode_clipper_agrees_with_its_wave_digital_form() {
     let mut wdf = DiodeClipper::new(DiodeClipperConfig {
         input_ohms: 2.2e3,
         capacitor_farads: 10e-9,
-        diode: Shockley::D1N4148,
+        diode: Shockley::N4148,
         solver: NewtonSettings::DEFAULT,
     });
     wdf.prepare(192_000.0);

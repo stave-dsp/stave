@@ -41,7 +41,7 @@ impl PowerSupplyConfig {
     pub const SILICON_CHOKE: Self = Self {
         mains_hz: 60.0,
         secondary_peak_volts: 450.0,
-        rectifier: Shockley::D1N4007,
+        rectifier: Shockley::N4007,
         rectifier_ohms: 20.0,
         reservoir_farads: 32e-6,
         filter: SupplyFilter::Choke {

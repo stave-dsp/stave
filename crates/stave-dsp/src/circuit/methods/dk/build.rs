@@ -4,6 +4,7 @@
 use super::devices::{Device, Nonlinear, SHUNT};
 use super::solve::{Health, Settings, Workspace};
 use super::{pin, Capacitor, Dk, Inductor, Input, Pin};
+use crate::circuit::devices::opamp::{Amp, Macromodel};
 use crate::circuit::netlist::expr::{Dual, Tape};
 use crate::circuit::netlist::{ElementKind, Netlist, NetlistError, Probe};
 use crate::kernel::node::Tail;
@@ -119,15 +120,19 @@ impl<'a> Builder<'a> {
         let netlist = self.netlist;
         let elements = netlist.elements();
         let nodes = netlist.node_count() - 1;
-        // Internal nodes (a diode's series resistance), then branch rows.
+        // Internal nodes (a diode's series resistance, a macromodel's gain
+        // node), then branch rows.
         let mut internal = vec![None; elements.len()];
         let mut next = nodes;
         for (i, e) in elements.iter().enumerate() {
-            if let ElementKind::Diode { series_ohms, .. } = e.kind {
-                if series_ohms > 0.0 {
-                    internal[i] = Some(next);
-                    next += 1;
-                }
+            let needs = match &e.kind {
+                ElementKind::Diode { diode, .. } => diode.series_ohms > 0.0,
+                ElementKind::OpAmp { amp, .. } => matches!(amp, Amp::Macromodel(_)),
+                _ => false,
+            };
+            if needs {
+                internal[i] = Some(next);
+                next += 1;
             }
         }
         let node_total = next;
@@ -139,6 +144,7 @@ impl<'a> Builder<'a> {
                     | ElementKind::VoltageControlledVoltage { .. }
                     | ElementKind::BehaviouralVoltage { .. }
                     | ElementKind::Inductor { .. }
+                    | ElementKind::OpAmp { .. }
             ) {
                 row[i] = next;
                 next += 1;
@@ -212,15 +218,26 @@ impl<'a> Builder<'a> {
                     self.add(pin(*a), Some(row[j]), *gain);
                     self.add(pin(*b), Some(row[j]), -gain);
                 }
+                ElementKind::VoltageControlledCurrent {
+                    a,
+                    b,
+                    control,
+                    gain,
+                } => {
+                    let (a, b, c, d) = (pin(*a), pin(*b), pin(control.0), pin(control.1));
+                    self.add(a, c, *gain);
+                    self.add(a, d, -gain);
+                    self.add(b, c, -gain);
+                    self.add(b, d, *gain);
+                }
                 ElementKind::Diode {
                     anode,
                     cathode,
                     diode,
-                    series_ohms,
                 } => {
                     let junction = match internal[i] {
                         Some(node) => {
-                            self.conductance(pin(*anode), Some(node), 1.0 / series_ohms);
+                            self.conductance(pin(*anode), Some(node), 1.0 / diode.series_ohms);
                             Some(node)
                         }
                         None => pin(*anode),
@@ -228,7 +245,7 @@ impl<'a> Builder<'a> {
                     let k = pin(*cathode);
                     self.conductance(junction, k, SHUNT);
                     self.device(
-                        Device::Diode(*diode),
+                        Device::Diode(diode.junction()),
                         &[(junction, k)],
                         &[&[(junction, -1.0), (k, 1.0)]],
                     );
@@ -244,6 +261,71 @@ impl<'a> Builder<'a> {
                         Device::Triode(*tube),
                         &[(g, k), (p, k)],
                         &[&[(p, -1.0), (k, 1.0)], &[(g, -1.0), (k, 1.0)]],
+                    );
+                }
+                ElementKind::Pentode {
+                    plate,
+                    screen,
+                    grid,
+                    cathode,
+                    tube,
+                } => {
+                    let (p, s, g, k) = (pin(*plate), pin(*screen), pin(*grid), pin(*cathode));
+                    self.device(
+                        Device::Pentode(*tube),
+                        &[(g, k), (s, k), (p, k)],
+                        &[&[(p, -1.0), (k, 1.0)], &[(s, -1.0), (k, 1.0)]],
+                    );
+                }
+                ElementKind::OpAmp {
+                    plus,
+                    minus,
+                    output,
+                    amp,
+                    supply,
+                } => {
+                    let r = Some(row[i]);
+                    let (plus, minus, out) = (pin(*plus), pin(*minus), pin(*output));
+                    // The output: a branch current into `output` from ground.
+                    self.add(out, r, 1.0);
+                    match amp {
+                        // The nullor: v(+) − v(−) = 0.
+                        Amp::Ideal(_) => {
+                            self.add(r, plus, 1.0);
+                            self.add(r, minus, -1.0);
+                        }
+                        // A unity buffer of the gain node.
+                        Amp::Macromodel(m) => {
+                            let n = internal[i];
+                            self.add(r, out, 1.0);
+                            self.add(r, n, -1.0);
+                            let stage = m.prepare(supply.0, supply.1);
+                            self.conductance(n, None, stage.leak);
+                            self.capacitors.push(Capacitor {
+                                a: n,
+                                b: None,
+                                farads: Macromodel::COMPENSATION_FARADS,
+                                initial_volts: 0.0,
+                            });
+                            self.device(Device::OpAmp(stage), &[(plus, minus), (n, None)], &[&[(n, 1.0)]]);
+                        }
+                    }
+                }
+                ElementKind::Ota {
+                    plus,
+                    minus,
+                    output,
+                    bias,
+                    negative,
+                    ota,
+                } => {
+                    let (plus, minus, out) = (pin(*plus), pin(*minus), pin(*output));
+                    let (b, neg) = (pin(*bias), pin(*negative));
+                    self.conductance(b, neg, SHUNT);
+                    self.device(
+                        Device::Ota(*ota),
+                        &[(plus, minus), (b, neg)],
+                        &[&[(out, 1.0)], &[(b, -1.0), (neg, 1.0)]],
                     );
                 }
                 ElementKind::BehaviouralCurrent { a, b, expression } => {

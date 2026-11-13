@@ -47,7 +47,7 @@ fn diode_clipper_matches_ngspice() {
         let mut clipper = DiodeClipper::new(DiodeClipperConfig {
             input_ohms: 2.2e3,
             capacitor_farads: 10e-9,
-            diode: Shockley::D1N4148,
+            diode: Shockley::N4148,
             solver,
         });
         clipper.prepare(48_000.0 * 4.0);

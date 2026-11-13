@@ -1,5 +1,7 @@
-//! The diode family: the [`Diode`] trait and its models. The one model
-//! today is the Shockley junction, i = Is·(exp(v / (n·Vt)) − 1).
+//! The diode family: the [`Diode`] trait and its model, the Shockley
+//! junction `i = Is·(exp(v/(n·Vt)) − 1)` with SPICE's reverse breakdown
+//! and series resistance, and parts as constants of its parameters
+//! ([`Shockley::N4148`], [`Shockley::N34A`], the LEDs, the Zeners).
 
 /// The diode family: a junction's current and conductance at a voltage,
 /// and how a Newton step on that voltage is bounded. Every diode model
@@ -25,14 +27,89 @@ impl Diode for Shockley {
     }
 }
 
-/// The Shockley junction: i = Is·(exp(v / (n·Vt)) − 1), with SPICE's
-/// junction limiting. Series resistance belongs to the circuit (a
-/// netlist's diode `Rs` becomes a resistor).
+/// The Shockley junction, as SPICE's level-1 diode card holds it: `IS`,
+/// `N`, `RS`, and reverse breakdown `BV`, `IBV`, `NBV`.
+///
+/// # Models
+///
+/// A pn (or point-contact, or LED) junction's static I–V curve: the
+/// forward exponential, reverse saturation, and reverse breakdown
+/// (avalanche or Zener):
+///
+/// ```text
+///     i(v) = Is·(exp(v/(N·Vt)) − 1)                       forward (everywhere without breakdown)
+///     i(v) = −Is·(1 + (3·N·Vt/(e·v))³)        v < −3·N·Vt, reverse (with breakdown)
+///     i(v) = −Is·exp(−(xbv + v)/(NBV·Vt))     v < −xbv,    breakdown
+/// ```
+///
+/// the last two only when [`breakdown`](Self::breakdown) is set, and [`series_ohms`](Self::series_ohms) in series (a circuit
+/// method places it as a resistor; the junction methods here are the
+/// junction alone). Junction capacitance, transit time, recombination
+/// current (`ISR`), high injection (`IKF`) and temperature are not
+/// modelled: a netlist lists what its cards ask for in
+/// [`Netlist::unmodelled`](crate::circuit::netlist::Netlist::unmodelled).
+///
+/// # Derivation
+///
+/// The ideal-diode equation (Shockley 1949) as ngspice's `dioload.c`
+/// evaluates it, and its breakdown as `diotemp.c` sets it up (tag
+/// ngspice-42), region for region: the knee `xbv` solves
+/// `IBV = Is·(exp((BV − xbv)/(NBV·Vt)) − 1 + xbv/Vt)` (`xbv = BV` when
+/// `IBV < Is·BV/Vt`), so the current at `−BV` is `IBV` when `Is` is small
+/// (a germanium junction's large `Is` leaves it less).
+/// [`junction`](Self::junction) solves `xbv` once. ngspice's `gmin`
+/// (a picosiemens across the junction) is a convergence aid, not part of
+/// the model, and is left out. Parts are the published `.model` cards
+/// named on each constant.
+///
+/// # Verified
+///
+/// `stave-test/tests/dk_matches_ngspice.rs` `diode_iv_curves_match_ngspice`:
+/// each part's I–V curve (a voltage ramp through a resistor, forward
+/// conduction and reverse breakdown) through `Circuit<Dk>` against ngspice
+/// on the same card, normalized RMS 2e-8 to 5e-7 by part, and every part constant equal
+/// to its card as the netlist parser reads it. Unit tests beside this file
+/// check the partials and the breakdown knee.
+///
+/// # Cost
+///
+/// One `exp_m1` per evaluation, one more with breakdown;
+/// `stave-dsp/tests/datasheet.rs` "`Circuit<Dk>` diode clipper" and
+/// "DiodeClipper (WDF)".
+///
+/// # Aliasing
+///
+/// None of its own (memoryless); a clipping circuit made of it aliases,
+/// so run it oversampled.
+///
+/// # Valid ranges
+///
+/// Any voltage (the exponentials are evaluated without overflow inside a
+/// circuit, where [`limit_step`](Self::limit_step) bounds every Newton
+/// step); the cards are fitted to their datasheets' forward curves at
+/// room temperature, so 27 °C ([`THERMAL_VOLTS_27C`]) is the valid one.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Shockley {
     pub saturation_amps: f64,
     pub emission: f64,
     pub thermal_volts: f64,
+    /// Bulk resistance in series with the junction, ohms (SPICE `RS`).
+    pub series_ohms: f64,
+    /// Reverse breakdown, or `None` for a junction that never breaks down.
+    pub breakdown: Option<Breakdown>,
+}
+
+/// Reverse breakdown as SPICE's diode card sets it.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Breakdown {
+    /// `BV`: the reverse voltage at which the breakdown current is `IBV`,
+    /// volts (positive).
+    pub volts: f64,
+    /// `IBV`: the current at `BV`, amps (ngspice's default is 1 mA).
+    pub amps: f64,
+    /// `NBV`: the breakdown exponential's emission coefficient (ngspice's
+    /// default is the card's `N`).
+    pub emission: f64,
 }
 
 /// kT/q at 27 °C (300.15 K), SPICE's default temperature, from the SI-exact
@@ -40,20 +117,137 @@ pub struct Shockley {
 pub const THERMAL_VOLTS_27C: f64 = 1.380_649e-23 * 300.15 / 1.602_176_634e-19;
 
 impl Shockley {
-    /// The SPICE model `D(Is=2.52n N=1.752)`.
-    pub const D1N4148: Self = Self {
-        saturation_amps: 2.52e-9,
-        emission: 1.752,
+    /// SPICE's default card, `D()`: `IS` = 1e-14, `N` = 1, no series
+    /// resistance or breakdown.
+    pub const DEFAULT: Self = Self {
+        saturation_amps: 1e-14,
+        emission: 1.0,
         thermal_volts: THERMAL_VOLTS_27C,
+        series_ohms: 0.0,
+        breakdown: None,
     };
 
-    /// The SPICE model `D(Is=7.03n N=1.8)` (1N4007, a power rectifier;
-    /// its 34 mΩ bulk resistance belongs to the circuit's series ohms).
-    pub const D1N4007: Self = Self {
+    /// 1N4148, LTspice's `standard.dio` (onsemi):
+    /// `D(Is=2.52n Rs=.568 N=1.752 Cjo=4p M=.4 tt=20n)`. The card gives no
+    /// breakdown.
+    pub const N4148: Self = Self {
+        saturation_amps: 2.52e-9,
+        emission: 1.752,
+        series_ohms: 0.568,
+        ..Self::DEFAULT
+    };
+
+    /// 1N914, LTspice's `standard.dio` (onsemi): the same die and the same
+    /// card as the [`N4148`](Self::N4148).
+    pub const N914: Self = Self::N4148;
+
+    /// 1N4007 (a power rectifier): `D(Is=7.03n N=1.8 Rs=34m)`.
+    pub const N4007: Self = Self {
         saturation_amps: 7.03e-9,
         emission: 1.8,
-        thermal_volts: THERMAL_VOLTS_27C,
+        series_ohms: 0.034,
+        ..Self::DEFAULT
     };
+
+    /// 1N34A (germanium point contact), the card the community-extended
+    /// LTspice `standard.dio` (Bordodynov) gives and KiCad's and Qspice's
+    /// libraries copy: `D(IS=2.6u RS=6.5 N=1.6 CJO=0.8p EG=0.67 BV=25
+    /// IBV=0.003)`. No manufacturer publishes one.
+    pub const N34A: Self = Self {
+        saturation_amps: 2.6e-6,
+        emission: 1.6,
+        series_ohms: 6.5,
+        breakdown: Some(Breakdown {
+            volts: 25.0,
+            amps: 3e-3,
+            emission: 1.6,
+        }),
+        ..Self::DEFAULT
+    };
+
+    /// A red indicator LED (GaAsP, Vf ≈ 1.85 V at 20 mA): the generic
+    /// `LedRed` card of the community-extended LTspice `standard.dio`
+    /// (Bordodynov), relabelled HLMP-6000 (Avago red, 5 mm) in KSKelvin's
+    /// Qspice library: `D(IS=93.2P RS=42M N=3.73 BV=4 IBV=10U CJO=2.97P
+    /// VJ=.75 M=.333 TT=4.32U)`.
+    pub const LED_RED: Self = Self {
+        saturation_amps: 93.2e-12,
+        emission: 3.73,
+        series_ohms: 42e-3,
+        breakdown: Some(Breakdown {
+            volts: 4.0,
+            amps: 10e-6,
+            emission: 3.73,
+        }),
+        ..Self::DEFAULT
+    };
+
+    /// A green indicator LED (Vf ≈ 2.3 V at 20 mA): the same library's
+    /// generic `LedGreen` card, `D(IS=93.2P RS=42M N=4.61 BV=4 IBV=10U …)`.
+    pub const LED_GREEN: Self = Self {
+        emission: 4.61,
+        breakdown: Some(Breakdown {
+            volts: 4.0,
+            amps: 10e-6,
+            emission: 4.61,
+        }),
+        ..Self::LED_RED
+    };
+
+    /// A blue indicator LED (InGaN, Vf ≈ 3.7 V at 20 mA): the same
+    /// library's generic `LedBLUE` card, `D(IS=93.2P RS=42M N=7.47 BV=5
+    /// IBV=10U …)`.
+    pub const LED_BLUE: Self = Self {
+        emission: 7.47,
+        breakdown: Some(Breakdown {
+            volts: 5.0,
+            amps: 10e-6,
+            emission: 7.47,
+        }),
+        ..Self::LED_RED
+    };
+
+    /// BZX84C6V2L, a 6.2 V Zener, LTspice's `standard.dio` (onsemi):
+    /// `D(Is=1.5n Rs=.5 Cjo=185p nbv=3 bv=6.2 Ibv=1m)` — every static
+    /// parameter of the card.
+    pub const BZX84C6V2L: Self = Self {
+        saturation_amps: 1.5e-9,
+        emission: 1.0,
+        series_ohms: 0.5,
+        breakdown: Some(Breakdown {
+            volts: 6.2,
+            amps: 1e-3,
+            emission: 3.0,
+        }),
+        ..Self::DEFAULT
+    };
+
+    /// 1N750, a 4.7 V Zener, LTspice's `standard.dio` (onsemi):
+    /// `D(Is=.88f Rs=.25 Cjo=175p M=.55 nbv=1.7 bv=4.7 Vj=.75 Isr=1.86n Nr=2
+    /// Ibv=20.245m Ibvl=1.96m Nbvl=15 Tbv1=-21.3u)`, its static
+    /// parameters less the recombination current (`Isr`, `Nr`) and the
+    /// low-current breakdown (`Ibvl`, `Nbvl`, which ngspice does not
+    /// read either): the breakdown knee is the card's, the forward curve
+    /// below 10 µA is not.
+    pub const N750: Self = Self {
+        saturation_amps: 0.88e-15,
+        emission: 1.0,
+        series_ohms: 0.25,
+        breakdown: Some(Breakdown {
+            volts: 4.7,
+            amps: 20.245e-3,
+            emission: 1.7,
+        }),
+        ..Self::DEFAULT
+    };
+
+    /// The SPICE card `D1N4148` under its old name.
+    #[deprecated(note = "renamed N4148 (DSP.md naming rule 3)")]
+    pub const D1N4148: Self = Self::N4148;
+
+    /// The SPICE card `D1N4007` under its old name.
+    #[deprecated(note = "renamed N4007 (DSP.md naming rule 3)")]
+    pub const D1N4007: Self = Self::N4007;
 
     pub fn knee_volts(&self) -> f64 {
         self.emission * self.thermal_volts
@@ -61,59 +255,90 @@ impl Shockley {
 
     /// Above this voltage a Newton step is compressed (SPICE's `vcrit`).
     pub fn critical_volts(&self) -> f64 {
+        critical(self.knee_volts(), self.saturation_amps)
+    }
+
+    /// The junction ready to evaluate: the breakdown knee solved once
+    /// (ngspice's `diotemp.c` iteration), so each evaluation costs one
+    /// exponential, two with breakdown. Circuit methods hold this.
+    pub fn junction(&self) -> Junction {
         let knee = self.knee_volts();
-        knee * (knee / (std::f64::consts::SQRT_2 * self.saturation_amps)).ln()
+        let breakdown = self.breakdown.map(|b| {
+            let (is, vt) = (self.saturation_amps, self.thermal_volts);
+            let bknee = b.emission * vt;
+            let xbv = if b.amps < is * b.volts / vt {
+                b.volts
+            } else {
+                let mut xbv = b.volts - bknee * (1.0 + b.amps / is).ln();
+                for _ in 0..50 {
+                    let next = b.volts - bknee * (b.amps / is + 1.0 - xbv / vt).ln();
+                    let done = (next - xbv).abs() <= 1e-14 * b.volts;
+                    xbv = next;
+                    if done {
+                        break;
+                    }
+                }
+                xbv
+            };
+            JunctionBreakdown {
+                xbv,
+                knee: bknee,
+                critical: critical(bknee, is),
+            }
+        });
+        Junction {
+            saturation_amps: self.saturation_amps,
+            knee,
+            critical: critical(knee, self.saturation_amps),
+            breakdown,
+        }
     }
 
     /// SPICE's `pnjlim`: a step from `old` to `new` that climbs past the
     /// critical voltage is taken logarithmically, so a Newton iterate can
-    /// never jump far up the exponential; steps elsewhere — reverse bias
-    /// included, where the junction is a constant leakage — are untouched.
+    /// never jump far up the exponential; past the breakdown voltage the
+    /// same holds in mirror for the breakdown exponential. Steps
+    /// elsewhere are untouched.
     pub fn limit_step(&self, new: f64, old: f64) -> f64 {
-        let (knee, critical) = (self.knee_volts(), self.critical_volts());
-        if new <= critical || (new - old).abs() <= 2.0 * knee {
-            return new;
-        }
-        if old > 0.0 {
-            let arg = 1.0 + (new - old) / knee;
-            if arg > 0.0 {
-                old + knee * arg.ln()
-            } else {
-                critical
-            }
-        } else {
-            knee * (new / knee).ln()
-        }
+        self.junction().limit_step(new, old)
     }
 
     /// `limit_step` for an antiparallel pair: either polarity climbs an
-    /// exponential, so negative steps are limited in mirror.
+    /// exponential, so negative steps are limited in mirror. (A pair
+    /// conducts forward long before either junction breaks down, so the
+    /// pair methods leave breakdown out.)
     pub fn limit_pair_step(&self, new: f64, old: f64) -> f64 {
+        let knee = self.knee_volts();
+        let critical = self.critical_volts();
         if new < 0.0 {
-            -self.limit_step(-new, -old)
+            -pnjlim(-new, -old, knee, critical)
         } else {
-            self.limit_step(new, old)
+            pnjlim(new, old, knee, critical)
         }
     }
 
     pub fn current(&self, volts: f64) -> f64 {
-        self.saturation_amps * (volts / self.knee_volts()).exp_m1()
+        self.current_and_conductance(volts).0
     }
 
     pub fn conductance(&self, volts: f64) -> f64 {
-        self.saturation_amps / self.knee_volts() * (volts / self.knee_volts()).exp()
+        self.current_and_conductance(volts).1
     }
 
-    /// `(current, conductance)` from one exponential — the pair a Newton
-    /// residual needs at every iterate.
+    /// `(current, conductance)`, the pair a Newton residual needs at
+    /// every iterate. With breakdown this solves the knee each call: a
+    /// solver holds a [`junction`](Self::junction) instead.
     #[inline]
     pub fn current_and_conductance(&self, volts: f64) -> (f64, f64) {
-        let knee = self.knee_volts();
-        let em1 = (volts / knee).exp_m1();
-        (
-            self.saturation_amps * em1,
-            self.saturation_amps / knee * (em1 + 1.0),
-        )
+        if self.breakdown.is_none() {
+            let knee = self.knee_volts();
+            let em1 = (volts / knee).exp_m1();
+            return (
+                self.saturation_amps * em1,
+                self.saturation_amps / knee * (em1 + 1.0),
+            );
+        }
+        self.junction().current_and_conductance(volts)
     }
 
     /// The antiparallel pair's `(current, conductance)` from one
@@ -139,16 +364,175 @@ impl Shockley {
     }
 }
 
+/// A [`Shockley`] junction prepared for evaluation (its breakdown knee
+/// solved): what circuit methods hold.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Junction {
+    saturation_amps: f64,
+    knee: f64,
+    critical: f64,
+    breakdown: Option<JunctionBreakdown>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct JunctionBreakdown {
+    /// ngspice's knee `xbv`: below `−xbv` the current is the breakdown
+    /// exponential.
+    xbv: f64,
+    knee: f64,
+    critical: f64,
+}
+
+impl Junction {
+    /// `(current, conductance)` at `volts`: one exponential. With
+    /// breakdown, ngspice's three regions — forward above `−3·N·Vt`, its
+    /// cubic reverse form down to `−xbv`, the breakdown exponential below.
+    #[inline]
+    pub fn current_and_conductance(&self, volts: f64) -> (f64, f64) {
+        let is = self.saturation_amps;
+        if let Some(b) = &self.breakdown {
+            if volts < -3.0 * self.knee {
+                if volts >= -b.xbv {
+                    let arg = 3.0 * self.knee / (volts * std::f64::consts::E);
+                    let arg3 = arg * arg * arg;
+                    return (-is * (1.0 + arg3), is * 3.0 * arg3 / volts);
+                }
+                let e = (-(b.xbv + volts) / b.knee).exp();
+                return (-is * e, is * e / b.knee);
+            }
+        }
+        let em1 = (volts / self.knee).exp_m1();
+        (is * em1, is / self.knee * (em1 + 1.0))
+    }
+
+    /// SPICE's `pnjlim` on whichever exponential the step climbs
+    /// (ngspice's `dioload.c`: the breakdown side within ten knees of
+    /// `−xbv`).
+    #[inline]
+    pub fn limit_step(&self, new: f64, old: f64) -> f64 {
+        if let Some(b) = &self.breakdown {
+            if new < f64::min(0.0, -b.xbv + 10.0 * b.knee) {
+                let (new_r, old_r) = (-(new + b.xbv), -(old + b.xbv));
+                return -(pnjlim(new_r, old_r, b.knee, b.critical) + b.xbv);
+            }
+        }
+        pnjlim(new, old, self.knee, self.critical)
+    }
+}
+
+impl Diode for Junction {
+    #[inline]
+    fn current_and_conductance(&self, volts: f64) -> (f64, f64) {
+        Junction::current_and_conductance(self, volts)
+    }
+
+    #[inline]
+    fn limit_step(&self, new: f64, old: f64) -> f64 {
+        Junction::limit_step(self, new, old)
+    }
+}
+
+/// SPICE's `vcrit` for an exponential `scale·exp(v/knee)`.
+fn critical(knee: f64, scale: f64) -> f64 {
+    knee * (knee / (std::f64::consts::SQRT_2 * scale)).ln()
+}
+
+/// SPICE's `pnjlim` (Nagel, SPICE2, 1975) on one exponential.
+fn pnjlim(new: f64, old: f64, knee: f64, critical: f64) -> f64 {
+    if new <= critical || (new - old).abs() <= 2.0 * knee {
+        return new;
+    }
+    if old > 0.0 {
+        let arg = 1.0 + (new - old) / knee;
+        if arg > 0.0 {
+            old + knee * arg.ln()
+        } else {
+            critical
+        }
+    } else {
+        knee * (new / knee).ln()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const PARTS: [Shockley; 9] = [
+        Shockley::N4148,
+        Shockley::N914,
+        Shockley::N4007,
+        Shockley::N34A,
+        Shockley::LED_RED,
+        Shockley::LED_GREEN,
+        Shockley::LED_BLUE,
+        Shockley::BZX84C6V2L,
+        Shockley::N750,
+    ];
+
     #[test]
     fn a_pair_is_two_opposed_diodes() {
-        let d = Shockley::D1N4148;
+        let d = Shockley::N4148;
         for v in [-0.6, -0.1, 0.0, 0.3, 0.7] {
             let pair = d.current(v) - d.current(-v);
             assert!((d.pair_current(v) - pair).abs() < 1e-15 + 1e-9 * pair.abs());
         }
+    }
+
+    #[test]
+    fn the_conductance_is_the_derivative_of_the_current() {
+        for d in PARTS {
+            for v in [-30.0, -6.5, -6.2, -4.8, -1.0, 0.0, 0.3, 0.7, 2.0] {
+                let (_, g) = d.current_and_conductance(v);
+                let h = 1e-6;
+                let numeric = (d.current(v + h) - d.current(v - h)) / (2.0 * h);
+                assert!(
+                    (g - numeric).abs() <= 1e-5 * numeric.abs() + 1e-15,
+                    "{d:?} at {v}: {g} vs {numeric}"
+                );
+            }
+        }
+    }
+
+    /// At `−BV` a Zener carries `IBV` (ngspice's knee is fitted to it)
+    /// when `Is` is small; the 1N34A's large `Is` leaves it less, as in
+    /// ngspice.
+    #[test]
+    fn a_zener_carries_ibv_at_bv() {
+        for d in [Shockley::BZX84C6V2L, Shockley::N750, Shockley::LED_BLUE] {
+            let b = d.breakdown.unwrap();
+            let i = -d.current(-b.volts);
+            assert!((i / b.amps - 1.0).abs() < 1e-3, "{d:?}: {i}");
+        }
+        assert!(
+            Shockley::N4148.current(-50.0) > -1e-8,
+            "no breakdown without BV"
+        );
+        let germanium = -Shockley::N34A.current(-25.0);
+        assert!((1e-4..3e-3).contains(&germanium), "{germanium}");
+    }
+
+    /// The LEDs' forward voltages at 20 mA, junction plus series drop.
+    #[test]
+    fn leds_light_at_their_colours_forward_voltage() {
+        for (d, vf) in [
+            (Shockley::LED_RED, 1.85),
+            (Shockley::LED_GREEN, 2.29),
+            (Shockley::LED_BLUE, 3.70),
+        ] {
+            let junction = d.knee_volts() * (0.02 / d.saturation_amps).ln_1p();
+            let total = junction + 0.02 * d.series_ohms;
+            assert!((total - vf).abs() < 0.02, "{total}");
+        }
+    }
+
+    #[test]
+    fn limiting_never_moves_a_small_step_and_tames_a_big_one() {
+        let z = Shockley::BZX84C6V2L;
+        assert_eq!(z.limit_step(-6.25, -6.24), -6.25);
+        let tamed = z.limit_step(-40.0, -6.2);
+        assert!(tamed > -7.0, "{tamed}");
+        let forward = z.limit_step(20.0, 0.6);
+        assert!(forward < 1.0, "{forward}");
     }
 }

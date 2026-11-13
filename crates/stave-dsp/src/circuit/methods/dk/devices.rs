@@ -3,7 +3,10 @@
 //! `v(b, a)` share one unknown) and writes some outputs — currents
 //! injected into the network, or a behavioural source's voltage.
 
-use crate::circuit::devices::diode::Shockley;
+use crate::circuit::devices::diode::Junction;
+use crate::circuit::devices::opamp::Prepared;
+use crate::circuit::devices::ota::{BipolarPair, Ota};
+use crate::circuit::devices::pentode::{koren::Koren as PentodeKoren, Pentode};
 use crate::circuit::devices::triode::{Triode, Tube};
 use crate::circuit::netlist::expr::{Dual, Tape, MAX_CONTROLS};
 
@@ -18,9 +21,18 @@ pub(crate) const SHUNT: f64 = 1e-3;
 pub(crate) enum Device {
     /// One control (anode to cathode), one output: its current less the
     /// part `shunt · v` the linear network carries (see [`SHUNT`]).
-    Diode(Shockley),
+    Diode(Junction),
     /// Controls (grid–cathode, plate–cathode); outputs (plate, grid).
     Triode(Tube),
+    /// Controls (grid–cathode, screen–cathode, plate–cathode); outputs
+    /// (plate, screen).
+    Pentode(PentodeKoren),
+    /// A macromodel op-amp's gain stage. Controls (`v(+, −)`, the
+    /// internal node); one output, the current into the internal node.
+    OpAmp(Prepared),
+    /// Controls (`v(+, −)`, the bias junction); outputs (the current into
+    /// the output node, the bias junction's current less its shunt).
+    Ota(BipolarPair),
     /// Controls as the tape numbers them; one output.
     Expression { tape: Tape, stack: Vec<Dual> },
 }
@@ -64,6 +76,40 @@ impl Nonlinear {
                 jq[o * nv + gp] += c.plate_per_plate_volt * sp;
                 jq[(o + 1) * nv + gg] += c.grid_per_grid_volt * sg;
             }
+            Device::Pentode(t) => {
+                let (vg, vs, vp) = (
+                    sign_read(&self.controls, v, 0),
+                    sign_read(&self.controls, v, 1),
+                    sign_read(&self.controls, v, 2),
+                );
+                let c = t.currents(vg, vs, vp);
+                let ((gg, sg), (gs, ss), (gp, sp)) = (self.controls[0], self.controls[1], self.controls[2]);
+                q[o] = c.plate;
+                q[o + 1] = c.screen;
+                jq[o * nv + gg] += c.plate_per_grid_volt * sg;
+                jq[o * nv + gs] += c.plate_per_screen_volt * ss;
+                jq[o * nv + gp] += c.plate_per_plate_volt * sp;
+                jq[(o + 1) * nv + gg] += c.screen_per_grid_volt * sg;
+                jq[(o + 1) * nv + gs] += c.screen_per_screen_volt * ss;
+            }
+            Device::OpAmp(a) => {
+                let (vd, vn) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
+                let c = a.current(vd, vn);
+                let ((gd, sd), (gn, sn)) = (self.controls[0], self.controls[1]);
+                q[o] = c.amps;
+                jq[o * nv + gd] += c.per_input_volt * sd;
+                jq[o * nv + gn] += c.per_node_volt * sn;
+            }
+            Device::Ota(a) => {
+                let (vd, vb) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
+                let c = a.currents(vd, vb);
+                let ((gd, sd), (gb, sb)) = (self.controls[0], self.controls[1]);
+                q[o] = c.output;
+                q[o + 1] = c.bias - SHUNT * vb;
+                jq[o * nv + gd] += c.output_per_input_volt * sd;
+                jq[o * nv + gb] += c.output_per_bias_volt * sb;
+                jq[(o + 1) * nv + gb] += (c.bias_per_bias_volt - SHUNT) * sb;
+            }
             Device::Expression { tape, stack } => {
                 let mut local = [0.0; MAX_CONTROLS];
                 for (i, &(g, sign)) in self.controls.iter().enumerate() {
@@ -80,10 +126,18 @@ impl Nonlinear {
 
     /// Bound a Newton step from `old` to `new` (a junction's `pnjlim`).
     pub fn limit(&self, new: &mut [f64], old: &[f64]) {
-        if let Device::Diode(d) = &self.device {
-            let (g, sign) = self.controls[0];
-            let limited = d.limit_step(sign * new[g], self.local(old, 0));
-            new[g] = sign * limited;
+        match &self.device {
+            Device::Diode(d) => {
+                let (g, sign) = self.controls[0];
+                let limited = d.limit_step(sign * new[g], self.local(old, 0));
+                new[g] = sign * limited;
+            }
+            Device::Ota(a) => {
+                let (g, sign) = self.controls[1];
+                let limited = a.limit_bias_step(sign * new[g], self.local(old, 1));
+                new[g] = sign * limited;
+            }
+            _ => {}
         }
     }
 }

@@ -79,7 +79,7 @@ fn diode_clipper(v: &StageParams) -> DiodeClipperConfig {
     DiodeClipperConfig {
         input_ohms: v.get("input") * 1e3,
         capacitor_farads: v.get("capacitor") * 1e-9,
-        diode: Shockley::D1N4148,
+        diode: Shockley::N4148,
         solver: PairSolver::ALL[v.choice("solver")],
     }
 }

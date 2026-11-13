@@ -176,7 +176,7 @@ fn primitive_datasheet() {
         let mut wdf = DiodeClipper::new(DiodeClipperConfig {
             input_ohms: 2.2e3,
             capacitor_farads: 10e-9,
-            diode: Shockley::D1N4148,
+            diode: Shockley::N4148,
             solver,
         });
         wdf.prepare(sr);
@@ -514,7 +514,7 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut wdf = DiodeClipper::new(DiodeClipperConfig {
         input_ohms: 2.2e3,
         capacitor_farads: 10e-9,
-        diode: Shockley::D1N4148,
+        diode: Shockley::N4148,
         solver: PairSolver::default(),
     });
     wdf.prepare(sr);

@@ -27,6 +27,9 @@ pub mod spice;
 use std::fmt;
 
 use crate::circuit::devices::diode::Shockley;
+use crate::circuit::devices::opamp::Amp;
+use crate::circuit::devices::ota::BipolarPair;
+use crate::circuit::devices::pentode::koren::Koren as PentodeKoren;
 use crate::circuit::devices::triode::Tube;
 pub use expr::Expr;
 
@@ -100,13 +103,20 @@ pub enum ElementKind {
         control: String,
         gain: f64,
     },
-    /// A junction from `anode` to `cathode`, with the model card's series
-    /// resistance.
+    /// SPICE `G`: a current of gain · v(control) (siemens) from `a`
+    /// through the element to `b`.
+    VoltageControlledCurrent {
+        a: Node,
+        b: Node,
+        control: (Node, Node),
+        gain: f64,
+    },
+    /// A junction from `anode` to `cathode`; the model's
+    /// [`series_ohms`](Shockley::series_ohms) is a resistor in series.
     Diode {
         anode: Node,
         cathode: Node,
         diode: Shockley,
-        series_ohms: f64,
     },
     /// A triode by stave's device models (no SPICE spelling; built in code).
     Triode {
@@ -114,6 +124,41 @@ pub enum ElementKind {
         grid: Node,
         cathode: Node,
         tube: Tube,
+    },
+    /// A pentode or beam tetrode by stave's device models (no SPICE
+    /// spelling — ngspice decks write the same law as `B` sources; built
+    /// in code).
+    Pentode {
+        plate: Node,
+        screen: Node,
+        grid: Node,
+        cathode: Node,
+        tube: PentodeKoren,
+    },
+    /// An op-amp (no SPICE primitive; built in code): its inputs draw no
+    /// current and its output is a voltage source to ground. `supply` is
+    /// the rails `(negative, positive)` in volts, which a
+    /// [`Macromodel`](crate::circuit::devices::opamp::Macromodel) clips
+    /// short of; the [`Ideal`](crate::circuit::devices::opamp::Ideal)
+    /// ignores them.
+    OpAmp {
+        plus: Node,
+        minus: Node,
+        output: Node,
+        amp: Amp,
+        supply: (f64, f64),
+    },
+    /// An OTA (no SPICE primitive; built in code): a current into
+    /// `output` set by v(plus, minus), and the bias pin a junction from
+    /// `bias` to `negative` (the negative supply) whose current the chip
+    /// mirrors as `Iabc`.
+    Ota {
+        plus: Node,
+        minus: Node,
+        output: Node,
+        bias: Node,
+        negative: Node,
+        ota: BipolarPair,
     },
     /// SPICE `B … I = {expr}`.
     BehaviouralCurrent { a: Node, b: Node, expression: Expr },
@@ -257,7 +302,7 @@ pub struct Netlist {
     /// The voltage the deck writes out (`wrdata … v(a, b)`).
     pub probe: Option<Probe>,
     /// Model-card parameters the parser accepted but no stave element
-    /// models (a diode's junction capacitance, transit time, breakdown),
+    /// models (a diode's junction capacitance, transit time),
     /// as `model: parameter` — so what a comparison leaves out is on
     /// record.
     pub unmodelled: Vec<String>,
@@ -315,6 +360,13 @@ impl Netlist {
     pub fn element(&self, name: &str) -> Option<&Element> {
         let name = name.to_ascii_lowercase();
         self.elements.iter().find(|e| e.name == name)
+    }
+
+    /// Take the named element out (its nodes stay), returning it.
+    pub fn remove(&mut self, name: &str) -> Option<Element> {
+        let name = name.to_ascii_lowercase();
+        let at = self.elements.iter().position(|e| e.name == name)?;
+        Some(self.elements.remove(at))
     }
 
     pub fn element_mut(&mut self, name: &str) -> Option<&mut Element> {

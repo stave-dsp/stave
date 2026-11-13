@@ -62,5 +62,5 @@ fn the_decks_elements_read_as_written() {
         ElementKind::BehaviouralCurrent { .. }
     ));
     // What the WDF clipper and DK leave out of the 1N4148 card, on record.
-    assert_eq!(find("diode_clipper").unmodelled.len(), 4);
+    assert_eq!(find("diode_clipper").unmodelled.len(), 3);
 }

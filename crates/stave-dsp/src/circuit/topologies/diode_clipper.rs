@@ -151,7 +151,7 @@ mod tests {
         let mut c = DiodeClipper::new(DiodeClipperConfig {
             input_ohms: 2.2e3,
             capacitor_farads: 10e-9,
-            diode: Shockley::D1N4148,
+            diode: Shockley::N4148,
             solver,
         });
         c.prepare(48_000.0);
