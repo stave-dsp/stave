@@ -31,7 +31,9 @@ stave-play --list-material --export-material /tmp/stave-material
 ```
 
 A candidate is one string: `dry` (the material unprocessed, which is the
-bypass anchor), a `.vst3` bundle, `stage:NAME`, `wav:FILE` (a recording
+bypass anchor), a `.vst3` bundle, an Audio Unit (`au:NAME` or its
+`.component`, macOS: a third-party contender, see [Benchmark against
+another plugin](crate::howto::host_tools)), `stage:NAME`, `wav:FILE` (a recording
 aligned to the material, such as a capture) or `blessed:RECORD` (a sound
 blessed earlier). Pieces after `;` are param settings in the param's own
 units (as `--set` takes them), `preset=NAME`, `label=TEXT`, or `ref`,

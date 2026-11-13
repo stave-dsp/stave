@@ -177,10 +177,7 @@ fn open_job(
                 label: c.label.clone(),
                 source,
             })?;
-            let mut instance: Box<dyn Instance + Send> = match opened {
-                Opened::Plugin(p) => p,
-                Opened::Stage(s) => Box::new(s),
-            };
+            let mut instance: Box<dyn Instance + Send> = opened.into_send();
             if instance.layout().inputs == 0 {
                 return Err(candidate_err(
                     c,

@@ -26,8 +26,9 @@ fn tone() -> ToneWindow {
 #[test]
 fn names_are_unique_and_params_valid() {
     use stave_core::params::Params;
-    for (i, m) in CATALOG.iter().enumerate() {
-        assert!(CATALOG[..i].iter().all(|o| o.name != m.name), "{}", m.name);
+    let all: Vec<&StageSpec> = CATALOG.iter().chain(REFERENCES).collect();
+    for (i, m) in all.iter().enumerate() {
+        assert!(all[..i].iter().all(|o| o.name != m.name), "{}", m.name);
         let params = (m.params)();
         assert_eq!(params.validate(), Ok(()), "{}", m.name);
         let mut names: Vec<_> = (0..params.count())
@@ -135,4 +136,26 @@ fn every_module_passes_validation() {
         failed.extend(failures(stage, true));
     }
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// Every reference model opens by name, runs a hot tone at every
+/// oversampling factor to a finite output, and reports its solver.
+#[test]
+fn every_reference_runs() {
+    let input: Vec<f32> = (0..4_800).map(|i| 0.3 * (std::f32::consts::TAU * 220.0 * i as f32 / 48_000.0).sin()).collect();
+    for spec in REFERENCES {
+        let opened = crate::opened::Opened::open(std::path::Path::new(&format!("{PREFIX}{}", spec.name)), config()).unwrap();
+        let mut inst = opened.into_instance();
+        for factor in 0..4 {
+            inst.set_param("oversample", f64::from(factor)).unwrap();
+            let (mut l, mut r) = (vec![0.0f32; 64], vec![0.0f32; 64]);
+            let mut peak = 0.0f32;
+            for chunk in input.chunks(64).take(if factor < 2 { 75 } else { 10 }) {
+                inst.process(&[chunk, chunk], &mut [&mut l, &mut r], &[]);
+                assert!(l.iter().all(|v| v.is_finite()), "{} at factor {factor}", spec.name);
+                peak = l.iter().fold(peak, |p, v| p.max(v.abs()));
+            }
+            assert!(peak > 1e-4, "{} at factor {factor}: silent", spec.name);
+        }
+    }
 }

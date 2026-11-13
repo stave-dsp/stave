@@ -32,7 +32,7 @@ fn stage<S: Stage + Send + 'static>(
     })
 }
 
-fn stage_with_solver<S: Stage + Send + 'static>(
+pub(super) fn stage_with_solver<S: Stage + Send + 'static>(
     stage: S,
     configure: fn(&mut S, &StageParams),
     solver: fn(&S) -> NewtonStats,
@@ -151,7 +151,7 @@ const PLAIN: Unit = Unit::Plain { decimals: 3 };
 /// A continuous param, linear across `min..=max`. A param change
 /// re-voices the stage between blocks, with no glide, so it is not
 /// offered for automation.
-fn float(
+pub(super) fn float(
     id: u32,
     name: &'static str,
     min: f64,
@@ -168,37 +168,15 @@ fn float(
 }
 
 /// A choice among `T`'s options, starting at the first.
-fn choice<T: ParamEnum>(id: u32, name: &'static str) -> Box<dyn AnyParam> {
+pub(super) fn choice<T: ParamEnum>(id: u32, name: &'static str) -> Box<dyn AnyParam> {
     Box::new(EnumParam::new(ParamId(id), name, T::from_index(0)))
 }
 
-/// A choice over a static list of option names.
-macro_rules! options {
-    ($(#[$doc:meta])* $name:ident = $names:expr) => {
-        $(#[$doc])*
-        #[derive(Copy, Clone)]
-        struct $name(u32);
-
-        impl ParamEnum for $name {
-            const COUNT: u32 = $names.len() as u32;
-            fn from_index(i: u32) -> Self {
-                Self(i.min(Self::COUNT - 1))
-            }
-            fn to_index(self) -> u32 {
-                self.0
-            }
-            fn name(i: u32) -> &'static str {
-                $names[(i as usize).min($names.len() - 1)]
-            }
-        }
-    };
-}
-
-options!(
+options_list!(
     /// The diode pair's solver.
     Solver = PairSolver::NAMES
 );
-options!(
+options_list!(
     /// The triode model.
     TubeChoice = Tube::NAMES
 );
@@ -364,3 +342,31 @@ pub const CATALOG: &[StageSpec] = &[
     },
 ];
 
+/// The reference models a host tool can open by name beside the
+/// catalog: whole verified netlists and the ladder filters, offline (a
+/// netlist costs microseconds a sample, so they are not held to the
+/// realtime validation suite the catalog passes). For measuring and
+/// auditioning against a plugin (`stave-play --characterise`, the Voicing
+/// tab).
+pub const REFERENCES: &[StageSpec] = &[
+    StageSpec {
+        name: "circuit/ts808",
+        params: super::classics::ts808_params,
+        build: super::classics::ts808,
+    },
+    StageSpec {
+        name: "circuit/jcm800_2203",
+        params: super::classics::jcm800_params,
+        build: super::classics::jcm800,
+    },
+    StageSpec {
+        name: "circuit/moog_904a",
+        params: super::classics::moog_params,
+        build: super::classics::moog,
+    },
+    StageSpec {
+        name: "filter/ladder",
+        params: super::classics::ladder_params,
+        build: super::classics::ladder,
+    },
+];

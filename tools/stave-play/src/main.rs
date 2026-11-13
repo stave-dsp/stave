@@ -4,6 +4,7 @@
 
 mod analysis;
 mod app;
+mod characterise;
 mod audio;
 mod debug_log;
 #[cfg_attr(not(target_os = "macos"), path = "editor_none.rs")]
@@ -26,10 +27,15 @@ const USAGE: &str = "stave-play [PLUGIN.vst3] [--sample-rate HZ] [--block-size N
        stave-play --compare CANDIDATE --compare CANDIDATE ... [--material MATERIAL] \
                      [--trim DB] [--abx-trials N] [--voicing-dir DIR]
        stave-play --verify-blessed RECORD_OR_DIR [--tolerance-db DB]
+       stave-play --characterise CANDIDATE --characterise CANDIDATE ... \
+                     [--rates HZ,HZ] [--tier t0|t1] [--process-block N] [--report PATH]
        stave-play --list-material [--export-material DIR]
 
-A CANDIDATE is dry, PLUGIN.vst3, stage:NAME, wav:FILE or blessed:RECORD,
-then ;name=value settings, ;preset=NAME, ;label=TEXT or ;ref (quote it).
+A CANDIDATE is dry, PLUGIN.vst3, au:NAME (an Audio Unit, macOS), stage:NAME,
+wav:FILE or blessed:RECORD, then ;name=value settings, ;preset=NAME,
+;label=TEXT or ;ref (quote it). --characterise measures each plugin or
+stage candidate as a black box (DSP.md R17-R19) and prints them side by
+side (default rates 44100,48000, tier t1, process block 64).
 MATERIAL is a built-in name (see --list-material) or a WAV path.";
 
 fn main() -> std::process::ExitCode {
@@ -63,6 +69,18 @@ fn main() -> std::process::ExitCode {
     }
     if let Some(path) = &launch.verify_blessed {
         return verify_blessed(path, launch.tolerance_db);
+    }
+    if !launch.characterise.candidates.is_empty() {
+        return match characterise::run(&launch.characterise) {
+            Ok(report) => {
+                println!("{report}");
+                std::process::ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("stave-play: {e}");
+                std::process::ExitCode::FAILURE
+            }
+        };
     }
     let voicing = match voicing::Voicing::new(&launch.app.voicing) {
         Ok(v) => v,
@@ -154,6 +172,7 @@ struct Cli {
     tolerance_db: f64,
     list_material: bool,
     export_material: Option<PathBuf>,
+    characterise: characterise::Options,
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -182,6 +201,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
     };
     let (mut verify_blessed, mut tolerance_db, mut list_material) = (None, -120.0, false);
     let mut export_material = None;
+    let mut characterise = characterise::Options::default();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         let mut value = |flag| it.next().ok_or(ArgError::MissingValue(flag));
@@ -245,6 +265,28 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
                 let v = value("--tolerance-db")?;
                 tolerance_db = v.parse().map_err(|_| bad("--tolerance-db", &v))?;
             }
+            "--characterise" => {
+                let v = value("--characterise")?;
+                voicing::Candidate::parse(&v).map_err(|_| bad("--characterise", &v))?;
+                characterise.candidates.push(v);
+            }
+            "--rates" => {
+                let v = value("--rates")?;
+                characterise.rates = characterise::parse_rates(&v).ok_or_else(|| bad("--rates", &v))?;
+            }
+            "--tier" => {
+                let v = value("--tier")?;
+                characterise.tier = match v.to_ascii_lowercase().as_str() {
+                    "t0" => stave_test::characterise::Tier::T0,
+                    "t1" => stave_test::characterise::Tier::T1,
+                    _ => return Err(bad("--tier", &v)),
+                };
+            }
+            "--process-block" => {
+                let v = value("--process-block")?;
+                characterise.block = v.parse().ok().filter(|n| *n > 0).ok_or_else(|| bad("--process-block", &v))?;
+            }
+            "--report" => characterise.out = Some(PathBuf::from(value("--report")?)),
             "--list-material" => list_material = true,
             "--export-material" => export_material = Some(PathBuf::from(value("--export-material")?)),
             s if s.starts_with('-') => return Err(ArgError::UnknownOption(arg)),
@@ -258,6 +300,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
         tolerance_db,
         list_material,
         export_material,
+        characterise,
     }))
 }
 
@@ -335,5 +378,16 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!((c.verify_blessed, c.tolerance_db), (Some(PathBuf::from("b")), -90.0));
+    }
+
+    #[test]
+    fn parses_characterise_options() {
+        let args = ["--characterise", "stage:circuit/ts808", "--characterise", "au:Some Effect;Drive=1", "--rates",
+            "48000", "--tier", "t0", "--process-block", "128", "--report", "r.md"];
+        let c = parse(args.into_iter().map(String::from)).unwrap().unwrap().characterise;
+        assert_eq!(c.candidates, ["stage:circuit/ts808", "au:Some Effect;Drive=1"]);
+        assert_eq!((c.rates, c.block, c.tier), (vec![48_000.0], 128, stave_test::characterise::Tier::T0));
+        assert_eq!(c.out, Some(PathBuf::from("r.md")));
+        assert!(parse(["--tier", "t9"].into_iter().map(String::from)).is_err());
     }
 }

@@ -6,15 +6,39 @@
 //! ```text
 //! mod.rs       the stage model: StageSpec, StageParams
 //! catalog.rs   the static catalog: every stage, its params and builder
+//! classics.rs  REFERENCES: the classic netlists and the ladders, offline
 //! instance.rs  CatalogInstance / CatalogHandle: a catalog stage running
 //! ```
 
+/// A choice over a static list of option names.
+macro_rules! options_list {
+    ($(#[$doc:meta])* $name:ident = $names:expr) => {
+        $(#[$doc])*
+        #[derive(Copy, Clone)]
+        pub struct $name(u32);
+
+        impl stave_core::params::ParamEnum for $name {
+            const COUNT: u32 = $names.len() as u32;
+            fn from_index(i: u32) -> Self {
+                Self(i.min(Self::COUNT - 1))
+            }
+            fn to_index(self) -> u32 {
+                self.0
+            }
+            fn name(i: u32) -> &'static str {
+                $names[(i as usize).min($names.len() - 1)]
+            }
+        }
+    };
+}
+
 mod catalog;
+mod classics;
 mod instance;
 #[cfg(test)]
 mod tests;
 
-pub use catalog::CATALOG;
+pub use catalog::{CATALOG, REFERENCES};
 pub use instance::{CatalogHandle, CatalogInstance};
 
 use stave_core::params::{AnyParam, Params};
@@ -81,6 +105,7 @@ impl Params for StageParams {
     }
 }
 
+/// The catalog stage, or reference model, named `name`.
 pub fn find(name: &str) -> Option<&'static StageSpec> {
-    CATALOG.iter().find(|m| m.name == name)
+    CATALOG.iter().chain(REFERENCES).find(|m| m.name == name)
 }

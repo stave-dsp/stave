@@ -98,38 +98,6 @@ pub enum BlessError {
 /// file's text.
 pub const FINGERPRINT_FORMAT: &str = "stave fingerprint v1";
 
-/// The silence a candidate gets before each fingerprint run: a plugin
-/// cannot be reset through the host API, so each run starts from rest.
-const REST_SECONDS: f64 = 0.1;
-
-/// A plugin or stage candidate as a ticker: one instance, opened once,
-/// processed a sample at a time (mono in to every input, the first
-/// output out); each fresh ticker first plays [`REST_SECONDS`] of
-/// silence.
-fn ticker_of(instance: Box<dyn stave_host::instance::Instance + Send>, rate: f64) -> impl Fn(f64) -> stave_test::characterise::model::Ticker {
-    let layout = instance.layout();
-    let shared = std::rc::Rc::new(std::cell::RefCell::new(instance));
-    let (n_in, n_out) = (layout.inputs.max(1), layout.outputs.max(1));
-    move |_rate| {
-        let inst = shared.clone();
-        let mut ins = vec![[0.0f32; 1]; n_in];
-        let mut outs = vec![[0.0f32; 1]; n_out];
-        let mut tick = move |x: f64| {
-            for i in &mut ins {
-                i[0] = x as f32;
-            }
-            let in_refs: Vec<&[f32]> = ins.iter().map(|b| &b[..]).collect();
-            let mut out_refs: Vec<&mut [f32]> = outs.iter_mut().map(|b| &mut b[..]).collect();
-            inst.borrow_mut().process(&in_refs, &mut out_refs, &[]);
-            f64::from(outs[0][0])
-        };
-        for _ in 0..(REST_SECONDS * rate) as usize {
-            tick(0.0);
-        }
-        Box::new(tick)
-    }
-}
-
 /// The R18 hook: the candidate's fingerprint at `sample_rate`, as JSON
 /// (`{format, case, knee, text}`), or `None` for a candidate that does
 /// not run (dry, a recording, a blessed take) or fails to open. Knee
@@ -142,7 +110,8 @@ pub fn fingerprint_at(
     sample_rate: f64,
     knee: Option<stave_measure::suite::levels::Knee>,
 ) -> Option<stave_test::characterise::Fingerprint> {
-    use stave_test::characterise::fingerprint::of_stage;
+    use stave_test::characterise::black_box::maker;
+    use stave_test::characterise::fingerprint::of_black_box;
     if !matches!(candidate.source, super::candidate::Source::Plugin { .. }) {
         return None;
     }
@@ -154,7 +123,8 @@ pub fn fingerprint_at(
     let mut jobs = takes::open_jobs(std::slice::from_ref(candidate), material, trim_db, config).ok()?;
     let Some(Job::Instance { instance, .. }) = jobs.pop() else { return None };
     let model = format!("stave-play candidate `{}`", candidate.label);
-    let (fp, plan) = of_stage(&slug(&candidate.label), &model, None, ticker_of(instance, sample_rate), sample_rate, knee);
+    let shared = std::rc::Rc::new(std::cell::RefCell::new(instance));
+    let (fp, plan) = of_black_box(&slug(&candidate.label), &model, None, maker(shared, 1), sample_rate, knee);
     Some(fp.derived(&plan, None))
 }
 

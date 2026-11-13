@@ -188,3 +188,22 @@ fn trim_sets_the_drive() {
     let ratio = a[0].iter().zip(&m.channels[0]).find(|(_, b)| b.abs() > 0.1).map(|(a, b)| a / b).unwrap();
     assert!((f64::from(ratio) - db_to_gain(-6.0)).abs() < 1e-6);
 }
+
+/// An Audio Unit is a contender like any other: opened from its spec,
+/// set by param name, latency-compensated and loudness-matched (Apple's
+/// own low-pass ships with every macOS).
+#[cfg(target_os = "macos")]
+#[test]
+fn an_audio_unit_is_a_contender() {
+    let m = material("guitar riff");
+    let (au, _) = Candidate::parse("au:Apple:AULowpass;Cutoff Frequency=1500;label=lp").unwrap();
+    let candidates = vec![Candidate::dry(), au];
+    let jobs = open_jobs(&candidates, &m, 0.0, config()).unwrap();
+    let plan = Plan { material: m, trim_db: 0.0, candidates, reference: None, with_anchor: false, block_size: 256 };
+    let p = prepare(plan, jobs, &AtomicU32::new(0)).unwrap();
+    let lp = &p.takes[1];
+    assert_eq!(lp.label, "lp");
+    assert!(lp.resolved.iter().any(|r| r.name == "Cutoff Frequency" && (r.value - 1_500.0).abs() < 1e-3), "{:?}", lp.resolved);
+    assert!(p.matching.max_deviation_lu <= REFINE_LU, "{:?}", p.matching);
+    assert_ne!(p.takes[0].sha256, lp.sha256, "the unit processed the material");
+}

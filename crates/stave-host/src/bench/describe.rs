@@ -44,6 +44,8 @@ pub fn describe_plugin(p: &crate::plugin::LoadedPlugin) -> Description {
 pub fn describe_opened(loaded: &crate::opened::Opened) -> Description {
     match loaded {
         crate::opened::Opened::Plugin(p) => describe_plugin(p),
+        #[cfg(target_os = "macos")]
+        crate::opened::Opened::AudioUnit(a) => describe(a.as_ref()),
         crate::opened::Opened::Stage(m) => describe(m),
     }
 }

@@ -4,13 +4,14 @@
 //!
 //! ```text
 //! plugin/    VST3 hosting → LoadedPlugin
+//! au/        Audio Unit hosting on macOS → AuInstance (offline)
 //! instance   the Instance trait: the seam everything measures through
 //! adapt      Instance ↔ System, and any stave-dsp Stage as an Instance
 //! param      one parameter model (Param, core's words), lookup by name
 //! stages     stave-dsp stages by name, loadable like plugins
 //! note       note schedules (of core's events)
 //! drive      Driver: run an Instance from a Signal + notes
-//! opened     what a tool opens: a bundle or stage:<name>
+//! opened     what a tool opens: a bundle, au:<name> or stage:<name>
 //! response   frequency response by log sweep (H1)
 //! bench/     the bench: phases, reports, the describe dump
 //! validate/  the validation suite: one file per check
@@ -18,6 +19,8 @@
 //! ```
 
 pub mod adapt;
+#[cfg(target_os = "macos")]
+pub mod au;
 pub mod bench;
 pub mod config;
 pub mod instance;

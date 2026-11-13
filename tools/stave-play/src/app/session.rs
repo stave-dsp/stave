@@ -25,6 +25,11 @@ pub enum SessionError {
     Load(#[from] OpenError),
     #[error("could not start audio")]
     Audio(#[from] AudioError),
+    /// Audio Units are measured and auditioned offline (the Voicing tab,
+    /// `--characterise`); the live session hosts VST3 and stages.
+    #[cfg(target_os = "macos")]
+    #[error("{0}: an Audio Unit plays in the Voicing tab and --characterise, not live")]
+    OfflineOnly(String),
 }
 
 enum ParamSource {
@@ -56,6 +61,8 @@ impl Session {
         let name = loaded.name();
         match loaded {
             Opened::Plugin(plugin) => Self::start_plugin(*plugin, name, shared, ns_view),
+            #[cfg(target_os = "macos")]
+            Opened::AudioUnit(_) => Err(SessionError::OfflineOnly(name)),
             Opened::Stage(stage) => {
                 let params = ParamSource::Stage(stage.handle());
                 let outputs = stage.layout().outputs;
