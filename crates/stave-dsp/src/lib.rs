@@ -93,13 +93,14 @@ pub use behavioral::smooth_sat::SmoothSat;
 // Layer 4 — circuit.
 // The flat names below keep plugin paths working until K3 prunes the
 // root to the author-level vocabulary: `Circuit` is the `Quiescent`
-// trait, `TriodeModel` the triode family's `Triode` trait.
+// trait. The triode family's `Triode` trait is reached by path
+// (`circuit::devices::triode::Triode`); `Triode` here is the stage.
 pub use circuit::audio::{AudioAdapter, AudioAdapterConfig, Quiescent as Circuit};
 pub use circuit::devices::diode::Shockley;
 pub use circuit::devices::magnetic::{JilesAtherton, JilesAthertonCore};
 pub use circuit::devices::triode::dempwolf::Dempwolf;
 pub use circuit::devices::triode::koren::Koren;
-pub use circuit::devices::triode::{Triode as TriodeModel, TriodeCurrents, Tube};
+pub use circuit::devices::triode::{TriodeCurrents, Tube};
 pub use circuit::methods::newton::{NewtonSettings, NewtonStats, Solved};
 pub use circuit::topologies::common_cathode::{CommonCathode, CommonCathodeConfig};
 pub use circuit::topologies::coupler::Coupler;

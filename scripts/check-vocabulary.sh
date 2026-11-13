@@ -11,7 +11,10 @@
 #     `stave` umbrella, stave-core's model, the guide, the examples),
 #     where an author reads them first;
 #   * a `Host` on the editor side (the face's side is the Controller;
-#     Host is the DAW).
+#     Host is the DAW);
+#   * an implementation word as the prefix or suffix of a name in
+#     stave-dsp's public API (DSP.md naming rule 1): `Model`, `Impl`,
+#     `Processor`, `Engine`, `Helper`, `V2`, `New`, `Simple`, `Fast`.
 #
 # Every word a rule below rejects must be listed in the "Never call it"
 # column of the glossary's Terms table (checked first), so the gate
@@ -109,5 +112,16 @@ report "sample_rate, never sr or fs; frame, never sample_offset" \
 documented plain get index
 report "a param's value is value(), in its natural type" \
   '\.(plain|get|index)\(\)' -- crates/stave/ examples/
+
+# stave-dsp names the thing, not the implementation (DSP.md naming
+# rule 1): no implementation word as the prefix or suffix of a public
+# type, trait or alias, or of a name re-exported `as`. (`NewtonSettings`
+# passes: the word must end at a capital, a digit or the name's end.)
+term model
+documented model impl processor engine helper v2 new simple fast
+IMPL='(Model|Impl|Processor|Engine|Helper|V2|New|Simple|Fast)'
+NAME="(${IMPL}(?:[A-Z0-9]\\w*)?|\\w*[a-z0-9]${IMPL})\\b"
+report "stave-dsp names the thing, not the implementation (DSP.md naming rule 1)" \
+  "\\bpub +(struct|enum|trait|type|union) +${NAME}|\\bpub +use +[^;]*\\bas +${NAME}|^ *[\\w:]+ +as +${NAME} *[,}]" -- crates/stave-dsp/src/
 
 exit "$fail"
