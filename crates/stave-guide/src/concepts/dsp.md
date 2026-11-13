@@ -454,6 +454,62 @@ method — the state space computed once per prepare, Newton only on the
 devices' controlling voltages. The hand-derived topologies are held to
 `Circuit<Dk>` on the same netlist (`dk_matches_ngspice.rs`).
 
+### Anti-aliasing inside a circuit
+
+A clipper inside a feedback loop cannot take the memoryless
+[`Adaa`](stave_dsp::Adaa) after its solve: the kernel's half-sample
+delay would land in the loop. [`Dk::set_antialiasing`](stave_dsp::circuit::methods::dk::Dk::set_antialiasing),
+[`Wdf::set_antialiasing`](stave_dsp::circuit::methods::wdf::Wdf::set_antialiasing)
+and [`DiodeClipper::set_antialiasing`](stave_dsp::DiodeClipper::set_antialiasing)
+take [`Antialiasing::Adaa`](stave_dsp::circuit::methods::adaa::Antialiasing)
+instead: the solve's outputs averaged over each sample (in closed form
+where the nonlinearity is a one-port of diodes, by quadrature
+otherwise), the rest of the loop delayed to match and designed for
+1.5 samples ([`methods::adaa`](stave_dsp::circuit::methods::adaa)).
+Closed form beats oversampling outright; quadrature lowers the aliasing
+too, but costs more than oversampling to the same level, so a
+transistor or tube circuit is better oversampled. The output is half a
+sample late, and the top of the band dips (2 dB at 10 kHz at 48 kHz),
+which mild oversampling removes.
+
+```rust
+use stave_dsp::circuit::methods::adaa::Antialiasing;
+use stave_dsp::circuit::methods::dk::{Dk, Mean};
+use stave_dsp::circuit::{Circuit, Netlist};
+use stave_dsp::Stage;
+use stave_measure::aliasing::SteppedTone;
+
+let clipper = Netlist::parse_spice(
+    "* diode clipper
+     V1 in 0 0
+     R1 in out 2.2k
+     C1 out 0 10n
+     D1 out 0 DI
+     D2 0 out DI
+     .model DI D(Is=2.52n N=1.752)
+     .control
+     wrdata out v(out)
+     .endc",
+)
+.unwrap();
+let sweep = SteppedTone { low_hz: 2_000.0, high_hz: 6_000.0, steps: 2, ..SteppedTone::default() };
+let aliasing = |antialiasing| {
+    sweep
+        .through(|| {
+            let mut c = Circuit::<Dk>::new(&clipper).unwrap();
+            c.drive("V1").unwrap();
+            c.set_antialiasing(antialiasing);
+            assert!(antialiasing == Antialiasing::None || c.adaa_mean() == Some(Mean::ClosedForm));
+            c.prepare(48_000.0);
+            move |x: f32| c.tick(10.0 * x)
+        })
+        .worst_audible()
+        .audible_db
+};
+let (plain, adaa) = (aliasing(Antialiasing::None), aliasing(Antialiasing::Adaa));
+assert!(adaa < plain - 10.0, "plain {plain:.1} dB, ADAA {adaa:.1} dB");
+```
+
 The models are held to references outside the code:
 
 - `crates/stave-test/tests/matches_ngspice.rs` compares against ngspice

@@ -63,10 +63,23 @@
 //!
 //! `stave-dsp/tests/datasheet.rs` lists `Circuit<Dk>` lines beside the
 //! hand-derived topologies'.
+//!
+//! # Anti-aliasing
+//!
+//! None by default. [`Dk::set_antialiasing`] turns on first-order
+//! stateful ADAA (Holters 2019; [`adaa`] has the update,
+//! [`methods::adaa`](crate::circuit::methods::adaa) the derivation and the
+//! measured alias levels): the matrices designed for `1.5·T`, the states
+//! and inputs averaged, the solve's outputs replaced by their mean over
+//! the sample — in closed form for a one-port of diodes, by Lobatto
+//! quadrature otherwise ([`Mean`]).
 
+pub mod adaa;
 pub mod devices;
 pub mod matrix;
 pub mod solve;
+
+pub use adaa::Mean;
 
 use devices::Nonlinear;
 pub use matrix::Phasor;
@@ -74,6 +87,7 @@ use matrix::accumulate;
 pub use solve::{Health, Settings};
 use solve::{Prediction, Workspace};
 
+use crate::circuit::methods::adaa::Antialiasing;
 use crate::circuit::methods::newton::NewtonStats;
 use crate::circuit::netlist::expr::{Dual, Tape};
 use crate::circuit::netlist::{Netlist, NetlistError, Node, Probe, Source};
@@ -111,8 +125,10 @@ pub(crate) struct Inductor {
 /// **Derivation** MNA, trapezoidal companions, the nonlinear subsystem
 /// separated (module docs). **Verified** `dk_matches_ngspice.rs`.
 /// **Cost** the datasheet's `Circuit<Dk>` lines. **Aliasing** none of its
-/// own: a nonlinear netlist aliases as its devices do; run it
-/// oversampled. **Valid ranges** wherever its devices' models are.
+/// own by default: a nonlinear netlist aliases as its devices do; run it
+/// oversampled, or turn on first-order stateful ADAA
+/// ([`set_antialiasing`](Self::set_antialiasing), DSP.md A1).
+/// **Valid ranges** wherever its devices' models are.
 #[derive(Clone, Debug)]
 pub struct Dk {
     // Structure, fixed at build.
@@ -159,6 +175,8 @@ pub struct Dk {
     output: f64,
     settings: Settings,
     health: Health,
+    antialiasing: Antialiasing,
+    adaa: adaa::State,
 }
 
 /// The conductance a DC solve adds from every node to ground when the
@@ -216,6 +234,64 @@ impl Dk {
         self.settings = settings;
     }
 
+    /// Anti-alias the nonlinear subsystem (DSP.md A1): with
+    /// [`Antialiasing::Adaa`], first-order stateful ADAA (Holters 2019,
+    /// [`methods::adaa`](crate::circuit::methods::adaa)) — the solve's
+    /// outputs averaged over each sample's line of predictions, in closed
+    /// form or by quadrature ([`adaa_mean`](Self::adaa_mean)), the linear
+    /// part delayed half a sample and designed for `1.5·T`. Re-prepares
+    /// at the current rate.
+    ///
+    /// ```
+    /// use stave_dsp::circuit::methods::adaa::Antialiasing;
+    /// use stave_dsp::circuit::methods::dk::{Dk, Mean};
+    /// use stave_dsp::circuit::netlist::Netlist;
+    ///
+    /// let netlist = Netlist::parse_spice(
+    ///     "* clipper
+    ///      V1 in 0 0
+    ///      R1 in out 2.2k
+    ///      C1 out 0 10n
+    ///      D1 out 0 DI
+    ///      D2 0 out DI
+    ///      .model DI D(Is=2.52n N=1.752)
+    ///      .control
+    ///      wrdata out v(out)
+    ///      .endc",
+    /// )
+    /// .unwrap();
+    /// let mut dk = Dk::new(&netlist).unwrap();
+    /// dk.drive("V1").unwrap();
+    /// dk.set_antialiasing(Antialiasing::Adaa);
+    /// // One junction voltage, both diodes through one port: closed form.
+    /// assert_eq!(dk.adaa_mean(), Some(Mean::ClosedForm));
+    /// let peak = (0..480)
+    ///     .map(|n| dk.step(5.0 * (n as f64 * 0.13).sin()))
+    ///     .fold(0.0f64, |m, v| m.max(v.abs()));
+    /// assert!((0.5..0.9).contains(&peak), "a forward drop: {peak}");
+    /// assert_eq!(dk.health().newton.capped, 0);
+    /// ```
+    pub fn set_antialiasing(&mut self, antialiasing: Antialiasing) {
+        self.antialiasing = antialiasing;
+        self.prepare(self.sample_rate);
+    }
+
+    pub fn antialiasing(&self) -> Antialiasing {
+        self.antialiasing
+    }
+
+    /// How ADAA forms the solve's mean for this circuit, `None` with ADAA
+    /// off.
+    pub fn adaa_mean(&self) -> Option<Mean> {
+        (self.antialiasing == Antialiasing::Adaa).then(|| self.adaa.kernel.mean())
+    }
+
+    /// The step the linear part is discretised for: the sample period,
+    /// stretched by 1.5 under ADAA.
+    fn design_step(&self) -> f64 {
+        self.step * self.antialiasing.design_step_scale()
+    }
+
     /// Newton work, cap hits and continuation fallbacks since prepare.
     pub fn health(&self) -> Health {
         self.health
@@ -256,7 +332,7 @@ impl Dk {
 
     /// Back to t = 0 at the operating point (or the initial conditions).
     pub fn reset(&mut self) {
-        let t = self.step;
+        let t = self.design_step();
         self.samples = 0;
         for (s, c) in self.capacitors.iter().enumerate() {
             let g = 2.0 * c.farads / t;
@@ -279,16 +355,17 @@ impl Dk {
             self.output = self.operating_output();
         }
         self.work.evaluate(&mut self.devices, 0.0);
+        if self.antialiasing == Antialiasing::Adaa {
+            self.reset_adaa();
+        }
     }
 
-    /// One sample: the driven source takes `input`, every other source
-    /// its value at the new time; returns the probe's voltage.
-    pub fn step(&mut self, input: f64) -> f64 {
-        self.samples += 1;
-        let time = self.samples as f64 * self.step;
+    /// Every source's value at `time` into `u`, the driven one at 0
+    /// (its value is set by `step`).
+    fn inputs_at(&mut self, time: f64) {
         for (k, source) in self.inputs.iter_mut().enumerate() {
             self.u[k] = if self.driven == Some(k) {
-                input
+                0.0
             } else {
                 match source {
                     Input::Source(s) => s.value_at(time),
@@ -296,10 +373,25 @@ impl Dk {
                 }
             };
         }
+    }
+
+    /// One sample: the driven source takes `input`, every other source
+    /// its value at the new time; returns the probe's voltage.
+    pub fn step(&mut self, input: f64) -> f64 {
+        self.samples += 1;
+        let time = self.samples as f64 * self.step;
+        self.inputs_at(time);
+        if let Some(k) = self.driven {
+            self.u[k] = input;
+        }
         let (nx, nu) = (self.x.len(), self.u.len());
         self.p.iter_mut().for_each(|p| *p = 0.0);
         accumulate(&self.dx, &self.x, &mut self.p, nx);
         accumulate(&self.du, &self.u, &mut self.p, nu);
+        if self.antialiasing == Antialiasing::Adaa {
+            self.output = self.step_adaa(time);
+            return self.output;
+        }
         self.work.solve(
             Prediction {
                 p: &self.p,

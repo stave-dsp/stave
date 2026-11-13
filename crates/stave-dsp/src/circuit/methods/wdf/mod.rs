@@ -13,9 +13,11 @@
 //! - [`Wdf`] — a [`Netlist`](crate::circuit::netlist::Netlist) built
 //!   into trees under one R-type root with a multi-port nonlinear root
 //!   (`Circuit<Wdf>`): the method a netlist chooses by type parameter;
+//! - [`adaa`] — first-order ADAA at a one-port root (DSP.md A1);
 //! - [`pair`] — the antiparallel diode pair at a hand-built tree's root
 //!   ([`PairMethod`]).
 
+pub mod adaa;
 mod circuit;
 pub mod elements;
 mod forest;

@@ -37,6 +37,8 @@ pub(crate) struct Cell {
     /// The wave sent up (β), and the one that came down (α).
     pub beta: f64,
     pub alpha: f64,
+    /// Under ADAA, the last sample's β (`synchronize`).
+    pub previous: f64,
     /// A reactance's stored wave; a source's volts.
     pub state: f64,
     /// It (or something below it) reflects a nonzero wave.
@@ -56,6 +58,7 @@ impl Cell {
             share: 0.0,
             beta: 0.0,
             alpha: 0.0,
+            previous: 0.0,
             state: 0.0,
             reflective: stateful || kind == Kind::Source,
             stateful,
@@ -102,6 +105,7 @@ impl Forest {
             share: 0.0,
             beta: 0.0,
             alpha: 0.0,
+            previous: 0.0,
             state: 0.0,
             reflective,
             stateful,
@@ -272,6 +276,26 @@ impl Forest {
                 Kind::Inverter(c) => self.cells[c].alpha = -alpha,
                 Kind::Resistor | Kind::Source => {}
             }
+        }
+    }
+
+    /// ADAA's synchronization (Albertini, Bernardini & Sarti 2021): every
+    /// wave sent up becomes its mean with the last sample's, so the pass
+    /// down sees the trees at `n − ½` like the root's mean output.
+    #[inline]
+    pub fn synchronize(&mut self) {
+        for &i in &self.up_order {
+            let cell = &mut self.cells[i];
+            let raw = cell.beta;
+            cell.beta = 0.5 * (raw + cell.previous);
+            cell.previous = raw;
+        }
+    }
+
+    /// The waves sent up now are the last sample's (at rest, for ADAA).
+    pub fn rest(&mut self) {
+        for &i in &self.up_order {
+            self.cells[i].previous = self.cells[i].beta;
         }
     }
 

@@ -171,6 +171,28 @@ impl Nonlinear {
         }
     }
 
+    /// Whether [`closed_form_mean`](Self::closed_form_mean) knows this
+    /// device: a one-output law of one control with a closed-form
+    /// antiderivative (stateful ADAA's one-port, `dk::adaa`).
+    pub fn has_closed_form_mean(&self) -> bool {
+        matches!(self.device, Device::Diode(_))
+    }
+
+    /// `(mean, secant)` of the device's output over the straight line
+    /// from `v0` to `v1` of its one global control: the divided
+    /// differences of its antiderivative and of itself, in closed form.
+    pub fn closed_form_mean(&self, v0: f64, v1: f64) -> (f64, f64) {
+        match &self.device {
+            Device::Diode(d) => {
+                let (_, sign) = self.controls[0];
+                let (a, b) = (sign * v0, sign * v1);
+                let mean = d.mean_current(a, b) - SHUNT * 0.5 * (a + b);
+                (mean, sign * (d.secant(a, b) - SHUNT))
+            }
+            _ => (0.0, 0.0),
+        }
+    }
+
     /// Bound a Newton step from `old` to `new` (a junction's `pnjlim`).
     pub fn limit(&self, new: &mut [f64], old: &[f64]) {
         let pair = |limit: &dyn Fn([f64; 2], [f64; 2]) -> [f64; 2], new: &mut [f64]| {

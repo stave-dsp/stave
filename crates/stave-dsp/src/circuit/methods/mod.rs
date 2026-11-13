@@ -1,6 +1,9 @@
 //! How a circuit is solved, separate from what it is: a topology names
 //! its method as a type parameter or a constructor, never in its name.
 //!
+//! - [`adaa`] — antiderivative anti-aliasing through a solve
+//!   ([`Antialiasing`](adaa::Antialiasing)), for the DK method and the
+//!   wave-digital roots;
 //! - [`dk`] — the nodal DK method: any MNA-solvable
 //!   [`Netlist`](crate::circuit::netlist::Netlist), discretised into a
 //!   state space with its nonlinear subsystem separated
@@ -16,6 +19,7 @@
 //! - [`wright_omega`] — closed forms of the Shockley equation in the wave
 //!   domain.
 
+pub mod adaa;
 pub mod dk;
 pub mod load_line;
 pub mod newton;

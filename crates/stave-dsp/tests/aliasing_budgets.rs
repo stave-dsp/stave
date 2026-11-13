@@ -18,14 +18,23 @@
 //! in a 4x region (`Oversampled2x::front(nested(..))`); the nonlinear
 //! filters (S1) in the region each documents: the ladders and the
 //! Sallen–Key at 4x, the Korg35 at 2x (`Oversampled2x::front`).
+//!
+//! The circuits (DSP.md A1) run every way instead, so each row compares:
+//! 1×, 2× and 4× (`Oversampled::linear`), each without and with stateful
+//! ADAA, one test per circuit (measured on an x86-64 Linux build host,
+//! 2026-11-12; the same rule for budgets).
 
+use stave_dsp::circuit::methods::adaa::Antialiasing;
+use stave_dsp::circuit::methods::dk::Dk;
+use stave_dsp::circuit::netlist::Netlist;
+use stave_dsp::circuit::Circuit;
 use stave_dsp::primitives::filters::korg35::Korg35;
 use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
 use stave_dsp::primitives::filters::sallen_key::SallenKey;
 use stave_dsp::units::{db, hz, Db, Hz};
 use stave_dsp::{
-    Adaa, AdaaOrder, CurveStage, DiodeClipper, DiodeClipperConfig, Osc, Oversampled2x, PairSolver,
-    Shockley, SmoothSat, Stage, Triode, Waveform, Wavetable,
+    Adaa, AdaaOrder, CurveStage, DiodeClipper, DiodeClipperConfig, Osc, Oversampled,
+    Oversampled2x, PairSolver, Shockley, SmoothSat, Stage, Triode, Waveform, Wavetable,
 };
 use stave_measure::aliasing::{Aliasing, SteppedTone};
 
@@ -120,6 +129,90 @@ const STAGES: &[Budget] = &[
     row("SallenKey (+12 dB, 4x)", 48_000.0, -98.0, -100.6, -89.3),
     row("Korg35 (+12 dB, 2x)", 44_100.0, -77.0, -79.6, -79.6),
     row("Korg35 (+12 dB, 2x)", 48_000.0, -80.0, -82.9, -82.9),
+];
+
+/// The circuits (DSP.md A1), the same stepped tone, at 1×, 2× and 4×
+/// (`Oversampled::linear`), each without and with stateful ADAA
+/// (`Antialiasing::Adaa`): the WDF clipper's root and the op-amp
+/// clipper's one-port in closed form, the rest by Lobatto quadrature
+/// (`Dk::adaa_mean`). Drives: the clippers ×10 and ×1, the cathode's
+/// grid ×4 (2 V peak), the Fuzz Face 0.5 V, the Tube Screamer 0.5 V on
+/// its 4.5 V reference. The quadrature rows gain far less than closed
+/// form, and the cathode at 4× is at the floor either way: findings,
+/// recorded as measured, not budgets to chase.
+const CIRCUITS: &[Budget] = &[
+    row("DiodeClipper x10 (WDF) 1x", 44_100.0, -7.0, -9.9, -9.8),
+    row("DiodeClipper x10 (WDF) 1x", 48_000.0, -7.0, -9.0, -9.0),
+    row("DiodeClipper x10 (WDF) 1x ADAA", 44_100.0, -26.0, -28.4, -27.6),
+    row("DiodeClipper x10 (WDF) 1x ADAA", 48_000.0, -22.0, -24.9, -24.9),
+    row("DiodeClipper x10 (WDF) 2x", 44_100.0, -22.0, -24.4, -24.4),
+    row("DiodeClipper x10 (WDF) 2x", 48_000.0, -21.0, -23.4, -23.4),
+    row("DiodeClipper x10 (WDF) 2x ADAA", 44_100.0, -37.0, -39.3, -39.3),
+    row("DiodeClipper x10 (WDF) 2x ADAA", 48_000.0, -36.0, -38.1, -38.1),
+    row("DiodeClipper x10 (WDF) 4x", 44_100.0, -41.0, -43.3, -39.2),
+    row("DiodeClipper x10 (WDF) 4x", 48_000.0, -36.0, -38.0, -38.0),
+    row("DiodeClipper x10 (WDF) 4x ADAA", 44_100.0, -62.0, -64.6, -60.8),
+    row("DiodeClipper x10 (WDF) 4x ADAA", 48_000.0, -67.0, -69.5, -69.5),
+    row("Circuit<Dk> diode clipper x10 (RS) 1x", 44_100.0, -7.0, -9.9, -9.9),
+    row("Circuit<Dk> diode clipper x10 (RS) 1x", 48_000.0, -7.0, -9.0, -9.0),
+    row("Circuit<Dk> diode clipper x10 (RS) 1x ADAA", 44_100.0, -22.0, -24.6, -24.6),
+    row("Circuit<Dk> diode clipper x10 (RS) 1x ADAA", 48_000.0, -18.0, -20.7, -20.7),
+    row("Circuit<Dk> diode clipper x10 (RS) 2x", 44_100.0, -22.0, -24.4, -24.4),
+    row("Circuit<Dk> diode clipper x10 (RS) 2x", 48_000.0, -21.0, -23.4, -23.4),
+    row("Circuit<Dk> diode clipper x10 (RS) 2x ADAA", 44_100.0, -40.0, -42.6, -40.2),
+    row("Circuit<Dk> diode clipper x10 (RS) 2x ADAA", 48_000.0, -37.0, -39.0, -39.0),
+    row("Circuit<Dk> diode clipper x10 (RS) 4x", 44_100.0, -41.0, -43.6, -39.4),
+    row("Circuit<Dk> diode clipper x10 (RS) 4x", 48_000.0, -36.0, -38.2, -38.2),
+    row("Circuit<Dk> diode clipper x10 (RS) 4x ADAA", 44_100.0, -55.0, -57.5, -51.9),
+    row("Circuit<Dk> diode clipper x10 (RS) 4x ADAA", 48_000.0, -60.0, -62.0, -62.0),
+    row("Circuit<Dk> op-amp clipper 1x", 44_100.0, -12.0, -14.4, -14.4),
+    row("Circuit<Dk> op-amp clipper 1x", 48_000.0, -12.0, -14.4, -14.4),
+    row("Circuit<Dk> op-amp clipper 1x ADAA", 44_100.0, -26.0, -28.4, -28.4),
+    row("Circuit<Dk> op-amp clipper 1x ADAA", 48_000.0, -24.0, -26.7, -26.7),
+    row("Circuit<Dk> op-amp clipper 2x", 44_100.0, -24.0, -26.8, -26.6),
+    row("Circuit<Dk> op-amp clipper 2x", 48_000.0, -20.0, -22.9, -22.9),
+    row("Circuit<Dk> op-amp clipper 2x ADAA", 44_100.0, -39.0, -41.2, -40.8),
+    row("Circuit<Dk> op-amp clipper 2x ADAA", 48_000.0, -40.0, -42.0, -42.0),
+    row("Circuit<Dk> op-amp clipper 4x", 44_100.0, -33.0, -35.7, -31.5),
+    row("Circuit<Dk> op-amp clipper 4x", 48_000.0, -31.0, -33.0, -33.0),
+    row("Circuit<Dk> op-amp clipper 4x ADAA", 44_100.0, -67.0, -69.2, -52.8),
+    row("Circuit<Dk> op-amp clipper 4x ADAA", 48_000.0, -59.0, -61.1, -61.1),
+    row("Circuit<Dk> common cathode x4 1x", 44_100.0, -30.0, -32.2, -18.1),
+    row("Circuit<Dk> common cathode x4 1x", 48_000.0, -30.0, -32.2, -18.1),
+    row("Circuit<Dk> common cathode x4 1x ADAA", 44_100.0, -46.0, -48.9, -27.5),
+    row("Circuit<Dk> common cathode x4 1x ADAA", 48_000.0, -66.0, -68.7, -25.3),
+    row("Circuit<Dk> common cathode x4 2x", 44_100.0, -66.0, -68.7, -68.7),
+    row("Circuit<Dk> common cathode x4 2x", 48_000.0, -79.0, -81.4, -24.4),
+    row("Circuit<Dk> common cathode x4 2x ADAA", 44_100.0, -96.0, -98.9, -94.0),
+    row("Circuit<Dk> common cathode x4 2x ADAA", 48_000.0, -96.0, -98.0, -25.7),
+    row("Circuit<Dk> common cathode x4 4x", 44_100.0, -130.0, -132.2, -94.3),
+    row("Circuit<Dk> common cathode x4 4x", 48_000.0, -130.0, -132.7, -24.4),
+    row("Circuit<Dk> common cathode x4 4x ADAA", 44_100.0, -131.0, -133.6, -94.6),
+    row("Circuit<Dk> common cathode x4 4x ADAA", 48_000.0, -132.0, -134.0, -24.7),
+    row("Circuit<Dk> fuzz face 1x", 44_100.0, -3.0, -5.1, -1.0),
+    row("Circuit<Dk> fuzz face 1x", 48_000.0, -4.0, -6.7, -1.5),
+    row("Circuit<Dk> fuzz face 1x ADAA", 44_100.0, -3.0, -5.9, -2.9),
+    row("Circuit<Dk> fuzz face 1x ADAA", 48_000.0, -6.0, -8.3, -3.5),
+    row("Circuit<Dk> fuzz face 2x", 44_100.0, -7.0, -9.3, -9.0),
+    row("Circuit<Dk> fuzz face 2x", 48_000.0, -10.0, -12.7, -7.1),
+    row("Circuit<Dk> fuzz face 2x ADAA", 44_100.0, -12.0, -14.1, -13.4),
+    row("Circuit<Dk> fuzz face 2x ADAA", 48_000.0, -15.0, -17.0, -9.0),
+    row("Circuit<Dk> fuzz face 4x", 44_100.0, -15.0, -17.0, -15.4),
+    row("Circuit<Dk> fuzz face 4x", 48_000.0, -16.0, -18.5, -8.7),
+    row("Circuit<Dk> fuzz face 4x ADAA", 44_100.0, -19.0, -21.1, -20.6),
+    row("Circuit<Dk> fuzz face 4x ADAA", 48_000.0, -21.0, -23.0, -9.3),
+    row("Circuit<Dk> tube screamer 1x", 44_100.0, -11.0, -13.7, -13.6),
+    row("Circuit<Dk> tube screamer 1x", 48_000.0, -11.0, -13.5, -13.5),
+    row("Circuit<Dk> tube screamer 1x ADAA", 44_100.0, -15.0, -17.6, -17.4),
+    row("Circuit<Dk> tube screamer 1x ADAA", 48_000.0, -15.0, -17.7, -17.7),
+    row("Circuit<Dk> tube screamer 2x", 44_100.0, -23.0, -25.7, -25.5),
+    row("Circuit<Dk> tube screamer 2x", 48_000.0, -19.0, -21.0, -21.0),
+    row("Circuit<Dk> tube screamer 2x ADAA", 44_100.0, -26.0, -28.1, -26.5),
+    row("Circuit<Dk> tube screamer 2x ADAA", 48_000.0, -25.0, -27.4, -27.4),
+    row("Circuit<Dk> tube screamer 4x", 44_100.0, -30.0, -32.1, -28.6),
+    row("Circuit<Dk> tube screamer 4x", 48_000.0, -26.0, -28.9, -28.9),
+    row("Circuit<Dk> tube screamer 4x ADAA", 44_100.0, -37.0, -39.4, -37.1),
+    row("Circuit<Dk> tube screamer 4x ADAA", 48_000.0, -38.0, -40.0, -40.0),
 ];
 
 /// The oscillators, stepped from 110 Hz to 5 kHz.
@@ -319,7 +412,105 @@ fn measure_oscillator(name: &str, rate: f64) -> Aliasing {
     }
 }
 
+/// A circuit row's name: `"<circuit> <factor>x[ ADAA]"`.
+fn measure_circuit(name: &str, rate: f64) -> Aliasing {
+    let (circuit, adaa) = match name.strip_suffix(" ADAA") {
+        Some(c) => (c, true),
+        None => (name, false),
+    };
+    let (circuit, factor) = circuit.rsplit_once(' ').expect("a factor");
+    let factor: u32 = factor.trim_end_matches('x').parse().expect("a factor");
+    let antialiasing = if adaa {
+        Antialiasing::Adaa
+    } else {
+        Antialiasing::None
+    };
+    let sweep = stage_sweep(rate);
+    let fs = rate as f32;
+    if circuit == "DiodeClipper x10 (WDF)" {
+        return sweep.through(|| {
+            let mut clipper = DiodeClipper::new(DiodeClipperConfig {
+                input_ohms: 2.2e3,
+                capacitor_farads: 10e-9,
+                diode: Shockley::N4148,
+                solver: PairSolver::default(),
+            });
+            clipper.set_antialiasing(antialiasing);
+            let mut os = Oversampled::linear(clipper, factor);
+            os.prepare(fs);
+            move |x: f32| os.tick(10.0 * x)
+        });
+    }
+    // (deck, driven source, gain, the input's DC offset)
+    let (deck, source, gain, offset) = match circuit {
+        "Circuit<Dk> diode clipper x10 (RS)" => (
+            include_str!("../../stave-test/spice/diode_clipper.cir"),
+            "v1",
+            10.0,
+            0.0,
+        ),
+        "Circuit<Dk> op-amp clipper" => (
+            include_str!("../../stave-test/spice/opamp_clipper.cir"),
+            "v1",
+            1.0,
+            0.0,
+        ),
+        "Circuit<Dk> common cathode x4" => (
+            include_str!("../../stave-test/spice/common_cathode.cir"),
+            "v1",
+            4.0,
+            0.0,
+        ),
+        "Circuit<Dk> fuzz face" => (
+            include_str!("../../stave-test/spice/fuzz_face.cir"),
+            "vin",
+            1.0,
+            0.0,
+        ),
+        "Circuit<Dk> tube screamer" => (
+            include_str!("../../stave-test/spice/tube_screamer.cir"),
+            "v1",
+            1.0,
+            4.5,
+        ),
+        other => panic!("no circuit {other}"),
+    };
+    let netlist = Netlist::parse_spice(deck).unwrap();
+    sweep.through(|| {
+        let mut c = Circuit::<Dk>::new(&netlist).unwrap();
+        c.drive(source).unwrap();
+        c.set_antialiasing(antialiasing);
+        let mut os = Oversampled::linear(c, factor);
+        os.prepare(fs);
+        // Settle on the input's offset, then measure about where it rests
+        // (a plate at 200 V is subtracted in f64, not lost in f32).
+        for _ in 0..(rate as usize / 10) {
+            os.tick(offset as f32);
+        }
+        let rest = f64::from(os.tick(offset as f32));
+        move |x: f32| (f64::from(os.tick((offset + gain * f64::from(x)) as f32)) - rest) as f32
+    })
+}
+
+/// The circuit rows whose name starts with `prefix`, at `rate`, with
+/// ADAA or without.
+fn circuit_rows(prefix: &str, rate: f64, adaa: bool) -> Vec<&'static Budget> {
+    let rows: Vec<_> = CIRCUITS
+        .iter()
+        .filter(|b| b.stage.starts_with(prefix) && b.rate == rate && b.stage.ends_with(" ADAA") == adaa)
+        .collect();
+    assert!(!rows.is_empty(), "no rows for {prefix}");
+    rows
+}
+
 fn check(rows: &[Budget], measure: impl Fn(&str, f64) -> Aliasing) {
+    check_rows(rows.iter(), measure);
+}
+
+fn check_rows<'a>(
+    rows: impl Iterator<Item = &'a Budget>,
+    measure: impl Fn(&str, f64) -> Aliasing,
+) {
     let mut failures = Vec::new();
     for b in rows {
         let report = measure(b.stage, b.rate);
@@ -357,4 +548,151 @@ fn nonlinear_stages_hold_their_alias_budgets() {
 #[cfg_attr(miri, ignore)]
 fn oscillators_hold_their_alias_budgets() {
     check(OSCILLATORS, measure_oscillator);
+}
+
+// The circuits (DSP.md A1): a test per circuit, rate and setting, so
+// they run in parallel within the harness's time limit.
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn wdf_diode_clipper_plain_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("DiodeClipper x10 (WDF)", 44_100.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn wdf_diode_clipper_adaa_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("DiodeClipper x10 (WDF)", 44_100.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn wdf_diode_clipper_plain_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("DiodeClipper x10 (WDF)", 48_000.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn wdf_diode_clipper_adaa_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("DiodeClipper x10 (WDF)", 48_000.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_diode_clipper_plain_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> diode clipper", 44_100.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_diode_clipper_adaa_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> diode clipper", 44_100.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_diode_clipper_plain_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> diode clipper", 48_000.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_diode_clipper_adaa_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> diode clipper", 48_000.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_opamp_clipper_plain_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> op-amp clipper", 44_100.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_opamp_clipper_adaa_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> op-amp clipper", 44_100.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_opamp_clipper_plain_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> op-amp clipper", 48_000.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_opamp_clipper_adaa_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> op-amp clipper", 48_000.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_common_cathode_plain_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> common cathode", 44_100.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_common_cathode_adaa_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> common cathode", 44_100.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_common_cathode_plain_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> common cathode", 48_000.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_common_cathode_adaa_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> common cathode", 48_000.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_fuzz_face_plain_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> fuzz face", 44_100.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_fuzz_face_adaa_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> fuzz face", 44_100.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_fuzz_face_plain_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> fuzz face", 48_000.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_fuzz_face_adaa_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> fuzz face", 48_000.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_tube_screamer_plain_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> tube screamer", 44_100.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_tube_screamer_adaa_44k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> tube screamer", 44_100.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_tube_screamer_plain_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> tube screamer", 48_000.0, false).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn dk_tube_screamer_adaa_48k_holds_its_alias_budgets() {
+    check_rows(circuit_rows("Circuit<Dk> tube screamer", 48_000.0, true).into_iter(), measure_circuit);
 }

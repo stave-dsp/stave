@@ -369,6 +369,24 @@ impl Shockley {
     pub fn pair_conductance(&self, volts: f64) -> f64 {
         2.0 * self.saturation_amps / self.knee_volts() * (volts / self.knee_volts()).cosh()
     }
+
+    /// The pair's mean current over `[a, b]`: the divided difference of
+    /// its antiderivative `2·Is·N·Vt·cosh(v/(N·Vt))`, formed as
+    /// `2·Is·sinh(v̄/(N·Vt))·sinhc(Δ/(2·N·Vt))` so `a ≈ b` loses nothing
+    /// (stateful ADAA, [`methods::adaa`](crate::circuit::methods::adaa)).
+    pub fn pair_mean_current(&self, a: f64, b: f64) -> f64 {
+        let knee = self.knee_volts();
+        let (mid, half) = (0.5 * (a + b), 0.5 * (b - a) / knee);
+        2.0 * self.saturation_amps * (mid / knee).sinh() * sinhc(half)
+    }
+
+    /// The pair's secant conductance `Δi/Δv` over `[a, b]` (the
+    /// conductance where `a = b`).
+    pub fn pair_secant(&self, a: f64, b: f64) -> f64 {
+        let knee = self.knee_volts();
+        let (mid, half) = (0.5 * (a + b), 0.5 * (b - a) / knee);
+        2.0 * self.saturation_amps / knee * (mid / knee).cosh() * sinhc(half)
+    }
 }
 
 /// A [`Shockley`] junction prepared for evaluation (its breakdown knee
@@ -412,6 +430,68 @@ impl Junction {
         (is * em1, is / self.knee * (em1 + 1.0))
     }
 
+    /// The antiderivative of the current, `∫₀ᵛ i dv`, continuous across
+    /// the breakdown regions: `Is·(N·Vt·expm1(v/(N·Vt)) − v)` forward.
+    pub fn antiderivative(&self, volts: f64) -> f64 {
+        let (is, knee) = (self.saturation_amps, self.knee);
+        let forward = |v: f64| is * (knee * (v / knee).exp_m1() - v);
+        let Some(b) = &self.breakdown else {
+            return forward(volts);
+        };
+        let edge = -3.0 * knee;
+        if volts >= edge {
+            return forward(volts);
+        }
+        // The reverse cubic, −Is·(1 + c³/v³), from the forward region's edge.
+        let c3 = (3.0 * knee / std::f64::consts::E).powi(3);
+        let cubic = |v: f64| -is * v + 0.5 * is * c3 / (v * v);
+        let at_edge = forward(edge) - cubic(edge);
+        if volts >= -b.xbv {
+            return cubic(volts) + at_edge;
+        }
+        // The breakdown exponential, −Is·exp(−(xbv + v)/NBV·Vt).
+        let breakdown = |v: f64| is * b.knee * (-(b.xbv + v) / b.knee).exp();
+        let at_knee = cubic(-b.xbv) + at_edge - breakdown(-b.xbv);
+        breakdown(volts) + at_knee
+    }
+
+    /// The mean current over `[a, b]`, `ΔI/Δv` of
+    /// [`antiderivative`](Self::antiderivative); forward, in closed form
+    /// without cancellation (`expm1`), so `a ≈ b` is exact
+    /// (stateful ADAA, [`methods::adaa`](crate::circuit::methods::adaa)).
+    pub fn mean_current(&self, a: f64, b: f64) -> f64 {
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        let delta = hi - lo;
+        if self.forward_only(lo) {
+            let is = self.saturation_amps;
+            return is * ((lo / self.knee).exp() * exprel(delta / self.knee) - 1.0);
+        }
+        if delta <= 1e-9 * (1.0 + hi.abs()) {
+            return self.current_and_conductance(0.5 * (lo + hi)).0;
+        }
+        (self.antiderivative(hi) - self.antiderivative(lo)) / delta
+    }
+
+    /// The secant conductance `Δi/Δv` over `[a, b]`, the conductance
+    /// where `a = b`.
+    pub fn secant(&self, a: f64, b: f64) -> f64 {
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        let delta = hi - lo;
+        if self.forward_only(lo) {
+            let g = self.saturation_amps / self.knee;
+            return g * (lo / self.knee).exp() * exprel(delta / self.knee);
+        }
+        if delta <= 1e-9 * (1.0 + hi.abs()) {
+            return self.current_and_conductance(0.5 * (lo + hi)).1;
+        }
+        (self.current_and_conductance(hi).0 - self.current_and_conductance(lo).0) / delta
+    }
+
+    /// Whether everything above `volts` is the forward exponential.
+    fn forward_only(&self, volts: f64) -> bool {
+        self.breakdown.is_none() || volts >= -3.0 * self.knee
+    }
+
     /// SPICE's `pnjlim` on whichever exponential the step climbs
     /// (ngspice's `dioload.c`: the breakdown side within ten knees of
     /// `−xbv`).
@@ -438,6 +518,8 @@ impl Diode for Junction {
         Junction::limit_step(self, new, old)
     }
 }
+
+use super::junction::{exprel, sinhc};
 
 /// SPICE's `vcrit` for an exponential `scale·exp(v/knee)`.
 fn critical(knee: f64, scale: f64) -> f64 {
@@ -531,6 +613,42 @@ mod tests {
             let total = junction + 0.02 * d.series_ohms;
             assert!((total - vf).abs() < 0.02, "{total}");
         }
+    }
+
+    /// Stateful ADAA's divided differences: the mean current is the
+    /// integral of the current (a fine midpoint rule), across the
+    /// breakdown regions too, and `a ≈ b` is the current itself.
+    #[test]
+    fn the_mean_current_is_the_integral_of_the_current() {
+        for d in [Shockley::N4148, Shockley::BZX84C6V2L, Shockley::N34A] {
+            let j = d.junction();
+            for (a, b) in [(-0.2, 0.75), (-7.0, -5.5), (-9.0, 0.6), (0.4, 0.4 + 1e-12)] {
+                let n = 200_000;
+                let h = (b - a) / n as f64;
+                let integral: f64 = (0..n)
+                    .map(|k| j.current_and_conductance(a + (k as f64 + 0.5) * h).0)
+                    .sum::<f64>()
+                    / n as f64;
+                let scale = integral.abs().max(1e-12);
+                let mean = j.mean_current(a, b);
+                assert!((mean - integral).abs() < 1e-6 * scale, "{d:?} {a}..{b}: {mean} vs {integral}");
+                assert!((j.mean_current(b, a) - mean).abs() <= 1e-12 * scale);
+                let secant = j.secant(a, b);
+                let exact = if (b - a).abs() < 1e-9 {
+                    j.current_and_conductance(a).1
+                } else {
+                    (j.current_and_conductance(b).0 - j.current_and_conductance(a).0) / (b - a)
+                };
+                assert!((secant - exact).abs() < 1e-6 * exact.abs().max(1e-12), "{a}..{b}");
+            }
+        }
+        let pair = Shockley::N4148;
+        let n = 100_000;
+        let (a, b) = (-0.3, 0.8);
+        let h = (b - a) / n as f64;
+        let integral: f64 =
+            (0..n).map(|k| pair.pair_current(a + (k as f64 + 0.5) * h)).sum::<f64>() / n as f64;
+        assert!((pair.pair_mean_current(a, b) - integral).abs() < 1e-6 * integral.abs());
     }
 
     #[test]

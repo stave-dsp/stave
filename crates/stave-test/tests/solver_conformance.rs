@@ -268,4 +268,65 @@ mod dk {
         use stave_dsp::circuit::topologies::moog_ladder_904a;
         run_netlist("Moog ladder (k = 3)", &moog_ladder_904a(3.0), "vin", CLASSIC_FRAMES, |n| hot(n, 0.3));
     }
+
+    /// DSP.md A1: the circuits with stateful ADAA at the host rate, under
+    /// the hot signals above and four times hotter — finite, bounded by
+    /// their rails, no solve at its cap (the quadrature's extra solves
+    /// included).
+    #[test]
+    fn circuits_with_adaa_converge_at_the_host_rate() {
+        use stave_dsp::circuit::methods::adaa::Antialiasing;
+        let opamp = deck("opamp_clipper").replace("V1 in 0 DC 0 SIN(0 0.5 1k)", "V1 in 0 0");
+        let clipper = deck("diode_clipper").replace("V1 in 0 SIN(0 1 1k)", "V1 in 0 0");
+        let cases: [(&str, &str, &str, f64, f64, f64); 5] = [
+            ("diode clipper", &clipper, "v1", 0.0, 4.0, 2.0),
+            ("op-amp clipper", &opamp, "v1", 0.0, 1.0, 10.0),
+            ("common cathode", &deck("common_cathode"), "v1", 0.0, 8.0, 400.0),
+            ("fuzz face", &deck("fuzz_face"), "vin", 0.0, 2.0, 20.0),
+            ("Tube Screamer", &deck("tube_screamer"), "v1", 4.5, 1.0, 10.0),
+        ];
+        for (name, text, source, offset, volts, bound) in cases {
+            for hotter in [1.0, 4.0] {
+                let mut c = Circuit::<Dk>::new(&Netlist::parse_spice(text).unwrap()).unwrap();
+                c.drive(source).unwrap();
+                c.set_antialiasing(Antialiasing::Adaa);
+                c.prepare(RATE as f32);
+                for n in 0..RATE as usize {
+                    let y = c.tick_f64(offset + hotter * hot(n, volts));
+                    assert!(y.is_finite() && y.abs() < bound, "{name} ×{hotter}: sample {n} = {y}");
+                }
+                let h = c.health();
+                println!(
+                    "{name} ×{hotter} (DK, ADAA {:?}): {:.2} iterations/solve, {:.2} solves/sample, {} capped, {} continuations",
+                    c.adaa_mean().unwrap(),
+                    h.newton.mean_iterations(),
+                    h.newton.solves as f64 / RATE,
+                    h.newton.capped,
+                    h.continuations
+                );
+                assert_eq!(h.newton.capped, 0, "{name} ×{hotter} (DK, ADAA) hit its iteration cap");
+            }
+        }
+        for hotter in [1.0, 4.0] {
+            let mut s = stave_dsp::DiodeClipper::new(stave_dsp::DiodeClipperConfig {
+                input_ohms: 2.2e3,
+                capacitor_farads: 10e-9,
+                diode: stave_dsp::Shockley::N4148,
+                solver: stave_dsp::PairSolver::default(),
+            });
+            s.set_antialiasing(Antialiasing::Adaa);
+            stave_dsp::Stage::prepare(&mut s, RATE as f32);
+            for n in 0..RATE as usize {
+                let y = stave_dsp::Stage::tick(&mut s, (hotter * hot(n, 4.0)) as f32);
+                assert!(y.is_finite() && y.abs() < 2.0, "WDF clipper ×{hotter}: sample {n} = {y}");
+            }
+            let st = s.stats();
+            println!(
+                "diode clipper ×{hotter} (WDF, ADAA): {:.2} iterations/solve, {} capped",
+                st.iterations as f64 / st.solves as f64,
+                st.capped
+            );
+            assert_eq!(st.capped, 0);
+        }
+    }
 }

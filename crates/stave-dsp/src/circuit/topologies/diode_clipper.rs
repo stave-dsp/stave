@@ -3,7 +3,9 @@
 //! the pair at the root, solved per sample by the method `M`.
 
 use crate::circuit::devices::diode::Shockley;
+use crate::circuit::methods::adaa::Antialiasing;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
+use crate::circuit::methods::wdf::adaa::{Antiparallel, Root};
 use crate::circuit::methods::wdf::{Capacitor, OnePort, PairMethod, Parallel, ResistiveSource};
 use crate::circuit::methods::wright_omega::WrightOmega;
 use crate::kernel::node::{Stage, Tail};
@@ -52,16 +54,28 @@ pub enum PairSolver {
 /// `crates/stave-dsp/tests/aliasing_budgets.rs::nonlinear_stages_hold_their_alias_budgets`
 /// (DSP.md R5): ×10 into the Newton pair inside a 4× region, a
 /// stepped tone's inharmonic energy below 20 kHz under −41 dB at
-/// 44.1 kHz (measured −43.3) and −36 at 48 (−38.0).
+/// 44.1 kHz (measured −43.3) and −36 at 48 (−38.0). With ADAA:
+/// `crates/stave-test/tests/adaa_matches_ngspice.rs::wdf_diode_clipper_with_adaa_matches_ngspice`
+/// (6.9e-4 at 4×, either solver) and
+/// `crates/stave-dsp/tests/aliasing_budgets.rs::wdf_diode_clipper_adaa_44k_holds_its_alias_budgets`
+/// (at 44.1 kHz −28.4 dB at 1×, −39.3 at 2×, −64.6 at 4×, against
+/// −9.9, −24.4 and −43.3 without).
 ///
 /// # Cost
 /// Datasheet `"DiodeClipper (WDF, Newton)"`,
 /// `"DiodeClipper (WDF, Wright omega)"`, and `"DiodeClipper x10 (WDF)"`
-/// driven hard.
+/// driven hard; with ADAA `"DiodeClipper x10 (WDF) 1x ADAA"` and its
+/// 2× and 4× lines, beside `"DiodeClipper x10 (WDF) 8x"`.
 ///
 /// # Aliasing
-/// None of its own: a hard clipper; run it inside an oversampled region
-/// (the reference holds at 4×).
+/// None of its own by default: a hard clipper; run it inside an
+/// oversampled region (the reference holds at 4×). With
+/// [`set_antialiasing`](Self::set_antialiasing)`(Antialiasing::Adaa)`,
+/// first-order ADAA at the root (Albertini et al. 2021: the pair's mean
+/// reflection in closed form, the leaves' waves averaged, the capacitor
+/// designed for `1.5·T`; [`methods::wdf::adaa`](crate::circuit::methods::wdf::adaa)),
+/// level at 4× with plain 8× oversampling. The output is half a sample
+/// late.
 ///
 /// # Valid ranges
 /// Any positive rate; Newton capped at [`NewtonSettings::DEFAULT`]'s 32
@@ -75,6 +89,9 @@ pub struct DiodeClipper<M = PairSolver> {
     solver: M,
     volts: f64,
     stats: NewtonStats,
+    antialiasing: Antialiasing,
+    root: Root,
+    capacitor_prev: f64,
 }
 
 impl Default for PairSolver {
@@ -127,7 +144,20 @@ impl<M: PairMethod> DiodeClipper<M> {
             solver: config.solver,
             volts: 0.0,
             stats: NewtonStats::default(),
+            antialiasing: Antialiasing::None,
+            root: Root::default(),
+            capacitor_prev: 0.0,
         }
+    }
+
+    /// First-order ADAA at the root ([`Antialiasing::Adaa`]) or none
+    /// (the default); re-prepares at the current rate. Under ADAA the
+    /// pair's mean is taken on the exact antiparallel law whichever
+    /// method solves it, so [`WrightOmega`]'s neglected off-diode
+    /// leakage (at most `Is·R`, microvolts) enters the mean.
+    pub fn set_antialiasing(&mut self, antialiasing: Antialiasing) {
+        self.antialiasing = antialiasing;
+        self.prepare(self.sample_rate);
     }
 
     pub fn stats(&self) -> NewtonStats {
@@ -146,17 +176,24 @@ impl<M: PairMethod> DiodeClipper<M> {
 impl<M: PairMethod> Stage for DiodeClipper<M> {
     fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
-        self.tree.right.prepare(sample_rate);
-        self.volts = 0.0;
+        // Under ADAA the capacitor is designed for 1.5·T.
+        let design_rate = f64::from(sample_rate) / self.antialiasing.design_step_scale();
+        self.tree.right.prepare(design_rate as f32);
         self.stats = NewtonStats::default();
+        self.reset();
     }
 
     fn reset(&mut self) {
         self.tree.right.reset();
         self.volts = 0.0;
+        self.root.reset();
+        self.capacitor_prev = 0.0;
     }
 
     fn tick(&mut self, x: f32) -> f32 {
+        if self.antialiasing == Antialiasing::Adaa {
+            return self.tick_adaa(f64::from(x)) as f32;
+        }
         self.tree.left.volts = f64::from(x);
         let wave = self.tree.reflected();
         let ohms = self.tree.resistance();
@@ -172,6 +209,32 @@ impl<M: PairMethod> Stage for DiodeClipper<M> {
     fn tail(&self) -> Tail {
         let tau = self.tree.left.ohms * self.tree.right.farads();
         Tail::from_time_constant(tau, self.sample_rate)
+    }
+}
+
+impl<M: PairMethod> DiodeClipper<M> {
+    /// One sample under ADAA (Albertini et al. 2021, Algorithm 1): the
+    /// forward scan as usual, the pair's mean reflection, then the
+    /// backward scan on the leaves' waves averaged with their last values.
+    fn tick_adaa(&mut self, x: f64) -> f64 {
+        let capacitor = self.tree.right.reflected();
+        let (g_source, g_capacitor) = (1.0 / self.tree.left.ohms, 1.0 / self.tree.right.resistance());
+        let share = g_source / (g_source + g_capacitor);
+        let wave = share * x + (1.0 - share) * capacitor;
+        let ohms = self.tree.resistance();
+        self.solver
+            .reflect(&self.diode, wave, ohms, &mut self.volts, &mut self.stats);
+        let mean = self
+            .root
+            .reflect(&Antiparallel(self.diode), wave, self.volts, ohms);
+        // Parallel adaptor, backward: each child gets b + up − its own wave,
+        // every term at n − ½.
+        let capacitor_mean = 0.5 * (capacitor + self.capacitor_prev);
+        self.tree
+            .right
+            .incident(mean.reflected + mean.arriving - capacitor_mean);
+        self.capacitor_prev = capacitor;
+        mean.volts
     }
 }
 

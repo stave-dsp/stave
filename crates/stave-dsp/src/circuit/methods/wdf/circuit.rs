@@ -6,10 +6,12 @@ use crate::circuit::methods::dk::devices::Nonlinear;
 use crate::circuit::methods::dk::matrix::{complex_solve, solve_columns, Phasor};
 use crate::circuit::methods::dk::solve::{Prediction, Workspace};
 use crate::circuit::methods::dk::{pin, read, Dk, Health, Input, Pin, Settings};
+use crate::circuit::methods::adaa::Antialiasing;
 use crate::circuit::methods::newton::NewtonStats;
 use crate::circuit::netlist::{ElementKind, Netlist, NetlistError, Node};
 use crate::kernel::node::Tail;
 
+mod adaa;
 mod scattering;
 
 pub use scattering::NonlinearRoot;
@@ -160,8 +162,11 @@ impl Structure {
 /// **Models** the netlist it was built from, nothing else.
 /// **Derivation** as above. **Verified** `wdf_matches_ngspice.rs`.
 /// **Cost** the datasheet's `Circuit<Wdf>` lines. **Aliasing** none of
-/// its own; run a nonlinear netlist oversampled. **Valid ranges**
-/// wherever its devices' models are.
+/// its own by default; run a nonlinear netlist oversampled, or turn on
+/// first-order ADAA at the R-type root
+/// ([`set_antialiasing`](Self::set_antialiasing), Albertini et al.
+/// 2021; DSP.md A1), which matches `Circuit<Dk>`'s ADAA to the solves'
+/// tolerance. **Valid ranges** wherever its devices' models are.
 #[derive(Clone, Debug)]
 pub struct Wdf {
     forest: Forest,
@@ -219,6 +224,8 @@ pub struct Wdf {
     output: f64,
     settings: Settings,
     health: Health,
+    antialiasing: Antialiasing,
+    adaa: adaa::State,
 }
 
 fn unsupported(name: &str, reason: &str) -> NetlistError {
@@ -487,6 +494,8 @@ impl Wdf {
             output: 0.0,
             settings,
             health: Health::default(),
+            antialiasing: Antialiasing::None,
+            adaa: adaa::State::new(nu, nv, nq),
         };
         wdf.values = vec![0.0; wdf.slots.len()];
         if wdf.operating.dc_v.len() != nv {
@@ -598,6 +607,9 @@ impl Wdf {
         }
         self.work.evaluate(&mut self.devices, 0.0);
         self.reset_scattering();
+        if self.adaa_active() {
+            self.reset_adaa();
+        }
     }
 
     /// One sample: the driven source takes `input`, every other source
@@ -620,6 +632,9 @@ impl Wdf {
 
     /// One sample from the sources' values in `self.values`.
     fn advance(&mut self, time: f64) -> f64 {
+        if self.adaa_active() && self.linearised.is_none() {
+            return self.advance_adaa(time);
+        }
         let na = self.reflective.len();
         for (slot, &value) in self.slots.iter().zip(&self.values) {
             match slot.target {
@@ -727,7 +742,13 @@ impl Wdf {
 
     /// The R-type root's rows for the current rate.
     fn discretise(&mut self) -> Result<(), NetlistError> {
-        let fs = f64::from(self.sample_rate);
+        // Under ADAA the trees' reactances are adapted for 1.5·T.
+        let scale = if self.adaa_active() {
+            self.antialiasing.design_step_scale()
+        } else {
+            1.0
+        };
+        let fs = f64::from(self.sample_rate) / scale;
         self.forest.adapt(fs);
         let n = self.n;
         let p = self.ports.len();
@@ -839,6 +860,9 @@ impl Wdf {
         }
         self.p = vec![0.0; rows.len()];
         self.z = vec![0.0; width];
+        if diode_columns.is_none() {
+            self.adaa.kernel.find_one_port(&self.bq, n, &self.k, &self.devices);
+        }
         Ok(())
     }
 
@@ -907,6 +931,9 @@ impl Wdf {
             .collect();
         let nx = states.len();
         let mut probe = self.clone();
+        // Under ADAA: the plain filter on the trees adapted for 1.5·T,
+        // which `response_at` maps by Holters' eq. (13).
+        probe.antialiasing = Antialiasing::None;
         if !probe.devices.is_empty() {
             probe.linearise();
         }
@@ -950,7 +977,14 @@ impl Wdf {
         let (input, scale) = self.response_input()?;
         let (a, b, c, d) = self.measured_state_space(input);
         let nx = c.len();
-        let zi = Phasor::new(angle.cos(), -angle.sin());
+        let mut zi = Phasor::new(angle.cos(), -angle.sin());
+        let outer = if self.adaa_active() {
+            let (inner, outer) = adaa::holters(zi);
+            zi = inner;
+            outer
+        } else {
+            Phasor::new(1.0, 0.0)
+        };
         let mut m: Vec<Phasor> = (0..nx * nx)
             .map(|i| {
                 let one = if i / nx == i % nx { 1.0 } else { 0.0 };
@@ -965,7 +999,7 @@ impl Wdf {
             .iter()
             .zip(&x)
             .fold(Phasor::default(), |s, (&c, &x)| s.add(Phasor::new(c, 0.0).mul(x)));
-        let h = Phasor::new(d, 0.0).add(zi.mul(cx));
+        let h = outer.mul(Phasor::new(d, 0.0).add(zi.mul(cx)));
         Some(Phasor::new(scale * h.re, scale * h.im))
     }
 }

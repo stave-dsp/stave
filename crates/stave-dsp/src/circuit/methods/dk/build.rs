@@ -2,7 +2,9 @@
 //! rate-independent stamps made, sources and devices given their columns.
 
 use super::devices::{Device, Nonlinear, SHUNT};
+use super::adaa;
 use super::solve::{Health, Settings, Workspace};
+use crate::circuit::methods::adaa::Antialiasing;
 use super::{pin, Capacitor, Dk, Inductor, Input, Pin};
 use crate::circuit::devices::opamp::{Amp, Macromodel};
 use crate::circuit::netlist::expr::{Dual, Tape};
@@ -466,6 +468,8 @@ impl<'a> Builder<'a> {
             output: 0.0,
             settings,
             health: Health::default(),
+            antialiasing: Antialiasing::None,
+            adaa: adaa::State::new(nx, nu, nv, nq),
         })
     }
 }

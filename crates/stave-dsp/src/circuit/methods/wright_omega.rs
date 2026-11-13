@@ -46,6 +46,18 @@ impl WrightOmega {
         let w = wright_omega((r_is / knee).ln() + (magnitude + r_is) / knee);
         wave.signum() * (magnitude + 2.0 * r_is - 2.0 * knee * w)
     }
+
+    /// The wave a single `diode` (anode toward the port, no breakdown)
+    /// reflects for an arriving `wave` through port resistance `ohms`:
+    /// exact, `b = a + 2R·Is − 2·N·Vt·ω((a + R·Is)/(N·Vt) + ln(R·Is/(N·Vt)))`
+    /// (Werner et al. 2015; Albertini et al. 2021, eq. 22).
+    #[inline]
+    pub fn reflect_single(diode: &Shockley, wave: f64, ohms: f64) -> f64 {
+        let (is, knee) = (diode.saturation_amps, diode.knee_volts());
+        let r_is = ohms * is;
+        let w = wright_omega((r_is / knee).ln() + (wave + r_is) / knee);
+        wave + 2.0 * r_is - 2.0 * knee * w
+    }
 }
 
 #[cfg(test)]

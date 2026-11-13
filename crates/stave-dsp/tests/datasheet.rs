@@ -48,6 +48,13 @@
 //! spends a few ns on its tree passes elsewhere. The scattering iterative
 //! method on the clipper costs 1847 (10.6 sweeps of two scalar solves).
 //!
+//! Stateful ADAA (DSP.md A1) against oversampling, at the alias levels
+//! `aliasing_budgets.rs` records: closed form is cheaper at equal or
+//! better aliasing (op-amp clipper 691 at 1× with ADAA vs 1117 at plain
+//! 2×, 2236 at 4× with ADAA vs 3223 at plain 8×); quadrature is not
+//! (Tube Screamer 3817 at 1× with ADAA vs 3953 at plain 2×, which aliases
+//! 8 dB less).
+//!
 //! Learned anchors (M3, 2026-11-12): WaveNet at Neural Amp Modeler's
 //! standard size 2.2 µs/sample (12 + 6 channels 1.7), LSTM 1 x 16 0.32,
 //! GRU 1 x 16 0.23 — a different scale: a capture network is the whole
@@ -219,6 +226,7 @@ fn primitive_datasheet() {
     }
 
     circuit_datasheet(sr, &input);
+    adaa_datasheet(sr, &input);
 
     let mut line = DelayLine::new();
     line.allocate(4_800);
@@ -816,6 +824,52 @@ fn driven(netlist: Netlist, sr: f32) -> Circuit<Dk> {
     c.drive("vin").unwrap();
     c.prepare(sr);
     c
+}
+
+/// Stateful ADAA (DSP.md A1) against oversampling, for the alias levels
+/// `aliasing_budgets.rs` records: each circuit at 1×, 2× and 4× with ADAA
+/// beside 2×, 4× and 8× without (the plain 1× lines are above). The
+/// clippers' means are closed form (one solve a sample), the Tube
+/// Screamer's by quadrature (two).
+fn adaa_datasheet(sr: f32, input: &[f32]) {
+    use stave_dsp::circuit::methods::adaa::Antialiasing;
+    if sheet::timed() {
+        println!("  stateful ADAA vs oversampling");
+    }
+    for factor in [1u32, 2, 4, 8] {
+        for adaa in [false, true] {
+            if (factor == 1 && !adaa) || (factor == 8 && adaa) {
+                continue;
+            }
+            let antialiasing = if adaa { Antialiasing::Adaa } else { Antialiasing::None };
+            let suffix = format!(" {factor}x{}", if adaa { " ADAA" } else { "" });
+
+            let mut wdf = DiodeClipper::new(DiodeClipperConfig {
+                input_ohms: 2.2e3,
+                capacitor_farads: 10e-9,
+                diode: Shockley::N4148,
+                solver: PairSolver::default(),
+            });
+            wdf.set_antialiasing(antialiasing);
+            let mut wdf = Oversampled::linear(wdf, factor);
+            wdf.prepare(sr);
+            bench(&format!("DiodeClipper x10 (WDF){suffix}"), input, |x| wdf.tick(10.0 * x));
+
+            let circuits: [(&str, Netlist, f32, f32); 3] = [
+                ("Circuit<Dk> diode clipper x10", Netlist::parse_spice(CLIPPER).unwrap(), 10.0, 0.0),
+                ("Circuit<Dk> op-amp clipper", Netlist::parse_spice(OPAMP_CLIPPER).unwrap(), 1.0, 0.0),
+                ("Circuit<Dk> Tube Screamer (JRC4558)", tube_screamer_netlist(), 1.0, 4.5),
+            ];
+            for (name, netlist, gain, offset) in circuits {
+                let mut c = Circuit::<Dk>::new(&netlist).unwrap();
+                c.drive("v1").unwrap();
+                c.set_antialiasing(antialiasing);
+                let mut os = Oversampled::linear(c, factor);
+                os.prepare(sr);
+                bench(&format!("{name}{suffix}"), input, |x| os.tick(offset + gain * x));
+            }
+        }
+    }
 }
 
 /// An ngspice deck as `Circuit<Dk>`, its `VIN` driven by the input.

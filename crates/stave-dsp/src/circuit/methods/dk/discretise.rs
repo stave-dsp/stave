@@ -3,6 +3,7 @@
 
 use super::matrix::{complex_solve, product, solve_columns, Phasor};
 use super::{read, Dk, Pin};
+use crate::circuit::methods::adaa::Antialiasing;
 use crate::circuit::methods::newton::NewtonSettings;
 use crate::circuit::netlist::NetlistError;
 use crate::kernel::node::Tail;
@@ -43,7 +44,7 @@ impl Dk {
 
     /// The trapezoidal matrices for the current step.
     pub(super) fn discretise(&mut self) -> Result<(), NetlistError> {
-        let (n, t) = (self.n, self.step);
+        let (n, t) = (self.n, self.design_step());
         let (nc, nl) = (self.capacitors.len(), self.inductors.len());
         let nx = nc + nl;
         let (nu, nq) = (self.inputs.len(), self.nq);
@@ -105,6 +106,7 @@ impl Dk {
         difference_row(&m, cols, self.probe.0, self.probe.1, 1.0, &mut row);
         split(&row, &mut self.ex, &mut self.eu, &mut self.eq, 0);
         self.tail = self.estimate_tail();
+        self.adaa.kernel.find_one_port(&self.bq, self.n, &self.k, &self.devices);
         Ok(())
     }
 
@@ -259,7 +261,15 @@ impl Dk {
         let (input, scale) = self.response_input()?;
         let nx = self.x.len();
         let (a, b, c, d) = self.linearised(input);
-        let zi = Phasor::new(angle.cos(), -angle.sin());
+        let mut zi = Phasor::new(angle.cos(), -angle.sin());
+        // ADAA (Holters 2019, eq. 13): H̃(z) = ½(1 + z⁻¹)·H(ζ) with
+        // ζ⁻¹ = ½(z⁻¹ + z⁻²), the matrices being designed for 1.5·T.
+        let adaa = self.antialiasing == Antialiasing::Adaa;
+        let half = Phasor::new(0.5, 0.0);
+        let outer = half.mul(Phasor::new(1.0, 0.0).add(zi));
+        if adaa {
+            zi = half.mul(zi.add(zi.mul(zi)));
+        }
         // (I − A·z⁻¹)·X = B;  H = D + z⁻¹·C·X.
         let mut m: Vec<Phasor> = (0..nx * nx)
             .map(|i| {
@@ -275,7 +285,10 @@ impl Dk {
         for j in 0..nx {
             cx = cx.add(Phasor::new(c[j], 0.0).mul(x[j]));
         }
-        let h = Phasor::new(d, 0.0).add(zi.mul(cx));
+        let mut h = Phasor::new(d, 0.0).add(zi.mul(cx));
+        if adaa {
+            h = outer.mul(h);
+        }
         Some(Phasor::new(scale * h.re, scale * h.im))
     }
 
@@ -309,7 +322,10 @@ impl Dk {
             }
             v = next.into_iter().map(|x| x / norm).collect();
         }
-        Tail::from_pole((log_growth / f64::from(counted)).exp())
+        // A pole per design step of 1.5·T under ADAA is its 1/1.5 power
+        // per sample.
+        let per_sample = log_growth / f64::from(counted) / self.antialiasing.design_step_scale();
+        Tail::from_pole(per_sample.exp())
     }
 
     /// The probe at the operating point.

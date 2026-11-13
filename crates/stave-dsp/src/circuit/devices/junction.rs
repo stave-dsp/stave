@@ -41,6 +41,27 @@ pub(crate) fn limit_step(new: f64, old: f64, is: f64, knee: f64) -> f64 {
     }
 }
 
+/// `expm1(x)/x`, 1 at 0: the divided difference of an exponential
+/// without cancellation.
+#[inline]
+pub(crate) fn exprel(x: f64) -> f64 {
+    if x.abs() < 1e-8 {
+        1.0 + 0.5 * x
+    } else {
+        x.exp_m1() / x
+    }
+}
+
+/// `sinh(x)/x`, 1 at 0.
+#[inline]
+pub(crate) fn sinhc(x: f64) -> f64 {
+    if x.abs() < 1e-6 {
+        1.0 + x * x / 6.0
+    } else {
+        x.sinh() / x
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

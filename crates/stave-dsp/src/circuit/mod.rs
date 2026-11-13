@@ -139,7 +139,11 @@ impl Method for Wdf {
 /// (1e-10 dB, an R-type root) and
 /// `crates/stave-test/tests/wdf_matches_ngspice.rs::bridged_t_matches_ngspice`,
 /// and every circuit's R17 matrix at DK's T0 budgets in
-/// `crates/stave-test/tests/characterise.rs::every_circuit_on_wdf`.
+/// `crates/stave-test/tests/characterise.rs::every_circuit_on_wdf`. `Circuit<Dk>` with stateful ADAA:
+/// `crates/stave-test/tests/adaa_matches_ngspice.rs::opamp_clipper_with_adaa_matches_ngspice`
+/// and its siblings (the in-band error ADAA adds, 1.2e-4 to 4.4e-3), and
+/// `crates/stave-dsp/tests/aliasing_budgets.rs::dk_opamp_clipper_adaa_44k_holds_its_alias_budgets`
+/// and its siblings (the alias figures, with and without ADAA).
 ///
 /// # Cost
 /// Datasheet `"Circuit<Dk> diode clipper x10"` (about 6
@@ -149,10 +153,19 @@ impl Method for Wdf {
 /// netlists as WDFs: `"Circuit<Wdf> diode clipper x10"`,
 /// `"Circuit<Wdf> op-amp clipper"`, `"Circuit<Wdf> cathode x5 (Koren)"`,
 /// `"Circuit<Wdf> tone stack"`, `"Circuit<Wdf> fuzz face"`, and the
-/// scattering iterative method's `"Circuit<Wdf> diode clipper x10 (SIM)"`.
+/// scattering iterative method's `"Circuit<Wdf> diode clipper x10 (SIM)"`. `Circuit<Dk>` with
+/// ADAA: `"Circuit<Dk> op-amp clipper 1x ADAA"` (closed form, one solve
+/// a sample) and `"Circuit<Dk> Tube Screamer (JRC4558) 1x ADAA"`
+/// (quadrature, two), each with its 2× and 4× lines beside the plain
+/// 2×, 4× and 8× ones.
 ///
 /// # Aliasing
-/// None of its own; a nonlinear netlist expects to run oversampled.
+/// None of its own by default; a nonlinear netlist expects to run
+/// oversampled. [`Dk::set_antialiasing`] turns on first-order stateful
+/// ADAA (DSP.md A1): closed form where the nonlinear subsystem is a
+/// one-port of diodes (at 4× the op-amp clipper's aliasing is 21 dB below
+/// plain 8×), quadrature otherwise (always lower aliasing, but dearer
+/// than oversampling to the same level).
 ///
 /// # Valid ranges
 /// Its devices' and its method's: any positive rate; Newton caps and
