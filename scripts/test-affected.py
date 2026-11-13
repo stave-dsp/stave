@@ -18,6 +18,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 GLOBAL = ("Cargo.toml", "Cargo.lock", ".cargo/", ".config/", "rust-toolchain")
+# Files a package reads from another package's directory (include_str!):
+# a change there reaches the reader too, though no manifest says so.
+READERS = {"crates/stave-test/spice/": ("stave-dsp",)}
 
 
 def run(*cmd):
@@ -52,6 +55,7 @@ def affected(files, packages, dependents):
         matches = [n for n, d in packages.items() if d != Path(".") and d in path.parents]
         if matches:
             owners.add(max(matches, key=lambda n: len(packages[n].parts)))
+        owners.update(r for prefix, readers in READERS.items() if f.startswith(prefix) for r in readers)
     reached, frontier = set(owners), list(owners)
     tested = set(owners)
     while frontier:
