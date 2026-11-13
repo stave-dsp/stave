@@ -258,6 +258,14 @@ Wright-omega closed forms) and `topologies/` (common cathode, triode
 stage, push-pull pair, power supply, coupler, tone stack, diode clipper,
 op-amp clipper, transformer).
 
+Any circuit can also run straight from its netlist:
+[`Netlist::parse_spice`](stave_dsp::circuit::netlist::Netlist::parse_spice)
+reads the SPICE subset the ngspice decks are written in, and
+[`Circuit<Dk>`](stave_dsp::circuit::Circuit) solves it by the nodal DK
+method — the state space computed once per prepare, Newton only on the
+devices' controlling voltages. The hand-derived topologies are held to
+`Circuit<Dk>` on the same netlist (`dk_matches_ngspice.rs`).
+
 The models are held to references outside the code:
 
 - `crates/stave-test/tests/matches_ngspice.rs` compares against ngspice

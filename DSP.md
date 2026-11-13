@@ -208,7 +208,7 @@ circuit/
 
 ### N — circuit solvers
 
-- [ ] **N1** A netlist type in Rust: nodes, elements (R, C, L, sources,
+- [x] **N1** (c2c2a54) A netlist type in Rust: nodes, elements (R, C, L, sources,
   devices), and a parser for the SPICE subset `stave-test/spice/*.cir`
   already uses, so one netlist feeds both ngspice and stave.
 - [ ] **N2** Nodal DK method (Yeh 2009; Holters & Zölzer 2015, ACME.jl):

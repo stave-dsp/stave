@@ -17,6 +17,9 @@
 //! Newton solve at ~63 — an implicit nonlinear ODE per sample is
 //! the one primitive you budget around.
 
+use stave_dsp::circuit::methods::dk::Dk;
+use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
+use stave_dsp::circuit::Circuit;
 use stave_dsp::FilterSpec;
 use stave_dsp::RcClipperConfig;
 use stave_dsp::{AdaaOrder, AdsrConfig};
@@ -28,6 +31,10 @@ use stave_dsp::{
     Adaa, Adsr, Allpass1, Biquad, Convolver, Curve, DelayLine, DiodeClipper, DiodeClipperConfig,
     Fft, Hysteresis, ImpulseResponse, Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley,
     Slew, Stage, Waveform,
+};
+use stave_dsp::{
+    CommonCathode, CommonCathodeConfig, Koren, OpAmpClipper, OpAmpClipperConfig,
+    PassiveToneControlPositions, PassiveToneStack, PassiveToneStackComponents, Tube,
 };
 
 const N: usize = 1 << 17;
@@ -148,6 +155,8 @@ fn primitive_datasheet() {
         bench(name, &input, |x| wdf.tick(x));
     }
 
+    circuit_datasheet(sr, &input);
+
     let mut line = DelayLine::new();
     line.allocate(4_800);
     bench("DelayLine write+read_cubic", &input, |x| {
@@ -220,4 +229,149 @@ fn primitive_datasheet() {
         );
         bench(&name, &input, |x| conv.tick(x));
     }
+}
+
+/// A netlist as `Circuit<Dk>`, its `V1` driven by the input.
+fn dk(deck: &str, sr: f32) -> Circuit<Dk> {
+    circuit_from(Netlist::parse_spice(deck).unwrap(), sr)
+}
+
+fn circuit_from(netlist: Netlist, sr: f32) -> Circuit<Dk> {
+    let mut c = Circuit::<Dk>::new(&netlist).unwrap();
+    c.drive("v1").unwrap();
+    c.prepare(sr);
+    c
+}
+
+const CLIPPER: &str = "diode clipper
+V1 in 0 0
+R1 in out 2.2k
+C1 out 0 10n
+D1 out 0 DI
+D2 0 out DI
+.model DI D(Is=2.52n N=1.752)
+.control
+wrdata out v(out)
+.endc";
+
+const OPAMP_CLIPPER: &str = "TS808 clipper, ideal op-amp
+V1 in 0 0
+E1 inm 0 in 0 1
+R1 inm s 4.7k
+VS s g 0
+C1 g 0 47n
+E2 fb 0 in 0 1
+F1 0 out VS 1
+RF out fb 51k
+CF out fb 51p
+D1 out fb DI
+D2 fb out DI
+.model DI D(Is=2.52n N=1.752)
+.control
+wrdata out v(out)
+.endc";
+
+/// The common cathode with the Koren law as ngspice spells it.
+const CATHODE_B: &str = "12AX7 common cathode
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+V1 g 0 0
+VB b 0 300
+RA b p 100k
+RK k 0 1.5k
+CK k 0 22u
+BE e1 0 V = {V(p,k)/kp*ln(1+exp(kp*(1/mu+V(g,k)/sqrt(kvb+V(p,k)*V(p,k)))))}
+RE e1 0 1G
+BI p k I = {V(e1) > 0 ? 2*pow(V(e1),ex)/kg1 : 0}
+.control
+wrdata out v(p)
+.endc";
+
+const TONE_STACK: &str = "tone stack, pots at noon
+V1 i 0 0
+C1 i t 250p
+RT1 t o 125000
+RT2 o b 125000
+R4 i n 100000
+C2 n b 100n
+RB b j 500000
+RM1 j w 12500
+RM2 w 0 12500
+C3 n w 47n
+.control
+wrdata out v(o)
+.endc";
+
+/// `Circuit<Dk>` beside the hand-derived topology of the same netlist,
+/// at the host rate, on the same ±0.3 V noise (scaled into each
+/// circuit's working range).
+fn circuit_datasheet(sr: f32, input: &[f32]) {
+    println!("  circuits: hand-derived topology, then Circuit<Dk> on its netlist");
+
+    let mut wdf = DiodeClipper::new(DiodeClipperConfig {
+        input_ohms: 2.2e3,
+        capacitor_farads: 10e-9,
+        diode: Shockley::D1N4148,
+        solver: PairSolver::default(),
+    });
+    wdf.prepare(sr);
+    bench("DiodeClipper x10 (WDF)", input, |x| wdf.tick(10.0 * x));
+    let mut clipper = dk(CLIPPER, sr);
+    bench("Circuit<Dk> diode clipper x10", input, |x| clipper.tick(10.0 * x));
+
+    let mut opamp = OpAmpClipper::new(OpAmpClipperConfig::TS808);
+    opamp.prepare(sr);
+    bench("OpAmpClipper", input, |x| opamp.tick(x));
+    let mut opamp_dk = dk(OPAMP_CLIPPER, sr);
+    bench("Circuit<Dk> op-amp clipper", input, |x| opamp_dk.tick(x));
+
+    let mut cathode = CommonCathode::new(CommonCathodeConfig {
+        tube: Koren::T12AX7,
+        source_ohms: 0.0,
+        supply_volts: 300.0,
+        plate_load_ohms: 100e3,
+        cathode_ohms: 1.5e3,
+        bypass_farads: 22e-6,
+        newton: Default::default(),
+    });
+    cathode.prepare(sr);
+    bench("CommonCathode x5 (Koren)", input, |x| cathode.tick(5.0 * x));
+    let mut cathode_b = dk(CATHODE_B, sr);
+    bench("Circuit<Dk> cathode x5 (B src)", input, |x| cathode_b.tick(5.0 * x));
+    let mut cathode_t = circuit_from(cathode_netlist(), sr);
+    bench("Circuit<Dk> cathode x5 (Koren)", input, |x| cathode_t.tick(5.0 * x));
+
+    let mut stack = PassiveToneStack::new(PassiveToneStackComponents {
+        treble_capacitance_farads: 250e-12,
+        bass_capacitance_farads: 100e-9,
+        midrange_capacitance_farads: 47e-9,
+        treble_potentiometer_ohms: 250e3,
+        bass_potentiometer_ohms: 1e6,
+        midrange_potentiometer_ohms: 25e3,
+        slope_resistance_ohms: 100e3,
+    });
+    stack.set_controls(PassiveToneControlPositions::new(0.5, 0.5, 0.5));
+    stack.prepare(sr);
+    bench("PassiveToneStack", input, |x| stack.tick(x));
+    let mut stack_dk = dk(TONE_STACK, sr);
+    bench("Circuit<Dk> tone stack", input, |x| stack_dk.tick(x));
+}
+
+/// The common cathode built in code, with stave's Koren device.
+fn cathode_netlist() -> Netlist {
+    let mut n = Netlist::new();
+    let (g, b, p, k) = (n.add_node("g"), n.add_node("b"), n.add_node("p"), n.add_node("k"));
+    let ground = stave_dsp::circuit::netlist::Node::GROUND;
+    let parts = [
+        ("v1", ElementKind::VoltageSource { a: g, b: ground, source: Source::dc(0.0) }),
+        ("vb", ElementKind::VoltageSource { a: b, b: ground, source: Source::dc(300.0) }),
+        ("ra", ElementKind::Resistor { a: b, b: p, ohms: 100e3 }),
+        ("rk", ElementKind::Resistor { a: k, b: ground, ohms: 1.5e3 }),
+        ("ck", ElementKind::Capacitor { a: k, b: ground, farads: 22e-6, initial_volts: None }),
+        ("t1", ElementKind::Triode { plate: p, grid: g, cathode: k, tube: Tube::Koren(Koren::T12AX7) }),
+    ];
+    for (name, kind) in parts {
+        n.add(name, kind).unwrap();
+    }
+    n.probe = Some(Probe::node(p));
+    n
 }
