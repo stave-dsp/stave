@@ -43,6 +43,7 @@ fn run<W: stave_dsp::primitives::spectral::Worker>(conv: &mut Convolver<W>, x: &
 /// inline reference's, bit for bit — mono and true stereo, one to three
 /// deferred sizes.
 #[test]
+#[cfg_attr(miri, ignore = "exceeds Miri's 300 s budget; the handoff ring itself is loom-modelled")]
 fn offline_workers_match_inline_bit_for_bit() {
     let x = noise(3, 60_000);
     for (taps, largest, from) in [
@@ -101,6 +102,7 @@ fn offline_workers_match_inline_bit_for_bit() {
 /// (the test settles it), nothing is late and the output is the
 /// inline reference's, bit for bit.
 #[test]
+#[cfg_attr(miri, ignore = "exceeds Miri's 300 s budget; the handoff ring itself is loom-modelled")]
 fn settled_realtime_workers_match_inline() {
     let ir = ImpulseResponse::mono(&hall(20_000));
     let x = noise(9, 40_000);
@@ -131,6 +133,7 @@ fn settled_realtime_workers_match_inline() {
 /// report, and from the next block on the output is exact again (the
 /// late block still reached the run's history).
 #[test]
+#[cfg_attr(miri, ignore = "exceeds Miri's 300 s budget; the handoff ring itself is loom-modelled")]
 fn a_slow_worker_misses_one_block_and_says_so() {
     const L: usize = 512;
     let ir = ImpulseResponse::mono(&hall(16_000));
