@@ -436,6 +436,19 @@ circuit/
   under the pinned ngspice 42 so version noise (up to 5e-6 of peak today)
   doesn't eat the margin.
 
+- [ ] **R17** A characterisation matrix per circuit, not one waveform. Today 40
+  cases compare one waveform by normalised RMS and 8 compare AC magnitude;
+  the harness's `Harmonics` and `ThdDelta` metrics are used by no circuit
+  case, phase is never compared, and nothing spans drive levels. Every
+  nonlinear circuit gets, against ngspice (and later hardware, R13):
+  operating point (DC bias, exact); small-signal response at the operating
+  point, magnitude **and phase**; gain and compression versus input level;
+  each harmonic H2–H10 in magnitude and phase over a level × frequency
+  grid, with a budget per harmonic; THD+N versus level and frequency;
+  two-tone intermodulation; dynamics after a burst (bias shift, blocking,
+  sag recovery); aliasing at the shipping rate (A4). One `Case` builder
+  call gives the whole matrix, and the model catalogue shows its plots.
+
 ### P — profiling and performance
 
 - [x] **P1** (67108c3: `crates/stave-dsp/datasheet.json` from stave-mini via `scripts/datasheet.sh`, held to the benched stages by the test itself; the docs site's Cost page) The datasheet as data: `datasheet.rs` writes JSON
