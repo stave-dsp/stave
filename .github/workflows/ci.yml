@@ -208,4 +208,4 @@ jobs:
           cargo +$NIGHTLY miri nextest run --locked --profile miri
           --partition hash:${{ matrix.shard }}/4
           -p stave-core -p stave-telemetry -p stave-vst3 -p stave-clap
-          -E 'package(stave-core) | package(stave-telemetry) | binary_id(/::(wrapper|table|diagnostics|negotiation|panic)_abi$/)'
+          -E 'package(stave-core) | package(stave-telemetry) | binary_id(/::(wrapper|table|diagnostics|negotiation|panic|state_race)_abi$/)'

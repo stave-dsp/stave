@@ -8,7 +8,7 @@
 //! replays exactly that run. `STAVE_SIM_SEEDS=<n>` widens the sweep
 //! (CI's nightly runs more).
 
-use stave_host::plugin::sim::{simulate, SimConfig};
+use stave_host::plugin::sim::{simulate, simulate_tape, SimConfig};
 use stave_model::check::validate;
 use stave_model::lifecycle::{Abstract, Compliant, Lifecycle};
 
@@ -61,4 +61,25 @@ fn a_seed_replays_exactly() {
     assert!(a.events > 0, "the plugin's event trace was read and validated");
     let c = simulate(tilt(), 8, SimConfig::default()).expect("seed 8 passes");
     assert_ne!(a.digest, c.digest, "different seeds, different runs");
+}
+
+/// The nightly fuzzer's tape (`fuzz (vst3_host)`): a deactivated plugin,
+/// blocks anyway, then a save racing a block — which answered
+/// `kInternalError` whenever the save held the plugin as the block
+/// arrived. Thread timing picks that interleaving, so the tape replays
+/// many times; stave-vst3's `state_race_abi` forces it.
+#[test]
+#[cfg_attr(miri, ignore = "full plugin lifecycles")]
+fn the_save_during_process_tape_keeps_every_law() {
+    let tape = include_bytes!("fixtures/save_during_process.tape");
+    // As the fuzz target configures a run.
+    let config = SimConfig {
+        steps: (tape.len() / 8).clamp(1, 64),
+        illegal_per_16: 4,
+    };
+    for _ in 0..64 {
+        if let Err(failure) = simulate_tape(tilt(), tape, config) {
+            panic!("{failure}");
+        }
+    }
 }

@@ -174,12 +174,23 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
     // stave-dsp remain primary; see stave_core::runtime::ScopedFtz).
     let _ftz = stave_core::runtime::ScopedFtz::engage();
 
-    // Exclusive processor access for the duration of the block.
-    let Some(mut proc) = inst.plugin.claim() else {
-        inst.diagnostics
-            .faults
-            .record(ProcessFault::ConcurrentProcess, 1);
-        return K_INTERNAL_ERROR;
+    // Exclusive processor access for the duration of the block. Held
+    // elsewhere — a state save or load on the UI thread (legal during
+    // playback) or an overlapping call (not) — the block is dropped,
+    // never refused: silence over the host's buffers and kResultOk, as
+    // for an unprepared block (an error here is the host's to interpret,
+    // and the host did nothing wrong). The fault says which: a dropped
+    // block while active, an unprepared one while not.
+    let Some(mut proc) = inst.plugin.claim_for_block() else {
+        let fault = if inst.shared.activated() {
+            ProcessFault::ConcurrentProcess
+        } else {
+            ProcessFault::Unprepared
+        };
+        inst.diagnostics.faults.record(fault, 1);
+        // SAFETY: the host's output channels are writable for `frames`.
+        unsafe { stave_core::runtime::zero_tail(output_ptrs, 0, frames) };
+        return K_RESULT_OK;
     };
 
     // Aux inputs: aux buses follow the main input, declaration

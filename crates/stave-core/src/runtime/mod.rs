@@ -488,6 +488,18 @@ impl<P: Erased> PluginCell<P> {
         got
     }
 
+    /// The audio thread's claim, for one block: never waits, never
+    /// asserts. `None` means another thread holds the processor — most
+    /// often a state save or load on the main thread, which the formats
+    /// allow during playback (VST3 `getState`/`setState`, CLAP
+    /// `state.save`/`load`, on the main thread while `process` runs), so
+    /// unlike [`claim`](Self::claim) it is not a protocol violation; an
+    /// overlapping `process` or activation (which is) looks the same.
+    /// The caller drops the block: silence, a success answer and a fault.
+    pub fn claim_for_block(&self) -> Option<ProcessorGuard<'_, P>> {
+        self.try_claim_quiet()
+    }
+
     /// Claim with bounded retry, for LEGITIMATE cross-thread callers:
     /// state save/load runs on the UI thread while audio may be
     /// mid-block (hosts save projects during playback). The audio

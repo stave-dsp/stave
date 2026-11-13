@@ -38,7 +38,8 @@ use crate::EVENT_SLOTS;
 pub enum Fault {
     /// A host call panicked (caught at the boundary).
     Panic,
-    /// A second process call while one was running.
+    /// A block dropped (silenced) because another call held the plugin:
+    /// a state save or load on another thread, or an overlapping call.
     ConcurrentProcess,
     /// A process call with no process data.
     MissingProcessData,

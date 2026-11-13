@@ -13,7 +13,9 @@ use stave_telemetry::{Event, Fault, Telemetry};
 /// A process call the wrapper had to refuse, or ran with input dropped.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ProcessFault {
-    /// A second process call while one was running.
+    /// A block that found the plugin held by another call — a state save
+    /// or load on another thread (legal during playback) or an
+    /// overlapping process or activation (not): dropped, silenced.
     ConcurrentProcess,
     MissingProcessData,
     /// A block longer than the host's declared maximum.
@@ -48,14 +50,15 @@ impl ProcessFault {
 
     pub fn severity(self) -> Severity {
         match self {
-            Self::ConcurrentProcess
-            | Self::MissingProcessData
+            Self::MissingProcessData
             | Self::BlockTooLong
             | Self::MissingOutput
             | Self::UnsupportedSampleSize
             | Self::BlockTruncated
             | Self::Unprepared => Severity::HostMisbehaving,
-            Self::ParamChangesDropped | Self::EventsDropped => Severity::Warning,
+            Self::ConcurrentProcess | Self::ParamChangesDropped | Self::EventsDropped => {
+                Severity::Warning
+            }
         }
     }
 
@@ -82,7 +85,9 @@ impl ProcessFault {
 impl fmt::Display for ProcessFault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::ConcurrentProcess => "process refused: called while another process call ran",
+            Self::ConcurrentProcess => {
+                "block dropped (silenced): another call held the plugin — a state save or load, or an overlapping process"
+            }
             Self::MissingProcessData => "process refused: no process data",
             Self::BlockTooLong => "process refused: block longer than the declared maximum",
             Self::MissingOutput => "process refused: no output buffers",

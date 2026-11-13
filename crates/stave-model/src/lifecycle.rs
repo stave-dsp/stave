@@ -77,6 +77,11 @@ pub enum BlockExpect {
     Silent,
     /// The plugin runs: success, finite output.
     Ran,
+    /// A block racing a state save on another thread: the plugin runs,
+    /// or — the save holding it when the block arrives — the block is
+    /// dropped: silence and a `ConcurrentProcess` fault. Success either
+    /// way (the host did nothing wrong); which one is thread timing.
+    Contended,
 }
 
 /// The wrapper's answer the model predicts for a call.
@@ -166,10 +171,22 @@ impl Lifecycle {
                 result_ok: true,
                 block: BlockExpect::NotABlock,
             },
-            HostCall::Process { frames, .. } | HostCall::SaveDuringProcess { frames } => Expect {
+            HostCall::Process { frames, .. } => Expect {
                 result_ok: block(frames) != BlockExpect::Refused,
                 block: block(frames),
             },
+            // The save holds the plugin while it serializes; a block that
+            // arrives then cannot run. Inactive, it was silent anyway.
+            HostCall::SaveDuringProcess { frames } => {
+                let block = match block(frames) {
+                    BlockExpect::Ran => BlockExpect::Contended,
+                    other => other,
+                };
+                Expect {
+                    result_ok: block != BlockExpect::Refused,
+                    block,
+                }
+            }
             HostCall::SetParam { .. }
             | HostCall::SaveState
             | HostCall::LoadSaved(_)
@@ -268,6 +285,7 @@ impl crate::check::Model for Compliant {
             HostCall::SetActive(!s.active),
             HostCall::SetProcessing(!s.processing),
             HostCall::SaveState,
+            HostCall::SaveDuringProcess { frames: s.max_block },
         ]);
         for frames in [0, 1, s.max_block] {
             out.push(HostCall::Process {
@@ -305,6 +323,15 @@ impl crate::check::Model for Compliant {
                 };
                 if l.allows(&call) && l.expect(&call).block != BlockExpect::Ran {
                     return Err(format!("a legal {frames}-frame block would not run"));
+                }
+                // A save during playback is legal: the block it races
+                // succeeds, run or dropped, and is never refused.
+                let racing = HostCall::SaveDuringProcess { frames };
+                if l.allows(&racing) {
+                    let e = l.expect(&racing);
+                    if !e.result_ok || e.block != BlockExpect::Contended {
+                        return Err(format!("a legal {frames}-frame block racing a save answers {e:?}"));
+                    }
                 }
             }
         }

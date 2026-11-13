@@ -109,8 +109,8 @@ mod tests {
             session: Session::default(),
         };
         let faults = &diagnostics.faults;
-        assert!(faults.record(ProcessFault::ConcurrentProcess, 1));
-        assert!(!faults.record(ProcessFault::ConcurrentProcess, 1));
+        assert!(faults.record(ProcessFault::BlockTooLong, 1));
+        assert!(!faults.record(ProcessFault::BlockTooLong, 1));
         assert!(!faults.record(ProcessFault::EventsDropped, 7));
         diagnostics.report_faults();
         diagnostics.report_faults();
@@ -121,7 +121,7 @@ mod tests {
             [
                 (
                     Severity::HostMisbehaving,
-                    "process refused: called while another process call ran (×2)".to_string()
+                    "process refused: block longer than the declared maximum (×2)".to_string()
                 ),
                 (
                     Severity::Warning,

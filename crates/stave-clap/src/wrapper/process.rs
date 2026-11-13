@@ -103,11 +103,19 @@ fn process_block<P: ClapExport>(
     // stave-dsp remain primary; see stave_core::runtime::ScopedFtz).
     let _ftz = stave_core::runtime::ScopedFtz::engage();
 
-    // Exclusive processor access for the block; refuse (error status)
-    // on a host protocol violation instead of racing.
-    let Some(mut proc) = inst.plugin.claim() else {
+    // Exclusive processor access for the block. Held elsewhere — a
+    // `state.save`/`load` on the main thread (legal while processing) or
+    // an overlapping call (not) — the block is dropped, not raced:
+    // silence, and the status an unprepared block gets while inactive.
+    let Some(mut proc) = inst.plugin.claim_for_block() else {
+        // SAFETY: the host's output channels are writable for `frames`.
+        unsafe { stave_core::runtime::zero_tail(output_ptrs, 0, frames) };
+        if !inst.shared.activated() {
+            inst.fault(ProcessFault::Unprepared, 1);
+            return sys::CLAP_PROCESS_ERROR;
+        }
         inst.fault(ProcessFault::ConcurrentProcess, 1);
-        return sys::CLAP_PROCESS_ERROR;
+        return sys::CLAP_PROCESS_CONTINUE;
     };
 
     // Aux inputs: declared aux ports follow the main input in

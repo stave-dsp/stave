@@ -10,7 +10,10 @@
 //! may not run is silent, that output is finite, that state round-trips
 //! and a refused load changes nothing, that the plugin never logged a
 //! panic. Any failure names its seed; [`simulate`] with that seed
-//! replays it exactly.
+//! replays it exactly — all but one choice: whether a
+//! `SaveDuringProcess` block lands while the save holds the plugin (it
+//! is then dropped, a legal outcome the model allows) is real thread
+//! timing, so the plugin can come out of that step on either path.
 
 use std::fmt;
 
@@ -173,6 +176,7 @@ fn run(entry: EntryPoints, seed: u64, rng: Rng, config: SimConfig) -> Result<Sim
     })?;
     let mut sim = Sim {
         model: Lifecycle::active(48_000.0, 512),
+        last_block_silent: false,
         rng,
         digest: Fnv(0xCBF2_9CE4_8422_2325),
         saved: Vec::new(),
@@ -219,7 +223,10 @@ fn run(entry: EntryPoints, seed: u64, rng: Rng, config: SimConfig) -> Result<Sim
     // a gesture begun once and ended once, release after prepare, no
     // gap) — trace validation of the wrapper's own records.
     if config.illegal_per_16 == 0 && sim.traced() {
-        let trace = sim.recorder.trace();
+        let mut trace = sim.recorder.trace();
+        // A block dropped under a racing save is the model's legal
+        // `Contended` outcome, each one checked at its own step.
+        trace.0.retain(|r| r.event != Event::Fault(Fault::ConcurrentProcess));
         let broken = check(&trace);
         if let Some(v) = broken.first() {
             let call = sim.calls.last().cloned().unwrap_or(HostCall::SaveState);
@@ -236,6 +243,8 @@ fn run(entry: EntryPoints, seed: u64, rng: Rng, config: SimConfig) -> Result<Sim
 
 struct Sim {
     model: Lifecycle,
+    /// Whether the last block's output was all zeros.
+    last_block_silent: bool,
     rng: Rng,
     digest: Fnv,
     /// States the plugin saved, for later loads.
@@ -405,6 +414,16 @@ impl Sim {
         if let Some(fault) = fault {
             if !events.contains(&Event::Fault(fault)) {
                 return Err(format!("a {fault:?} block traced only {events:?}"));
+            }
+        }
+        // A dropped block: only where a save races it, and silent. (The
+        // sim never overlaps a block with anything else.)
+        if events.contains(&Event::Fault(Fault::ConcurrentProcess)) {
+            if expect.block != BlockExpect::Contended {
+                return Err(format!("a block was dropped for {call:?} ({:?}): {events:?}", expect.block));
+            }
+            if !self.last_block_silent {
+                return Err("a block dropped under a racing save is not silent".into());
             }
         }
         Ok(())
@@ -595,6 +614,7 @@ impl Sim {
         for s in &outcome.output {
             self.digest.mix(&s.to_bits().to_le_bytes());
         }
+        self.last_block_silent = outcome.output.iter().all(|&s| s == 0.0);
         let want = match expect.block {
             lifecycle::BlockExpect::Refused => K_INVALID_ARGUMENT,
             _ => K_RESULT_OK,
