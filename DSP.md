@@ -221,7 +221,7 @@ circuit/
   MNA → discretised state-space with the nonlinear subsystem separated,
   matrices computed once per prepare. Newton on the nonlinear subsystem
   only. Built from N1 netlists.
-- [ ] **N3** Nonlinear solve strategies for N2: damped Newton with junction
+- [x] **N3** (f2222e2; the precomputed solution table is not done) Nonlinear solve strategies for N2: damped Newton with junction
   limiting (exists, generalise it), homotopy / source stepping for hard starts,
   a warm start from the previous sample, and an optional precomputed
   solution table with interpolation (and its error bound) for low-cost runtime.
