@@ -43,6 +43,33 @@ const VG_MAX: f64 = 16.0;
 /// the composed transfer is normalized and its flank gain read.
 const X_SPAN: f64 = 16.0;
 
+/// The class-AB push-pull power pair (see the module docs).
+///
+/// # Models
+/// A class-AB push-pull power pair: two Koren triode halves driven in
+/// antiphase through the phase inverter, sharing a cathode.
+///
+/// # Derivation
+/// Each half's load-line transfer solved and tabulated once over grid
+/// volts, evaluated as f(b + x) − f(b − x) at the live bias; under
+/// `Bias::Cathode` the shared cathode is the circuit's RC.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::push_pull_static_transfer_matches_ngspice`:
+/// the static transfer against the ngspice plate difference, 2e-6
+/// normalized RMS up to the pair's level scale;
+/// `crates/stave-test/tests/solver_conformance.rs::push_pull_feedback_converges_at_the_host_rate`.
+///
+/// # Cost
+/// No datasheet line yet (DSP.md P1).
+///
+/// # Aliasing
+/// ADAA on each tabulated half at the live bias; oversample when it is
+/// driven hard.
+///
+/// # Valid ranges
+/// Grid volts within the table (−40 V to +16 V absolute); B+ scale
+/// positive (debug-asserted); any positive rate.
 #[derive(Clone)]
 pub struct PushPull {
     p: TriodeParams,

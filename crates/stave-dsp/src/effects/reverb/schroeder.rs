@@ -38,7 +38,9 @@ const MOORER_DAMPING: f32 = 0.3;
 /// prepared rate.
 ///
 /// # Verified
-/// `effects::reverb::tests` (T60 as Schroeder T30 around 1 kHz): within
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::measured_t60_matches_the_setting`,
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::stable_at_maximum_decay` and
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::sample_rate_invariant` (T60 as Schroeder T30 around 1 kHz): within
 /// 5 % (Schroeder: four combs leave few modes near 1 kHz, so the read is
 /// noisier) and 3 % (Moorer) of the setting at 1 and 2.5 s (measured
 /// −3.7 % / +1.2 % and −0.3 % / −1.8 %); stable at infinite T60; from
@@ -46,7 +48,7 @@ const MOORER_DAMPING: f32 = 0.3;
 /// 0.07 dB.
 ///
 /// # Cost
-/// `Schroeder (4 combs, 2 allpasses)` and `Schroeder::moorer (6 combs)`
+/// `"Schroeder (4 combs, 2 allpasses)"` and `"Schroeder::moorer (6 combs)"`
 /// on the datasheet.
 ///
 /// # Aliasing

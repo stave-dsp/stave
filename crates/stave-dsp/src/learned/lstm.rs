@@ -35,15 +35,17 @@ use crate::kernel::node::{Stage, Tail};
 ///
 /// # Verified
 ///
-/// `tests/nam_parity.rs`: a two-layer, five-unit `.nam` exported by
-/// Neural Amp Modeler 0.13, run against the trainer's forward pass from
-/// the same file, max abs error ≤ 1e-5 (measured 1.2e-7).
+/// A two-layer, five-unit `.nam` exported by Neural Amp Modeler 0.13,
+/// run against the trainer's forward pass from the same file
+/// (`crates/stave-dsp/tests/nam_parity.rs::lstm_matches_the_trainer`),
+/// and random shapes against an independent f64 forward pass
+/// (`crates/stave-dsp/tests/nam_parity.rs::random_recurrent_networks_match_the_f64_reference`).
+/// Budget: max abs error ≤ 1e-5 (measured 1.2e-7 against the trainer).
 ///
 /// # Cost
 ///
-/// `datasheet.rs` ("LSTM (1 x 16)"): `4H(I + H)` multiply-adds and
-/// `5H` transcendental functions per layer per sample; one 16-unit
-/// layer measured 0.32 µs/sample on an M3.
+/// `4H(I + H)` multiply-adds and `5H` transcendental functions per
+/// layer per sample; one 16-unit layer is datasheet `"LSTM (1 x 16)"`.
 ///
 /// # Aliasing
 ///

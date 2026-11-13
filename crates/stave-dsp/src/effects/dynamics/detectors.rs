@@ -21,12 +21,12 @@ use crate::primitives::filters::one_pole::tau_coeff;
 /// Times are time constants (a step covers 63 % in one).
 ///
 /// # Verified
-/// `effects::dynamics::tests::detector_times_match_the_settings`: a
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::detector_times_match_the_settings`: a
 /// step's measured 63 % rise and fall land within one sample of the
 /// attack and release.
 ///
 /// # Cost
-/// `Peak detector` on the datasheet.
+/// `"Peak detector"` on the datasheet.
 ///
 /// # Aliasing
 /// The rectifier makes harmonics of the input; they are the detector's
@@ -90,12 +90,12 @@ impl Stage for Peak {
 /// keeps the sum's drift below −150 dB of full scale over hours.
 ///
 /// # Verified
-/// `effects::dynamics::tests::rms_reads_a_sine_at_its_rms`: a sine
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::rms_reads_a_sine_at_its_rms`: a sine
 /// reads `A/√2` within 1e-4 once the window is full, and a burst leaves
 /// the window exactly `N` samples after it stops.
 ///
 /// # Cost
-/// `Rms detector (10 ms)` on the datasheet.
+/// `"Rms detector (10 ms)"` on the datasheet.
 ///
 /// # Aliasing
 /// None that reaches audio (the output drives a gain).
@@ -178,12 +178,12 @@ impl Stage for Rms {
 /// such "auto release" smoothing.
 ///
 /// # Verified
-/// `effects::dynamics::tests::program_dependent_release_follows_history`:
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::program_dependent_release_follows_history`:
 /// after a 2 s hold the release time constant measures `slow` within
 /// 5 %; after a 5 ms burst the 63 % fall is under a quarter of `slow`.
 ///
 /// # Cost
-/// `ProgramDependent detector` on the datasheet.
+/// `"ProgramDependent detector"` on the datasheet.
 ///
 /// # Aliasing
 /// As [`Peak`].
@@ -272,7 +272,7 @@ impl Stage for ProgramDependent {
 /// louder (the image never shifts); `Mean` from their average.
 ///
 /// # Verified
-/// `effects::dynamics::tests::stereo_link_modes`.
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::stereo_link_modes`.
 ///
 /// # Cost
 /// A compare or an add.
@@ -322,11 +322,11 @@ impl Link {
 /// Two [`Biquad`]s (`q = 1/√2`, f64 coefficients).
 ///
 /// # Verified
-/// `effects::dynamics::tests::sidechain_band_limits_the_key`: −3 dB at
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::sidechain_band_limits_the_key`: −3 dB at
 /// each corner, passband unity.
 ///
 /// # Cost
-/// `Sidechain (HP + LP)` on the datasheet.
+/// `"Sidechain (HP + LP)"` on the datasheet.
 ///
 /// # Aliasing
 /// None (linear).

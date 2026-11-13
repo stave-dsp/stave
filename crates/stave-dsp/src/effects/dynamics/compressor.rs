@@ -22,7 +22,7 @@ use crate::primitives::gain::{amp_to_db, db_to_amp};
 /// curve, since `y = x + c` solves to `y = T + (x − T)/R`.
 ///
 /// # Verified
-/// `effects::dynamics::tests::static_curves_match_the_formulas`: the
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::static_curves_match_the_formulas`: the
 /// curve against eq. (4) at every 0.25 dB, and a compressor's settled
 /// output level on a held input against it, both topologies, within
 /// 0.01 dB (hard knee) and 0.05 dB (feedback soft knee, against the
@@ -111,7 +111,7 @@ impl GainComputer {
 /// See [`Compressor`].
 ///
 /// # Verified
-/// `effects::dynamics::tests::static_curves_match_the_formulas` runs both.
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::static_curves_match_the_formulas` runs both.
 ///
 /// # Cost
 /// None (data).
@@ -151,13 +151,15 @@ pub enum Topology {
 /// and is stable for any ratio.
 ///
 /// # Verified
-/// `effects::dynamics::tests`: settled levels match
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::static_curves_match_the_formulas`: settled levels match
 /// [`GainComputer::output_db`] (feed-forward and feedback); the gain's
 /// measured 63 % attack and release times (from the audio, on a DC
-/// step) match the settings within 1 % feed-forward and 5 % feedback.
+/// step) match the settings within 1 % feed-forward and 5 % feedback
+/// (`crates/stave-dsp/src/effects/dynamics/tests.rs::compressor_times_match_the_settings`); no allocation after
+/// `prepare` (`crates/stave-dsp/tests/realtime_effects.rs::effects_never_allocate_after_prepare`).
 ///
 /// # Cost
-/// `Compressor (feed-forward)` and `Compressor (feedback)` on the
+/// `"Compressor (feed-forward)"` and `"Compressor (feedback)"` on the
 /// datasheet.
 ///
 /// # Aliasing

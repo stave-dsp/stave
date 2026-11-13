@@ -11,6 +11,32 @@
 
 use super::{TriodeCurrents, Triode};
 
+/// One tube's Dempwolf–Zölzer model parameters.
+///
+/// # Models
+/// Dempwolf and Zölzer's physically motivated triode (DAFx 2011),
+/// cathode and grid current; parts as constants: [`Dempwolf::RSD_1`],
+/// `RSD_2`, `EHX_1`.
+///
+/// # Derivation
+/// The paper's equations (10)–(12) with its fitted parameters.
+///
+/// # Verified
+/// `crates/stave-dsp/src/circuit/devices/triode/dempwolf.rs::reproduces_the_papers_operating_points`
+/// (the paper's figures 2(b) and 6); in a circuit,
+/// `crates/stave-test/tests/matches_ngspice.rs::common_cathode_grid_current_matches_ngspice`
+/// (2e-5 normalized RMS at 4×).
+///
+/// # Cost
+/// Per evaluation inside its circuit's line; no datasheet line of its
+/// own yet (DSP.md P1).
+///
+/// # Aliasing
+/// None of its own: a device, evaluated by the circuit that holds it.
+///
+/// # Valid ranges
+/// Grid and plate volts relative to the cathode as a stage biases them;
+/// grid current is modelled for a positive grid.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Dempwolf {
     pub name: &'static str,

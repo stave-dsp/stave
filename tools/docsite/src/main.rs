@@ -13,9 +13,11 @@
 //! * the reference pages are computed: the crate graph and platform
 //!   matrix from `cargo metadata` and the workflows, the units from
 //!   `Unit::format`, the themes and the catalogue drawn from the real
-//!   parts, the CLI pages by running each binary's `--help`, the plugin
-//!   checks from `plugin_checks!`'s source, the changelog from git tags,
-//!   the cost of each DSP stage from its committed measurements;
+//!   parts, the model catalogue from stave-dsp's rustdoc (failing on a
+//!   model without its sections), the CLI pages by running each
+//!   binary's `--help`, the plugin checks from `plugin_checks!`'s
+//!   source, the changelog from git tags, the cost of each DSP stage
+//!   from its committed measurements;
 //! * the API is rustdoc's own output, restyled (`assets/rustdoc-*.html`
 //!   are passed to rustdoc by the script);
 //! * search covers the guide, the reference pages and every API item;
@@ -28,6 +30,7 @@ mod guide;
 mod home;
 mod html;
 mod meta;
+mod models;
 mod reference;
 mod rustdoc;
 mod search;
@@ -106,10 +109,12 @@ fn build(doc: &Path, out: &Path) -> Result<usize> {
     // The reference: generated.
     let (catalogue, parts) = reference::catalogue_page(&cx)?;
     let (checks, n_checks) = reference::plugin_checks(&cx)?;
+    let (models, _) = models::catalogue(&cx)?;
     let generated = vec![
         reference::crates(&cx)?,
         reference::platforms(&cx)?,
         catalogue,
+        models,
         reference::themes(&cx)?,
         reference::units(&cx)?,
         cost::page(&cx)?,

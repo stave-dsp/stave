@@ -19,6 +19,36 @@ pub enum CrossoverSide {
     Highpass,
 }
 
+/// One side of a fourth-order Linkwitz–Riley crossover.
+///
+/// # Models
+///
+/// Linkwitz and Riley's fourth-order crossover filter (1976): a squared
+/// second-order Butterworth, 24 dB/octave, −6 dB at the corner.
+///
+/// # Derivation
+///
+/// Two cascaded cookbook Butterworth sections (`Q = 1/√2`), bilinear,
+/// prewarped at the corner.
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/primitives/filters/linkwitz_riley.rs::lr4_pair_sums_flat_and_is_minus_6_db_at_the_corner`:
+/// a matched pair sums within 0.01 dB of flat from 60 Hz to 15 kHz, and
+/// the corner reads −6.02 dB within 0.05.
+///
+/// # Cost
+///
+/// No datasheet line yet (DSP.md P1): two biquads per side, about twice
+/// `"Biquad (lowpass)"`.
+///
+/// # Aliasing
+///
+/// None: linear.
+///
+/// # Valid ranges
+///
+/// Corner held inside (1 Hz, 0.499·fs) by the sections; any rate.
 #[derive(Clone, Copy, Debug)]
 pub struct LinkwitzRiley4 {
     side: CrossoverSide,

@@ -24,6 +24,36 @@ pub struct CommonCathodeConfig<T> {
     pub newton: NewtonSettings,
 }
 
+/// A triode common-cathode stage, solved per sample (see the module docs).
+///
+/// # Models
+/// A triode common-cathode stage: plate load to the supply, bypassed
+/// cathode resistor, grid driven through the source resistance; any
+/// [`Triode`] model (`Koren::T12AX7`, `Dempwolf::RSD_1` …).
+///
+/// # Derivation
+/// Grid, plate and cathode solved together per sample (3-D Newton with
+/// junction limiting), the bypass capacitor as SPICE's trapezoidal
+/// companion, started at its DC operating point.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::common_cathode_matches_ngspice`:
+/// Koren 12AX7, 1e-5 normalized RMS at 4× about an operating point that
+/// agrees to 1 µV;
+/// `crates/stave-test/tests/matches_ngspice.rs::common_cathode_grid_current_matches_ngspice`:
+/// Dempwolf with grid current through 33 kΩ, 2e-5;
+/// `crates/stave-test/tests/solver_conformance.rs::common_cathode_converges_at_the_host_rate`.
+///
+/// # Cost
+/// Datasheet `"CommonCathode x5 (Koren)"`.
+///
+/// # Aliasing
+/// None of its own; the references hold at 4×: run it oversampled.
+///
+/// # Valid ranges
+/// Any positive rate; parts as a real stage takes them (tested at 300
+/// V, 100 kΩ, 1.5 kΩ, 22 µF); grid drive to 3 V peak tested; Newton
+/// capped by its [`NewtonSettings`].
 #[derive(Clone)]
 pub struct CommonCathode<T> {
     config: CommonCathodeConfig<T>,

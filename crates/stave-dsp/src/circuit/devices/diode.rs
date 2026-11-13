@@ -64,7 +64,7 @@ impl Diode for Shockley {
 ///
 /// # Verified
 ///
-/// `stave-test/tests/dk_matches_ngspice.rs` `diode_iv_curves_match_ngspice`:
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::diode_iv_curves_match_ngspice`:
 /// each part's I–V curve (a voltage ramp through a resistor, forward
 /// conduction and reverse breakdown) through `Circuit<Dk>` against ngspice
 /// on the same card, normalized RMS 2e-8 to 5e-7 by part, and every part constant equal
@@ -74,8 +74,8 @@ impl Diode for Shockley {
 /// # Cost
 ///
 /// One `exp_m1` per evaluation, one more with breakdown;
-/// `stave-dsp/tests/datasheet.rs` "`Circuit<Dk>` diode clipper" and
-/// "DiodeClipper (WDF)".
+/// the datasheet's `"Circuit<Dk> diode clipper x10"` and
+/// `"DiodeClipper (WDF, Newton)"`.
 ///
 /// # Aliasing
 ///

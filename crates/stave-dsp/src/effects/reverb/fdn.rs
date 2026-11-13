@@ -36,11 +36,12 @@ const RIGHT: [f32; LINES] = [1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0];
 /// butterfly, `O(N log N)`, every line feeding every other equally.
 ///
 /// # Verified
-/// `effects::reverb::tests::the_fdn_matrix_is_unitary`: `AᵀA = I` within
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::the_fdn_matrix_is_unitary`: `AᵀA = I` within
 /// 1e-6 for both.
 ///
 /// # Cost
-/// Part of the `Fdn` datasheet lines.
+/// Part of the `"Fdn (8 lines, Householder)"` and
+/// `"Fdn (8 lines, Hadamard)"` datasheet lines.
 ///
 /// # Aliasing
 /// None (a linear map).
@@ -109,7 +110,10 @@ impl Mixing {
 /// own LFO, which smears the modes (Dattorro 1997, §3).
 ///
 /// # Verified
-/// `effects::reverb::tests` (T60 as Schroeder T30 around 1 kHz, ISO
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::measured_t60_matches_the_setting`,
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::the_fdn_matrix_is_unitary`,
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::stable_at_maximum_decay` and
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::sample_rate_invariant` (T60 as Schroeder T30 around 1 kHz, ISO
 /// 3382): within 3 % of the setting at 1 and 2.5 s (measured −0.3 % and
 /// +1.5 % Householder, 0.0 % and +2.0 % Hadamard); the matrix is unitary
 /// within 1e-6; a frozen (infinite T60) network fed full-scale noise
@@ -120,7 +124,7 @@ impl Mixing {
 /// short, and a frozen loop sheds 1.6 dB over three seconds.
 ///
 /// # Cost
-/// `Fdn (8 lines, Householder)` and `Fdn (8 lines, Hadamard)` on the
+/// `"Fdn (8 lines, Householder)"` and `"Fdn (8 lines, Hadamard)"` on the
 /// datasheet.
 ///
 /// # Aliasing

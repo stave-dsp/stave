@@ -45,21 +45,28 @@ use crate::kernel::node::{Stage, Tail};
 ///
 /// # Verified
 ///
-/// `tests/nam_parity.rs`: three `.nam` files exported by Neural Amp
-/// Modeler 0.13 (standard two-array, gated; the 0.13 trainer's
-/// single-array shape with per-layer kernels and a 4-tap head; bottleneck,
-/// head 1×1, blended gating and five activations) run against the
-/// trainer's own forward pass, max abs error ≤ 1e-5 (measured ≤ 6e-7; the random-shape f64 reference ≤ 3e-7).
+/// Three `.nam` files exported by Neural Amp Modeler 0.13 run against
+/// the trainer's own forward pass: the standard two-array, gated net
+/// (`crates/stave-dsp/tests/nam_parity.rs::wavenet_standard_matches_the_trainer`),
+/// the 0.13 trainer's single-array shape with per-layer kernels and a
+/// 4-tap head (`crates/stave-dsp/tests/nam_parity.rs::wavenet_packed_matches_the_trainer`),
+/// and bottleneck, head 1×1, blended gating and five activations
+/// (`crates/stave-dsp/tests/nam_parity.rs::wavenet_mixed_matches_the_trainer`);
+/// random shapes against an independent f64 forward pass
+/// (`crates/stave-dsp/tests/nam_parity.rs::random_wavenets_match_the_f64_reference`).
+/// Budget: max abs error ≤ 1e-5 (measured ≤ 6e-7 against the trainer,
+/// ≤ 3e-7 against the f64 reference). No allocation in `process`:
+/// `crates/stave-dsp/tests/learned_no_alloc.rs::networks_process_without_allocating`.
 /// `scripts/nam-reference.py` regenerates the references.
 ///
 /// # Cost
 ///
-/// `datasheet.rs` ("WaveNet (NAM standard)"): the standard capture
-/// architecture (16 + 8 channels, 2 × 10 layers, kernel 3), about
-/// 13 000 multiply-adds and 240 `tanh` a sample, measured 2.2 µs/sample
-/// on an M3 (about 10% of one core per channel at 48 kHz). One sample
-/// at a time, output lanes vectorised; batching frames per block
-/// (weight reuse) is DSP.md P4's.
+/// The standard capture architecture (16 + 8 channels, 2 × 10 layers,
+/// kernel 3), about 13 000 multiply-adds and 240 `tanh` a sample:
+/// datasheet `"WaveNet (NAM standard)"`, about 14% of one core per
+/// channel at 48 kHz; a lighter one is `"WaveNet (12 + 6 channels)"`.
+/// One sample at a time, output lanes vectorised; batching frames per
+/// block (weight reuse) is DSP.md P4's.
 ///
 /// # Aliasing
 ///

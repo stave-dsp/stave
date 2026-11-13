@@ -232,6 +232,8 @@ pre.terminal { white-space: pre; }
 .graph .node text { fill: var(--ink); }
 .graph .node:hover rect, .graph .node.hot rect { stroke: var(--accent); stroke-width: 1.5; }
 .cfg { font: 500 11px var(--mono); color: var(--ink-3); }
+table.models td { font-size: 13.5px; min-width: 11em; }
+table.models td:first-child { min-width: 0; white-space: nowrap; }
 table.matrix td.yes { color: var(--accent-ink); font-weight: 600; }
 
 .theme-index { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; }

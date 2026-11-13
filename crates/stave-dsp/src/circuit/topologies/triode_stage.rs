@@ -121,6 +121,35 @@ pub enum Bias {
     Cathode { bypass_farads: f64 },
 }
 
+/// A tabulated common-cathode triode stage (see the module docs).
+///
+/// # Models
+/// A common-cathode triode stage: Koren's plate law (12AX7 by default,
+/// any [`Koren`] part) against the plate load line, with Dempwolf's
+/// measured grid current through the source resistance.
+///
+/// # Derivation
+/// The plate equilibrium solved once per table point, tabulated over
+/// grid volts with its antiderivatives and evaluated with ADAA; under
+/// [`Bias::Cathode`] the cathode is the circuit's RC.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::triode_stage_static_transfer_matches_ngspice`:
+/// the static transfer against an ngspice grid sweep, 5e-7 normalized
+/// RMS up to the level scale, the operating point to 1 µV;
+/// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::koren_matches_12ax7_datasheet`.
+///
+/// # Cost
+/// No datasheet line yet (DSP.md P1).
+///
+/// # Aliasing
+/// First-order ADAA on the tabulated transfer
+/// (`crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::adaa_reduces_aliasing`);
+/// oversample as well when driven hard.
+///
+/// # Valid ranges
+/// Grid volts within the table; `prepare` takes the rate `tick` runs at
+/// (N× the host rate inside an N× oversampler); any positive rate.
 #[derive(Clone)]
 pub struct Triode {
     p: TriodeParams,

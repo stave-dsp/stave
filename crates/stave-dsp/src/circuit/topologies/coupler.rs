@@ -9,6 +9,29 @@ use crate::kernel::node::{Stage, Tail};
 /// rates put the pole within ~2e-4 of unity, where f32 quantizes the
 /// corner and leaves a measurable low-frequency error floor (pinned in
 /// `stave-test/tests/coupler_conformance.rs`).
+///
+/// # Models
+/// The interstage coupling capacitor into its grid leak: a first-order
+/// RC high-pass.
+///
+/// # Derivation
+/// The RC network, its capacitor discretized as every circuit capacitor
+/// is (trapezoidal), in f64.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::coupler_matches_ngspice`:
+/// 2e-6 normalized RMS against ngspice at 48 kHz;
+/// `crates/stave-test/tests/coupler_conformance.rs::corner_is_accurate_at_4x_rate`.
+///
+/// # Cost
+/// No datasheet line yet (DSP.md P1): one f64 first-order section per
+/// sample.
+///
+/// # Aliasing
+/// None: linear.
+///
+/// # Valid ranges
+/// Corner and rate positive (debug-asserted), the corner below Nyquist.
 #[derive(Clone)]
 pub struct Coupler {
     hz: f32,

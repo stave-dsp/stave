@@ -37,6 +37,49 @@ const N: usize = 10;
 // high drive and left a slowly decaying high-harmonic tail — fizz); the
 // Chebyshev sum then adds the tunable even/odd colour on top.
 
+/// A saturator whose harmonic spectrum is specified directly, between
+/// complementary high shelves that keep its distortion off the highs.
+///
+/// # Models
+///
+/// A designed curve with no hardware claim: `Σ aₙ·Tₙ(tanh(drive·x + bias))`
+/// over ten Chebyshev orders, inside a −/+ `hf_db` high-shelf pair at
+/// 2.5 kHz and a 5 Hz DC blocker.
+///
+/// # Derivation
+///
+/// The Chebyshev identity `Tₙ(cos θ) = cos(nθ)` (each weight is one
+/// harmonic's amount), the small-signal slope pinned to unity, and
+/// pre/de-emphasis companding as in tape and broadcast practice.
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/behavioral/smooth_sat/tests.rs::harmonic_profile_is_warm_and_smooth`
+/// (2nd harmonic above −45 dB, 6th at least 12 dB under it, smoothness
+/// cutting the 4th and 6th),
+/// `crates/stave-dsp/src/behavioral/smooth_sat/tests.rs::companding_reduces_intermod`
+/// (the 1 kHz difference tone of 10 and 11 kHz at least 12 dB lower
+/// with companding) and
+/// `crates/stave-dsp/src/behavioral/smooth_sat/tests.rs::oversampled_alias_floor_high_input`
+/// (a 7 kHz tone's aliases below −65 dB at 4×).
+///
+/// # Cost
+///
+/// No datasheet line yet (DSP.md P1): three biquads, a `tanh` and a
+/// ten-term recurrence per sample.
+///
+/// # Aliasing
+///
+/// None in the [`Stage`] view, which runs everything at the base rate
+/// (for analysis). Products run [`tick_pre`](Self::tick_pre), then
+/// [`shape`](Self::shape) inside an oversampled region (4× for the
+/// budget above), then [`tick_post`](Self::tick_post).
+///
+/// # Valid ranges
+///
+/// `even` and `odd` in 0–1, smoothness in 0–1 (exclusive), `hf_db ≥ 0`
+/// (debug-asserted); `drive ≥ 0` (clamped). The tanh keeps the
+/// Chebyshev argument inside (−1, 1) at any drive.
 #[derive(Clone)]
 pub struct SmoothSat {
     a: [f32; N],    // harmonic weights: a[0]=a₁ (fundamental) .. a[N-1]=a_N

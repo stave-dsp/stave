@@ -4,6 +4,36 @@ use crate::kernel::node::{Stage, Tail};
 /// Slew limiter: output can rise/fall at most so many full-scale units per
 /// millisecond. Distortion that depends on FREQUENCY at equal amplitude —
 /// the pushed-speaker/OTA character no memoryless curve can produce.
+///
+/// # Models
+///
+/// A rate limit, `|dy/dt| ≤ rise` (or `fall`), with no hardware claim:
+/// the shape of an amplifier's slew-rate limit, not any particular one.
+///
+/// # Derivation
+///
+/// The definition, per sample: the step toward the input is clamped to
+/// `rate · 1000 / sample_rate` full-scale units.
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/behavioral/slew/tests.rs::steps_ramp_at_the_set_rates_and_slow_signals_pass`:
+/// steps ramp at exactly the set rise and fall rates at 44.1, 48 and
+/// 96 kHz, and a sine under both limits passes, within 1e-4.
+///
+/// # Cost
+///
+/// Datasheet `"Slew"`.
+///
+/// # Aliasing
+///
+/// None added below the limit; a limited edge has slope discontinuities
+/// whose partials fall at 12 dB/octave. Run hard limiting oversampled.
+///
+/// # Valid ranges
+///
+/// Rates > 0 full-scale units per millisecond (debug-asserted); any
+/// sample rate. Rates above `sample_rate / 1000` per ms never engage.
 #[derive(Clone)]
 pub struct Slew {
     rise_per_ms: f32,
@@ -65,3 +95,6 @@ impl Stage for Slew {
         Tail::samples((1.0 / self.max_rise.min(self.max_fall)).ceil() as u32)
     }
 }
+
+#[cfg(test)]
+mod tests;

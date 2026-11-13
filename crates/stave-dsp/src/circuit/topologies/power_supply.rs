@@ -56,6 +56,34 @@ impl PowerSupplyConfig {
 /// A [`Stage`] from load current to supply voltage: `tick` takes the
 /// amps the load draws this sample and returns the B+ it sees
 /// ([`tick_f64`](PowerSupply::tick_f64) is the same step in `f64`).
+///
+/// # Models
+/// A tube amp's B+ supply: full-wave rectifier into a reservoir
+/// capacitor, a choke or resistor into a filter capacitor
+/// ([`PowerSupplyConfig::SILICON_CHOKE`]).
+///
+/// # Derivation
+/// Trapezoidal companions for the capacitors and choke; the linear
+/// network reduced to a Thévenin source seen by the rectifier, whose
+/// voltage is solved by Newton with SPICE's junction limiting.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::power_supply_matches_ngspice`:
+/// from switch-on through a 20 → 80 → 20 mA load step, 2e-5 normalized
+/// RMS at 4×, no capped solve;
+/// `crates/stave-test/tests/solver_conformance.rs::power_supply_converges_under_a_swinging_load`.
+///
+/// # Cost
+/// No datasheet line yet (DSP.md P1).
+///
+/// # Aliasing
+/// Little to alias: its input is a load current, its output a slowly
+/// moving supply; the rectifier's switching is solved at the rate it
+/// runs at (the reference holds at 4×).
+///
+/// # Valid ranges
+/// Any positive rate; load currents the supply can source (tested 20–80
+/// mA); Newton capped by its [`NewtonSettings`].
 #[derive(Clone)]
 pub struct PowerSupply {
     config: PowerSupplyConfig,

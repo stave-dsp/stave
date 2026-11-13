@@ -93,11 +93,35 @@ impl Method for Dk {
 /// the method's own controls ([`Dk::drive`], [`Dk::stats`],
 /// [`Dk::analog_response`]).
 ///
-/// **Models** the netlist. **Derivation** the method's. **Verified**
-/// `stave-test/tests/dk_matches_ngspice.rs` for `Circuit<Dk>`.
-/// **Cost** `stave-dsp/tests/datasheet.rs`'s `Circuit<Dk>` lines.
-/// **Aliasing** none of its own; a nonlinear netlist expects
-/// oversampling. **Valid ranges** its devices'.
+/// # Models
+/// The netlist it is given ([`Netlist`]), whatever its elements: no
+/// circuit of its own.
+///
+/// # Derivation
+/// The method `M`'s: for [`Dk`], the nodal DK state space of the
+/// netlist's MNA equations, trapezoidal companions, Newton on the
+/// nonlinear ports.
+///
+/// # Verified
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::diode_clipper_matches_ngspice`
+/// and its siblings (RC, coupler, op-amp clipper, common cathode, power
+/// supply, tone stack, triode and push-pull transfers): every deck at
+/// the hand topology's budget or tighter, with healthy solves; for one,
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::common_cathode_matches_ngspice`:
+/// 1e-5 normalized RMS at 4×.
+///
+/// # Cost
+/// Datasheet `"Circuit<Dk> diode clipper x10"` (about 6
+/// iterations/solve), `"Circuit<Dk> op-amp clipper"`,
+/// `"Circuit<Dk> cathode x5 (B src)"`, `"Circuit<Dk> cathode x5 (Koren)"`
+/// and `"Circuit<Dk> tone stack"`: 2–3× the hand derivations.
+///
+/// # Aliasing
+/// None of its own; a nonlinear netlist expects to run oversampled.
+///
+/// # Valid ranges
+/// Its devices' and its method's: any positive rate; Newton caps and
+/// continuations reported in [`Dk::health`], never silent.
 #[derive(Clone, Debug)]
 pub struct Circuit<M> {
     method: M,

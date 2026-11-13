@@ -93,6 +93,50 @@ pub struct Metadata {
 
 /// A network a `.nam` file holds: one [`Stage`] whatever the
 /// architecture, so a plugin holds one type and loads any file.
+///
+/// # Models
+///
+/// Whatever the capture was: a [`WaveNet`] or an [`Lstm`] trained on a
+/// device's input/output recordings, chosen by the file's
+/// `architecture`.
+///
+/// # Derivation
+///
+/// Trained out of tree by Neural Amp Modeler's PyTorch trainer; the
+/// reader is written from the published `.nam` layout (0.5–0.7, legacy
+/// and 0.13 keys) by [`parse`].
+///
+/// # Verified
+///
+/// Each architecture against the trainer's own forward pass on files it
+/// exported (`crates/stave-dsp/tests/nam_parity.rs::wavenet_standard_matches_the_trainer`,
+/// `crates/stave-dsp/tests/nam_parity.rs::lstm_matches_the_trainer`);
+/// legacy keys read the same network
+/// (`crates/stave-dsp/tests/nam_parity.rs::legacy_keys_read_the_same_network`).
+/// Budget: max abs error ≤ 1e-5 (measured ≤ 6e-7).
+///
+/// # Cost
+///
+/// The network it holds, plus one match per sample: see [`WaveNet`]
+/// (`"WaveNet (NAM standard)"`) and [`Lstm`] (`"LSTM (1 x 16)"`) on the
+/// datasheet.
+///
+/// # Aliasing
+///
+/// None added beyond what the network learned at its trained rate. A
+/// host at half that rate runs it in an
+/// [`Oversampled2x`](crate::Oversampled2x) region; other ratios wait on
+/// DSP.md A2.
+///
+/// # Valid ranges
+///
+/// Input in the range it was trained on (NAM normalises captures to
+/// about −18 dBFS RMS). Sample rate: the trained rate,
+/// [`sample_rate`](Self::sample_rate); at any other it outputs silence
+/// and [`rate_mismatch`](Self::rate_mismatch) says why, unless
+/// [`RatePolicy::Any`] is chosen. Architectures the loader refuses
+/// (FiLM, grouped convolutions, condition DSP, post-head,
+/// `SlimmableContainer`) fail at [`parse`] by name.
 #[derive(Clone, Debug)]
 pub enum Network {
     WaveNet(WaveNet),

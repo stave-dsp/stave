@@ -13,6 +13,35 @@ use crate::circuit::methods::newton::{NewtonSettings, NewtonStats, Solved};
 /// Vacuum permeability, H/m.
 pub const MU_0: f64 = 1.256_637_062_12e-6;
 
+/// One core material's Jiles–Atherton parameters.
+///
+/// # Models
+/// Jiles and Atherton's model of ferromagnetic hysteresis (1986):
+/// saturation, anhysteretic shape, coupling, pinning and reversibility
+/// of a core material.
+///
+/// # Derivation
+/// The published model, advanced by the trapezoidal rule in H (Holters
+/// & Zölzer, DAFx 2016), one Newton solve per step (in
+/// `JilesAthertonCore`).
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_reference.rs::jiles_atherton_matches_reference`:
+/// against an independent high-precision solution
+/// (`scripts/ja-reference.py`), 5e-5 normalized RMS, converging with
+/// rate, no capped solve;
+/// `crates/stave-dsp/src/circuit/devices/magnetic.rs::the_loop_is_hysteretic_and_odd`.
+///
+/// # Cost
+/// Per evaluation inside its circuit's line (`Transformer`); no
+/// datasheet line yet (DSP.md P1).
+///
+/// # Aliasing
+/// None of its own: a device; the circuit holding it runs oversampled.
+///
+/// # Valid ranges
+/// Physical parameters (all positive, reversibility 0..1); fields
+/// within a few times saturation.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct JilesAtherton {
     /// Saturation magnetization Ms, A/m.

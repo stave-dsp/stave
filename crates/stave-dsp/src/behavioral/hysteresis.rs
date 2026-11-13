@@ -7,6 +7,40 @@ use crate::primitives::filters::one_pole::DcBlocker;
 /// approaches it at a rate proportional to signal motion, opening a
 /// frequency-independent loop. AC-coupled (5 Hz) so remanence doesn't
 /// linger into silence.
+///
+/// # Models
+///
+/// A hysteresis loop with no hardware claim: an anhysteretic `tanh`
+/// plus a remanent part that chases it per unit of input travelled.
+/// The circuit-layer model of a real core is
+/// [`JilesAtherton`](crate::circuit::devices::magnetic::JilesAtherton).
+///
+/// # Derivation
+///
+/// Jiles and Atherton's reversible/irreversible split (1986), reduced
+/// to one first-order update `m += (tanh(drive·x) − m) · min(rate·|Δx|, 1)`;
+/// constants chosen by ear, not fitted to a material.
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/behavioral/hysteresis/tests.rs::the_loop_opens_with_depth_and_follows_the_path_not_the_speed`:
+/// the loop opens, widens with depth, and keeps its width within 2 %
+/// when the same triangle runs at half the speed.
+///
+/// # Cost
+///
+/// Datasheet `"Hysteresis"`.
+///
+/// # Aliasing
+///
+/// None handled: the `tanh` and the loop's corners add harmonics. Run
+/// it inside an oversampled region when driven hard.
+///
+/// # Valid ranges
+///
+/// `drive > 0` (debug-asserted; output is normalised by `drive`, floored
+/// at 0.05), `depth` in 0–1. The loop depends on the input's path, so it
+/// is the same at any sample rate; the DC blocker sits at 5 Hz.
 #[derive(Clone)]
 pub struct Hysteresis {
     drive: f32,
@@ -74,3 +108,6 @@ impl Stage for Hysteresis {
         self.dc.tail()
     }
 }
+
+#[cfg(test)]
+mod tests;

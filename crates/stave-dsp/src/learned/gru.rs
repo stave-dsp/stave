@@ -33,15 +33,18 @@ use crate::kernel::node::{Stage, Tail};
 ///
 /// # Verified
 ///
-/// `tests/nam_parity.rs`: a two-layer, four-unit `torch.nn.GRU` with a
-/// linear head against PyTorch's forward pass, max abs error ≤ 1e-5
-/// (measured 3.6e-7); `scripts/nam-reference.py` writes the reference.
+/// A two-layer, four-unit `torch.nn.GRU` with a linear head against
+/// PyTorch's forward pass
+/// (`crates/stave-dsp/tests/nam_parity.rs::gru_matches_torch`), and
+/// random shapes against an independent f64 forward pass
+/// (`crates/stave-dsp/tests/nam_parity.rs::random_recurrent_networks_match_the_f64_reference`).
+/// Budget: max abs error ≤ 1e-5 (measured 3.6e-7 against PyTorch);
+/// `scripts/nam-reference.py` writes the reference.
 ///
 /// # Cost
 ///
-/// `datasheet.rs` ("GRU (1 x 16)"): `3H(I + H)` multiply-adds and `3H`
-/// transcendental functions per layer per sample; one 16-unit layer
-/// measured 0.23 µs/sample on an M3.
+/// `3H(I + H)` multiply-adds and `3H` transcendental functions per
+/// layer per sample; one 16-unit layer is datasheet `"GRU (1 x 16)"`.
 ///
 /// # Aliasing
 ///

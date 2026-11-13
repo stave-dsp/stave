@@ -433,7 +433,7 @@ impl Segment {
 /// uniform and non-uniform: worst error 2e-6 `‖h‖₂·max|x|` (budget
 /// 2e-5), `crates/stave-dsp/tests/convolver_properties.rs`; an impulse
 /// returns the response at every host rate,
-/// `tests/sample_rate_range.rs`. The delay line's index maths is a Kani
+/// `crates/stave-dsp/tests/sample_rate_range.rs`. The delay line's index maths is a Kani
 /// proof (`delay_line_slots_are_distinct_and_in_range`); every schedule
 /// covers the response once and lines up with the latency
 /// (`schedules_tile_the_response_and_line_up`), and costs no more under

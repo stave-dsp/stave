@@ -23,6 +23,34 @@ pub struct TransformerConfig {
     pub newton: NewtonSettings,
 }
 
+/// A transformer on a Jiles–Atherton core (see the module docs).
+///
+/// # Models
+/// A transformer on a Jiles–Atherton core ([`JilesAtherton`]), driven
+/// by a voltage through a source resistance, secondary unloaded.
+///
+/// # Derivation
+/// The primary's flux-linkage equation, trapezoidal in time, one Newton
+/// solve per sample for the primary current with the core's own solve
+/// inside it.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_reference.rs::transformer_matches_reference`:
+/// against an independent high-precision solution
+/// (`scripts/ja-reference.py`), 1e-5 normalized RMS, the error
+/// converging with rate, no capped solve.
+///
+/// # Cost
+/// No datasheet line yet (DSP.md P1).
+///
+/// # Aliasing
+/// None of its own: saturation and hysteresis are nonlinear, so run it
+/// oversampled (the reference is checked at 48 kHz × N).
+///
+/// # Valid ranges
+/// Any positive rate (debug-asserted); core and winding values physical
+/// (positive turns, area and path length); Newton capped by its
+/// [`NewtonSettings`].
 #[derive(Clone)]
 pub struct Transformer {
     config: TransformerConfig,

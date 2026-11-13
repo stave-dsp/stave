@@ -36,6 +36,34 @@ impl OpAmpClipperConfig {
     };
 }
 
+/// The op-amp diode clipper (see the module docs).
+///
+/// # Models
+/// The Tube Screamer's clipping stage: a non-inverting ideal op-amp
+/// with an antiparallel diode pair in its feedback loop
+/// ([`OpAmpClipperConfig::TS808`]).
+///
+/// # Derivation
+/// Ideal op-amp nodal analysis, trapezoidal companions for both
+/// capacitors, one scalar Newton solve per sample for the feedback
+/// voltage with SPICE's junction limiting.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::opamp_clipper_matches_ngspice`:
+/// 5e-5 normalized RMS at 16×, the error falling as h² (3× or more at
+/// 32×), no capped solve;
+/// `crates/stave-test/tests/solver_conformance.rs::opamp_clipper_converges_at_the_host_rate`.
+///
+/// # Cost
+/// Datasheet `"OpAmpClipper"`.
+///
+/// # Aliasing
+/// None of its own; its 2.6 µs feedback pole wants a high rate: the
+/// reference holds at 16×.
+///
+/// # Valid ranges
+/// Any positive rate (debug-asserted); an ideal op-amp, so no rail
+/// clipping; Newton capped by its [`NewtonSettings`].
 #[derive(Clone)]
 pub struct OpAmpClipper {
     config: OpAmpClipperConfig,

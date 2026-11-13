@@ -59,6 +59,40 @@ impl Waveform {
 
 /// The audio-rate oscillator: a generator [`Stage`] (its input is
 /// ignored). Phase is `f64` cycles.
+///
+/// # Models
+///
+/// The four [`Waveform`]s from a phase accumulator; saw and square
+/// band-limited by polyBLEP, sine exact, triangle naive.
+///
+/// # Derivation
+///
+/// The two-sample polynomial band-limited step of Välimäki and Huovilainen
+/// (2007), subtracted at each discontinuity.
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/primitives/osc.rs::polyblep_buys_at_least_20_db_on_the_worst_alias`
+/// (a 2093 Hz saw's exposed aliases below 8 kHz at least 20 dB under the
+/// naive saw's, the worst near-Nyquist fold at least 10 dB),
+/// `crates/stave-dsp/src/primitives/osc.rs::pitch_is_exact` and
+/// `crates/stave-dsp/src/primitives/osc.rs::sine_harmonics_are_at_the_floor`
+/// (2nd and 3rd under −80 dB).
+///
+/// # Cost
+///
+/// Datasheet `"Osc (sine)"` and `"Osc (saw, polyBLEP)"`.
+///
+/// # Aliasing
+///
+/// First-order polyBLEP on saw and square (residual aliasing near
+/// Nyquist, see Verified); the naive triangle's harmonics fall at
+/// 12 dB/octave. Wavetable-grade cleanness needs a wavetable.
+///
+/// # Valid ranges
+///
+/// `0 ≤ hz < sample_rate / 2`; polyBLEP assumes the increment is below
+/// half a cycle per sample.
 #[derive(Copy, Clone, Debug)]
 pub struct Osc {
     waveform: Waveform,

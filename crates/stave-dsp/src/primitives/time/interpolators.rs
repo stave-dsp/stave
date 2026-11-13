@@ -42,7 +42,9 @@ pub const MAX_TAPS: usize = 32;
 /// Karjalainen & Laine, "Splitting the unit delay", IEEE SPM 1996).
 ///
 /// # Verified
-/// `primitives::time::interpolators::tests`: the weights sum to one, a
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::weights_sum_to_one`,
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::sine_errors_stay_inside_their_budgets`
+/// and `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::modulated_reads_stay_finite`: the weights sum to one, a
 /// sine's fractional-delay magnitude and phase errors stay inside each
 /// interpolator's budget, and a modulated read stays finite at extreme
 /// rates.
@@ -92,7 +94,7 @@ pub trait Interpolator: Clone + Default + Debug {
 /// Textbook (Laakso et al. 1996, §III-B, N = 1).
 ///
 /// # Verified
-/// `interpolators::tests::sine_errors_stay_inside_their_budgets` (worst
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::sine_errors_stay_inside_their_budgets` (worst
 /// over fractions 0.05–0.95): 0.44 dB and 0.0007 cycles at
 /// 0.1·`sample_rate`; 3.0 dB and 0.012 cycles at 0.25·`sample_rate`
 /// (budgets 0.45 dB / 0.001 and 3.05 dB / 0.012).
@@ -148,7 +150,8 @@ fn lagrange_weights<const P: usize>(d: f32) -> [f32; P] {
 /// interval, where odd-order Lagrange is passive: `|H| ≤ 1`).
 ///
 /// # Verified
-/// `interpolators::tests`: weights sum to one within 1e-6; worst over
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::weights_sum_to_one` and
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::sine_errors_stay_inside_their_budgets`: weights sum to one within 1e-6; worst over
 /// fractions, 0.031 dB and 0.00005 cycles at 0.1·`sample_rate`, 1.07 dB
 /// and 0.0045 cycles at 0.25·`sample_rate` (budgets 0.035 dB / 0.0001
 /// and 1.1 dB / 0.005).
@@ -192,7 +195,8 @@ impl Interpolator for Lagrange3 {
 /// Laakso et al. 1996, eq. (42), N = 5, `D = 2 + frac`.
 ///
 /// # Verified
-/// `interpolators::tests`: weights sum to one within 1e-6; worst over
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::weights_sum_to_one` and
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::sine_errors_stay_inside_their_budgets`: weights sum to one within 1e-6; worst over
 /// fractions, 0.0025 dB and 0.000004 cycles at 0.1·`sample_rate`,
 /// 0.44 dB and 0.0019 cycles at 0.25·`sample_rate` (budgets 0.003 dB /
 /// 0.00001 and 0.45 dB / 0.002).
@@ -246,7 +250,9 @@ impl Interpolator for Lagrange5 {
 /// moving delay feeds the recursion a consistent signal.
 ///
 /// # Verified
-/// `interpolators::tests`: unity gain at DC; no magnitude error
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::weights_sum_to_one`,
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::sine_errors_stay_inside_their_budgets` and
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::modulated_reads_stay_finite`: unity gain at DC; no magnitude error
 /// (allpass, budget 0.001 dB); worst phase error 0.0022 cycles at
 /// 0.1·`sample_rate` and 0.027 cycles at 0.25·`sample_rate` (budgets
 /// 0.0025 and 0.03); a delay swept at audio rates stays finite and
@@ -321,7 +327,9 @@ const SINC_KAISER_BETA: f64 = 6.0;
 /// between rows, which stays below −90 dB of the ideal row.
 ///
 /// # Verified
-/// `interpolators::tests`: weights sum to one within 1e-5; the table
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::weights_sum_to_one`,
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::sinc_table_matches_the_direct_weights` and
+/// `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::sine_errors_stay_inside_their_budgets`: weights sum to one within 1e-5; the table
 /// holds the direct weights within 3e-5. Worst over fractions at 0.1
 /// and 0.25·`sample_rate`: `Sinc<8>` 0.0055 dB / 0.00002 cycles and
 /// 0.0006 dB / 0.00005 cycles; `Sinc<16>` 0.0010 dB / 0.00004 and

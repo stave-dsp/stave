@@ -8,6 +8,35 @@
 //! It models plate current only; grid current is not part of the law.
 
 /// One tube's Koren model parameters, as a SPICE `.model` line holds them.
+///
+/// # Models
+/// Norman Koren's triode plate-current law (Glass Audio, 1996), plate
+/// current only; parts as constants: [`Koren::T12AX7`], `T12AT7`,
+/// `T12AU7`, `T6DJ8`, `T6SN7`.
+///
+/// # Derivation
+/// Koren's published equation and his fitted parameters per tube, as a
+/// SPICE `.model` line holds them.
+///
+/// # Verified
+/// Through the circuits that use it, against ngspice's B-source
+/// spelling of the same law:
+/// `crates/stave-test/tests/matches_ngspice.rs::common_cathode_matches_ngspice`
+/// (1e-5 normalized RMS at 4×);
+/// `crates/stave-dsp/src/circuit/devices/triode/koren.rs::the_slope_is_the_derivative_of_the_current`;
+/// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::koren_matches_12ax7_datasheet`
+/// (the 12AX7 datasheet's plate current).
+///
+/// # Cost
+/// Per evaluation inside its circuit's line:
+/// `"CommonCathode x5 (Koren)"`.
+///
+/// # Aliasing
+/// None of its own: a device, evaluated by the circuit that holds it.
+///
+/// # Valid ranges
+/// Plate volts ≥ 0 as a stage biases them; any grid volts (cutoff below
+/// the knee, softplus with no overflow).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Koren {
     pub name: &'static str,

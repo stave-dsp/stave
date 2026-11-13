@@ -18,6 +18,40 @@ use crate::kernel::node::{Stage, Tail};
 /// A second-order section: one [`FilterSpec`] at the prepared rate.
 /// Before `prepare` it runs at 48 kHz; `Biquad::default()` is a
 /// passthrough.
+///
+/// # Models
+///
+/// The second-order analog prototypes (lowpass, highpass, allpass, bell,
+/// shelves) mapped to z by the bilinear transform, prewarped at the
+/// corner: Bristow-Johnson's *Audio EQ Cookbook* designs, plus stave's
+/// own shelf.
+///
+/// # Derivation
+///
+/// The cookbook formulas, rewritten cancellation-free (`1 − cos ω` as
+/// `2·sin²(ω/2)`), in f64, run as transposed direct form II.
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/primitives/filters/biquad/tests.rs::lowpass_and_peak_match_the_cookbook`
+/// (measured tone gain within 0.01 dB of the cookbook formulas written
+/// out independently, 50 Hz–16 kHz) and
+/// `crates/stave-test/tests/shelf_conformance.rs::rbj_shelf_is_monotonic_and_cookbook_flat`.
+///
+/// # Cost
+///
+/// Datasheet `"Biquad (lowpass)"`.
+///
+/// # Aliasing
+///
+/// None: linear. The bilinear map compresses the response toward
+/// Nyquist (a lowpass reaches zero there), with no folding.
+///
+/// # Valid ranges
+///
+/// Corners are held inside (1 Hz, 0.499·fs), `q > 0` (debug-asserted).
+/// f64 coefficients keep a 7 Hz high-pass stable at 768 kHz, where f32
+/// would round its poles onto the unit circle.
 #[derive(Clone, Copy, Debug)]
 pub struct Biquad {
     b0: f64,
@@ -339,3 +373,6 @@ pub enum FilterSpec {
         db: f32,
     },
 }
+
+#[cfg(test)]
+mod tests;

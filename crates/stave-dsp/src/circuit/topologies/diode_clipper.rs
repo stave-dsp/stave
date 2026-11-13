@@ -30,11 +30,39 @@ pub enum PairSolver {
     WrightOmega,
 }
 
-/// **Models** the R–C–diode-pair clipper (`stave-test/spice/diode_clipper.cir`).
-/// **Derivation:** a wave-digital tree (bilinear capacitor) with the
-/// pair at the root, solved by `M`. **Verified:** `matches_ngspice.rs`
-/// (`the_wdf_diode_clipper_matches_spice_with_either_solver`, 0.2 %
-/// normalized RMS at 4×).
+/// The R–C–diode-pair clipper, solved by the method `M` (see the module
+/// docs).
+///
+/// # Models
+/// The R–C–diode-pair clipper (`stave-test/spice/diode_clipper.cir`):
+/// input resistor into a capacitor to ground, shunted by an
+/// antiparallel pair ([`Shockley::D1N4148`] in the tests).
+///
+/// # Derivation
+/// A wave-digital tree (bilinear capacitor) with the pair at the root,
+/// solved by `M`: Newton with SPICE's junction limiting, or Werner et
+/// al.'s Wright-omega closed form.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::diode_clipper_matches_ngspice`:
+/// 5e-4 normalized RMS against ngspice at 4×, with either solver, no
+/// capped solve;
+/// `crates/stave-test/tests/solver_conformance.rs::diode_clipper_converges_at_the_host_rate`:
+/// no solve capped at the host rate under a hot signal.
+///
+/// # Cost
+/// Datasheet `"DiodeClipper (WDF, Newton)"`,
+/// `"DiodeClipper (WDF, Wright omega)"`, and `"DiodeClipper x10 (WDF)"`
+/// driven hard.
+///
+/// # Aliasing
+/// None of its own: a hard clipper; run it inside an oversampled region
+/// (the reference holds at 4×).
+///
+/// # Valid ranges
+/// Any positive rate; Newton capped at [`NewtonSettings::DEFAULT`]'s 32
+/// iterations, caps reported by `stats()`. Tested to 6 V peak (the hot
+/// signal of `solver_conformance`).
 #[derive(Clone)]
 pub struct DiodeClipper<M = PairSolver> {
     tree: Parallel<ResistiveSource, Capacitor>,

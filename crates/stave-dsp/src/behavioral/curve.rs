@@ -552,6 +552,45 @@ impl Frame {
 /// modulation-safe by construction: writers touch `pending` at any time;
 /// `tick` commits it BETWEEN difference quotients (the ordering ADAA
 /// requires), so no caller can move the curve mid-evaluation.
+///
+/// # Models
+///
+/// Any memoryless transfer `y = gain · f(bias + drive · x)` the caller
+/// tabulates, with no hardware claim of its own: the claim is the
+/// shape's (see [`shapes`](crate::behavioral::shapes)).
+///
+/// # Derivation
+///
+/// A Catmull-Rom table of `f` with trapezoid antiderivatives, run
+/// through first-order antiderivative anti-aliasing (Parker, Zavalishin
+/// and Le Bivic, DAFx 2016; the table form after Gabrielli and
+/// Squartini, DAFx 2025).
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/behavioral/curve.rs::table_matches_source_function`
+/// (interpolation within 2e-7 of `tanh`),
+/// `crates/stave-dsp/src/behavioral/curve.rs::g1_matches_analytic_antiderivative`
+/// (within 5e-5 of `ln cosh`) and
+/// `crates/stave-dsp/src/behavioral/adaa.rs::adaa_reduces_aliasing_on_a_hard_driven_tone`
+/// (the folded 9th harmonic of a 5 kHz tone into `tanh(6x)` more than
+/// 6 dB below direct evaluation).
+///
+/// # Cost
+///
+/// No datasheet line of its own yet (DSP.md P1); its parts are
+/// `"Adaa(1) over Curve"`.
+///
+/// # Aliasing
+///
+/// First-order ADAA (on by default; [`set_adaa`](Self::set_adaa)
+/// turns it off), which adds half a sample of group delay. Hard shapes
+/// still want an oversampled region on top.
+///
+/// # Valid ranges
+///
+/// Any shape finite on its table domain; past the domain `f` holds its
+/// edge value. `drive` is floored at 1e-6. Any sample rate.
 #[derive(Clone)]
 pub struct CurveStage {
     curve: Curve,

@@ -25,7 +25,9 @@ use crate::primitives::time::interpolators::{Interpolator, Linear, MAX_TAPS};
 /// A power-of-two ring indexed by mask; fractional reads per `I`.
 ///
 /// # Verified
-/// `delay::tests`: integer reads are bit-transparent, the block read is
+/// `crates/stave-dsp/src/primitives/time/delay.rs::integer_reads_are_transparent`,
+/// `crates/stave-dsp/src/primitives/time/delay.rs::read_block_matches_read` and
+/// `crates/stave-dsp/src/primitives/time/delay.rs::cubic_read_beats_linear_where_it_matters`: integer reads are bit-transparent, the block read is
 /// the read loop bit for bit, the linear and cubic HF losses are pinned;
 /// `interpolators::tests` holds each `I`'s error budget.
 ///
@@ -272,8 +274,8 @@ impl<I: Interpolator> DelayLine<I> {
 /// A [`DelayLine<I>`] written, read and advanced once per sample.
 ///
 /// # Verified
-/// `delay::delay_stage_properties` (integer delays exact for every
-/// interpolator) and `interpolators::tests::modulated_reads_stay_finite`
+/// `crates/stave-dsp/src/primitives/time/delay.rs::delay_stage_reads_back_at_its_setting` (integer delays exact for every
+/// interpolator) and `crates/stave-dsp/src/primitives/time/interpolators/tests.rs::modulated_reads_stay_finite`
 /// (a delay swept at audio rates, every interpolator).
 ///
 /// # Cost

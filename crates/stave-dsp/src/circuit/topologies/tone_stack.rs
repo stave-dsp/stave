@@ -54,7 +54,31 @@ struct Coefficients {
     denominator: [f64; 4],
 }
 
-/// Concrete, allocation-free passive tone-stack processor.
+/// The passive three-control tone network, allocation-free (see the
+/// module docs).
+///
+/// # Models
+/// The passive treble/bass/mid tone network of Yeh and Smith (DAFx-06),
+/// with its component values and pot positions.
+///
+/// # Derivation
+/// Yeh & Smith's closed-form third-order transfer function of the
+/// network, realized by the bilinear transform.
+///
+/// # Verified
+/// `crates/stave-test/tests/matches_ngspice.rs::tone_stack_matches_ngspice`:
+/// magnitude within 1e-10 dB of ngspice's AC analysis at three pot
+/// settings.
+///
+/// # Cost
+/// Datasheet `"PassiveToneStack"`.
+///
+/// # Aliasing
+/// None: linear (the bilinear transform warps frequencies near Nyquist;
+/// it does not alias).
+///
+/// # Valid ranges
+/// Pot positions 0..=1 (debug-asserted); any positive rate.
 #[derive(Clone)]
 pub struct PassiveToneStack {
     components: PassiveToneStackComponents,

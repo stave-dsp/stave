@@ -37,7 +37,7 @@ const ROUNDING_GUARD: f32 = 1.0 - 1e-6;
 /// See [`Limiter`].
 ///
 /// # Verified
-/// `effects::dynamics::tests::the_limiter_never_exceeds_its_ceiling`.
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::the_limiter_never_exceeds_its_ceiling`.
 ///
 /// # Cost
 /// None (data); true peak costs the interpolator (datasheet).
@@ -79,7 +79,7 @@ pub enum Peaks {
 /// reports that delay exactly.
 ///
 /// # Verified
-/// `effects::dynamics::tests`: on hostile signals (a +12 dB sine at
+/// `crates/stave-dsp/src/effects/dynamics/tests.rs::the_limiter_never_exceeds_its_ceiling`: on hostile signals (a +12 dB sine at
 /// `sample_rate/4` and 45°, all inter-sample overs; +20 dB noise; noise
 /// bursts, a near-Nyquist sweep, a clipped square, spikes, a DC step;
 /// lookaheads 0.1–5 ms) the output's true peak, measured by
@@ -89,7 +89,7 @@ pub enum Peaks {
 /// time constant measures the setting within 2 %.
 ///
 /// # Cost
-/// `Limiter (true peak)` and `Limiter (sample peak)` on the datasheet.
+/// `"Limiter (true peak)"` and `"Limiter (sample peak)"` on the datasheet.
 ///
 /// # Aliasing
 /// The gain is band-limited by the ramp (an `L`-sample moving average);

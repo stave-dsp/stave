@@ -35,6 +35,43 @@ pub enum RcTopology {
 /// ACROSS the nonlinearity (`x − v`): the history-dependent clip of the
 /// Tube-Screamer/808 family, where the cap charges THROUGH the diode's
 /// conduction so the effective threshold moves with what came before.
+///
+/// # Models
+///
+/// One capacitor charged through a monotone conductance: the
+/// history-dependent clip of a diode-and-cap stage, with no claim to a
+/// particular schematic (the circuit-layer clippers are
+/// [`DiodeClipper`](crate::circuit::topologies::diode_clipper::DiodeClipper)
+/// and [`OpAmpClipper`](crate::circuit::topologies::opamp_clipper::OpAmpClipper)).
+///
+/// # Derivation
+///
+/// The ODE `τ·dv/dt = i(x − v)` (series) or `τ·dv/dt = g·x − i(v)`
+/// (shunt), backward Euler, the conductance a power-law knee plus a 5 %
+/// leak, tabulated on a [`Curve`].
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/behavioral/rc/tests.rs::series_stage_matches_backward_euler_and_the_ode`:
+/// the diode preset within 1e-4 of backward Euler on the analytic law
+/// (bisection-solved), and within 0.03 of full scale of the continuous
+/// ODE (RK4, 64 substeps) on a driven 200 Hz sine.
+///
+/// # Cost
+///
+/// Datasheet `"NonlinearRc (diode, Newton)"`; the shunt form is one
+/// Newton step.
+///
+/// # Aliasing
+///
+/// None handled; the capacitor smooths the clip's edges but the knee
+/// still folds. Expects an oversampled region when driven hard.
+///
+/// # Valid ranges
+///
+/// `tau_ms > 0`, `threshold > 0`, hardness ≥ 1 (diode) or ≥ 2 (shunt),
+/// all debug-asserted. The tables span ±8 (series) and ±2 (shunt) across
+/// the conductance; beyond them the curve holds its edge value.
 #[derive(Clone)]
 pub struct NonlinearRc {
     i_curve: Curve,
@@ -256,3 +293,6 @@ impl Stage for NonlinearRc {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;

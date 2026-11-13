@@ -22,7 +22,7 @@ use crate::meta::{self, Workspace};
 use crate::rustdoc;
 use crate::Result;
 
-const GITHUB: &str = "https://github.com/stave-dsp/stave";
+pub const GITHUB: &str = "https://github.com/stave-dsp/stave";
 
 /// What every generator reads.
 pub struct Ctx<'a> {

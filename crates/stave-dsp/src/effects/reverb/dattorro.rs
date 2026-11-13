@@ -161,14 +161,16 @@ impl Half {
 /// rate-independent).
 ///
 /// # Verified
-/// `effects::reverb::tests` (T60 as Schroeder T30 around 1 kHz): within
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::measured_t60_matches_the_setting`,
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::stable_at_maximum_decay` and
+/// `crates/stave-dsp/src/effects/reverb/tests.rs::sample_rate_invariant` (T60 as Schroeder T30 around 1 kHz): within
 /// 3 % of the setting at 1 and 2.5 s (measured −0.9 % and −1.6 %; the
 /// summed-length formula this replaced measured +13 %); stable and
 /// finite at infinite T60 under full-scale noise; from 44.1 to 192 kHz
 /// the T60 holds within 0.6 % and the level within 0.06 dB.
 ///
 /// # Cost
-/// `Dattorro (plate)` on the datasheet.
+/// `"Dattorro (plate)"` on the datasheet.
 ///
 /// # Aliasing
 /// None (linear; sub-sample modulation at 1 Hz).
