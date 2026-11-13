@@ -11,11 +11,12 @@ hits=$(grep -rn "probe!\|probe_f64\|probe_named" examples/*/src --include="*.rs"
 if [[ -n "$hits" ]]; then
   echo "G6 VIOLATION: name-keyed tap publishing in an engine (declare a Tap):"; echo "$hits"; fail=1
 fi
-# 2) stave-dsp layering (the guide: crates/stave-guide/src/concepts/dsp.md): each layer may use only
+# 2) stave-dsp layering (DSP.md's layer table; the guide:
+#    crates/stave-guide/src/concepts/dsp.md): each layer may use only
 #    the layers listed before it. A missing layer directory is a renamed
 #    layer — fail loudly rather than silently checking nothing.
 DSP=crates/stave-dsp/src
-layers=(kernel primitives behavioral circuit structures)
+layers=(units kernel primitives behavioral circuit physical learned effects structures)
 # Non-test, non-comment references to crate::<layer> under a directory.
 # Test modules may compose across layers (a resampler test can drive a
 # triode as its fixture); the rule binds shipped code.

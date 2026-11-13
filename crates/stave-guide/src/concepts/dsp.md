@@ -1,14 +1,14 @@
 # The DSP library
 
 `stave-dsp` (re-exported as [`stave::dsp`](stave::dsp)) is a vocabulary
-rather than a bag of filters: five layers ordered by modelling method,
+rather than a bag of filters: layers ordered by the claim a model makes,
 one processing contract for every leaf and composite, and composition
 forms whose laws are pinned by tests.
 
-## Five layers, pointing down
+## Layers, pointing down
 
 Each layer may use only the layers before it. The folders under
-`crates/stave-dsp/src/` name the modelling method, and
+`crates/stave-dsp/src/` name the claim (and so the verification), and
 `scripts/check-view-bindings.sh` fails the build when shipped code in a
 layer reaches `crate::<layer>` of a layer above it (test modules may
 compose across layers; a missing layer directory fails the gate rather
@@ -16,11 +16,15 @@ than silently checking nothing).
 
 | Layer | What it holds | May use |
 |---|---|---|
-| 0 [`kernel`](stave_dsp::kernel) | the [`Stage`](stave_dsp::Stage) contract and [`Tail`](stave_dsp::Tail); the composition forms; the denormal and non-finite guards | nothing |
-| 1 [`primitives`](stave_dsp::primitives) | filters ([`Biquad`](stave_dsp::Biquad), [`Svf`](stave_dsp::Svf), [`OnePole`](stave_dsp::OnePole), [`DcBlocker`](stave_dsp::DcBlocker), [`Allpass1`](stave_dsp::Allpass1), [`LinkwitzRiley4`](stave_dsp::LinkwitzRiley4), [`Crossover3`](stave_dsp::Crossover3)); time ([`DelayLine`](stave_dsp::DelayLine), [`Comb`](stave_dsp::Comb), [`DelayAllpass`](stave_dsp::DelayAllpass)); control (LFOs, envelopes, followers, smoothers, [`RandomWalk`](stave_dsp::RandomWalk)); [`Osc`](stave_dsp::Osc) and [`Waveform`](stave_dsp::Waveform); gain and pitch helpers; seeded randomness | kernel |
-| 2 [`behavioral`](stave_dsp::behavioral) | models fitted to measurement or chosen by ear: tabulated curves with ADAA, [`soft_clip`](stave_dsp::soft_clip) and the [`shapes`](stave_dsp::shapes) library, [`SmoothSat`](stave_dsp::SmoothSat), [`Slew`](stave_dsp::Slew), [`Hysteresis`](stave_dsp::Hysteresis), [`NonlinearRc`](stave_dsp::NonlinearRc) | kernel, primitives |
-| 3 [`circuit`](stave_dsp::circuit) | devices, solver methods and topologies derived from schematics | kernel, primitives, behavioral |
-| 4 [`structures`](stave_dsp::structures) | [`Chain`](stave_dsp::Chain) (serial composition with addressable slots), [`chain!`](stave_dsp::chain), [`ModMatrix`](stave_dsp::ModMatrix) | all of the above |
+| 0 [`units`](stave_dsp::units) | quantities as types (empty until the first lands) | nothing |
+| 1 [`kernel`](stave_dsp::kernel) | the [`Stage`](stave_dsp::Stage) contract and [`Tail`](stave_dsp::Tail); the composition forms; the denormal and non-finite guards | units |
+| 2 [`primitives`](stave_dsp::primitives) | filters ([`Biquad`](stave_dsp::Biquad), [`Svf`](stave_dsp::Svf), [`OnePole`](stave_dsp::OnePole), [`DcBlocker`](stave_dsp::DcBlocker), [`Allpass1`](stave_dsp::Allpass1), [`LinkwitzRiley4`](stave_dsp::LinkwitzRiley4), [`Crossover3`](stave_dsp::Crossover3)); time ([`DelayLine`](stave_dsp::DelayLine), [`Comb`](stave_dsp::Comb), [`DelayAllpass`](stave_dsp::DelayAllpass)); control (LFOs, envelopes, followers, smoothers, [`RandomWalk`](stave_dsp::RandomWalk)); [`Osc`](stave_dsp::Osc) and [`Waveform`](stave_dsp::Waveform); gain and pitch helpers; seeded randomness | units, kernel |
+| 3 [`behavioral`](stave_dsp::behavioral) | models fitted to measurement or chosen by ear: tabulated curves with ADAA, [`soft_clip`](stave_dsp::soft_clip) and the [`shapes`](stave_dsp::shapes) library, [`SmoothSat`](stave_dsp::SmoothSat), [`Slew`](stave_dsp::Slew), [`Hysteresis`](stave_dsp::Hysteresis), [`NonlinearRc`](stave_dsp::NonlinearRc) | units, kernel, primitives |
+| 4 [`circuit`](stave_dsp::circuit) | devices, solver methods, netlists and topologies derived from schematics | units, kernel, primitives, behavioral |
+| 5 [`physical`](stave_dsp::physical) | models derived from mechanics or acoustics (empty until the first lands) | the layers above |
+| 6 [`learned`](stave_dsp::learned) | models trained from captures (empty until the first lands) | the layers above |
+| 7 [`effects`](stave_dsp::effects) | algorithmic designs that model no hardware (empty until the first lands) | the layers above |
+| 8 [`structures`](stave_dsp::structures) | [`Chain`](stave_dsp::Chain) (serial composition with addressable slots), [`chain!`](stave_dsp::chain), [`ModMatrix`](stave_dsp::ModMatrix) | all of the above |
 
 The crate root re-exports the public vocabulary flat, so
 `stave_dsp::Biquad` and `stave::dsp::Biquad` are the same type, and the

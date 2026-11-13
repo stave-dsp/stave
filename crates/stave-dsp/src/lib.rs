@@ -6,19 +6,21 @@
 //! and ring-out. Setters take musical units (`_hz`, `_ms`, `_db`, `q`);
 //! phase is in cycles; sample rates are `f32`.
 //!
-//! Five layers, each depending only on the ones before it
-//! (`scripts/check-view-bindings.sh` enforces it):
+//! A model lives in the layer whose claim it makes, and the claim
+//! decides how it is verified. Each layer depends only on the ones
+//! before it (`scripts/check-view-bindings.sh` enforces it):
 //!
-//! 0. [`kernel`] — the contract and the forms graphs are built from:
-//!    [`Serial`], [`Par2`], [`Loop`], [`Oversampled2x`], [`PerChannel`],
-//!    control routing ([`Router`]) and voices ([`VoiceRack`]).
-//! 1. [`primitives`] — linear building blocks: filters, delays, control
-//!    generators and followers, oscillators.
-//! 2. [`behavioral`] — models fitted to measurement or chosen by ear:
-//!    tabulated curves with ADAA, saturators, slew, hysteresis.
-//! 3. [`circuit`] — models derived from schematics: devices, solvers and
-//!    topologies verified against ngspice.
-//! 4. [`structures`] — reusable compositions: [`Chain`], [`ModMatrix`].
+//! | Layer | Claim | Verified by |
+//! |---|---|---|
+//! | [`units`] | quantities as types | unit tests, Kani |
+//! | [`kernel`] | the [`Stage`] contract and the graph forms: [`Serial`], [`Par2`], [`Loop`], [`Oversampled2x`], [`PerChannel`], [`Router`], [`VoiceRack`] | property tests, loom, Kani |
+//! | [`primitives`] | textbook linear DSP: filters, delays, oscillators, control | naive references and analytic responses |
+//! | [`behavioral`] | a shape chosen or fitted, with no hardware claim: curves with ADAA, saturators, slew, hysteresis | analytic antiderivatives, aliasing budgets |
+//! | [`circuit`] | derived from a schematic: devices, methods, netlists, topologies | ngspice on the same netlist |
+//! | [`physical`] | derived from mechanics or acoustics | published modes, high-precision solutions, captures |
+//! | [`learned`] | trained from captures | parity with the reference implementation, capture error |
+//! | [`effects`] | algorithmic designs that model no hardware | analytic properties, golden audio |
+//! | [`structures`] | compositions: [`Chain`], [`ModMatrix`] | property tests |
 //!
 //! Constraints: no allocation on the audio path, no panics in `tick` or
 //! `process`. The crate root re-exports the public vocabulary flat.
@@ -27,9 +29,13 @@
 
 pub mod behavioral;
 pub mod circuit;
+pub mod effects;
 pub mod kernel;
+pub mod learned;
+pub mod physical;
 pub mod primitives;
 pub mod structures;
+pub mod units;
 
 pub use behavioral::shapes;
 
