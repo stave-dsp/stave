@@ -7,25 +7,32 @@
 # stages it benches and the file's stages differ, so run this whenever a
 # bench line is added, renamed or removed (and when a stage's cost moves).
 #
-#   scripts/datasheet.sh               # on the reference machine (ssh stave-mini)
+#   scripts/datasheet.sh               # on the reference machine
 #   scripts/datasheet.sh HOST          # elsewhere, through scripts/offload.sh
 #   scripts/datasheet.sh local         # on this machine
 #
-# The reference machine is stave-mini, an Apple M1 Mac mini (its ssh
-# host name too): every committed row comes from it, so rows compare with each
-# other. Measure elsewhere to explore, but commit numbers from it, and
-# measure when it is quiet: the file records the load average at the
-# start, and the Cost page shows it beside each row's spread.
-# STAVE_DATASHEET_MACHINE names the machine on the page (default: the
-# reference name for the reference host, else HOST).
+# The reference machine is the one named by STAVE_REFERENCE_HOST in your
+# local configuration (stave.env.example), described on the Cost page by
+# STAVE_REFERENCE_NAME (the hardware, e.g. "Apple M1, 8 cores"). Every
+# committed row comes from one machine, so rows compare with each other:
+# measure elsewhere to explore, but commit numbers from it, and measure when
+# it is quiet — the file records the load average at the start, and the Cost
+# page shows it beside each row's spread. STAVE_DATASHEET_MACHINE overrides
+# the name written for a one-off run.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-REFERENCE_HOST=stave-mini
-REFERENCE_NAME=stave-mini
-HOST="${1:-$REFERENCE_HOST}"
+source scripts/lib/config.sh
+stave_config_load "$ROOT"
+if [[ -n "${1:-}" ]]; then
+  HOST="$1"
+else
+  HOST="$(stave_config_require STAVE_REFERENCE_HOST "datasheet.sh (the reference machine)")"
+fi
+REFERENCE_HOST="${STAVE_REFERENCE_HOST:-}"
+REFERENCE_NAME="${STAVE_REFERENCE_NAME:-reference machine}"
 
-if [[ "$HOST" == "$REFERENCE_HOST" || "$HOST" == "$REFERENCE_NAME" ]]; then
+if [[ -n "$REFERENCE_HOST" && "$HOST" == "$REFERENCE_HOST" ]]; then
   MACHINE="${STAVE_DATASHEET_MACHINE:-$REFERENCE_NAME}"
 elif [[ "$HOST" == local ]]; then
   MACHINE="${STAVE_DATASHEET_MACHINE:-$(hostname -s)}"

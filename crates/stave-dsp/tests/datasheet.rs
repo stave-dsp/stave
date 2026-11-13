@@ -34,7 +34,7 @@
 //! B-source Koren law; 2062 with the Koren device), tone stack 9.7 vs
 //! 29. The general method costs 2–3× the hand derivation; a topology
 //! stays its own type where that matters. The transistor decks have no
-//! hand topology (stave-mini, 2026-11-12): Fuzz Face 3500
+//! hand topology (the reference machine, 2026-11-12): Fuzz Face 3500
 //! (two Gummel–Poon AC128s, four controls, 7.4 iterations on ±0.3 V
 //! noise), CE stage 784, JFET booster 573.
 //!

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "machine": { "name": "stave-mini", "cpu": "Apple M1", "os": "macos", "arch": "aarch64" },
+  "machine": { "name": "reference machine", "cpu": "Apple M1", "os": "macos", "arch": "aarch64" },
   "commit": "f552220",
   "date": "2026-11-13",
   "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",

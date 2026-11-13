@@ -85,15 +85,15 @@ cargo test --release -p stave-dsp --test datasheet -- --nocapture
 ```
 
 Its rows are committed as data, `crates/stave-dsp/datasheet.json`,
-measured on one reference machine (stave-mini, an Apple M1) that the
-file names, and the docs site's Cost reference page is generated from
+measured on one reference machine (`STAVE_REFERENCE_HOST` in your
+[local configuration](crate::howto::local_config)) that the file describes, and the docs site's Cost reference page is generated from
 it. Measuring while the site builds would publish a shared CI runner's
 noise. The test fails, in debug too, where it times nothing and only
 names each stage, whenever the stages it benches and the file's stages
 differ. A new `bench(..)` line therefore lands with fresh data:
 
 ```sh
-scripts/datasheet.sh          # on the reference machine (ssh stave-mini), the file fetched back
+scripts/datasheet.sh          # on the reference machine, the file fetched back
 scripts/datasheet.sh local    # on this machine, to explore (don't commit those numbers)
 ```
 
@@ -146,7 +146,7 @@ in `target/profile`, and nothing opens when stdout is not a terminal, so
 it works on a build host and fetches the profile back:
 
 ```sh
-STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh stave-mini -- scripts/profile.sh stage triode
+STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh macos -- scripts/profile.sh stage triode
 samply load target/profile/stage-triode.json.gz
 ```
 

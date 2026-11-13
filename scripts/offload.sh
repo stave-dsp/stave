@@ -1,30 +1,43 @@
 #!/usr/bin/env bash
 # Run a command on a build host instead of this machine: the working tree
-# (uncommitted changes included; anything git ignores is not sent) is synced to the
-# host, the command runs there under `nice`, its output streams back, and
-# its exit status is this script's.
+# (uncommitted changes included; anything git ignores is not sent) is synced
+# to the host, the command runs there under `nice`, its output streams back,
+# and its exit status is this script's.
 #
-#   scripts/offload.sh HOST -- cargo nextest run -p stave-dsp
-#   scripts/offload.sh HOST -- scripts/gates.sh
-#   STAVE_OFFLOAD_NAME=fft scripts/offload.sh HOST -- cargo clippy --workspace
-#   STAVE_OFFLOAD_SYNC=tar scripts/offload.sh stave-dsp -- cargo nextest run -p stave-dsp
-#   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh HOST -- scripts/profile.sh stage biquad
+#   scripts/offload.sh linux -- cargo nextest run -p stave-dsp
+#   scripts/offload.sh macos -- scripts/gates.sh
+#   scripts/offload.sh some-ssh-host -- cargo clippy --workspace
+#   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh macos -- scripts/profile.sh stage biquad
 #
-# HOST is any ssh destination with rustup and cargo-nextest installed (the
-# pinned toolchain installs itself from rust-toolchain.toml). Each tree
-# gets its own directory and build cache on the host, named after the
-# local directory unless STAVE_OFFLOAD_NAME says otherwise, so parallel
-# agents never share a build.
+# HOST is `linux` or `macos` (the hosts named by STAVE_LINUX_HOST and
+# STAVE_MACOS_HOST in your local configuration — see stave.env.example), or
+# any ssh destination. The host needs rustup and cargo-nextest; the pinned
+# toolchain installs itself from rust-toolchain.toml. Each tree gets its own
+# directory and build cache on the host, named after the local directory
+# unless STAVE_OFFLOAD_NAME says otherwise, so parallel builds never share
+# one.
 #
-# STAVE_OFFLOAD_FETCH names paths (relative to the tree, space-separated)
-# the command writes on the host; after it exits, pass or fail, each one
-# that exists is copied back into the local tree (scripts/profile.sh's
-# profiles, scripts/datasheet.sh's data, target/icount).
+# Hosts listed in STAVE_TAR_HOSTS (or any host with STAVE_OFFLOAD_SYNC=tar)
+# get a tarball instead of rsync. STAVE_OFFLOAD_FETCH names paths (relative
+# to the tree, space-separated) the command writes on the host; after it
+# exits, pass or fail, each one that exists is copied back into the local
+# tree (scripts/profile.sh's profiles, scripts/datasheet.sh's data).
 set -euo pipefail
 HOST="${1:?usage: $0 HOST -- COMMAND...}"
 shift
 [[ "${1:-}" == "--" ]] && shift
 (($#)) || { echo "usage: $0 HOST -- COMMAND..." >&2; exit 2; }
+
+source "$(dirname "$0")/lib/config.sh"
+stave_config_load "$(git rev-parse --show-toplevel)"
+case "$HOST" in
+  linux) HOST="$(stave_config_require STAVE_LINUX_HOST "offload.sh linux")" ;;
+  macos) HOST="$(stave_config_require STAVE_MACOS_HOST "offload.sh macos")" ;;
+esac
+SYNC="${STAVE_OFFLOAD_SYNC:-rsync}"
+for tar_host in ${STAVE_TAR_HOSTS:-}; do
+  [[ "$tar_host" == "$HOST" ]] && SYNC="${STAVE_OFFLOAD_SYNC:-tar}"
+done
 
 ROOT="$(git rev-parse --show-toplevel)"
 NAME="${STAVE_OFFLOAD_NAME:-$(basename "$ROOT")}"
@@ -33,9 +46,10 @@ DIR="stave-offload/$NAME"
 
 TARGETENV=""
 GITENV=""
-if [[ "${STAVE_OFFLOAD_SYNC:-rsync}" == tar ]]; then
-  # For hosts where rsync misbehaves (stave-dsp: the session ends with an
-  # unexplained 255 after the data arrives): send exactly the files git
+if [[ "$SYNC" == tar ]]; then
+  # For hosts where rsync misbehaves (seen behind an ssh relay into a
+  # container: the session ends with an unexplained 255 after the data
+  # arrives): send exactly the files git
   # tracks or would track, compressed, unpacked fresh each time, mtimes
   # kept; the build cache lives beside the sources so it survives. Git
   # itself is not sent, so tag/history-dependent scripts belong on an
@@ -49,7 +63,10 @@ else
   ssh "$HOST" "mkdir -p '$DIR'"
   # Sources only: whatever git ignores (build output, bundles, refs) is not
   # sent, and the host's own target/ (also excluded) survives --delete.
+  # .git goes whole (rules come first-match-first: gitignore's **/refs/
+  # must not reach .git/refs).
   rsync -az --delete \
+    --include '/.git/***' \
     --filter=':- .gitignore' \
     --exclude '/target/' --exclude '/.claude/' --exclude '**/refs/' \
     "$ROOT/" "$HOST:$DIR/"

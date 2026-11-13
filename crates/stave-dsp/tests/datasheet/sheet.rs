@@ -265,7 +265,7 @@ pub fn finish() {
          benched but not in the data: {missing:?}\n  \
          in the data but no longer benched: {stale:?}\n\
          Every bench(..) line needs its row (the docs' Cost page is generated from the file).\n\
-         Fix: run `scripts/datasheet.sh` (it measures on the reference machine, stave-mini,\n\
+         Fix: run `scripts/datasheet.sh` (it measures on your reference machine,\n\
          and writes the file back), then commit crates/stave-dsp/datasheet.json with the change.\n"
     );
 }

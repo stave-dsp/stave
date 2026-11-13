@@ -15,10 +15,11 @@
 # start-up cancel exactly. The counts depend on the compiler, valgrind,
 # glibc (libm) and the CPU family, so the baseline is blessed where CI
 # runs: x86_64 Ubuntu 24.04 (glibc 2.39, valgrind 3.22) — GitHub's
-# ubuntu-24.04 runner, or the stave-dsp build container, which matches:
+# ubuntu-24.04 runner, or a Linux build host that matches it (glibc 2.39,
+# valgrind 3.22):
 #
 #   STAVE_OFFLOAD_FETCH=crates/stave-dsp/benches/stages.icount \
-#     scripts/offload.sh stave-dsp -- scripts/icount.sh bless
+#     scripts/offload.sh linux -- scripts/icount.sh bless
 #
 # Bless on purpose: when a change makes a stage dearer and that is the
 # price of the change, or cheaper (the check reports a drop beyond the
@@ -38,7 +39,7 @@ SHORT=16384
 LONG=32768
 OUT="${ICOUNT_OUT:-target/icount}"
 command -v valgrind >/dev/null || {
-  echo "icount: needs valgrind on Linux (on a Mac: scripts/offload.sh stave-dsp -- scripts/icount.sh)" >&2
+  echo "icount: needs valgrind on Linux (on a Mac: scripts/offload.sh linux -- scripts/icount.sh)" >&2
   exit 2
 }
 
@@ -58,7 +59,7 @@ ENVLINE="# $(valgrind --version) · glibc $(getconf GNU_LIBC_VERSION | cut -d" "
 {
   echo "# Instructions per sample of each stage in crates/stave-dsp/benches/stages.rs,"
   echo "# counted by scripts/icount.sh (cachegrind; $LONG minus $SHORT samples)."
-  echo "# Bless on x86_64 Ubuntu 24.04 (CI's runner, or the stave-dsp container):"
+  echo "# Bless on x86_64 Ubuntu 24.04 (CI's runner, or a matching Linux host):"
   echo "#   scripts/icount.sh bless"
   echo "$ENVLINE"
 } > "$OUT/stages.icount"

@@ -56,6 +56,8 @@ pub mod howto {
     pub mod model_placement {}
     #[doc = include_str!("howto/release.md")]
     pub mod release {}
+    #[doc = include_str!("howto/local-config.md")]
+    pub mod local_config {}
 }
 
 #[doc = include_str!("glossary.md")]

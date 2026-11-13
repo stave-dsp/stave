@@ -263,7 +263,8 @@ Most models are tuned by listening. The tooling makes that rigorous:
 
 ### Reference program material
 
-From the user's sample library (`/Volumes/Crucial X8/Sample Library`):
+From the sample library named by `STAVE_SAMPLE_LIBRARY` (local configuration;
+see `stave.env.example`). The maintainer's library holds:
 
 - `Test Corpus/` — 58 deterministic 48 kHz/24-bit picks in 13 sets (drum
   loops, kicks, snares, hats, percussion, piano and synth notes, vocals and
@@ -616,7 +617,7 @@ other references; a model with a capture is held to it within budget.
 
 ### P — profiling and performance
 
-- [x] **P1** (67108c3: `crates/stave-dsp/datasheet.json` from stave-mini via `scripts/datasheet.sh`, held to the benched stages by the test itself; the docs site's Cost page) The datasheet as data: `datasheet.rs` writes JSON
+- [x] **P1** (67108c3: `crates/stave-dsp/datasheet.json` from the reference machine via `scripts/datasheet.sh`, held to the benched stages by the test itself; the docs site's Cost page) The datasheet as data: `datasheet.rs` writes JSON
   (ns/sample, spread, rate) per stage; the docs site shows it as a
   reference page, the same way the catalogue is generated.
 - [x] **P2** (67108c3: `benches/stages.rs` + `scripts/icount.sh`, baseline `benches/stages.icount`, the `perf` workflow at +5%, about a minute) Deterministic performance regression in CI: instruction

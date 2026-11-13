@@ -13,3 +13,9 @@ __pycache__/
 **/refs/
 *.wav
 *.npy
+
+# Per-checkout configuration (see stave.env.example).
+/.stave/
+
+# Local research library: papers, schematics, datasheets (copyrighted; never committed).
+/research/

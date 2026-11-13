@@ -19,11 +19,11 @@
 # Linux: perf writes DIR/NAME.perf.data and, with inferno installed
 # (cargo install --locked inferno), DIR/NAME.svg. perf needs
 # kernel.perf_event_paranoid <= 2 and the perf_event_open syscall, which
-# unprivileged containers (the stave-dsp build host) do not grant:
+# unprivileged containers (a common build-host setup) do not grant:
 # profile on a Mac, a Linux machine you own, or a GitHub runner.
 #
 # On a build host, fetching the profile back:
-#   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh stave-mini -- scripts/profile.sh stage triode
+#   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh macos -- scripts/profile.sh stage triode
 #   samply load target/profile/stage-triode.json.gz
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

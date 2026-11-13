@@ -10,6 +10,8 @@ Each assumes you know the [concepts](crate::concepts).
   `stave-events`.
 - [Lay out a plugin project](crate::howto::project_layout): the shape,
   the tree rules, and the gates that hold them.
+- [Local configuration](crate::howto::local_config): per-machine hosts,
+  sample libraries and captures, and building on another machine.
 - [Measure performance](crate::howto::performance): the perf report,
   honest timings, the CPU tap, profiling.
 - [Place a new DSP model](crate::howto::model_placement): where a model

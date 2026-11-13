@@ -1,6 +1,6 @@
 # Instructions per sample of each stage in crates/stave-dsp/benches/stages.rs,
 # counted by scripts/icount.sh (cachegrind; 32768 minus 16384 samples).
-# Bless on x86_64 Ubuntu 24.04 (CI's runner, or the stave-dsp container):
+# Bless on x86_64 Ubuntu 24.04 (CI's runner, or a matching Linux host):
 #   scripts/icount.sh bless
 # valgrind-3.22.0 · glibc 2.39 · rustc 1.96.0 · x86_64
 biquad	38.66
