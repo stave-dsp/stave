@@ -7,12 +7,12 @@
 # stages it benches and the file's stages differ, so run this whenever a
 # bench line is added, renamed or removed (and when a stage's cost moves).
 #
-#   scripts/datasheet.sh               # on the reference machine (ssh mini)
+#   scripts/datasheet.sh               # on the reference machine (ssh stave-mini)
 #   scripts/datasheet.sh HOST          # elsewhere, through scripts/offload.sh
 #   scripts/datasheet.sh local         # on this machine
 #
-# The reference machine is stave-mini, an Apple M1 Mac mini (ssh alias
-# `mini`): every committed row comes from it, so rows compare with each
+# The reference machine is stave-mini, an Apple M1 Mac mini (its ssh
+# host name too): every committed row comes from it, so rows compare with each
 # other. Measure elsewhere to explore, but commit numbers from it, and
 # measure when it is quiet: the file records the load average at the
 # start, and the Cost page shows it beside each row's spread.
@@ -21,7 +21,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-REFERENCE_HOST=mini
+REFERENCE_HOST=stave-mini
 REFERENCE_NAME=stave-mini
 HOST="${1:-$REFERENCE_HOST}"
 

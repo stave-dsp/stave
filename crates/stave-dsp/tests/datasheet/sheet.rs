@@ -261,8 +261,11 @@ pub fn finish() {
     let stale: Vec<&String> = committed.iter().filter(|n| !names.contains(n)).collect();
     assert!(
         missing.is_empty() && stale.is_empty(),
-        "crates/stave-dsp/datasheet.json is out of step with tests/datasheet.rs — \
-         benched but not in the data: {missing:?}; in the data but no longer benched: {stale:?}. \
-         Refresh it on the reference machine: scripts/datasheet.sh"
+"\n\ncrates/stave-dsp/datasheet.json is out of step with tests/datasheet.rs.\n  \
+         benched but not in the data: {missing:?}\n  \
+         in the data but no longer benched: {stale:?}\n\
+         Every bench(..) line needs its row (the docs' Cost page is generated from the file).\n\
+         Fix: run `scripts/datasheet.sh` (it measures on the reference machine, stave-mini,\n\
+         and writes the file back), then commit crates/stave-dsp/datasheet.json with the change.\n"
     );
 }

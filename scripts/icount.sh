@@ -43,8 +43,9 @@ command -v valgrind >/dev/null || {
 }
 
 # The shipping profile (bench inherits release: fat LTO, one codegen unit).
-BIN="$(cargo bench --locked -p stave-dsp --bench stages --no-run --message-format=json-render-diagnostics \
-  | grep '"name":"stages"' | grep -o '"executable":"[^"]*"' | cut -d'"' -f4 | tail -1)"
+# Its path is cargo's "Executable … (PATH)" line.
+BIN="$(cargo bench --locked --color never -p stave-dsp --bench stages --no-run 2>&1 \
+  | tee /dev/stderr | sed -n 's/^ *Executable .*(\(.*\))$/\1/p' | tail -1)"
 [[ -x "$BIN" ]] || { echo "icount: could not build the stages bench" >&2; exit 1; }
 
 refs() { # the instructions executed by `stages count ID N`

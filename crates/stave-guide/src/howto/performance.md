@@ -93,7 +93,7 @@ names each stage, whenever the stages it benches and the file's stages
 differ. A new `bench(..)` line therefore lands with fresh data:
 
 ```sh
-scripts/datasheet.sh          # on the reference machine (ssh mini), the file fetched back
+scripts/datasheet.sh          # on the reference machine (ssh stave-mini), the file fetched back
 scripts/datasheet.sh local    # on this machine, to explore (don't commit those numbers)
 ```
 
@@ -146,7 +146,7 @@ in `target/profile`, and nothing opens when stdout is not a terminal, so
 it works on a build host and fetches the profile back:
 
 ```sh
-STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh mini -- scripts/profile.sh stage triode
+STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh stave-mini -- scripts/profile.sh stage triode
 samply load target/profile/stage-triode.json.gz
 ```
 

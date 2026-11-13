@@ -23,7 +23,7 @@
 # profile on a Mac, a Linux machine you own, or a GitHub runner.
 #
 # On a build host, fetching the profile back:
-#   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh mini -- scripts/profile.sh stage triode
+#   STAVE_OFFLOAD_FETCH=target/profile scripts/offload.sh stave-mini -- scripts/profile.sh stage triode
 #   samply load target/profile/stage-triode.json.gz
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -44,10 +44,11 @@ while (($#)); do
 done
 (($#)) || usage
 
-# The executable cargo builds for a target, in the profiling profile.
+# The executable cargo builds for a target, in the profiling profile
+# (from cargo's "Executable … (PATH)" line).
 built() {
-  cargo "$@" --locked --profile profiling --message-format=json-render-diagnostics \
-    | grep -o '"executable":"[^"]*"' | cut -d'"' -f4 | tail -1
+  cargo "$@" --locked --color never --profile profiling 2>&1 \
+    | tee /dev/stderr | sed -n 's/^ *Executable .*(\(.*\))$/\1/p' | tail -1
 }
 
 KIND="$1"
