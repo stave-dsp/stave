@@ -22,7 +22,7 @@ than silently checking nothing).
 | 3 [`behavioral`](stave_dsp::behavioral) | models fitted to measurement or chosen by ear: tabulated curves with ADAA, [`soft_clip`](stave_dsp::soft_clip) and the [`shapes`](stave_dsp::shapes) library, [`SmoothSat`](stave_dsp::SmoothSat), [`Slew`](stave_dsp::Slew), [`Hysteresis`](stave_dsp::Hysteresis), [`NonlinearRc`](stave_dsp::NonlinearRc) | units, kernel, primitives |
 | 4 [`circuit`](stave_dsp::circuit) | devices, solver methods, netlists and topologies derived from schematics | units, kernel, primitives, behavioral |
 | 5 [`physical`](stave_dsp::physical) | models derived from mechanics or acoustics (empty until the first lands) | the layers above |
-| 6 [`learned`](stave_dsp::learned) | models trained from captures (empty until the first lands) | the layers above |
+| 6 [`learned`](stave_dsp::learned) | models trained from captures: [`WaveNet`](stave_dsp::learned::WaveNet), [`Lstm`](stave_dsp::learned::Lstm), [`Gru`](stave_dsp::learned::Gru), and Neural Amp Modeler's `.nam` files ([`nam::parse`](stave_dsp::learned::nam::parse)) | the layers above |
 | 7 [`effects`](stave_dsp::effects) | algorithmic designs that model no hardware (empty until the first lands) | the layers above |
 | 8 [`structures`](stave_dsp::structures) | [`Chain`](stave_dsp::Chain) (serial composition with addressable slots), [`chain!`](stave_dsp::chain), [`ModMatrix`](stave_dsp::ModMatrix) | all of the above |
 
@@ -276,6 +276,26 @@ The models are held to references outside the code:
 
 Physical behaviour belongs to the library; a product that wants
 exaggeration owns it in its own code.
+
+## The learned layer
+
+[`learned`](stave_dsp::learned) runs networks trained out of tree (in
+Python) as ordinary stages: [`WaveNet`](stave_dsp::learned::WaveNet),
+[`Lstm`](stave_dsp::learned::Lstm) and [`Gru`](stave_dsp::learned::Gru),
+f32, one sample per tick, no allocation after loading.
+[`nam::parse`](stave_dsp::learned::nam::parse) reads a Neural Amp
+Modeler `.nam` file's text into a [`Network`](stave_dsp::learned::nam::Network);
+load it off the audio thread and hand it over.
+
+A network knows the rate it was trained at. Prepared at another, it
+outputs silence and [`rate_mismatch`](stave_dsp::learned::nam::Network::rate_mismatch)
+says why: run the network at its rate (an
+[`Oversampled2x`](stave_dsp::Oversampled2x) region when the host runs at
+half of it), or choose [`RatePolicy::Any`](stave_dsp::learned::RatePolicy)
+knowingly. `crates/stave-dsp/tests/nam_parity.rs` holds every
+architecture to the trainer's own forward pass on files it exported
+(`scripts/nam-reference.py`), within 1e-5, and to an independent f64
+forward pass on random shapes.
 
 ## Conventions
 

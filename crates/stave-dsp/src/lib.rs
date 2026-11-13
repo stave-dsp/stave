@@ -18,7 +18,7 @@
 //! | [`behavioral`] | a shape chosen or fitted, with no hardware claim: curves with ADAA, saturators, slew, hysteresis | analytic antiderivatives, aliasing budgets |
 //! | [`circuit`] | derived from a schematic: devices, methods, netlists, topologies | ngspice on the same netlist |
 //! | [`physical`] | derived from mechanics or acoustics | published modes, high-precision solutions, captures |
-//! | [`learned`] | trained from captures | parity with the reference implementation, capture error |
+//! | [`learned`] | trained from captures: [`learned::WaveNet`], [`learned::Lstm`], [`learned::Gru`], Neural Amp Modeler files ([`learned::nam`]) | parity with the reference implementation, capture error |
 //! | [`effects`] | algorithmic designs that model no hardware | analytic properties, golden audio |
 //! | [`structures`] | compositions: [`Chain`], [`ModMatrix`] | property tests |
 //!
