@@ -39,9 +39,12 @@
 //! Any netlist of R, C, L, independent V and I sources (DC, SIN, PWL, or
 //! a behavioural source of time alone), E, F and G controlled sources,
 //! Shockley diodes (series resistance as a resistor, breakdown
-//! included), stave triodes and pentodes, op-amps (the ideal nullor, or
-//! the macromodel's gain node, compensation capacitor and output buffer),
-//! OTAs, and behavioural sources of node voltages (`B … I = {…}` or
+//! included), Gummel–Poon BJTs, Shichman–Hodges JFETs and square-law
+//! MOSFETs (their ohmic resistances as resistors to internal nodes; a
+//! junction shunted like a diode's), stave triodes and pentodes, op-amps
+//! (the ideal nullor, or the macromodel's gain node, compensation
+//! capacitor and output buffer), OTAs, and behavioural sources of node
+//! voltages (`B … I = {…}` or
 //! `V = {…}`, at most four node voltages each), provided its MNA matrix
 //! is nonsingular (no floating node, no loop of voltage sources). The
 //! operating point is solved with capacitors open and inductors shorted,
@@ -53,7 +56,8 @@
 //! `stave-test/tests/dk_matches_ngspice.rs`: every ngspice deck whose
 //! devices exist runs through `Circuit<Dk>` and meets the budget of the
 //! hand-derived topology on the same deck, and agrees with that
-//! topology.
+//! topology; `transistors_match_ngspice.rs` holds the BJT, JFET and
+//! MOSFET decks (DC families and real circuits) to ngspice.
 //!
 //! # Cost
 //!

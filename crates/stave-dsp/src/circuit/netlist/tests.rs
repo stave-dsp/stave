@@ -218,3 +218,76 @@ R1 in 0 1k
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn transistors_read_with_their_cards_area_and_geometry() {
+    use crate::circuit::devices::{thermal_volts, Polarity};
+    let n = Netlist::parse_spice(
+        "transistors
+Q1 c b e QN 2
+Q2 c b e sub QP
+J1 d g s JP 0.5
+M1 d g s 0 MN W=30u L=10u AD=1p
+.model QN NPN(IS=1f BF=150 VAF=0 IKF=10m RB=10 CJE=2p)
+.model QP PNP(IS=2f)
+.model JP PJF(VTO=-2 BETA=1m RD=10)
+.model MN NMOS(LEVEL=1 VTO=1 KP=100u LD=1u GAMMA=0.5)
+.temp 35
+.options tnom=35
+",
+    )
+    .unwrap();
+    assert_eq!(n.temperature_celsius, Some(35.0));
+    match &n.element("q1").unwrap().kind {
+        ElementKind::Bjt { bjt, .. } => {
+            assert_eq!(bjt.polarity, Polarity::N);
+            assert_eq!(bjt.saturation_amps, 2e-15);
+            assert_eq!(bjt.forward_knee_amps, 20e-3);
+            assert_eq!(bjt.base_ohms, 5.0);
+            assert_eq!(bjt.forward_early_volts, f64::INFINITY);
+            assert_eq!(bjt.thermal_volts, thermal_volts(35.0));
+        }
+        other => panic!("{other:?}"),
+    }
+    match &n.element("q2").unwrap().kind {
+        ElementKind::Bjt { bjt, .. } => assert_eq!(bjt.polarity, Polarity::P),
+        other => panic!("{other:?}"),
+    }
+    // The substrate node is read, not connected.
+    assert!(n.node("sub").is_none());
+    match &n.element("j1").unwrap().kind {
+        ElementKind::Jfet { jfet, .. } => {
+            assert_eq!(jfet.polarity, Polarity::P);
+            assert_eq!((jfet.beta, jfet.drain_ohms), (0.5e-3, 20.0));
+        }
+        other => panic!("{other:?}"),
+    }
+    match &n.element("m1").unwrap().kind {
+        ElementKind::Mosfet { mosfet, bulk, .. } => {
+            assert_eq!(*bulk, Node::GROUND);
+            // KP·W/(L − 2·LD) = 100µ · 30/8.
+            assert!((mosfet.beta - 375e-6).abs() < 1e-15, "{}", mosfet.beta);
+            assert_eq!(mosfet.body_effect, 0.5);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(n.unmodelled, ["qn: cje", "m1: ad"]);
+}
+
+#[test]
+fn what_the_transistors_cannot_solve_is_refused_by_name() {
+    let level =
+        Netlist::parse_spice("t\nM1 d g 0 0 M3\n.model M3 NMOS(LEVEL=3 VTO=1)\n").unwrap_err();
+    assert!(
+        matches!(&level, NetlistError::Unsupported { element, .. } if element == "m1"),
+        "{level:?}"
+    );
+    let derived = Netlist::parse_spice("t\nM1 d g 0 0 MX\n.model MX NMOS(TOX=10n)\n").unwrap_err();
+    assert!(matches!(derived, NetlistError::Unsupported { .. }), "{derived:?}");
+    let hot = Netlist::parse_spice("t\nR1 a 0 1\n.temp 50\n").unwrap_err();
+    assert!(matches!(hot, NetlistError::Unsupported { .. }), "{hot:?}");
+    let wrong = Netlist::parse_spice("t\nQ1 c b 0 DD\n.model DD D(IS=1n)\n").unwrap_err();
+    assert!(matches!(wrong, NetlistError::Syntax { line: 2, .. }), "{wrong:?}");
+    // An unused card of an unsolvable level is no error.
+    assert!(Netlist::parse_spice("t\nR1 a 0 1\n.model M3 NMOS(LEVEL=3)\n").is_ok());
+}

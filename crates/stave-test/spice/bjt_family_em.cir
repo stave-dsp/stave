@@ -1,0 +1,21 @@
+* Ebers-Moll output characteristics: a card with only IS, BF and BR
+* (no Early effect, roll-off, leakage or resistance), Ic against Vce
+* for base currents of 5, 10, 15, 20 and 25 uA, Vce 0 to 5 V in each
+* 2 ms segment, then down to -0.5 V (into reverse active) at the end.
+* Output: the collector current, as 1 V per mA (F1 into 1k).
+IB 0 b PWL(0 5u 1.985m 5u 1.995m 10u 3.985m 10u 3.995m 15u 5.985m 15u 5.995m 20u 7.985m 20u 7.995m 25u 9.5m 25u)
+VCE cc 0 PWL(0 0 1.985m 5 1.995m 0 3.985m 5 3.995m 0 5.985m 5 5.995m 0 7.985m 5 7.995m 0 9m 5 10m -0.5)
+VS cc c 0
+Q1 c b 0 QEM
+F1 0 s VS 1
+RS s 0 1k
+.model QEM NPN(IS=1e-14 BF=200 BR=2)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 10m 0 50n
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(s)
+.endc
+.end

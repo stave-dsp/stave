@@ -33,7 +33,10 @@
 //! op-amp clipper 296 vs 646, common cathode 1040 vs 1959 (the deck's
 //! B-source Koren law; 2062 with the Koren device), tone stack 9.7 vs
 //! 29. The general method costs 2–3× the hand derivation; a topology
-//! stays its own type where that matters.
+//! stays its own type where that matters. The transistor decks have no
+//! hand topology (stave-mini, 2026-11-12): Fuzz Face 3500
+//! (two Gummel–Poon AC128s, four controls, 7.4 iterations on ±0.3 V
+//! noise), CE stage 784, JFET booster 573.
 //!
 //! Learned anchors (M3, 2026-11-12): WaveNet at Neural Amp Modeler's
 //! standard size 2.2 µs/sample (12 + 6 channels 1.7), LSTM 1 x 16 0.32,
@@ -562,6 +565,27 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     bench("PassiveToneStack", input, |x| stack.tick(x));
     let mut stack_dk = dk(TONE_STACK, sr);
     bench("Circuit<Dk> tone stack", input, |x| stack_dk.tick(x));
+
+    // The transistor circuits (DSP.md E1, E2): no hand topology, the
+    // ngspice decks themselves with their sources driven by the noise.
+    println!("  transistor circuits: Circuit<Dk> on the ngspice decks");
+    let mut fuzz = deck(include_str!("../../stave-test/spice/fuzz_face.cir"), sr);
+    bench("Circuit<Dk> fuzz face", input, |x| fuzz.tick(x));
+    solve_health(&fuzz);
+    let mut ce = deck(include_str!("../../stave-test/spice/ce_stage.cir"), sr);
+    bench("Circuit<Dk> CE stage x0.2", input, |x| ce.tick(0.2 * x));
+    solve_health(&ce);
+    let mut jfet = deck(include_str!("../../stave-test/spice/jfet_booster.cir"), sr);
+    bench("Circuit<Dk> JFET booster", input, |x| jfet.tick(x));
+    solve_health(&jfet);
+}
+
+/// An ngspice deck as `Circuit<Dk>`, its `VIN` driven by the input.
+fn deck(text: &str, sr: f32) -> Circuit<Dk> {
+    let mut c = Circuit::<Dk>::new(&Netlist::parse_spice(text).unwrap()).unwrap();
+    c.drive("vin").unwrap();
+    c.prepare(sr);
+    c
 }
 
 /// The solve behind a `Circuit<Dk>` line: iterations per sample, cap

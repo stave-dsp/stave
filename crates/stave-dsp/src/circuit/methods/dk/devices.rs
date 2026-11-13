@@ -7,6 +7,9 @@ use crate::circuit::devices::diode::Junction;
 use crate::circuit::devices::opamp::Prepared;
 use crate::circuit::devices::ota::{BipolarPair, Ota};
 use crate::circuit::devices::pentode::{koren::Koren as PentodeKoren, Pentode};
+use crate::circuit::devices::bjt::{Bjt, GummelPoon};
+use crate::circuit::devices::jfet::{self, Jfet};
+use crate::circuit::devices::mosfet::{self, Mosfet};
 use crate::circuit::devices::triode::{Triode, Tube};
 use crate::circuit::netlist::expr::{Dual, Tape, MAX_CONTROLS};
 
@@ -33,6 +36,15 @@ pub(crate) enum Device {
     /// Controls (`v(+, −)`, the bias junction); outputs (the current into
     /// the output node, the bias junction's current less its shunt).
     Ota(BipolarPair),
+    /// Controls (base–emitter, base–collector), each junction shunted
+    /// like a diode's; outputs (collector, base).
+    Bjt(GummelPoon),
+    /// Controls (gate–source, gate–drain), the gate junctions shunted;
+    /// outputs (drain, gate).
+    Jfet(jfet::ShichmanHodges),
+    /// Controls (gate–source, drain–source[, bulk–source]); output the
+    /// drain current. `bulk` is false with the bulk tied to the source.
+    Mosfet { mosfet: mosfet::ShichmanHodges, bulk: bool },
     /// Controls as the tape numbers them; one output.
     Expression { tape: Tape, stack: Vec<Dual> },
 }
@@ -110,6 +122,41 @@ impl Nonlinear {
                 jq[o * nv + gb] += c.output_per_bias_volt * sb;
                 jq[(o + 1) * nv + gb] += (c.bias_per_bias_volt - SHUNT) * sb;
             }
+            Device::Bjt(t) => {
+                let (vbe, vbc) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
+                let c = t.currents(vbe, vbc);
+                let ((ge, se), (gc, sc)) = (self.controls[0], self.controls[1]);
+                q[o] = c.collector + SHUNT * vbc;
+                q[o + 1] = c.base - SHUNT * (vbe + vbc);
+                jq[o * nv + ge] += c.collector_per_vbe * se;
+                jq[o * nv + gc] += (c.collector_per_vbc + SHUNT) * sc;
+                jq[(o + 1) * nv + ge] += (c.base_per_vbe - SHUNT) * se;
+                jq[(o + 1) * nv + gc] += (c.base_per_vbc - SHUNT) * sc;
+            }
+            Device::Jfet(t) => {
+                let (vgs, vgd) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
+                let c = t.currents(vgs, vgd);
+                let ((gs, ss), (gd, sd)) = (self.controls[0], self.controls[1]);
+                q[o] = c.drain + SHUNT * vgd;
+                q[o + 1] = c.gate - SHUNT * (vgs + vgd);
+                jq[o * nv + gs] += c.drain_per_vgs * ss;
+                jq[o * nv + gd] += (c.drain_per_vgd + SHUNT) * sd;
+                jq[(o + 1) * nv + gs] += (c.gate_per_vgs - SHUNT) * ss;
+                jq[(o + 1) * nv + gd] += (c.gate_per_vgd - SHUNT) * sd;
+            }
+            Device::Mosfet { mosfet, bulk } => {
+                let (vgs, vds) = (sign_read(&self.controls, v, 0), sign_read(&self.controls, v, 1));
+                let vbs = if *bulk { sign_read(&self.controls, v, 2) } else { 0.0 };
+                let c = mosfet.currents(vgs, vds, vbs);
+                let ((gg, sg), (gd, sd)) = (self.controls[0], self.controls[1]);
+                q[o] = c.drain;
+                jq[o * nv + gg] += c.drain_per_vgs * sg;
+                jq[o * nv + gd] += c.drain_per_vds * sd;
+                if *bulk {
+                    let (gb, sb) = self.controls[2];
+                    jq[o * nv + gb] += c.drain_per_vbs * sb;
+                }
+            }
             Device::Expression { tape, stack } => {
                 let mut local = [0.0; MAX_CONTROLS];
                 for (i, &(g, sign)) in self.controls.iter().enumerate() {
@@ -126,6 +173,12 @@ impl Nonlinear {
 
     /// Bound a Newton step from `old` to `new` (a junction's `pnjlim`).
     pub fn limit(&self, new: &mut [f64], old: &[f64]) {
+        let pair = |limit: &dyn Fn([f64; 2], [f64; 2]) -> [f64; 2], new: &mut [f64]| {
+            let ((a, sa), (b, sb)) = (self.controls[0], self.controls[1]);
+            let l = limit([sa * new[a], sb * new[b]], [self.local(old, 0), self.local(old, 1)]);
+            new[a] = sa * l[0];
+            new[b] = sb * l[1];
+        };
         match &self.device {
             Device::Diode(d) => {
                 let (g, sign) = self.controls[0];
@@ -137,6 +190,8 @@ impl Nonlinear {
                 let limited = a.limit_bias_step(sign * new[g], self.local(old, 1));
                 new[g] = sign * limited;
             }
+            Device::Bjt(t) => pair(&|n, o| t.limit_step(n, o), new),
+            Device::Jfet(t) => pair(&|n, o| t.limit_step(n, o), new),
             _ => {}
         }
     }

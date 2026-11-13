@@ -156,4 +156,32 @@ mod dk {
             0.05 + 0.04 * (std::f64::consts::TAU * 7.0 * n as f64 / RATE).sin()
         });
     }
+
+    // The transistor circuits (DSP.md E1, E2), each well past the level
+    // its ngspice deck is driven at.
+
+    #[test]
+    fn fuzz_face_converges_at_the_host_rate() {
+        run("fuzz face", &deck("fuzz_face"), "vin", |n| hot(n, 2.0));
+    }
+
+    #[test]
+    fn rangemaster_converges_at_the_host_rate() {
+        run("rangemaster", &deck("rangemaster"), "vin", |n| hot(n, 3.0));
+    }
+
+    #[test]
+    fn ce_stage_converges_at_the_host_rate() {
+        run("CE stage", &deck("ce_stage"), "vin", |n| hot(n, 2.0));
+    }
+
+    #[test]
+    fn jfet_booster_converges_at_the_host_rate() {
+        run("JFET booster", &deck("jfet_booster"), "vin", |n| hot(n, 4.0));
+    }
+
+    #[test]
+    fn mosfet_booster_converges_at_the_host_rate() {
+        run("MOSFET booster", &deck("mosfet_booster"), "vin", |n| hot(n, 8.0));
+    }
 }

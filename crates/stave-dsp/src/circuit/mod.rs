@@ -1,9 +1,9 @@
 //! **Layer 4 — circuit.** Models derived from schematics, in separate
 //! concerns so any circuit can be solved any supported way:
 //!
-//! - [`devices`] — one module per device family (diode, triode,
-//!   magnetic), one trait per family that every published model of it
-//!   implements, parts as constants;
+//! - [`devices`] — one module per device family (diode, BJT, JFET,
+//!   MOSFET, triode, magnetic), one trait per family that every
+//!   published model of it implements, parts as constants;
 //! - [`netlist`] — a circuit as data ([`Netlist`]): nodes, elements, and
 //!   the SPICE subset the ngspice decks are written in;
 //! - [`methods`] — how a circuit is solved: the nodal DK method for any

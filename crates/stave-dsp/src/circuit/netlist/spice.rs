@@ -7,8 +7,15 @@
 //!   `PWL(…)`), `E` (VCVS), `F` (CCCS), `G` (VCCS), `D` with a
 //!   `.model … D(…)` card (`IS`, `N`, `RS`, and breakdown `BV`, `IBV`,
 //!   `NBV` with ngspice's defaults; capacitance, transit time and the
-//!   rest are accepted and listed in [`Netlist::unmodelled`]), and `B` sources
-//!   (`V = {…}` or `I = {…}`, see [`Expr`]);
+//!   rest are accepted and listed in [`Netlist::unmodelled`]), `B` sources
+//!   (`V = {…}` or `I = {…}`, see [`Expr`]), and transistors at level
+//!   1: `Q` with an `NPN`/`PNP` card (Gummel–Poon's DC parameters),
+//!   `J` with `NJF`/`PJF` (Shichman–Hodges), `M` with `NMOS`/`PMOS`
+//!   (the square law, `W`/`L`/`M` on the element), each with an
+//!   optional area factor where SPICE has one; capacitances and noise
+//!   parameters are accepted and listed in [`Netlist::unmodelled`];
+//! - `.temp` or `.options temp= tnom=` (equal: model cards are read at
+//!   the circuit's temperature, with no temperature scaling);
 //! - `.param`, `.model`, `.tran … [UIC]`, `.ac dec …`, and a `.control`
 //!   block's `wrdata FILE v(a[, b])` (or `vm(…)`) as the probe;
 //!   `.options`, `.op`, `.end` and other control lines are skipped.
@@ -18,7 +25,9 @@
 
 use super::expr::{Expr, Scope};
 use super::{Ac, ElementKind, Netlist, NetlistError, Node, Probe, Signal, Source, Tran};
-use crate::circuit::devices::diode::{Breakdown, Shockley};
+use crate::circuit::devices::bjt::GummelPoon;
+use crate::circuit::devices::diode::{Breakdown, Shockley, THERMAL_VOLTS_27C};
+use crate::circuit::devices::{jfet, mosfet, thermal_volts, Polarity};
 
 /// A SPICE number: `2.2k`, `1meg`, `20.8333333u`, `1e-3`, `10uF`.
 pub fn value(word: &str) -> Result<f64, String> {
@@ -189,8 +198,16 @@ fn lines(text: &str) -> Result<(String, Vec<Line>, Vec<Line>), NetlistError> {
     Ok((title, deck, control))
 }
 
-struct Model {
-    diode: Shockley,
+/// A `.model` card, read at the netlist's temperature.
+enum Model {
+    Diode(Shockley),
+    Bjt(GummelPoon),
+    Jfet(jfet::ShichmanHodges),
+    /// `beta` holds `KP` until an element's `W/L` scales it.
+    Mosfet { mosfet: mosfet::ShichmanHodges, lateral_diffusion: f64 },
+    /// A card this subset reads but cannot solve, and why: an error only
+    /// if an element uses it.
+    Unsupported(String),
 }
 
 impl Netlist {
@@ -201,12 +218,16 @@ impl Netlist {
         netlist.title = title;
         let mut params: Vec<(String, f64)> = Vec::new();
         let mut models: Vec<(String, Model)> = Vec::new();
-        // Parameters and models first: SPICE allows use before definition.
+        // The temperature, then parameters and models: SPICE allows use
+        // before definition, and cards are read at the temperature.
+        let temp = temperature(&deck)?;
+        netlist.temperature_celsius = temp;
+        let thermal = temp.map_or(THERMAL_VOLTS_27C, thermal_volts);
         for line in &deck {
             match line.tokens[0].word() {
                 Some(".param") => parse_params(line, &mut params)?,
                 Some(".model") => {
-                    if let Some(model) = parse_model(line, &mut netlist)? {
+                    if let Some(model) = parse_model(line, thermal, &mut netlist)? {
                         models.push(model);
                     }
                 }
@@ -278,41 +299,207 @@ fn parse_params(line: &Line, params: &mut Vec<(String, f64)>) -> Result<(), Netl
     Ok(())
 }
 
-fn parse_model(line: &Line, netlist: &mut Netlist) -> Result<Option<(String, Model)>, NetlistError> {
-    let t = &line.tokens;
-    let (Some(name), Some(kind)) = (t.get(1).and_then(Token::word), t.get(2).and_then(Token::word))
-    else {
-        return Err(syntax(line, "expected .model NAME TYPE(...)"));
-    };
-    if kind != "d" {
-        return Ok(None);
+/// The circuit temperature from `.temp` or `.options temp=`, which must
+/// equal `tnom` (cards are read as written: no temperature scaling).
+fn temperature(deck: &[Line]) -> Result<Option<f64>, NetlistError> {
+    let (mut temp, mut tnom) = (None, None);
+    for line in deck {
+        let t = &line.tokens;
+        match t[0].word() {
+            Some(".temp") => temp = Some(number(line, t.get(1), &[])?),
+            Some(".options" | ".option" | ".opt") => {
+                for i in 1..t.len() {
+                    if let (Some(key @ ("temp" | "tnom")), Some(Token::Equals)) =
+                        (t[i].word(), t.get(i + 1))
+                    {
+                        let x = Some(number(line, t.get(i + 2), &[])?);
+                        if key == "temp" {
+                            temp = x;
+                        } else {
+                            tnom = x;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
-    let mut diode = Shockley::DEFAULT;
-    let (mut bv, mut ibv, mut nbv) = (None, 1e-3, None);
+    if temp.unwrap_or(27.0) != tnom.unwrap_or(27.0) {
+        return Err(NetlistError::Unsupported {
+            element: ".options".into(),
+            reason: "temp and tnom differ: temperature scaling of model cards is not modelled".into(),
+        });
+    }
+    Ok(temp)
+}
+
+/// A card's `KEY=value` pairs.
+fn model_parameters(line: &Line) -> Result<Vec<(String, f64)>, NetlistError> {
+    let t = &line.tokens;
+    let mut out = Vec::new();
     let mut i = 3;
     while i < t.len() {
         let (Some(key), Some(Token::Equals)) = (t[i].word(), t.get(i + 1)) else {
             return Err(syntax(line, "expected PARAM=value in a .model card"));
         };
-        let x = number(line, t.get(i + 2), &[])?;
-        match key {
-            "is" => diode.saturation_amps = x,
-            "n" => diode.emission = x,
-            "rs" => diode.series_ohms = x,
-            "bv" => bv = Some(x),
-            "ibv" | "ib" => ibv = x,
-            "nbv" => nbv = Some(x),
-            _ => netlist.unmodelled.push(format!("{name}: {key}")),
-        }
+        out.push((key.to_string(), number(line, t.get(i + 2), &[])?));
         i += 3;
     }
-    // ngspice's defaults: IBV 1 mA, NBV the card's N.
-    diode.breakdown = bv.map(|volts| Breakdown {
-        volts,
-        amps: ibv,
-        emission: nbv.unwrap_or(diode.emission),
-    });
-    let model = Model { diode };
+    Ok(out)
+}
+
+/// SPICE's "zero means none" for Early voltages and knee currents.
+fn infinite_at_zero(x: f64) -> f64 {
+    if x == 0.0 {
+        f64::INFINITY
+    } else {
+        x
+    }
+}
+
+fn parse_model(
+    line: &Line,
+    thermal: f64,
+    netlist: &mut Netlist,
+) -> Result<Option<(String, Model)>, NetlistError> {
+    let t = &line.tokens;
+    let (Some(name), Some(kind)) = (t.get(1).and_then(Token::word), t.get(2).and_then(Token::word))
+    else {
+        return Err(syntax(line, "expected .model NAME TYPE(...)"));
+    };
+    if !matches!(kind, "d" | "npn" | "pnp" | "njf" | "pjf" | "nmos" | "pmos") {
+        return Ok(None);
+    }
+    let parameters = model_parameters(line)?;
+    let level = parameters
+        .iter()
+        .find(|(k, _)| k == "level")
+        .map_or(1.0, |&(_, x)| x);
+    let mut skipped = Vec::new();
+    let model = match kind {
+        "d" => {
+            let mut diode = Shockley {
+                thermal_volts: thermal,
+                ..Shockley::DEFAULT
+            };
+            let (mut bv, mut ibv, mut nbv) = (None, 1e-3, None);
+            for (key, x) in &parameters {
+                let x = *x;
+                match key.as_str() {
+                    "is" => diode.saturation_amps = x,
+                    "n" => diode.emission = x,
+                    "rs" => diode.series_ohms = x,
+                    "bv" => bv = Some(x),
+                    "ibv" | "ib" => ibv = x,
+                    "nbv" => nbv = Some(x),
+                    _ => skipped.push(key),
+                }
+            }
+            // ngspice's defaults: IBV 1 mA, NBV the card's N.
+            diode.breakdown = bv.map(|volts| Breakdown {
+                volts,
+                amps: ibv,
+                emission: nbv.unwrap_or(diode.emission),
+            });
+            Model::Diode(diode)
+        }
+        _ if level != 1.0 => Model::Unsupported(format!(
+            "level {level}: only level 1 (Gummel–Poon, Shichman–Hodges, the square law)"
+        )),
+        "npn" | "pnp" => {
+            let mut q = GummelPoon {
+                polarity: if kind == "npn" { Polarity::N } else { Polarity::P },
+                thermal_volts: thermal,
+                ..GummelPoon::DEFAULT_NPN
+            };
+            for (key, x) in &parameters {
+                let x = *x;
+                match key.as_str() {
+                    "level" => {}
+                    "is" => q.saturation_amps = x,
+                    "bf" => q.forward_beta = x,
+                    "br" => q.reverse_beta = x,
+                    "nf" => q.forward_emission = x,
+                    "nr" => q.reverse_emission = x,
+                    "vaf" | "va" => q.forward_early_volts = infinite_at_zero(x),
+                    "var" | "vb" => q.reverse_early_volts = infinite_at_zero(x),
+                    "ikf" | "ik" => q.forward_knee_amps = infinite_at_zero(x),
+                    "ikr" => q.reverse_knee_amps = infinite_at_zero(x),
+                    "ise" => q.emitter_leakage_amps = x,
+                    "ne" => q.emitter_leakage_emission = x,
+                    "isc" => q.collector_leakage_amps = x,
+                    "nc" => q.collector_leakage_emission = x,
+                    "rb" => q.base_ohms = x,
+                    "re" => q.emitter_ohms = x,
+                    "rc" => q.collector_ohms = x,
+                    _ => skipped.push(key),
+                }
+            }
+            Model::Bjt(q)
+        }
+        "njf" | "pjf" => {
+            let mut j = jfet::ShichmanHodges {
+                polarity: if kind == "njf" { Polarity::N } else { Polarity::P },
+                thermal_volts: thermal,
+                ..jfet::ShichmanHodges::DEFAULT_N
+            };
+            for (key, x) in &parameters {
+                let x = *x;
+                match key.as_str() {
+                    "level" => {}
+                    "vto" | "vt0" => j.threshold_volts = x,
+                    "beta" => j.beta = x,
+                    "lambda" => j.channel_modulation = x,
+                    "is" => j.saturation_amps = x,
+                    "n" => j.emission = x,
+                    "rd" => j.drain_ohms = x,
+                    "rs" => j.source_ohms = x,
+                    _ => skipped.push(key),
+                }
+            }
+            Model::Jfet(j)
+        }
+        _ => {
+            let mut m = mosfet::ShichmanHodges {
+                polarity: if kind == "nmos" { Polarity::N } else { Polarity::P },
+                ..mosfet::ShichmanHodges::DEFAULT_N
+            };
+            let given = |k: &str| parameters.iter().any(|(p, _)| p == k);
+            let derived = if given("tox") && !given("kp") {
+                Some("KP from TOX and UO")
+            } else if given("nsub") && !(given("vto") && given("gamma") && given("phi")) {
+                Some("VTO, GAMMA or PHI from NSUB")
+            } else {
+                None
+            };
+            let mut lateral_diffusion = 0.0;
+            for (key, x) in &parameters {
+                let x = *x;
+                match key.as_str() {
+                    "level" => {}
+                    "vto" | "vt0" => m.threshold_volts = x,
+                    "kp" => m.beta = x,
+                    "gamma" => m.body_effect = x,
+                    "phi" => m.surface_potential = x,
+                    "lambda" => m.channel_modulation = x,
+                    "rd" => m.drain_ohms = x,
+                    "rs" => m.source_ohms = x,
+                    "ld" => lateral_diffusion = x,
+                    _ => skipped.push(key),
+                }
+            }
+            match derived {
+                Some(what) => Model::Unsupported(format!("derives {what}: give them in the card")),
+                None => Model::Mosfet {
+                    mosfet: m,
+                    lateral_diffusion,
+                },
+            }
+        }
+    };
+    for key in skipped {
+        netlist.unmodelled.push(format!("{name}: {key}"));
+    }
     Ok(Some((name.to_string(), model)))
 }
 
@@ -483,24 +670,30 @@ fn parse_element(
         },
         b'd' => {
             let (anode, cathode) = (node(line, t.get(1), netlist)?, node(line, t.get(2), netlist)?);
-            let model_name = t
-                .get(3)
-                .and_then(Token::word)
-                .ok_or_else(|| syntax(line, "expected a model name"))?;
-            let model = models
-                .iter()
-                .find(|(n, _)| n == model_name)
-                .map(|(_, m)| m)
-                .ok_or_else(|| NetlistError::UnknownModel {
-                    line: line.number,
-                    model: model_name.to_string(),
-                })?;
+            let Model::Diode(diode) = model(line, name, t.get(3), models)? else {
+                return Err(wrong_model(line, "a D element", t.get(3)));
+            };
             ElementKind::Diode {
                 anode,
                 cathode,
-                diode: model.diode,
+                diode: *diode,
             }
         }
+        b'q' => parse_bjt(line, name, models, netlist)?,
+        b'j' => {
+            let nodes = [1, 2, 3].map(|i| t.get(i));
+            let Model::Jfet(jfet) = model(line, name, t.get(4), models)? else {
+                return Err(wrong_model(line, "a J element", t.get(4)));
+            };
+            let area = area(line, t.get(5..).unwrap_or(&[]))?;
+            ElementKind::Jfet {
+                drain: node(line, nodes[0], netlist)?,
+                gate: node(line, nodes[1], netlist)?,
+                source: node(line, nodes[2], netlist)?,
+                jfet: jfet.with_area(area),
+            }
+        }
+        b'm' => parse_mosfet(line, name, models, netlist)?,
         b'b' => {
             let (a, b) = (node(line, t.get(1), netlist)?, node(line, t.get(2), netlist)?);
             let (Some(which), Some(Token::Equals), Some(Token::Braced(text))) =
@@ -525,11 +718,139 @@ fn parse_element(
         _ => {
             return Err(syntax(
                 line,
-                &format!("element `{name}`: its type is not in the subset (R C L V I E F G D B)"),
+                &format!("element `{name}`: its type is not in the subset (R C L V I E F G D B Q J M)"),
             ))
         }
     };
     netlist.add(name, kind)
+}
+
+/// The card an element names.
+fn model<'m>(
+    line: &Line,
+    element: &str,
+    token: Option<&Token>,
+    models: &'m [(String, Model)],
+) -> Result<&'m Model, NetlistError> {
+    let name = token
+        .and_then(Token::word)
+        .ok_or_else(|| syntax(line, "expected a model name"))?;
+    match models.iter().find(|(n, _)| n == name).map(|(_, m)| m) {
+        None => Err(NetlistError::UnknownModel {
+            line: line.number,
+            model: name.to_string(),
+        }),
+        Some(Model::Unsupported(reason)) => Err(NetlistError::Unsupported {
+            element: element.to_string(),
+            reason: format!(".model {name}: {reason}"),
+        }),
+        Some(m) => Ok(m),
+    }
+}
+
+fn wrong_model(line: &Line, what: &str, token: Option<&Token>) -> NetlistError {
+    let name = token.and_then(Token::word).unwrap_or("");
+    syntax(line, &format!("{what} needs a model of its own type, not .model {name}"))
+}
+
+/// An optional area factor (`… model [area] [OFF]`), 1 when absent.
+fn area(line: &Line, rest: &[Token]) -> Result<f64, NetlistError> {
+    let mut area = 1.0;
+    for (i, token) in rest.iter().enumerate() {
+        match token {
+            Token::Word(w) if w == "off" => {}
+            Token::Word(w) if i == 0 && value(w).is_ok() => area = number(line, Some(token), &[])?,
+            _ => return Err(syntax(line, "after the model: an area factor and OFF only")),
+        }
+    }
+    if area > 0.0 {
+        Ok(area)
+    } else {
+        Err(syntax(line, "the area factor must be positive"))
+    }
+}
+
+/// `Qname collector base emitter [substrate] model [area] [OFF]`. The
+/// substrate junction carries no DC current (`ISS` = 0), so its node is
+/// read but not connected.
+fn parse_bjt(
+    line: &Line,
+    name: &str,
+    models: &[(String, Model)],
+    netlist: &mut Netlist,
+) -> Result<ElementKind, NetlistError> {
+    let t = &line.tokens;
+    let names_a_model = |i: usize| {
+        t.get(i)
+            .and_then(Token::word)
+            .is_some_and(|w| models.iter().any(|(n, _)| n == w))
+    };
+    let at = if names_a_model(4) || !names_a_model(5) { 4 } else { 5 };
+    let Model::Bjt(bjt) = model(line, name, t.get(at), models)? else {
+        return Err(wrong_model(line, "a Q element", t.get(at)));
+    };
+    let area = area(line, t.get(at + 1..).unwrap_or(&[]))?;
+    Ok(ElementKind::Bjt {
+        collector: node(line, t.get(1), netlist)?,
+        base: node(line, t.get(2), netlist)?,
+        emitter: node(line, t.get(3), netlist)?,
+        bjt: bjt.with_area(area),
+    })
+}
+
+/// `Mname drain gate source bulk model [L=…] [W=…] [M=…]`; the default
+/// channel is SPICE's 100 µm × 100 µm. Geometry for capacitances (`AD`,
+/// `AS`, `PD`, `PS`, `NRD`, `NRS`) is listed in `unmodelled`.
+fn parse_mosfet(
+    line: &Line,
+    name: &str,
+    models: &[(String, Model)],
+    netlist: &mut Netlist,
+) -> Result<ElementKind, NetlistError> {
+    let t = &line.tokens;
+    let Model::Mosfet {
+        mosfet,
+        lateral_diffusion,
+    } = model(line, name, t.get(5), models)?
+    else {
+        return Err(wrong_model(line, "an M element", t.get(5)));
+    };
+    let (mut length, mut width, mut multiplier) = (100e-6, 100e-6, 1.0);
+    let rest = t.get(6..).unwrap_or(&[]);
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i].word() == Some("off") {
+            i += 1;
+            continue;
+        }
+        let (Some(key), Some(Token::Equals)) = (rest[i].word(), rest.get(i + 1)) else {
+            return Err(syntax(line, "expected KEY=value after an M element's model"));
+        };
+        let x = number(line, rest.get(i + 2), &[])?;
+        match key {
+            "l" => length = x,
+            "w" => width = x,
+            "m" => multiplier = x,
+            _ => netlist.unmodelled.push(format!("{name}: {key}")),
+        }
+        i += 3;
+    }
+    let effective = length - 2.0 * lateral_diffusion;
+    if effective <= 0.0 || width <= 0.0 || multiplier <= 0.0 {
+        return Err(syntax(line, "W, M and L − 2·LD must be positive"));
+    }
+    Ok(ElementKind::Mosfet {
+        drain: node(line, t.get(1), netlist)?,
+        gate: node(line, t.get(2), netlist)?,
+        source: node(line, t.get(3), netlist)?,
+        bulk: node(line, t.get(4), netlist)?,
+        mosfet: mosfet::ShichmanHodges {
+            beta: mosfet.beta * width / effective * multiplier,
+            drain_ohms: mosfet.drain_ohms / multiplier,
+            source_ohms: mosfet.source_ohms / multiplier,
+            ..*mosfet
+        },
+    })
 }
 
 fn parse_probe(line: &Line, netlist: &Netlist) -> Result<Probe, NetlistError> {

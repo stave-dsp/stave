@@ -1,0 +1,24 @@
+* BSS138 output characteristics: Id against Vds for gate voltages of
+* 2.2, 2.5, 2.8, 3.1 and 3.4 V above ground (Diodes Inc.'s level-1
+* card, its DC parameters). The source sits 0.5 V above the grounded
+* bulk, so the body effect (GAMMA 1.49) raises the threshold. Each 2 ms
+* segment ramps the drain from 0.2 V (the channel reversed) to 5.5 V;
+* no reactive parts, so every point is a DC solution. Output: the drain
+* current, as 1 V per mA (F1 into 1k).
+VG g 0 PWL(0 2.2 1.985m 2.2 1.995m 2.5 3.985m 2.5 3.995m 2.8 5.985m 2.8 5.995m 3.1 7.985m 3.1 7.995m 3.4 10m 3.4)
+VD dd 0 PWL(0 0.2 1.985m 5.5 1.995m 0.2 3.985m 5.5 3.995m 0.2 5.985m 5.5 5.995m 0.2 7.985m 5.5 7.995m 0.2 10m 5.5)
+VSRC src 0 0.5
+VS dd d 0
+M1 d g src 0 BSS138 L=100u W=100u
+F1 0 s VS 1
+RS s 0 1k
+.model BSS138 NMOS(LEVEL=1 VTO=1.2 KP=7.50m GAMMA=1.49 PHI=.75 LAMBDA=1.25m RD=0.196 RS=0.196)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 10m 0 50n
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(s)
+.endc
+.end

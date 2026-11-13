@@ -89,6 +89,18 @@ impl<'a> Builder<'a> {
         (self.controls.len() - 1, 1.0)
     }
 
+    /// A device terminal behind `ohms` of ohmic resistance: the internal
+    /// node, joined to the external pin; the pin itself without one.
+    fn terminal(&mut self, external: Pin, internal: Option<usize>, ohms: f64) -> Pin {
+        match internal {
+            Some(node) => {
+                self.conductance(external, Some(node), 1.0 / ohms);
+                Some(node)
+            }
+            None => external,
+        }
+    }
+
     fn device(&mut self, device: Device, controls: &[(Pin, Pin)], outputs: &[&[(Pin, f64)]]) {
         let controls = controls.iter().map(|&(a, b)| self.control(a, b)).collect();
         let output = self.nq;
@@ -120,19 +132,16 @@ impl<'a> Builder<'a> {
         let netlist = self.netlist;
         let elements = netlist.elements();
         let nodes = netlist.node_count() - 1;
-        // Internal nodes (a diode's series resistance, a macromodel's gain
-        // node), then branch rows.
-        let mut internal = vec![None; elements.len()];
+        // Internal nodes (behind a device's ohmic resistances, a
+        // macromodel's gain node), then branch rows.
+        let mut internal = vec![[None; 3]; elements.len()];
         let mut next = nodes;
         for (i, e) in elements.iter().enumerate() {
-            let needs = match &e.kind {
-                ElementKind::Diode { diode, .. } => diode.series_ohms > 0.0,
-                ElementKind::OpAmp { amp, .. } => matches!(amp, Amp::Macromodel(_)),
-                _ => false,
-            };
-            if needs {
-                internal[i] = Some(next);
-                next += 1;
+            for (k, needs) in internal_nodes(&e.kind).into_iter().enumerate() {
+                if needs {
+                    internal[i][k] = Some(next);
+                    next += 1;
+                }
             }
         }
         let node_total = next;
@@ -235,13 +244,7 @@ impl<'a> Builder<'a> {
                     cathode,
                     diode,
                 } => {
-                    let junction = match internal[i] {
-                        Some(node) => {
-                            self.conductance(pin(*anode), Some(node), 1.0 / diode.series_ohms);
-                            Some(node)
-                        }
-                        None => pin(*anode),
-                    };
+                    let junction = self.terminal(pin(*anode), internal[i][0], diode.series_ohms);
                     let k = pin(*cathode);
                     self.conductance(junction, k, SHUNT);
                     self.device(
@@ -296,7 +299,7 @@ impl<'a> Builder<'a> {
                         }
                         // A unity buffer of the gain node.
                         Amp::Macromodel(m) => {
-                            let n = internal[i];
+                            let n = internal[i][0];
                             self.add(r, out, 1.0);
                             self.add(r, n, -1.0);
                             let stage = m.prepare(supply.0, supply.1);
@@ -327,6 +330,65 @@ impl<'a> Builder<'a> {
                         &[(plus, minus), (b, neg)],
                         &[&[(out, 1.0)], &[(b, -1.0), (neg, 1.0)]],
                     );
+                }
+                ElementKind::Bjt {
+                    collector,
+                    base,
+                    emitter,
+                    bjt,
+                } => {
+                    let c = self.terminal(pin(*collector), internal[i][0], bjt.collector_ohms);
+                    let b = self.terminal(pin(*base), internal[i][1], bjt.base_ohms);
+                    let e = self.terminal(pin(*emitter), internal[i][2], bjt.emitter_ohms);
+                    self.conductance(b, e, SHUNT);
+                    self.conductance(b, c, SHUNT);
+                    self.device(
+                        Device::Bjt(*bjt),
+                        &[(b, e), (b, c)],
+                        &[&[(c, -1.0), (e, 1.0)], &[(b, -1.0), (e, 1.0)]],
+                    );
+                }
+                ElementKind::Jfet {
+                    drain,
+                    gate,
+                    source,
+                    jfet,
+                } => {
+                    let d = self.terminal(pin(*drain), internal[i][0], jfet.drain_ohms);
+                    let g = pin(*gate);
+                    let s = self.terminal(pin(*source), internal[i][2], jfet.source_ohms);
+                    self.conductance(g, s, SHUNT);
+                    self.conductance(g, d, SHUNT);
+                    self.device(
+                        Device::Jfet(*jfet),
+                        &[(g, s), (g, d)],
+                        &[&[(d, -1.0), (s, 1.0)], &[(g, -1.0), (s, 1.0)]],
+                    );
+                }
+                ElementKind::Mosfet {
+                    drain,
+                    gate,
+                    source,
+                    bulk,
+                    mosfet,
+                } => {
+                    let d = self.terminal(pin(*drain), internal[i][0], mosfet.drain_ohms);
+                    let g = pin(*gate);
+                    let s = self.terminal(pin(*source), internal[i][2], mosfet.source_ohms);
+                    let b = pin(*bulk);
+                    // vbs is read at the intrinsic source, as SPICE does:
+                    // a bulk tied to the source still sees −Id·RS.
+                    let tied = b == s;
+                    let device = Device::Mosfet {
+                        mosfet: *mosfet,
+                        bulk: !tied,
+                    };
+                    let column: &[(Pin, f64)] = &[(d, -1.0), (s, 1.0)];
+                    if tied {
+                        self.device(device, &[(g, s), (d, s)], &[column]);
+                    } else {
+                        self.device(device, &[(g, s), (d, s), (b, s)], &[column]);
+                    }
                 }
                 ElementKind::BehaviouralCurrent { a, b, expression } => {
                     let (a, b) = (pin(*a), pin(*b));
@@ -405,6 +467,22 @@ impl<'a> Builder<'a> {
             settings,
             health: Health::default(),
         })
+    }
+}
+
+/// Which of an element's internal node slots it needs: behind a diode's
+/// series resistance (anode), a BJT's (collector, base, emitter) or a
+/// FET's (drain, —, source) ohmic resistances when positive, and a
+/// macromodel op-amp's gain node.
+fn internal_nodes(kind: &ElementKind) -> [bool; 3] {
+    let ohmic = |r: [f64; 3]| r.map(|ohms| ohms > 0.0);
+    match kind {
+        ElementKind::Diode { diode, .. } => ohmic([diode.series_ohms, 0.0, 0.0]),
+        ElementKind::OpAmp { amp, .. } => [matches!(amp, Amp::Macromodel(_)), false, false],
+        ElementKind::Bjt { bjt, .. } => ohmic([bjt.collector_ohms, bjt.base_ohms, bjt.emitter_ohms]),
+        ElementKind::Jfet { jfet, .. } => ohmic([jfet.drain_ohms, 0.0, jfet.source_ohms]),
+        ElementKind::Mosfet { mosfet, .. } => ohmic([mosfet.drain_ohms, 0.0, mosfet.source_ohms]),
+        _ => [false; 3],
     }
 }
 

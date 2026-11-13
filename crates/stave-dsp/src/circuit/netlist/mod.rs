@@ -31,6 +31,7 @@ use crate::circuit::devices::opamp::Amp;
 use crate::circuit::devices::ota::BipolarPair;
 use crate::circuit::devices::pentode::koren::Koren as PentodeKoren;
 use crate::circuit::devices::triode::Tube;
+use crate::circuit::devices::{bjt, jfet, mosfet};
 pub use expr::Expr;
 
 /// A node of a [`Netlist`]; [`Node::GROUND`] is SPICE's `0`.
@@ -117,6 +118,30 @@ pub enum ElementKind {
         anode: Node,
         cathode: Node,
         diode: Shockley,
+    },
+    /// SPICE `Q`: a BJT, its card's area factor applied. The ohmic
+    /// resistances in the model become resistors to internal nodes.
+    Bjt {
+        collector: Node,
+        base: Node,
+        emitter: Node,
+        bjt: bjt::GummelPoon,
+    },
+    /// SPICE `J`: a JFET, its area factor applied.
+    Jfet {
+        drain: Node,
+        gate: Node,
+        source: Node,
+        jfet: jfet::ShichmanHodges,
+    },
+    /// SPICE `M`: a level-1 MOSFET, the element's `W/L` folded into
+    /// the model's `beta`.
+    Mosfet {
+        drain: Node,
+        gate: Node,
+        source: Node,
+        bulk: Node,
+        mosfet: mosfet::ShichmanHodges,
     },
     /// A triode by stave's device models (no SPICE spelling; built in code).
     Triode {
@@ -301,6 +326,11 @@ pub struct Netlist {
     pub ac: Option<Ac>,
     /// The voltage the deck writes out (`wrdata … v(a, b)`).
     pub probe: Option<Probe>,
+    /// The circuit's temperature in °C (`.temp` or `.options temp=`),
+    /// which sets the junctions' thermal voltage; `None` is SPICE's
+    /// 27 °C. Model cards are read at this temperature (`tnom` must
+    /// match: temperature scaling is not modelled).
+    pub temperature_celsius: Option<f64>,
     /// Model-card parameters the parser accepted but no stave element
     /// models (a diode's junction capacitance, transit time),
     /// as `model: parameter` — so what a comparison leaves out is on

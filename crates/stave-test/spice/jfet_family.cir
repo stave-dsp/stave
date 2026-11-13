@@ -1,0 +1,22 @@
+* J201 output characteristics: Id against Vds for gate voltages of 0,
+* -0.2, -0.4, -0.6 and -0.8 V (Siliconix's card, its DC parameters,
+* RD 112 and RS 101 ohms included). Each 2 ms segment ramps Vds from
+* -0.3 V (the channel reversed) to 5 V; with no reactive parts every
+* point is a DC solution. Output: the drain current, as 1 V per 0.1 mA
+* (F1 into 10k).
+VG g 0 PWL(0 0 1.985m 0 1.995m -0.2 3.985m -0.2 3.995m -0.4 5.985m -0.4 5.995m -0.6 7.985m -0.6 7.995m -0.8 10m -0.8)
+VDS dd 0 PWL(0 -0.3 1.985m 5 1.995m -0.3 3.985m 5 3.995m -0.3 5.985m 5 5.995m -0.3 7.985m 5 7.995m -0.3 10m 5)
+VS dd d 0
+J1 d g 0 J201
+F1 0 s VS 1
+RS s 0 10k
+.model J201 NJF(VTO=-0.90 BETA=7.00E-04 LAMBDA=.035 RD=1.12E+02 RS=1.01E+02 IS=1.58E-16)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 10m 0 50n
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(s)
+.endc
+.end

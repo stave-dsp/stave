@@ -1,0 +1,22 @@
+* AC128 output characteristics: Ic against Vce for base currents of
+* -10, -20, -30, -40 and -50 uA (germanium PNP, Holmes, Holters & van
+* Walstijn's DAFx-17 extraction, at their Vt = 25.5 mV: 22.7652 C with
+* tnom equal, so the card is read as written). Each 2 ms segment ramps
+* Vce from 0 to -6 V; no reactive parts, so every point is a DC
+* solution. Output: the collector current, as 1 V per 10 mA (F1 into 100).
+IB b 0 PWL(0 10u 1.985m 10u 1.995m 20u 3.985m 20u 3.995m 30u 5.985m 30u 5.995m 40u 7.985m 40u 7.995m 50u 10m 50u)
+VCE cc 0 PWL(0 0 1.985m -6 1.995m 0 3.985m -6 3.995m 0 5.985m -6 5.995m 0 7.985m -6 7.995m 0 10m -6)
+VS cc c 0
+Q1 c b 0 AC128
+F1 0 s VS 1
+RS s 0 100
+.model AC128 PNP(IS=20.66u BF=229.6 BR=14.66 NF=1.133 NR=1.140 VAF=19.68 VAR=88.28 IKF=463.0m IKR=241.5m ISE=2.190u ISC=7.546u NE=1.796 NC=1.364 RB=1.885 RE=306.4m RC=1.727u)
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12 temp=22.7652 tnom=22.7652
+.tran 20.8333333u 10m 0 50n
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(s)
+.endc
+.end
