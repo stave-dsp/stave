@@ -8,6 +8,7 @@ use crate::circuit::devices::diode::Shockley;
 /// steps; capped in case of a pathological input).
 const MAX_STEPS: u32 = 12;
 
+#[inline(always)]
 pub fn wright_omega(x: f64) -> f64 {
     let mut w = if x < -2.0 {
         x.exp()
@@ -38,7 +39,7 @@ pub struct WrightOmega;
 impl WrightOmega {
     /// The wave an antiparallel `diode` pair reflects for an arriving
     /// `wave` through port resistance `ohms`.
-    #[inline]
+    #[inline(always)]
     pub fn reflect_pair(diode: &Shockley, wave: f64, ohms: f64) -> f64 {
         let (is, knee) = (diode.saturation_amps, diode.knee_volts());
         let r_is = ohms * is;

@@ -27,7 +27,7 @@ pub trait PairMethod: Copy {
 /// Newton on the exact pair, v + R·i(v) = a, with SPICE's junction
 /// limiting.
 impl PairMethod for NewtonSettings {
-    #[inline]
+    #[inline(always)]
     fn reflect(
         &self,
         diode: &Shockley,
@@ -52,7 +52,7 @@ impl PairMethod for NewtonSettings {
 
 /// The closed form: no iterations, nothing recorded.
 impl PairMethod for WrightOmega {
-    #[inline]
+    #[inline(always)]
     fn reflect(
         &self,
         diode: &Shockley,

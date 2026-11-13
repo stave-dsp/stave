@@ -113,7 +113,7 @@ impl PairSolver {
 }
 
 impl PairMethod for PairSolver {
-    #[inline]
+    #[inline(always)]
     fn reflect(
         &self,
         diode: &Shockley,
@@ -194,14 +194,21 @@ impl<M: PairMethod> Stage for DiodeClipper<M> {
         if self.antialiasing == Antialiasing::Adaa {
             return self.tick_adaa(f64::from(x)) as f32;
         }
-        self.tree.left.volts = f64::from(x);
-        let wave = self.tree.reflected();
-        let ohms = self.tree.resistance();
-        let reflected =
-            self.solver
-                .reflect(&self.diode, wave, ohms, &mut self.volts, &mut self.stats);
-        self.tree.incident(reflected);
-        self.volts as f32
+        self.tick_plain(x)
+    }
+
+    /// The mode is chosen once a block, so the plain path's loop is the
+    /// plain tick alone.
+    fn process(&mut self, block: &mut [f32]) {
+        if self.antialiasing == Antialiasing::Adaa {
+            for x in block.iter_mut() {
+                *x = self.tick_adaa(f64::from(*x)) as f32;
+            }
+        } else {
+            for x in block.iter_mut() {
+                *x = self.tick_plain(*x);
+            }
+        }
     }
 
     /// With the diodes off, the capacitor discharges through the
@@ -213,9 +220,23 @@ impl<M: PairMethod> Stage for DiodeClipper<M> {
 }
 
 impl<M: PairMethod> DiodeClipper<M> {
+    /// One sample without ADAA: the tree up, the pair, the tree down.
+    #[inline(always)]
+    fn tick_plain(&mut self, x: f32) -> f32 {
+        self.tree.left.volts = f64::from(x);
+        let wave = self.tree.reflected();
+        let ohms = self.tree.resistance();
+        let reflected =
+            self.solver
+                .reflect(&self.diode, wave, ohms, &mut self.volts, &mut self.stats);
+        self.tree.incident(reflected);
+        self.volts as f32
+    }
+
     /// One sample under ADAA (Albertini et al. 2021, Algorithm 1): the
     /// forward scan as usual, the pair's mean reflection, then the
     /// backward scan on the leaves' waves averaged with their last values.
+    #[inline(never)]
     fn tick_adaa(&mut self, x: f64) -> f64 {
         let capacitor = self.tree.right.reflected();
         let (g_source, g_capacitor) = (1.0 / self.tree.left.ohms, 1.0 / self.tree.right.resistance());

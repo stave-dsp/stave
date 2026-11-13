@@ -36,7 +36,7 @@ impl NewtonSettings {
     /// and its slope; `limit(candidate, current)` lets a device bound a
     /// step (a junction's pnjlim); it must not move the solution. A step that would not
     /// reduce |residual| is halved, down to `min_damping`.
-    #[inline]
+    #[inline(always)]
     pub fn solve_scalar(
         &self,
         start: f64,
