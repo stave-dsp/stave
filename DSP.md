@@ -307,10 +307,10 @@ circuit/
 - [ ] **S1** Nonlinear ZDF ladder (Moog, Huovilainen/Zavalishin), diode
   ladder (TB-303), Sallen–Key and MS-20 (Korg35) filters, each with a
   drive control and its anti-aliasing.
-- [ ] **S2** Fractional delay interpolation: Lagrange (3rd/5th), Thiran
+- [x] **S2** (d64817a) Fractional delay interpolation: Lagrange (3rd/5th), Thiran
   allpass, windowed sinc, for modulated delays (chorus, flanger, wow);
   `DelayLine` takes the interpolator as a type parameter.
-- [ ] **S3** Reverb structures: FDN (Householder/Hadamard, modulated),
+- [x] **S3** (d64817a; decay as `set_t60_s` in f32 seconds until U4 moves setters to `units::Seconds`) Reverb structures: FDN (Householder/Hadamard, modulated),
   Dattorro plate, Schroeder/Moorer, each with decay in `Seconds` (U1).
 - [ ] **S4** Hilbert transform (IIR allpass pair), frequency shifter,
   single-sideband modulation.
@@ -322,11 +322,11 @@ circuit/
 
 ### D — dynamics
 
-- [ ] **D1** Detectors: peak, RMS (windowed), program-dependent
+- [x] **D1** (d64817a) Detectors: peak, RMS (windowed), program-dependent
   (opto-like), stereo link modes, sidechain filter.
-- [ ] **D2** Gain computers: hard/soft knee, ratio, feed-forward and
+- [x] **D2** (d64817a) Gain computers: hard/soft knee, ratio, feed-forward and
   feedback topologies (Giannoulis, Massberg & Reiss 2012).
-- [ ] **D3** Look-ahead brickwall and true-peak limiter (on the true-peak
+- [x] **D3** (d64817a) Look-ahead brickwall and true-peak limiter (on the true-peak
   meter stave-measure already has), latency reported.
 - [ ] **D4** Promote multiband-comp's crossover and per-band machinery
   to the library where it generalises.
