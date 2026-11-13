@@ -52,7 +52,123 @@ is one piece of work with an id; tick it with the commit that lands it.
 - **Cost**: `stave-dsp/tests/datasheet.rs` prints ns/sample per primitive
   (documents, never blocks); `stave-bench` measures a built plugin.
 
+## Architecture
+
+The library grows to hundreds of models, so where a thing lives and what
+it is called must answer three questions on sight: *what does it model*,
+*how was it derived*, and *how is it verified*.
+
+### Layers: a model lives where its claim lives
+
+A model's location is the claim it makes, and the claim decides its
+verification. Each layer depends only on the ones above it
+(`scripts/check-view-bindings.sh` enforces it).
+
+| Layer | Claim | Verified by |
+|---|---|---|
+| `units` | quantities as types (`Hz`, `Db`, `Seconds`, `Ohms` …) | unit tests, Kani |
+| `kernel` | the `Stage` contract and graph forms (serial, parallel, loop, oversampling, voices, lanes) | property tests, loom, Kani |
+| `primitives` | textbook linear DSP: filters, delays and interpolation, spectral (FFT, convolution, STFT, FIR design), oscillators, control | naive references (direct DFT, direct convolution, analytic responses) |
+| `behavioral` | a shape chosen or fitted, with **no hardware claim**: named by its maths (`Tanh`, `Knee`, `Fold`) and its anti-aliasing | analytic antiderivatives, aliasing budgets |
+| `circuit` | derived from a schematic | ngspice on the same netlist (R1–R4) |
+| `physical` | derived from mechanics or acoustics: springs, plates, rotors, tape transport, speakers, rooms, instruments | published modes, high-precision solutions, captures |
+| `learned` | trained from captures: WaveNet, LSTM, Wiener–Hammerstein | parity with the reference implementation, capture error |
+| `effects` | algorithmic designs that model no hardware: reverbs (FDN, Dattorro), pitch, granular, dynamics, EQ | analytic properties, golden audio |
+| `structures` | compositions: `Chain`, `ModMatrix` | property tests |
+
+So a "diode" can appear three ways, and each is obvious from its path:
+
+```text
+circuit::devices::diode::Shockley          the junction equation (a device model)
+circuit::topologies::diode_clipper()       a netlist that uses it
+behavioral::shapes::Tanh                   a curve a designer may choose instead — no diode claim
+learned::WaveNet                           a capture of a real clipper pedal
+```
+
+### Inside `circuit`: devices, methods, netlists, topologies
+
+Four separate concerns, so any circuit can be solved any supported way:
+
+```text
+circuit/
+  devices/      one module per device family; one type per published model
+    diode/        Shockley (+ series R as a field); parts as consts: Shockley::N4148, Shockley::N34A
+    bjt/          EbersMoll, GummelPoon;  parts: GummelPoon::BC109, ::AC128
+    jfet/  mosfet/  triode/ (Koren, Dempwolf, CohenHelie)  pentode/ (Koren, CohenHelie)
+    opamp/ (Ideal, Macromodel)  ota/  photocell/  magnetic/ (JilesAtherton)
+  netlist/      Netlist, Element, Node; SPICE-subset and KiCad import
+  methods/      how a circuit is solved
+    newton/  wdf/ (elements, adaptors incl. RType)  dk/ (nodal DK state space)
+    table/   wright_omega/  load_line/  hamiltonian/
+  topologies/   named circuits as netlists (data, not code): tube_screamer(),
+                fuzz_face(), marshall_tone_stack() … each with its ngspice case
+  Circuit<M>    one runtime type: a netlist solved by method M
+```
+
+- A **device family** has one trait (`Diode`, `Bjt`, `Triode` …) that every
+  model of it implements, so a circuit can swap `Koren` for `Dempwolf`.
+- **Parts** are constants of a model's parameters, named by part number,
+  never separate types.
+- The **method is a type parameter**, not part of a name:
+  `Circuit::<Dk>::new(fuzz_face())`, `Circuit::<Wdf>::new(..)`. Each method
+  documents which netlists it accepts (WDF needs adaptable structure; DK
+  takes any MNA-solvable netlist). A hand-optimised topology may exist as
+  its own type when it is measurably faster, and it is then checked
+  against `Circuit<Dk>` on the same netlist.
+
+### Naming rules
+
+1. **Name the thing, not the implementation.** No `Model`, `Impl`,
+   `Processor`, `Engine`, `Helper`, `V2`, `New`, `Simple`, `Fast`
+   suffixes or prefixes.
+2. **The approach lives in the path or a type parameter**, never in a
+   compound name: `devices::diode::Shockley`, not `ShockleyDiodeModel`;
+   `Convolver::uniform(..)`, not `UniformPartitionedConvolver`.
+3. **Published models are named after their model or authors** (`Koren`,
+   `EbersMoll`, `GummelPoon`, `Huovilainen`, `JilesAtherton`, `Dattorro`);
+   **parts after part numbers** (`N4148`, `BC109`, `MN3007`); **shapes after their
+   maths** (`Tanh`, `Knee`, `Chebyshev`).
+4. **Module names are plural for peer collections** (`devices`, `methods`,
+   `topologies`, `filters`, `shapes`) and singular for one concept
+   (`netlist`, `spectral`, `units`).
+5. **The crate root re-exports only author-level vocabulary**: the `Stage`
+   contract, units, the common primitives and effects. Model families are
+   reached by path, so `triode::Koren` and `pentode::Koren` never collide
+   and the path always says what a thing is.
+6. **One concept per file**, tests beside it (`foo.rs` + `foo/tests.rs`),
+   within the repo's file-size limit.
+7. **Every public model's rustdoc has the same sections**: *Models* (what
+   hardware or maths), *Derivation* (schematic, measurement, training,
+   textbook), *Verified* (the test that holds it to its reference, and the
+   budget), *Cost* (its datasheet line), *Aliasing* (none, ADAA, or the
+   oversampling it expects), *Valid ranges*. A docs-site page, the **model
+   catalogue**, is generated from these, and the build fails when a public
+   model lacks a section or names a test that doesn't exist.
+
 ## Ledger
+
+### K — architecture
+
+- [ ] **K1** The layer table above in code: add `units`, `physical`,
+  `learned`, `effects` modules (empty until their first model), update
+  `lib.rs`'s layer docs and `check-view-bindings.sh`'s dependency rules.
+- [ ] **K2** Restructure `circuit/` into devices (a module per family, a
+  trait per family), methods, netlist and topologies as above. The
+  existing `PairSolver` choice on `DiodeClipper` becomes the method type
+  parameter; the device families get their traits (`Triode` exists as
+  `TriodeModel`: rename to the family name).
+- [ ] **K3** Prune the crate root's flat re-exports to the author-level
+  vocabulary (rule 5); everything else by path. Migrate the 17 plugins in
+  the same release.
+- [ ] **K4** Apply the naming rules to every existing public item;
+  rename what breaks them (rule 1–3), with the vocabulary gate extended
+  to reject the banned suffixes in stave-dsp's public API.
+- [ ] **K5** The standard rustdoc sections (rule 7) on every public model,
+  and the generated **model catalogue** page on the docs site, failing
+  the build on a missing section or a verification test that doesn't exist.
+- [ ] **K6** A short "where does my model go?" decision guide in
+  crates/stave-guide, with the diode example, so humans and agents place
+  new work correctly the first time.
 
 ### U — units as types
 
@@ -311,7 +427,7 @@ is one piece of work with an id; tick it with the commit that lands it.
 
 1. **F1–F2** (FFT, convolution) and **R1–R2** (one reference harness,
    ngspice in CI): the most-used gap and the loop everything else
-   is verified with.
+   is verified with. Then **K1–K6** (architecture), before new families land.
 2. **N1–N3** (netlist, DK method, solve strategies) with **R3–R4**.
 3. **U1–U5** (unit types), before the library grows further, so new APIs
    are born typed.
