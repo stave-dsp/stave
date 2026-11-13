@@ -9,7 +9,7 @@
 //! | [`jfet`] | [`Jfet`](jfet::Jfet) | [`ShichmanHodges`](jfet::ShichmanHodges) |
 //! | [`mosfet`] | [`Mosfet`](mosfet::Mosfet) | [`ShichmanHodges`](mosfet::ShichmanHodges) (square law) |
 //! | [`triode`] | [`Triode`](triode::Triode) | [`Koren`](triode::koren::Koren), [`Dempwolf`](triode::dempwolf::Dempwolf), the run-time choice [`Tube`](triode::Tube) |
-//! | [`pentode`] | [`Pentode`](pentode::Pentode) | [`Koren`](pentode::koren::Koren) (beam tetrodes too) |
+//! | [`pentode`] | [`Pentode`](pentode::Pentode) | [`Koren`](pentode::koren::Koren), [`Reefman`](pentode::reefman::Reefman) (beam tetrodes too) |
 //! | [`opamp`] | [`OpAmp`](opamp::OpAmp) | [`Ideal`](opamp::Ideal), [`Macromodel`](opamp::Macromodel), the run-time choice [`Amp`](opamp::Amp) |
 //! | [`ota`] | [`Ota`](ota::Ota) | [`BipolarPair`](ota::BipolarPair) |
 //! | [`magnetic`] | [`Magnetic`](magnetic::Magnetic) | [`JilesAtherton`](magnetic::JilesAtherton) |

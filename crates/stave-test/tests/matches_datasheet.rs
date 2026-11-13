@@ -32,6 +32,9 @@
 //! it is no worse than the error measured when the gap was recorded. The
 //! gaps are the refit list in DSP.md.
 
+mod bench;
+
+use bench::{bisect, bjt, diode_volts, nearest, opamp};
 use stave_test::reference::{Case, Curve, Datasheet, Metric, Outcome, Uncertainty};
 
 /// Model tolerance on a linear axis, as a fraction of the table's peak
@@ -99,14 +102,6 @@ impl Measured {
             self.what, self.error, self.unit, self.budget, self.unit
         );
     }
-}
-
-/// The model value across `x ± ux` nearest the reading `y`.
-fn nearest(x: f64, y: f64, ux: f64, model: &impl Fn(f64) -> f64) -> f64 {
-    (0..=8)
-        .map(|k| model(x + ux * (f64::from(k) / 4.0 - 1.0)))
-        .min_by(|a, b| (a - y).abs().total_cmp(&(b - y).abs()))
-        .expect("nine samples")
 }
 
 /// Hold every curve of `table` to `model(curve, x)` on a linear value
@@ -239,171 +234,10 @@ fn limit(part: &str, model: &str, figure: &str, at: f64, value: f64, min: f64, m
     );
 }
 
-/// The root of an increasing `f` in `[lo, hi]` by bisection, to 1e-12.
-fn bisect(mut lo: f64, mut hi: f64, f: impl Fn(f64) -> f64) -> f64 {
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if f(mid) > 0.0 {
-            hi = mid;
-        } else {
-            lo = mid;
-        }
-        if hi - lo < 1e-12 {
-            break;
-        }
-    }
-    0.5 * (lo + hi)
-}
-
-// ----------------------------------------------------------- transistors
-
-mod bjt {
-    use stave_dsp::circuit::devices::bjt::{Bjt, GummelPoon};
-
-    use super::bisect;
-
-    /// Collector and base current magnitudes at intrinsic junction
-    /// magnitudes (`vbe`, `vce`), N-sense for either polarity.
-    fn intrinsic(q: &GummelPoon, vbe: f64, vce: f64) -> (f64, f64) {
-        let s = q.polarity.sign();
-        let c = q.currents(s * vbe, s * (vbe - vce));
-        (s * c.collector, s * c.base)
-    }
-
-    /// The intrinsic `vbe` that draws base current `ib` at intrinsic `vce`.
-    fn vbe_for_base(q: &GummelPoon, ib: f64, vce: f64) -> f64 {
-        bisect(-0.5, 1.5, |vbe| intrinsic(q, vbe, vce).1 - ib)
-    }
-
-    /// The operating point with base current |Ib| forced at terminal
-    /// |Vce| (a curve tracer): `(intrinsic vce, intrinsic vbe, |Ic|)`,
-    /// the card's ohmic emitter and collector resistances included.
-    fn operating(q: &GummelPoon, ib: f64, vce: f64) -> (f64, f64, f64) {
-        let at = |vce_int: f64| {
-            let vbe = vbe_for_base(q, ib, vce_int);
-            (vbe, intrinsic(q, vbe, vce_int).0)
-        };
-        let terminal = |vce_int: f64| {
-            let ic = at(vce_int).1;
-            vce_int + ic * q.collector_ohms + (ic + ib) * q.emitter_ohms
-        };
-        let vce_int = bisect(-0.5, vce, |v| terminal(v) - vce);
-        let (vbe, ic) = at(vce_int);
-        (vce_int, vbe, ic)
-    }
-
-    /// |Ic| at terminal |Vce| with |Ib| forced: the output family.
-    pub fn collector_at(q: &GummelPoon, ib: f64, vce: f64) -> f64 {
-        operating(q, ib, vce).2
-    }
-
-    /// Terminal |VBE| with |Ib| forced at terminal |Vce|: the junction's
-    /// plus the base and emitter resistances' drops.
-    pub fn terminal_vbe(q: &GummelPoon, ib: f64, vce: f64) -> f64 {
-        let (_, vbe, ic) = operating(q, ib, vce);
-        vbe + ib * q.base_ohms + (ic + ib) * q.emitter_ohms
-    }
-
-    /// The terminal |Vce| at which |Ib| draws |Ic| (the saturation
-    /// region); 5 V when it cannot below that.
-    pub fn vce_for(q: &GummelPoon, ib: f64, ic: f64) -> f64 {
-        bisect(0.0, 5.0, |vce| collector_at(q, ib, vce) - ic)
-    }
-
-    /// DC current gain Ic/Ib at |Ic| and terminal |Vce|.
-    pub fn hfe_at(q: &GummelPoon, ic: f64, vce: f64) -> f64 {
-        let ib = bisect(0.0, ic, |ib| collector_at(q, ib, vce) - ic);
-        ic / ib
-    }
-}
-
-/// A diode's forward voltage at `amps`: the junction's plus the series
-/// resistance's drop.
-fn diode_volts(d: &stave_dsp::circuit::devices::diode::Shockley, amps: f64) -> f64 {
-    let junction = bisect(-1.0, 3.0, |v| d.current(v) - amps);
-    junction + amps * d.series_ohms
-}
-
-// --------------------------------------------------------------- op-amps
-
-mod opamp {
-    use stave_dsp::circuit::devices::opamp::{Amp, Macromodel};
-    use stave_dsp::circuit::methods::dk::Dk;
-    use stave_dsp::circuit::netlist::{ElementKind, Netlist, Node, Probe, Source};
-
-    /// A unity follower of `part` on `supply`, its input source driven.
-    pub fn follower(part: Macromodel, supply: (f64, f64)) -> Dk {
-        let mut n = Netlist::new();
-        let (input, out) = (n.add_node("in"), n.add_node("out"));
-        n.add(
-            "v1",
-            ElementKind::VoltageSource {
-                a: input,
-                b: Node::GROUND,
-                source: Source::dc(0.0),
-            },
-        )
-        .unwrap();
-        n.add(
-            "u1",
-            ElementKind::OpAmp {
-                plus: input,
-                minus: out,
-                output: out,
-                amp: Amp::Macromodel(part),
-                supply,
-            },
-        )
-        .unwrap();
-        n.probe = Some(Probe::node(out));
-        let mut dk = Dk::new(&n).unwrap();
-        dk.drive("v1").unwrap();
-        dk
-    }
-
-    /// The follower's output at each of `times` (seconds, ascending) for
-    /// an input `input(t)`, stepped at `rate` and read by linear
-    /// interpolation.
-    pub fn response(dk: &mut Dk, rate: f64, input: impl Fn(f64) -> f64, times: &[f64]) -> Vec<f64> {
-        dk.prepare(rate as f32);
-        let end = times.iter().copied().fold(0.0, f64::max);
-        let steps = (end * rate).ceil() as usize + 1;
-        let trace: Vec<f64> = (0..=steps)
-            .map(|i| dk.step(input(i as f64 / rate)))
-            .collect();
-        times
-            .iter()
-            .map(|&t| {
-                let k = t * rate;
-                let i = (k.floor() as usize).min(steps - 1);
-                let frac = k - i as f64;
-                trace[i] + frac * (trace[i + 1] - trace[i])
-            })
-            .collect()
-    }
-
-    /// The largest output slope (V/s) of the follower for a step from
-    /// `from` to `to` volts on `supply`, stepped at 1 GHz.
-    pub fn slew(part: Macromodel, supply: (f64, f64), from: f64, to: f64) -> f64 {
-        let mut dk = follower(part, supply);
-        let rate = 1e9;
-        // Settle at `from` (the driven source rests at 0), then step.
-        let start = 1e-6 + 2.0 * from.abs() / part.slew_rate;
-        let swing = (to - from).abs();
-        let times: Vec<f64> = (0..=(4.0 * swing / part.slew_rate * rate) as usize)
-            .map(|i| start + i as f64 / rate)
-            .collect();
-        let out = response(&mut dk, rate, |t| if t < start { from } else { to }, &times);
-        out.windows(2)
-            .map(|w| (w[1] - w[0]).abs() * rate)
-            .fold(0.0, f64::max)
-    }
-}
-
 // ----------------------------------------------------------------- tubes
 
 mod tubes {
-    use stave_dsp::circuit::devices::pentode::{koren::Koren as KorenPentode, Pentode};
+    use stave_dsp::circuit::devices::pentode::{koren::Koren as KorenPentode, reefman::Reefman, Pentode};
     use stave_dsp::circuit::devices::triode::dempwolf::Dempwolf;
     use stave_dsp::circuit::devices::triode::koren::Koren;
     use stave_dsp::circuit::devices::triode::Triode;
@@ -416,7 +250,7 @@ mod tubes {
 
     /// Plate current at the table's screen voltage (a condition, or a
     /// curve's own).
-    fn plate(table: &str, tube: KorenPentode) -> super::Family {
+    fn plate(table: &str, tube: impl Pentode) -> super::Family {
         let vg2 = stave_test::reference::Datasheet::load(table).condition("vg2");
         linear(table, move |c, va| {
             let vg2 = c.get("vg2").or(vg2).expect("a screen voltage");
@@ -424,20 +258,33 @@ mod tubes {
         })
     }
 
-    fn screen(table: &str, tube: KorenPentode) -> super::Family {
+    /// Screen current against plate voltage at each curve's Vg1, or,
+    /// when a curve fixes the plate voltage (`va`, the EL34's transfer
+    /// chart), against the control grid: `x` is Vg1 there.
+    fn screen(table: &str, tube: impl Pentode) -> super::Family {
         let vg2 = stave_test::reference::Datasheet::load(table).condition("vg2");
-        linear(table, move |c, va| {
+        linear(table, move |c, x| {
             let vg2 = c.get("vg2").or(vg2).expect("a screen voltage");
-            tube.currents(c.parameter("vg1"), vg2, va).screen
+            match c.get("va") {
+                Some(va) => tube.currents(x, vg2, va).screen,
+                None => tube.currents(c.parameter("vg1"), vg2, x).screen,
+            }
         })
     }
 
+    /// Koren's published 12AX7, kept beside the fit to this sheet.
     #[test]
     fn ecc83_koren() {
         gap(
             triode("ecc83_plate", Koren::T12AX7).of("12AX7/ECC83", "Koren T12AX7"),
             11.7,
         );
+    }
+
+    /// E11: Koren's law fitted to this sheet.
+    #[test]
+    fn ecc83_philips() {
+        pass(triode("ecc83_plate", Koren::ECC83_PHILIPS).of("12AX7/ECC83", "Koren ECC83_PHILIPS"));
     }
 
     #[test]
@@ -469,12 +316,29 @@ mod tubes {
     /// (the sheet's transfer chart): `x` is Vg1 here.
     #[test]
     fn el34_screen() {
-        let f = linear("el34_screen", |c, vg1| {
-            KorenPentode::EL34
-                .currents(vg1, c.parameter("vg2"), c.parameter("va"))
-                .screen
-        });
-        gap(f.of("EL34", "Koren EL34 (screen)"), 53.7);
+        gap(
+            screen("el34_screen", KorenPentode::EL34).of("EL34", "Koren EL34 (screen)"),
+            53.7,
+        );
+    }
+
+    /// E11: Koren's law refitted to Philips' sheet (plate; `Kg2` to the
+    /// screen chart, which the law's shape still misses).
+    #[test]
+    fn el34_philips() {
+        pass(plate("el34_plate", KorenPentode::EL34_PHILIPS).of("EL34", "Koren EL34_PHILIPS"));
+        gap(
+            screen("el34_screen", KorenPentode::EL34_PHILIPS).of("EL34", "Koren EL34_PHILIPS (screen)"),
+            20.5,
+        );
+    }
+
+    /// E11: Reefman's law, plate and screen fitted together.
+    #[test]
+    fn el34_reefman() {
+        let tube = Reefman::EL34_PHILIPS;
+        pass(plate("el34_plate", tube).of("EL34", "Reefman EL34_PHILIPS"));
+        pass(screen("el34_screen", tube).of("EL34", "Reefman EL34_PHILIPS (screen)"));
     }
 
     #[test]
@@ -493,12 +357,42 @@ mod tubes {
         );
     }
 
+    /// E11: Koren's law refitted to Tung-Sol's plate curves.
+    #[test]
+    fn t6l6gc_tungsol() {
+        pass(plate("6l6gc_plate", KorenPentode::T6L6GC_TUNGSOL).of("6L6GC", "Koren T6L6GC_TUNGSOL"));
+        gap(
+            screen("6l6gc_screen", KorenPentode::T6L6GC_TUNGSOL)
+                .of("6L6GC", "Koren T6L6GC_TUNGSOL (screen)"),
+            39.6,
+        );
+    }
+
+    /// E11: Reefman's law, plate and screen fitted together. One law
+    /// cannot hold both of Tung-Sol's charts to budget: the screen's slow
+    /// fall to 400 V pulls the knee away from the plate curves' (the
+    /// Koren refit, plate only, passes).
+    #[test]
+    fn t6l6gc_reefman() {
+        let tube = Reefman::T6L6GC_TUNGSOL;
+        let plate = plate("6l6gc_plate", tube).of("6L6GC", "Reefman T6L6GC_TUNGSOL");
+        let screen = screen("6l6gc_screen", tube).of("6L6GC", "Reefman T6L6GC_TUNGSOL (screen)");
+        gap(plate, 11.3);
+        gap(screen, 12.9);
+    }
+
     #[test]
     fn kt88_plate() {
         gap(
             plate("kt88_plate", KorenPentode::KT88).of("KT88", "Koren KT88"),
             14.1,
         );
+    }
+
+    /// E11: Koren's law refitted to GEC's plate curves.
+    #[test]
+    fn kt88_gec() {
+        pass(plate("kt88_plate", KorenPentode::KT88_GEC).of("KT88", "Koren KT88_GEC"));
     }
 
     #[test]
@@ -513,6 +407,15 @@ mod tubes {
             89.0,
         );
     }
+
+    /// E11: Reefman's law, Philips' plate and Mullard's screen curves
+    /// fitted together.
+    #[test]
+    fn el84_reefman() {
+        let tube = Reefman::EL84_PHILIPS;
+        pass(plate("el84_plate", tube).of("EL84", "Reefman EL84_PHILIPS"));
+        pass(screen("el84_screen", tube).of("EL84", "Reefman EL84_PHILIPS (screen)"));
+    }
 }
 
 // ------------------------------------------------- transistors and diodes
@@ -521,7 +424,7 @@ mod transistors {
     use stave_dsp::circuit::devices::bjt::{EbersMoll, GummelPoon};
 
     use super::bjt::{collector_at, hfe_at, terminal_vbe, vce_for};
-    use super::{gap, limit, linear, logarithmic, Family};
+    use super::{gap, limit, linear, logarithmic, pass, Family};
 
     /// The card's Ebers–Moll core: its IS, BF, BR and Vt alone, so the
     /// table shows what Gummel–Poon's Early effect, roll-off, leakage and
@@ -587,7 +490,27 @@ mod transistors {
         // Fig. 16 leaves saturation at IB ≈ 19 µA for 1 mA (β ≈ 52); the
         // card's β is 133 there (the sheet's own table: ≥ 70).
         gap(saturation(q).of("2N3904", "Gummel–Poon N2N3904"), 85.9);
-        // The table's hFE limits at VCE = 1 V (onsemi 2N3903/D).
+        hfe_limits(q, "Gummel–Poon N2N3904");
+    }
+
+    /// E11: the card fitted to onsemi's Figures 15–17 within the table's
+    /// hFE limits. Figure 16's IC = 1 mA curve (β ≈ 52) contradicts the
+    /// table's hFE ≥ 70 at 1 mA, so the saturation region stays a gap;
+    /// held to the table's limits, the curves trade among themselves
+    /// (VCE(sat) at 195 mA is the ON-voltage figure's worst, a little
+    /// worse than the Fairchild card's 24.3%).
+    #[test]
+    fn n2n3904_onsemi() {
+        let q = GummelPoon::N2N3904_ONSEMI;
+        let model = "Gummel–Poon N2N3904_ONSEMI";
+        gap(normalised_hfe("2n3904_hfe", q).of("2N3904", model), 33.8);
+        gap(on_voltages(q).of("2N3904", model), 25.3);
+        gap(saturation(q).of("2N3904", model), 78.8);
+        hfe_limits(q, model);
+    }
+
+    /// The table's hFE limits at VCE = 1 V (onsemi 2N3903/D).
+    fn hfe_limits(q: GummelPoon, model: &str) {
         for (ic, min, max) in [
             (0.1e-3, 40.0, f64::INFINITY),
             (1e-3, 70.0, f64::INFINITY),
@@ -597,7 +520,7 @@ mod transistors {
         ] {
             limit(
                 "2N3904",
-                "Gummel–Poon N2N3904",
+                model,
                 "hFE",
                 ic,
                 hfe_at(&q, ic, 1.0),
@@ -613,23 +536,58 @@ mod transistors {
     const AC128: (&str, &str) = ("AC128", "Gummel–Poon AC128");
 
     /// |IC| against |VCE| at forced |IB|.
-    #[test]
-    fn ac128_output() {
-        let q = GummelPoon::AC128;
-        let f = linear("ac128_output", |c, vce| {
-            collector_at(&q, c.parameter("ib"), vce)
-        });
-        gap(f.of(AC128.0, AC128.1), 25.0);
+    fn ac128_output_of(q: GummelPoon) -> Family {
+        linear("ac128_output", |c, vce| collector_at(&q, c.parameter("ib"), vce))
     }
 
-    /// hFE against |IC| at |VCE| = 1 V, and the table's static hFE limits
-    /// at VCB = 0.
+    /// hFE against |IC| at |VCE| = 1 V.
+    fn ac128_hfe_of(q: GummelPoon) -> Family {
+        linear("ac128_hfe", |c, ic| hfe_at(&q, ic, c.parameter("vce")))
+    }
+
+    /// |IC| against |IB| at |VCE| = 1 V.
+    fn ac128_transfer_of(q: GummelPoon) -> Family {
+        linear("ac128_transfer", |c, ib| collector_at(&q, ib, c.parameter("vce")))
+    }
+
+    /// |IB| against |VBE| at |VCE| = 1 V.
+    fn ac128_input_of(q: GummelPoon) -> Family {
+        linear("ac128_input", |c, vbe| {
+            let vce = c.parameter("vce");
+            super::bisect(0.0, 0.1, |ib| terminal_vbe(&q, ib, vce) - vbe)
+        })
+    }
+
+    #[test]
+    fn ac128_output() {
+        gap(ac128_output_of(GummelPoon::AC128).of(AC128.0, AC128.1), 25.0);
+    }
+
+    /// hFE against |IC|, and the table's static hFE limits at VCB = 0.
     #[test]
     fn ac128_hfe() {
         let q = GummelPoon::AC128;
-        let f = linear("ac128_hfe", |c, ic| hfe_at(&q, ic, c.parameter("vce")));
-        gap(f.of(AC128.0, AC128.1), 11.9);
-        // VCB = 0: |VCE| = |VBE|, solved with the operating point.
+        gap(ac128_hfe_of(q).of(AC128.0, AC128.1), 11.9);
+        ac128_hfe_limits(q, AC128.1);
+    }
+
+    /// E11: the typical-part card, fitted to every Mullard curve at once
+    /// within the table's hFE limits; the DAFx-17 vintage card stays
+    /// beside it.
+    #[test]
+    fn ac128_mullard() {
+        let q = GummelPoon::AC128_MULLARD;
+        let model = "Gummel–Poon AC128_MULLARD";
+        pass(ac128_output_of(q).of(AC128.0, model));
+        pass(ac128_hfe_of(q).of(AC128.0, model));
+        pass(ac128_transfer_of(q).of(AC128.0, model));
+        pass(ac128_input_of(q).of(AC128.0, model));
+        ac128_hfe_limits(q, model);
+    }
+
+    /// The table's static hFE at VCB = 0: |VCE| = |VBE|, solved with the
+    /// operating point.
+    fn ac128_hfe_limits(q: GummelPoon, model: &str) {
         for (ic, min, max) in [
             (50e-3, 55.0, 175.0),
             (300e-3, 55.0, 175.0),
@@ -639,29 +597,18 @@ mod transistors {
                 let vce = super::bisect(0.0, 2.0, |v| v - terminal_vbe(&q, ib, v));
                 collector_at(&q, ib, vce) - ic
             });
-            limit(AC128.0, AC128.1, "hFE (VCB = 0)", ic, ic / ib, min, max);
+            limit(AC128.0, model, "hFE (VCB = 0)", ic, ic / ib, min, max);
         }
     }
 
-    /// |IC| against |IB| at |VCE| = 1 V.
     #[test]
     fn ac128_transfer() {
-        let q = GummelPoon::AC128;
-        let f = linear("ac128_transfer", |c, ib| {
-            collector_at(&q, ib, c.parameter("vce"))
-        });
-        gap(f.of(AC128.0, AC128.1), 24.3);
+        gap(ac128_transfer_of(GummelPoon::AC128).of(AC128.0, AC128.1), 24.3);
     }
 
-    /// |IB| against |VBE| at |VCE| = 1 V.
     #[test]
     fn ac128_input() {
-        let q = GummelPoon::AC128;
-        let f = linear("ac128_input", |c, vbe| {
-            let vce = c.parameter("vce");
-            super::bisect(0.0, 0.1, |ib| terminal_vbe(&q, ib, vce) - vbe)
-        });
-        gap(f.of(AC128.0, AC128.1), 45.2);
+        gap(ac128_input_of(GummelPoon::AC128).of(AC128.0, AC128.1), 45.2);
     }
 
     #[test]
@@ -687,7 +634,7 @@ mod diodes {
     use stave_dsp::circuit::devices::diode::Shockley;
     use stave_test::reference::{Case, Datasheet, Metric, Uncertainty};
 
-    use super::{diode_volts, gap, limit, Measured, DIODE_VOLTS};
+    use super::{diode_volts, gap, limit, pass, Measured, DIODE_VOLTS};
 
     /// Forward voltage at each current read off the graph: budget = the
     /// reading's voltage uncertainty, plus its current uncertainty as
@@ -733,6 +680,17 @@ mod diodes {
         );
     }
 
+    /// E11: `IS`, `N` and `RS` fitted to the Vishay curve.
+    #[test]
+    fn n4148_vishay() {
+        pass(forward(
+            "1n4148_forward",
+            "1N4148",
+            "Shockley N4148_VISHAY",
+            Shockley::N4148_VISHAY,
+        ));
+    }
+
     /// The sheet prints no curve, only a maximum: VF ≤ 1.00 V at 5 mA.
     #[test]
     fn n34a() {
@@ -749,7 +707,7 @@ mod opamps {
     use stave_dsp::circuit::devices::opamp::Macromodel;
     use stave_test::reference::{Case, Datasheet, Metric};
 
-    use super::opamp::{follower, response, slew};
+    use super::opamp::{edges, follower, slew, swing_at};
     use super::{bisect, gap, linear, logarithmic, pass, Family, Measured, LOG_TOLERANCE};
 
     /// The follower's −3 dB frequency through `Circuit<Dk>`'s
@@ -827,91 +785,25 @@ mod opamps {
         })
     }
 
-    /// The least-squares slope (V/s) of the points of `(t, v)` between
-    /// 20% and 80% of the way from `low` to `high`, within `[from, to]`.
-    fn edge_slope(t: &[f64], v: &[f64], low: f64, high: f64, from: f64, to: f64) -> f64 {
-        let span = high - low;
-        let inside: Vec<(f64, f64)> = t
-            .iter()
-            .zip(v)
-            .filter(|(&t, &v)| {
-                let k = (v - low) / span;
-                t >= from && t <= to && (0.2..=0.8).contains(&k)
-            })
-            .map(|(&t, &v)| (t, v))
-            .collect();
-        assert!(inside.len() >= 3, "an edge needs points: {inside:?}");
-        let n = inside.len() as f64;
-        let (mt, mv) = inside
-            .iter()
-            .fold((0.0, 0.0), |(a, b), (t, v)| (a + t / n, b + v / n));
-        let (num, den) = inside.iter().fold((0.0, 0.0), |(a, b), (t, v)| {
-            (a + (t - mt) * (v - mv), b + (t - mt) * (t - mt))
-        });
-        num / den
-    }
-
-    /// The voltage-follower pulse response: the model driven by the
-    /// sheet's drawn input, and each edge's slew (20–80% of the swing,
-    /// least squares) read off both the same way. The drawing is
-    /// idealised (straight segments, a drawn step at the edge's start),
-    /// so its slopes are compared, not its points.
+    /// The voltage-follower pulse response's edges, sheet and model read
+    /// the same way ([`edges`]): budget = the slope's reading uncertainty
+    /// + [`LOG_TOLERANCE`].
     fn pulse(table: &str, part: Macromodel) -> Vec<Measured> {
-        let sheet = Datasheet::load(table);
-        let vcc = sheet.condition("vcc").expect("the chart's supply");
-        let output = &sheet.curve(&[("output", 1.0)]).reference;
-        let input = &sheet.curve(&[("input", 1.0)]).reference;
-        let (low, high) = (
-            input.values()[0],
-            input.values().iter().copied().fold(f64::MIN, f64::max),
-        );
-        // The input's falling edge: between its last high and first low point after the rise.
-        let fall = {
-            let (t, v) = (input.abscissa(), input.values());
-            let i = (1..v.len())
-                .find(|&i| t[i] > 0.0 && v[i] < 0.5 * (low + high))
-                .expect("a falling edge");
-            0.5 * (t[i - 1] + t[i])
-        };
-        let start = -output.abscissa()[0] + 2.0 * (high - low) / part.slew_rate;
-        let mut dk = follower(part, (-vcc, vcc));
-        let rate = 1e9;
-        let times: Vec<f64> = output.abscissa().iter().map(|t| t + start).collect();
-        let drive = |t: f64| {
-            let t = t - start;
-            if t < -0.5 * start {
-                0.0
-            } else if (0.0..fall).contains(&t) {
-                high
-            } else {
-                low
-            }
-        };
-        let model = response(&mut dk, rate, drive, &times);
-        let t = output.abscissa();
-        let ux = sheet.uncertainty_x().at(0.0);
-        let uy = sheet.uncertainty_y().at(0.0);
-        [("rising", 0.0, fall), ("falling", fall, f64::MAX)]
+        edges(table, part)
             .into_iter()
-            .map(|(edge, from, to)| {
-                let sheet_slope = edge_slope(t, output.values(), low, high, from, to).abs();
-                let model_slope = edge_slope(t, &model, low, high, from, to).abs();
-                // The slope's reading uncertainty: a point's x and y error
-                // over the 20-80% edge's extent.
-                let rise = 0.6 * (high - low);
-                let reading = 2.0 * uy / rise + 2.0 * ux * sheet_slope / rise;
-                let budget = reading + LOG_TOLERANCE;
-                let error = (model_slope / sheet_slope - 1.0).abs();
+            .map(|e| {
+                let error = (e.model / e.sheet - 1.0).abs();
                 Measured {
                     what: format!(
-                        "{} | Macromodel {} | {table} {edge} edge (sheet {:.2} V/µs, model {:.2} V/µs)",
+                        "{} | Macromodel {} | {table} {} edge (sheet {:.2} V/µs, model {:.2} V/µs)",
                         part.name,
                         part.name,
-                        sheet_slope * 1e-6,
-                        model_slope * 1e-6
+                        e.name,
+                        e.sheet * 1e-6,
+                        e.model * 1e-6
                     ),
                     error: 100.0 * error,
-                    budget: 100.0 * budget,
+                    budget: 100.0 * (e.reading + LOG_TOLERANCE),
                     unit: "% of value",
                 }
             })
@@ -919,63 +811,97 @@ mod opamps {
     }
 
     /// The largest undistorted swing against frequency (full-power
-    /// bandwidth): the model's own slew (simulated) as SR/(π·f), capped
-    /// at its own simulated output swing.
+    /// bandwidth): [`swing_at`].
     fn swing(table: &str, part: Macromodel) -> Family {
         let vcc = Datasheet::load(table)
             .condition("vcc")
             .expect("the chart's supply");
-        let supply = (-vcc, vcc);
-        let sr = slew(part, supply, -5.0, 5.0);
-        let rails = {
-            let mut dk = follower(part, supply);
-            let times = [20e-6];
-            let up = response(&mut dk, 1e8, |_| 2.0 * vcc, &times)[0];
-            let down = response(&mut dk, 1e8, |_| -2.0 * vcc, &times)[0];
-            up - down
-        };
-        linear(table, move |_, f| {
-            (sr / (std::f64::consts::PI * f)).min(rails)
-        })
+        let model = swing_at(part, vcc);
+        linear(table, move |_, f| model(f))
     }
 
+    /// E11: the TL072 fitted to SLOS080W's curves (the drawn pulse's
+    /// asymmetric slew, the open-loop plot).
     #[test]
     fn tl072() {
         let part = Macromodel::TL072;
+        let [slew, gbw] = two(figures("tl072_figures", part));
+        // This revision's table prints 20 V/µs; its own drawn pulse rises
+        // at 9.9 and falls at 12.8 V/µs. The model follows the drawing,
+        // so the table figure stays a known gap (35.0% when the model
+        // took SLOS080J's 13 V/µs; the rising edge's 9.9 measures 50.7%).
+        gap(slew, 50.7);
+        pass(gbw);
+        let [rising, falling] = two(pulse("tl072_pulse", part));
+        pass(rising);
+        pass(falling);
+        // The plot is drawn as its asymptotes with a sharp knee; one real
+        // pole sits 3 dB under the drawn corner (38.0% at SLOS080J's
+        // figures, 22.0% fitted).
+        gap(
+            open_loop("tl072_open_loop", part).of("TL072", "Macromodel TL072"),
+            22.0,
+        );
+    }
+
+    /// SLOS080J's table figures, the TL072 until E11: symmetric slew.
+    #[test]
+    fn tl072_slos080j() {
+        let part = Macromodel::TL072_SLOS080J;
         let [slew, gbw] = two(figures("tl072_figures", part));
         // The macromodel takes SLOS080J's 13 V/µs; this revision's table
         // prints 20 V/µs for the same TL07xC rows.
         gap(slew, 35.0);
         pass(gbw);
         // The drawn follower response rises at ~10 V/µs and falls at
-        // ~12.8: the classic part slews asymmetrically, the model does not.
+        // ~12.8: the classic part slews asymmetrically, this card does not.
         let [rising, falling] = two(pulse("tl072_pulse", part));
         gap(rising, 31.8);
         pass(falling);
-        // The plotted open loop's dominant pole sits above the model's
+        // The plotted open loop's dominant pole sits above the card's
         // GBW/A0 (15 Hz): 38% low at 20 Hz.
         gap(
-            open_loop("tl072_open_loop", part).of("TL072", "Macromodel TL072"),
+            open_loop("tl072_open_loop", part).of("TL072", "Macromodel TL072_SLOS080J"),
             38.0,
         );
     }
 
+    /// E11: the JRC4558 fitted to the sheet's typical curves, which
+    /// contradict its table (110 dB and ~1.9 V/µs against 100 dB and
+    /// 1 V/µs): the curves are what the part does to a signal.
     #[test]
     fn jrc4558() {
         let part = Macromodel::JRC4558;
+        let [slew, gbw] = two(figures("jrc4558_figures", part));
+        // The table's 1 V/µs, which the swing plot contradicts.
+        gap(slew, 90.1);
+        pass(gbw);
+        pass(open_loop("jrc4558_open_loop", part).of("JRC4558", "Macromodel JRC4558"));
+        // The plotted swing implies a slew rate that climbs with frequency
+        // (1.7 V/µs past the knee, 3.4 V/µs at 300 kHz, where the
+        // gain-bandwidth also limits); one constant rate cannot follow it.
+        gap(
+            swing("jrc4558_swing", part).of("JRC4558", "Macromodel JRC4558"),
+            7.4,
+        );
+    }
+
+    /// The table's figures, the JRC4558 until E11.
+    #[test]
+    fn jrc4558_table() {
+        let part = Macromodel::JRC4558_TABLE;
         for figure in figures("jrc4558_figures", part) {
             pass(figure);
         }
-        // The sheet contradicts its own table: the plot's DC gain is
-        // 110 dB (the table's, and the model's, 100 dB), and the swing
-        // plot's knee implies ~1.8 V/µs (the table's, and the model's,
-        // 1 V/µs). The model follows the table.
+        // The plots contradict the table: 110 dB DC gain (the table's,
+        // and this card's, 100 dB), and a swing knee implying ~1.8 V/µs
+        // (the table's, and this card's, 1 V/µs).
         gap(
-            open_loop("jrc4558_open_loop", part).of("JRC4558", "Macromodel JRC4558"),
+            open_loop("jrc4558_open_loop", part).of("JRC4558", "Macromodel JRC4558_TABLE"),
             214.4,
         );
         gap(
-            swing("jrc4558_swing", part).of("JRC4558", "Macromodel JRC4558"),
+            swing("jrc4558_swing", part).of("JRC4558", "Macromodel JRC4558_TABLE"),
             40.8,
         );
     }

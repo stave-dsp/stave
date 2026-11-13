@@ -26,7 +26,7 @@
 * its wiper through C14 3n9 to the inverting input, R23 4k7 from its other
 * end to the output). Out: C15 4u7, R25 560R into the 10kB volume at
 * maximum. Supplies ideal: IC1 on 0-9 V; IC2 on the charge pump's -9 and
-* 18 V (ripple left out). Op-amps: stave's opamp::Macromodel::TL072,
+* 18 V (ripple left out). Op-amps: stave's opamp::Macromodel::TL072_SLOS080J,
 * written as behavioural sources (see opamp_slew.cir), rails per IC; 1N34A:
 * the community-extended LTspice standard.dio card, static part
 * (diode::Shockley::N34A). Output: out.

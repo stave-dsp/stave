@@ -358,7 +358,7 @@ fn with_macromodel(
 #[test]
 fn opamp_slew_and_clip_matches_ngspice() {
     use stave_dsp::circuit::devices::opamp::Macromodel;
-    let devices = with_macromodel("opamp_slew", Macromodel::JRC4558, (-15.0, 15.0));
+    let devices = with_macromodel("opamp_slew", Macromodel::JRC4558_TABLE, (-15.0, 15.0));
     let case = || Case::ngspice("opamp_slew").budget(Metric::NormalizedRms, OPAMP_SLEW_BUDGET);
     let (coarse, _) = transient_of("opamp_slew", &devices, 64);
     let coarse = case().named("opamp_slew/dk 64x, stave devices").compare(&coarse);
@@ -378,7 +378,7 @@ const OPAMP_SLEW_BUDGET: f64 = 5e-4;
 #[test]
 fn tube_screamer_with_a_jrc4558_matches_ngspice() {
     use stave_dsp::circuit::devices::opamp::Macromodel;
-    let devices = with_macromodel("tube_screamer", Macromodel::JRC4558, (0.0, 9.0));
+    let devices = with_macromodel("tube_screamer", Macromodel::JRC4558_TABLE, (0.0, 9.0));
     deck_and_devices("tube_screamer", 16, 6e-5, &devices);
 }
 

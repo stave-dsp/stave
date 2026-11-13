@@ -53,7 +53,14 @@ use crate::circuit::devices::triode::softplus;
 /// (`crates/stave-test/tests/matches_datasheet.rs::tubes::el34_screen`,
 /// `crates/stave-test/tests/matches_datasheet.rs::tubes::t6l6gc_screen`,
 /// `crates/stave-test/tests/matches_datasheet.rs::tubes::el84_screen`) by
-/// 38–89%: the screen law is the weak part.
+/// 38–89%: the screen law is the weak part. The refits to those sheets
+/// (DSP.md E11) pass on their plate curves:
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::el34_philips` (3.6%,
+/// budget 6.1%), `crates/stave-test/tests/matches_datasheet.rs::tubes::t6l6gc_tungsol`
+/// (3.9%, budget 6.5%) and `crates/stave-test/tests/matches_datasheet.rs::tubes::kt88_gec`
+/// (5.4%, budget 6.6%); refitting `Kg2` leaves the EL34 and 6L6GC screens
+/// 20.5% and 39.6% off, the law's shape ([`Reefman`](super::reefman::Reefman)
+/// has the rise).
 ///
 /// # Cost
 ///
@@ -139,7 +146,61 @@ impl Koren {
         kvb: 17.9,
     };
 
-    pub const ALL: [Self; 4] = [Self::EL34, Self::T6L6GC, Self::KT88, Self::EL84];
+    /// EL34 refitted to Philips' plate curves at Vg2 = 250 V (Electronic
+    /// Tube Handbook, "EL34", sheet B, drawing 7R02614), `Kg2` to the
+    /// screen current of its transfer chart (sheet A), by least squares
+    /// (`crates/stave-test/tests/fit_datasheet.rs::el34_koren`, DSP.md
+    /// E11). Koren's own fit is [`Self::EL34`]. Koren's screen law cannot
+    /// rise at low plate voltage; [`Reefman`](super::reefman::Reefman)'s
+    /// can.
+    pub const EL34_PHILIPS: Self = Self {
+        name: "EL34 (Philips)",
+        mu: 14.3778,
+        ex: 1.0,
+        kg1: 177.3962,
+        kg2: 427.3643,
+        kp: 62.00953,
+        kvb: 31.06504,
+    };
+
+    /// 6L6GC refitted to Tung-Sol's plate curves at Vg2 = 250 V
+    /// (tentative data sheet, April 1960), `Kg2` to the same sheet's
+    /// screen curves, by least squares
+    /// (`crates/stave-test/tests/fit_datasheet.rs::t6l6gc_koren`, DSP.md
+    /// E11; `Ex` at its bound, 1.6). Koren's own fit is [`Self::T6L6GC`].
+    pub const T6L6GC_TUNGSOL: Self = Self {
+        name: "6L6GC (Tung-Sol)",
+        mu: 9.707654,
+        ex: 1.6,
+        kg1: 2918.557,
+        kg2: 9214.315,
+        kp: 25.35764,
+        kvb: 19.84447,
+    };
+
+    /// KT88 refitted to GEC's plate curves at Vg2 = 300 V by least
+    /// squares (`crates/stave-test/tests/fit_datasheet.rs::kt88_koren`,
+    /// DSP.md E11; `Ex` at its bound, 1.6); the sheet prints no screen
+    /// curve, so `Kg2` is Koren's. Koren's own fit is [`Self::KT88`].
+    pub const KT88_GEC: Self = Self {
+        name: "KT88 (GEC)",
+        mu: 7.048145,
+        ex: 1.6,
+        kg1: 2868.033,
+        kg2: 4200.0,
+        kp: 36.0887,
+        kvb: 19.36558,
+    };
+
+    pub const ALL: [Self; 7] = [
+        Self::EL34,
+        Self::T6L6GC,
+        Self::KT88,
+        Self::EL84,
+        Self::EL34_PHILIPS,
+        Self::T6L6GC_TUNGSOL,
+        Self::KT88_GEC,
+    ];
 }
 
 impl Pentode for Koren {

@@ -15,11 +15,13 @@
 * pulldown is kept. Aion draws C3 as 47p; the 1979 pedal has 51p. The
 * supplies are ideal: 9 V, and 4.5 V for the 10k/10k + 47u reference.
 * Both op-amp halves are stave's opamp::Macromodel::JRC4558 between 0 and
-* 9 V, written as behavioural sources (see opamp_slew.cir); 2N5088:
+* 9 V, written as behavioural sources (see opamp_slew.cir), at its fit to
+* the NJM4558_E typical curves (GB 3.162246 MHz, SR 1.900817 V/us, Av
+* 343.256e3); 2N5088:
 * Fairchild's card, DC part (GummelPoon::N2N5088); 1N914: LTspice
 * standard.dio, static part. Guitar 300 mV, 1 kHz. Output: out.
 .param cc=1e-9 vos=0.5e-3 vhi=8 vlo=1 vmid=4.5 vk=0.02 kc=10
-.param gm={6.283185307179586*3e6*1e-9} isl={1e6*1e-9} g0={gm/100e3}
+.param gm={6.283185307179586*3.162246e6*1e-9} isl={1.900817e6*1e-9} g0={gm/343.256e3}
 VIN in 0 SIN(0 0.3 1k)
 RPD in 0 2.2meg
 VA va 0 9
