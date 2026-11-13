@@ -442,13 +442,13 @@ other references; a model with a capture is held to it within budget.
 - [x] **N5** (f889204: `wdf::elements` — `Inductor`, `ResistiveCurrentSource`, `Series`, `Inverter`, `Transformer` beside `Resistor`, `Capacitor`, `ResistiveSource`, `Parallel`; roots `VoltageSource`, `CurrentSource`, `Short`, `Open`, `Switch`; the ideal op-amp a nullor in the R-type root, the macromodel's linear parts absorbed and its gain stage at the nonlinear root (Tube Screamer on its JRC4558 at 3.1e-5 vs ngspice). The transformer and switch have no netlist element yet: the SPICE subset has no K coupling or S switch) WDF element set: inductor, ideal/resistive voltage and current
   sources, switches, short/open, polarity inverter, ideal transformer,
   op-amp (Paiva, Kemper) as roots or adaptors.
-- [ ] **N6** Parameter changes in a running circuit: re-adapting port
+- [x] **N6** (fb55b081: `netlist::Variable` — pots (two legs, `Taper::Linear`/`Exponential`, end ohms), rheostats, variable R and C, positions read back from the deck; `circuit::{Pot, VariableResistor, VariableCapacitor}` set while running (`set_position`, `set_ohms`, `set_farads`) through `Smoothing` (two half-time one-poles, 5 ms, refreshed every sample); DK keeps a variable R as an MNA branch, WDF re-adapts the leaf's tree, both correct the prepared matrices by Woodbury from the prepared base, capacitors keep v and i, prepare re-solves a moved operating point. Update vs rebuild 3e-14 DK / 1e-15 WDF tone stack, ≤ 1.6e-13 Tube Screamer; one tone stack turned through the three Yeh–Smith decks at 1e-10 dB DK, 3.5e-7 dB WDF (1 mΩ ends); new `tube_screamer_drive_{10,50,90}` decks at 5e-6–2.8e-5 NRMS (budget 6e-5) both methods; a treble sweep under 1 kHz sprays −102 dB at 64-sample automation (−62 stepped), −71 at 512 (−48); a move 133 ns vs a 60 µs rebuild (tone stack), 116/219 ns vs ~850 µs (Tube Screamer, DK/WDF)) Parameter changes in a running circuit: re-adapting port
   resistances and recomputing DK matrices without clicks, with smoothing
   and a bounded cost per block. Design: low-rank (Woodbury) matrix updates per potentiometer (Holters & Zölzer 2011).
 - [ ] **N7** (exploratory) Port-Hamiltonian formulation (Falaize & Hélie):
   energy-preserving discretisation with a passivity guarantee, checked
   against N2 on shared netlists.
-- [ ] **N8** Health telemetry for every solver: iterations per sample,
+- [x] **N8** (fb55b081: `Health` gains the worst residual and `NewtonStats` the peak iterations; `Dk`/`Wdf::take_health` per block; stave-core's `SolverTaps` (+ `solver_tap_ids!`) publishes mean/peak iterations, cap hits, continuations, residual; the guide's telemetry page shows a plugin how; `stave-test/tests/solver_taps.rs` runs every hand topology and every deck on DK and WDF hot through the taps, zero cap hits. P5's per-stage cost taps are not done) Health telemetry for every solver: iterations per sample,
   cap hits, residual, published as taps (P5), so a model that struggles
   at some setting shows it in a DAW.
 
