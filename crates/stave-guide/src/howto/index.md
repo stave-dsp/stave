@@ -3,7 +3,7 @@
 Task-oriented recipes for work around a plugin: driving the host tools,
 laying out a project, measuring performance, voicing by ear, pinning a
 model's sound with fingerprints, placing a
-DSP model, and cutting a release.
+DSP model, capturing and fitting block models, and cutting a release.
 Each assumes you know the [concepts](crate::concepts).
 
 - [Use the host tools](crate::howto::host_tools): measure, validate and
@@ -25,5 +25,8 @@ Each assumes you know the [concepts](crate::concepts).
   NMR, ANMR, ERB-band error, Rnonlin and GedLee.
 - [Place a new DSP model](crate::howto::model_placement): where a model
   goes in stave-dsp, what it is called, and how it is verified.
+- [Capture and fit a block model](crate::howto::block_models): the
+  stimulus to play through a device, a Wiener–Hammerstein or polynomial
+  Hammerstein fit with `stave-fit`, and where block models fall short.
 - [Cut a release](crate::howto::release): the release script, semver
   checks, and moving plugin suites to a tag.

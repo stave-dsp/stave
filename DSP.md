@@ -41,6 +41,10 @@ is one piece of work with an id; tick it with the commit that lands it.
 - **Behavioural** (`behavioral/`): ADAA (1st and 2nd order, memoryless
   shapes), tabulated curves, shapes (knee, asym, fold, Chebyshev), smooth
   saturation, slew, hysteresis, nonlinear RC.
+- **Learned** (`learned/`): Neural Amp Modeler WaveNet, LSTM and GRU
+  inference; block-oriented models (Wiener–Hammerstein, polynomial
+  Hammerstein), fitted by `stave_measure::identify` from a capture or a
+  circuit (`tools/stave-fit`).
 - **Primitives**: f64 biquad, ZDF SVF, one-pole, allpass, Linkwitz–Riley
   crossovers, delay line, comb, polyBLEP oscillator, LFO, ADSR, envelope,
   random, smoothing.
@@ -544,10 +548,10 @@ other references; a model with a capture is held to it within budget.
   (Carson et al. 2024, cubic Lagrange from S2) instead of waiting on A2;
   measure learned stages' aliasing (Sato & Smith's aliasing-to-signal ratio)
   under A4's budgets, and consider ADAA inside RNNs (Mikkonen & Werner 2025).
-- [ ] **M3** Block-oriented models: Wiener, Hammerstein,
+- [x] **M3** (#10: `learned::block::{WienerHammerstein, ParallelHammerstein, Block}` — `G(f(H(x)))` with Wiener/Hammerstein as its halves (cascades are `Serial`s), and Novak's `Σ Gₘ(xᵐ)`; filters as cascaded sections or FIR, the curve a polynomial or a C¹ Hermite spline on non-uniform knots held at its edges, optional ADAA1 on its table; rational filters keep their analog prototype at any rate, FIR ones are rate-bound; reset at rest (the operating point); a versioned JSON file read back bit for bit; allocation-free after construction. Fitted by `stave_measure::identify`: BLA from random-phase multisines, Sanathanan–Koerner rational fit, best split of its roots (Sjöberg et al. 2012), the curve by least squares with every level weighted equally, the BLA's shape against level beyond 2σ as the structure test. Round trips (`stave-test/tests/block_models.rs`): a known W–H system's filters to 0.02 dB / 0.8°, curve 0.4 % of range, error < −56 dB; a polynomial Hammerstein's kernels to 0.3 % of peak from one sweep. Fitted to the circuits through `Circuit<Dk>` at 4× and characterised against ngspice at 48 kHz, held-out error at −20 / +12 dB re knee: common cathode W–H −57.3 / −30.0 (the circuit at 48 kHz −57.2 / −29.4; BLA shape 0.03 dB: a W–H system), diode clipper −28.6 / −10.9 (circuit −16.2 / −13.2), Tube Screamer −31.4 / −11.5 (circuit −16.9 / −15.5) — FINDING: the clippers' corners move with drive (BLA shape 3.7 and 4.0 dB at +12), so the fit beats the circuit at 1× below the knee and loses above it (TS compression 0.96 dB at +12 against 0.004); the power series fitted at the knee −23.8 / −5.2, −18.5 / −3.4, −41.2 / −2.7 and audible aliasing past it (ANMR −4.2 to +12.7 dB); W–H ANMR −25 to −27 dB. Datasheet: W–H 2 + 2 sections and a 24-knot spline 41 ns/sample (ADAA 32), polynomial Hammerstein order 5 on sections 18, on 256-tap FIRs 709, against 264–2431 for the circuits. Not done: an LM refinement after the split, a smoothing penalty on the spline (its C¹ joins put H10–H15 near −77 dBc), fitting cascades) Block-oriented models: Wiener, Hammerstein,
   Wiener–Hammerstein (linear filters around a static curve), with a
   fitting tool in `tools/` that captures from a plugin or audio pair.
-- [ ] **M4** Capture workflow: a stimulus (ESS sweeps, multitone, noise
+- [x] **M4** (#10: `stave_measure::identify::capture::Capture` — multisines at −20 … +12 dB re a reference (four realisations, settled periods), a synchronized sweep from 5 Hz, noise bursts held out for validation; read back from a recording aligned by cross-correlation (exact on a loopback channel; on the device's own output it adds its group delay, 2 samples in the test) or from any system run directly with band-limited periodic oversampling; Novak's kernels deconvolved by the sweep's analytic spectrum with windows reaching halfway to each neighbouring harmonic. `tools/stave-fit`: `stimulus` (WAV + description), `fit` from a recording pair, a VST3 or catalogued stage hosted offline, or an R17 circuit; `--export-pair` writes the aligned input/output for training M1 out of tree; captures read at run time, never committed. Guide: "Capture and fit a block model". Not done: real program material in the stimulus (R22's corpus), clock-drift compensation between interface and device) Capture workflow: a stimulus (ESS sweeps, multitone, noise
   bursts, real program material) and alignment/latency compensation, to
   fit M3 or train M1 out of tree (training stays in Python; inference in Rust).
 - [ ] **M5** (exploratory) Differentiable grey-box: circuit-structured

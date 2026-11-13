@@ -3056,6 +3056,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "stave-fit"
+version = "0.4.0"
+dependencies = [
+ "stave-dsp",
+ "stave-host",
+ "stave-measure",
+ "stave-test",
+]
+
+[[package]]
 name = "stave-font"
 version = "0.4.0"
 dependencies = [

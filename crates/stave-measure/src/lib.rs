@@ -9,6 +9,8 @@
 //! loudness    level measures as strategies: peak, true peak, RMS, LUFS
 //! listening   ABX and rating statistics: binomial p, power, d′, MUSHRA summaries
 //! perceptual  NMR and ANMR (BS.1387), ERB-band error, Rnonlin, GedLee (DSP.md R19)
+//! identify    block models from a device's input and output: capture, BLA,
+//!             rational fits, Wiener–Hammerstein, Novak's Hammerstein (M3, M4)
 //! stats       order statistics (timings)
 //! system      what measurements drive: closures, plugins, DSP modules
 //! spectrum    FFT and Goertzel
@@ -62,6 +64,7 @@ pub const AUDIBLE_MAX_HZ: f64 = 20_000.0;
 pub mod aliasing;
 pub mod compare;
 pub mod dynamics;
+pub mod identify;
 pub mod latency;
 pub mod level;
 pub mod listening;

@@ -71,6 +71,13 @@
 //! 299 ns, about 6% for the delay line; a slimmable 20-layer WaveNet 3.6 µs
 //! at 16 channels, 1.5 at 4.
 //!
+//! Block models (M3, the reference machine, 2026-11-13): a
+//! Wiener-Hammerstein model of two sections, a 24-knot spline and two
+//! sections 41 ns/sample (32 with ADAA, whose uniform table is found
+//! without the spline's knot search), the polynomial Hammerstein model
+//! at order 5 on two sections a branch 18, on 256-tap FIR branches 709 —
+//! against the circuits they were fitted to, 264-2431 above.
+//!
 //! Hardware beyond circuits (H1, H2; the reference machine, 2026-11-12):
 //! the BBD line costs by its clock — HoltersParker with the Juno-60's
 //! fifth-order filters 74 ns/sample at 40 kHz, 154 at 100 kHz; the
@@ -91,6 +98,7 @@ use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
+use stave_dsp::learned::block::{self, Nonlinearity, ParallelHammerstein, Section, WienerHammerstein};
 use stave_dsp::learned::{nam, Gru, LoadError, RatePolicy};
 #[path = "datasheet/sheet.rs"]
 mod sheet;
@@ -828,6 +836,43 @@ fn primitive_datasheet() {
         net.prepare(sr);
         bench(name, &input, |x| net.tick(x));
     }
+
+    // M3: block models at the sizes stave's circuits fit to (the Tube
+    // Screamer's W-H: two sections before a 24-knot spline, one after;
+    // the polynomial Hammerstein at order 5), against the circuits above.
+    let section = |hz: f64| {
+        let w = std::f64::consts::TAU * hz / f64::from(sr);
+        let alpha = w.sin() / 1.4;
+        let a0 = 1.0 + alpha;
+        Section {
+            b: [(1.0 - w.cos()) / 2.0 / a0, (1.0 - w.cos()) / a0, (1.0 - w.cos()) / 2.0 / a0],
+            a: [-2.0 * w.cos() / a0, (1.0 - alpha) / a0],
+        }
+    };
+    let knots: Vec<f64> = (0..24).map(|k| (f64::from(k) / 23.0 * 2.0 - 1.0).powi(3) * 3.0).collect();
+    let spline = Nonlinearity::Spline {
+        values: knots.iter().map(|&u| u.tanh()).collect(),
+        knots,
+    };
+    let mut wh = WienerHammerstein::new(
+        sr,
+        block::Linear::Rational(vec![section(700.0), section(5_000.0)]),
+        spline,
+        block::Linear::Rational(vec![section(9_000.0), section(12_000.0)]),
+    );
+    wh.prepare(sr);
+    bench("WienerHammerstein (2 + 2 sections, 24-knot spline)", &input, |x| wh.tick(x));
+    wh.set_antialiasing(true);
+    bench("WienerHammerstein (2 + 2 sections, 24-knot spline, ADAA)", &input, |x| wh.tick(x));
+    let mut parallel = ParallelHammerstein::new(
+        sr,
+        (0..5).map(|m| block::Linear::Rational(vec![section(2_000.0 + 1_000.0 * f64::from(m)); 2])).collect(),
+    );
+    parallel.prepare(sr);
+    bench("ParallelHammerstein (order 5, 2 sections a branch)", &input, |x| parallel.tick(x));
+    let mut fir = ParallelHammerstein::new(sr, (0..5).map(|m| block::Linear::Fir(vec![0.01 / f64::from(m + 1); 256])).collect());
+    fir.prepare(sr);
+    bench("ParallelHammerstein (order 5, 256 taps a branch)", &input, |x| fir.tick(x));
     sheet::finish();
 }
 
