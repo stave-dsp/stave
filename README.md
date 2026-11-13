@@ -19,6 +19,7 @@ are generated from the code, and nothing on it is written twice.
   (windowed host), the storybook, and the docs site generator.
 - `crates/stave-guide` — the guide's articles, in Markdown.
 - `OVERHAUL.md` — the project's working ledger.
+- `DSP.md` — the DSP roadmap: models, verification loops and profiling.
 
 The plugins built on Stave live in
 [stave-plugins](https://github.com/stave-dsp/stave-plugins).
