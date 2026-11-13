@@ -1,0 +1,27 @@
+* An OTA VCA: an LM13700 amplifier (stave's ota::BipolarPair::LM13700,
+* written out as behavioural sources). The signal, 5 V peak at 1 kHz,
+* reaches the + input through 33k with 330 ohm to ground (about 50 mV,
+* into the tanh's bend); the - input sits on 330 ohm to ground. A control
+* voltage ramps 0 -> 10 V over 20 ms into the bias pin through 15k; the
+* pin is two junctions to the negative supply (here ground), fitted to
+* the datasheet's "2 diode drops" (1.4 V) at 500 uA (SNOSBW2F). The
+* output current runs into 10k to ground. Output: out.
+.param is=8.817884e-16 m=2 vt=0.025864925786328753 vos=0.4e-3
+VIN sig 0 SIN(0 5 1k)
+RIN sig inp 33k
+RP inp 0 330
+RM inm 0 330
+VC c 0 PWL(0 0 20m 10)
+RC c abc 15k
+BABC abc 0 I = {is*(exp(V(abc)/(m*vt))-1)}
+BO 0 out I = {is*(exp(V(abc)/(m*vt))-1)*tanh((V(inp,inm)+vos)/(2*vt))}
+RL out 0 10k
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 5.20833333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

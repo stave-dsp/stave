@@ -66,16 +66,19 @@ pub trait Ota: Copy {
 ///
 /// # Verified
 ///
-/// `stave-test/tests/dk_matches_ngspice.rs`: `ota_transfer_matches_ngspice`
-/// (the CA3080's output current across ±100 mV at three bias currents,
-/// normalized RMS 1e-6) and `ota_vca_matches_ngspice` (an LM13700 VCA
-/// with a control sweep, normalized RMS 1e-5 at 4×), each the element
-/// against ngspice's behavioural form of the same equations. Unit tests
-/// beside this file hold `gm` to the datasheets' 9600 µS at 500 µA.
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::ota_transfer_matches_ngspice`
+/// (the CA3080's output current across ±100 mV at about 10, 100 and
+/// 500 µA: normalized RMS 2.6e-8, budget 1e-7) and
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::ota_vca_matches_ngspice`
+/// (an LM13700 VCA under a control sweep: 4.1e-6 at 4×, budget 1e-5),
+/// each the element against ngspice's behavioural form of the same
+/// equations;
+/// `crates/stave-dsp/src/circuit/devices/ota/tests.rs::the_bias_pin_sits_where_the_datasheet_says`
+/// (`gm` within 1% of the datasheets' 9600 µS at 500 µA).
 ///
 /// # Cost
 ///
-/// `stave-dsp/tests/datasheet.rs`, "`Circuit<Dk>` OTA VCA": two controls in
+/// The datasheet's `"Circuit<Dk> OTA VCA (LM13700) x15"`: two controls in
 /// the DK solve.
 ///
 /// # Aliasing

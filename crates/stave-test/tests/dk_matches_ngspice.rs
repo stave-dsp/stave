@@ -373,6 +373,47 @@ fn tube_screamer_with_a_jrc4558_matches_ngspice() {
     deck_and_devices("tube_screamer", 16, 6e-5, &devices);
 }
 
+/// The OTA element in place of a deck's behavioural OTA (`BABC`, `BO`).
+fn with_ota(
+    name: &str,
+    ota: stave_dsp::circuit::devices::ota::BipolarPair,
+    minus: Option<&str>,
+) -> Netlist {
+    with_devices(name, &["babc", "bo"], |n| {
+        vec![(
+            "u1",
+            ElementKind::Ota {
+                plus: at(n, "inp"),
+                minus: minus.map_or(Node::GROUND, |m| at(n, m)),
+                output: at(n, "out"),
+                bias: at(n, "abc"),
+                negative: Node::GROUND,
+                ota,
+            },
+        )]
+    })
+}
+
+/// E5: the CA3080's output current across ±100 mV at Iabc = 10, 100 and
+/// 500 µA: the deck, then the `Ota` element, against ngspice. Measured
+/// 2.6e-8 both ways.
+#[test]
+fn ota_transfer_matches_ngspice() {
+    use stave_dsp::circuit::devices::ota::BipolarPair;
+    let devices = with_ota("ota_transfer", BipolarPair::CA3080, None);
+    deck_and_devices("ota_transfer", 1, 1e-7, &devices);
+}
+
+/// E5: an LM13700 VCA — 50 mV of signal at 1 kHz, the control ramping
+/// the bias current from 0 to 0.57 mA through 15 kΩ: the deck, then the
+/// `Ota` element, against ngspice at 4×. Measured 4.1e-6 both ways.
+#[test]
+fn ota_vca_matches_ngspice() {
+    use stave_dsp::circuit::devices::ota::BipolarPair;
+    let devices = with_ota("ota_vca", BipolarPair::LM13700, Some("inm"));
+    deck_and_devices("ota_vca", 4, 1e-5, &devices);
+}
+
 /// E6: every diode part's I–V curve — a ramp through 1 kΩ, forward
 /// conduction and, where the card has `BV`, reverse breakdown — through
 /// `Circuit<Dk>` against ngspice on the same card; and each part constant

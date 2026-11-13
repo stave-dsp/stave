@@ -596,6 +596,10 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     bench("Circuit<Dk> Tube Screamer (JRC4558)", input, |x| screamer.tick(4.5 + x));
     solve_health(&screamer);
 
+    // E5: an LM13700 VCA at a fixed control voltage.
+    let mut vca = circuit_from(ota_vca_netlist(), sr);
+    bench("Circuit<Dk> OTA VCA (LM13700) x15", input, |x| vca.tick(15.0 * x));
+    solve_health(&vca);
 }
 
 /// An ngspice deck as `Circuit<Dk>`, its `VIN` driven by the input.
@@ -632,6 +636,36 @@ wrdata out v(out)
         output: n.node("out").unwrap(),
         amp: Amp::Macromodel(Macromodel::JRC4558),
         supply: (0.0, 9.0),
+    };
+    n.add("u1", kind).unwrap();
+    n
+}
+
+/// `stave-test/spice/ota_vca.cir` with stave's OTA element, the control
+/// held at 5 V (about 0.24 mA of bias), the signal driven.
+fn ota_vca_netlist() -> Netlist {
+    use stave_dsp::circuit::devices::ota::BipolarPair;
+    let mut n = Netlist::parse_spice(
+        "LM13700 VCA
+V1 sig 0 0
+RIN sig inp 33k
+RP inp 0 330
+RM inm 0 330
+VC c 0 5
+RC c abc 15k
+RL out 0 10k
+.control
+wrdata out v(out)
+.endc",
+    )
+    .unwrap();
+    let kind = ElementKind::Ota {
+        plus: n.node("inp").unwrap(),
+        minus: n.node("inm").unwrap(),
+        output: n.node("out").unwrap(),
+        bias: n.node("abc").unwrap(),
+        negative: stave_dsp::circuit::netlist::Node::GROUND,
+        ota: BipolarPair::LM13700,
     };
     n.add("u1", kind).unwrap();
     n

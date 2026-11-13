@@ -180,6 +180,12 @@ mod dk {
         run("op-amp slew (JRC4558)", &deck("opamp_slew"), "v1", |n| hot(n, 3.0));
     }
 
+    /// E5: the LM13700 VCA, the signal hot into the tanh's saturation.
+    #[test]
+    fn ota_vca_converges_at_the_host_rate() {
+        run("OTA VCA (LM13700)", &deck("ota_vca"), "vin", |n| hot(n, 20.0));
+    }
+
     /// E3: the EL34 pair, grids swung ±54 V about the class point —
     /// cutoff, crossover and grid conduction every cycle.
     #[test]

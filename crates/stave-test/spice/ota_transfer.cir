@@ -1,0 +1,27 @@
+* OTA transfer: a CA3080 (stave's ota::BipolarPair::CA3080, written out
+* as behavioural sources) with its differential input swept -100 mV ->
+* +100 mV three times while a control voltage into the bias pin through
+* 10k sets Iabc to about 10 uA, 100 uA and 500 uA (quasi-static: no
+* reactive parts). The bias pin is one
+* junction to the negative supply (here ground) fitted to the
+* datasheet's 0.71 V at 500 uA (FN475.5); the output mirrors its current
+* through the pair's tanh: Iout = Iabc*tanh((vd + vos)/(2 Vt)). The output
+* current runs into 1k to ground. Output: 1000 * Iout.
+.param is=5.990399e-16 m=1 vt=0.025864925786328753 vos=0.4e-3
+VD inp 0 PWL(0 -0.1 6.65m 0.1 6.66m -0.1 13.32m 0.1 13.33m -0.1 20m 0.1)
+VC c 0 PWL(0 0.71 6.65m 0.71 6.66m 1.67 13.32m 1.67 13.33m 5.71 20m 5.71)
+RC c abc 10k
+BABC abc 0 I = {is*(exp(V(abc)/(m*vt))-1)}
+BO 0 out I = {is*(exp(V(abc)/(m*vt))-1)*tanh((V(inp)+vos)/(2*vt))}
+RL out 0 1k
+* ngspice's starting guess for the bias junction; stave ignores it.
+.nodeset v(abc)=0.61
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end
