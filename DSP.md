@@ -519,7 +519,7 @@ other references; a model with a capture is held to it within budget.
 
 ### S — structures and effects
 
-- [ ] **S1** Nonlinear ZDF ladder (Moog, Huovilainen/Zavalishin), diode
+- [x] **S1** (8b22aaf: circuits `circuit::topologies::{transistor_ladder::TransistorLadder, diode_ladder::DiodeLadder}` through `Circuit<Dk>` against ngspice decks — transient 6.7e-5/2.6e-5 at 4×, AC 3e-5 dB, onset 3.98/17.00, pitch 3 %/1 % under ideal (β); structures `primitives::filters::ladder::{Huovilainen, Stinchcombe}`, `sallen_key::SallenKey`, `korg35::Korg35` — trapezoidal ZDF with Newton, cutoff = self-oscillation pitch, resonance 1 = onset, drive in `Db`; Huovilainen vs the circuit 3.0e-2 ideal / 6.1e-3 tuned, Stinchcombe 4.1e-3 / 4.9e-5; small-signal ≤ 5e-5 dB, pitch ≤ 0.5 % past onset, rate-invariant, bounded under audio-rate modulation; aliasing in R5 (ladders and Sallen–Key at 4×, Korg35 at 2×); 231–274 ns/sample vs 15–76 µs for the circuits. Not done: a non-iterative energy-stable structure (Danish 2021, Ducceschi 2021)) Nonlinear ZDF ladder (Moog, Huovilainen/Zavalishin), diode
   ladder (TB-303), Sallen–Key and MS-20 (Korg35) filters, each with a
   drive control and its anti-aliasing.
 - [x] **S2** (d64817a) Fractional delay interpolation: Lagrange (3rd/5th), Thiran
@@ -532,7 +532,7 @@ other references; a model with a capture is held to it within budget.
   orthogonal energy-preserving feedback matrices with continuous angle
   controls for modulation and freeze (Coppola 2026); velvet-noise late reverb
   as a cheap engine.
-- [ ] **S4** Hilbert transform (IIR allpass pair), frequency shifter,
+- [x] **S4** (8b22aaf: `primitives::filters::hilbert::Hilbert`, polyphase elliptic allpass pair designed per rate from a band edge in Hz and a phase budget, 90° ± 0.36° from 20 Hz to 20 kHz at 44.1–192 kHz; `effects::modulation::{FrequencyShifter, SingleSideband}`, image 50 dB / other sideband 44 dB down; 27–62 ns/sample) Hilbert transform (IIR allpass pair), frequency shifter,
   single-sideband modulation.
 - [ ] **S5** Linear-phase and dynamic EQ on F2/F6.
 - [ ] **S6** Pitch: phase vocoder on F5, PSOLA, granular engine with
