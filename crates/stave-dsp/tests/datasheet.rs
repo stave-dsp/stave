@@ -65,7 +65,11 @@
 //! Learned anchors (M3, 2026-11-12): WaveNet at Neural Amp Modeler's
 //! standard size 2.2 µs/sample (12 + 6 channels 1.7), LSTM 1 x 16 0.32,
 //! GRU 1 x 16 0.23 — a different scale: a capture network is the whole
-//! amp, and costs like one.
+//! amp, and costs like one. M7 (2026-11-13, measured beside them on a
+//! loaded reference machine: LSTM 403 ns, GRU 284 in the same run): the
+//! same networks at 44.1 kHz through `RatePolicy::Interpolated` 427 and
+//! 299 ns, about 6% for the delay line; a slimmable 20-layer WaveNet 3.6 µs
+//! at 16 channels, 1.5 at 4.
 //!
 //! Hardware beyond circuits (H1, H2; the reference machine, 2026-11-12):
 //! the BBD line costs by its clock — HoltersParker with the Juno-60's
@@ -79,7 +83,7 @@ use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
-use stave_dsp::learned::{nam, Gru, LoadError};
+use stave_dsp::learned::{nam, Gru, LoadError, RatePolicy};
 #[path = "datasheet/sheet.rs"]
 mod sheet;
 #[path = "datasheet/knobs.rs"]
@@ -567,6 +571,47 @@ fn primitive_datasheet() {
     .unwrap();
     gru.prepare(sr);
     bench("GRU (1 x 16)", &input, |x| gru.tick(x));
+
+    // M7: the same recurrent networks, trained at 48 kHz, at 44.1 kHz
+    // through RatePolicy::Interpolated (the state read from a cubic
+    // Lagrange delay line), and a slimmable WaveNet at its smallest and
+    // full widths (one 20-layer array, 16 channels, sliced).
+    let mut lstm_44 = lstm.clone();
+    lstm_44.set_rate_policy(RatePolicy::Interpolated);
+    lstm_44.prepare(44_100.0);
+    bench("LSTM (1 x 16) Interpolated 48 -> 44.1 kHz", &input, |x| {
+        lstm_44.tick(x)
+    });
+    let mut gru_44 = gru.clone();
+    gru_44.set_rate_policy(RatePolicy::Interpolated);
+    gru_44.prepare(44_100.0);
+    bench("GRU (1 x 16) Interpolated 48 -> 44.1 kHz", &input, |x| {
+        gru_44.tick(x)
+    });
+    let slim_text = |w: &str| {
+        format!(
+            r#"{{"version":"0.7.0","architecture":"WaveNet","sample_rate":48000,
+            "config":{{"layers":[{{"input_size":1,"condition_size":1,"channels":16,
+            "head":{{"out_channels":1,"kernel_size":1,"bias":true}},"kernel_size":3,
+            "dilations":[1,2,4,8,16,32,64,128,256,512,1,2,4,8,16,32,64,128,256,512],
+            "activation":"Tanh","gated":false,
+            "slimmable":{{"method":"slice_channels_uniform","kwargs":{{"allowed_channels":[4,8,12,16]}}}}}}],
+            "head":null,"head_scale":0.02}},"weights":{w}}}"#
+        )
+    };
+    let needed = match nam::parse(&slim_text("[]")) {
+        Err(LoadError::Weights { expected, .. }) => expected,
+        other => panic!("{other:?}"),
+    };
+    let slim = nam::parse(&slim_text(&weights(needed))).unwrap();
+    for (i, name) in [
+        (0, "WaveNet slimmable 1 x 20 layers at 4 of 16 channels"),
+        (3, "WaveNet slimmable 1 x 20 layers at 16 of 16 channels"),
+    ] {
+        let mut net = slim.network_at(i);
+        net.prepare(sr);
+        bench(name, &input, |x| net.tick(x));
+    }
     sheet::finish();
 }
 

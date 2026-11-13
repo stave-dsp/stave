@@ -64,6 +64,16 @@ impl Json {
         }
     }
 
+    /// An object's keys in file order (none for a value that is not an
+    /// object).
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &str> {
+        let members: &[(String, Json)] = match self {
+            Json::Object(m) => m,
+            _ => &[],
+        };
+        members.iter().map(|(k, _)| k.as_str())
+    }
+
     /// The member `key`, treating an explicit `null` as missing.
     pub(crate) fn field(&self, key: &str) -> Option<&Json> {
         self.get(key).filter(|v| !matches!(v, Json::Null))

@@ -74,14 +74,22 @@ use crate::kernel::node::{Stage, Tail};
 /// rate and its nonlinearity's aliasing at that rate is part of what it
 /// learned. Running it in an [`Oversampled2x`](crate::Oversampled2x)
 /// region is only correct when the region's rate is the trained rate
-/// (see [`RatePolicy`]).
+/// (see [`RatePolicy`]). Measured
+/// (`crates/stave-dsp/tests/aliasing_budgets.rs::learned_stages_hold_their_alias_budgets`,
+/// worst inharmonic energy at or below 20 kHz re the fundamental,
+/// 44.1/48 kHz): the standard-shape fixture −32.2/−31.7 dB, a random
+/// NAM-standard network (weights ±0.125) −72.4/−73.4, a slimmable
+/// fixture −50.8/−51.1 at one channel and −39.3/−34.7 at four.
 ///
 /// # Valid ranges
 ///
 /// Input in the range it was trained on (NAM normalises captures to
 /// about −18 dBFS RMS; peaks near ±1). Sample rate: the trained rate,
 /// [`sample_rate`](Self::sample_rate); at any other the stage outputs
-/// silence unless [`RatePolicy::Any`] is chosen.
+/// silence unless [`RatePolicy::Any`] is chosen. A WaveNet stays
+/// rate-bound under [`RatePolicy::Interpolated`] (its memory is a learned
+/// FIR, with no state to delay): silent, the mismatch reported
+/// (`crates/stave-dsp/tests/learned_rates.rs::wavenets_stay_rate_bound`).
 #[derive(Clone, Debug)]
 pub struct WaveNet {
     arrays: Vec<LayerArray>,
@@ -266,6 +274,28 @@ impl WaveNet {
     /// Input samples one output depends on (the current one included).
     pub fn receptive_field(&self) -> usize {
         self.receptive_field
+    }
+
+    /// Multiply-adds per sample, every convolution counted (the
+    /// activations' transcendentals are extra): the figure a plugin
+    /// compares sizes of one capture by.
+    pub fn multiply_adds(&self) -> usize {
+        self.arrays
+            .iter()
+            .map(|a| {
+                let layers: usize = a
+                    .layers
+                    .iter()
+                    .map(|l| {
+                        l.conv.multiply_adds()
+                            + l.mixer.multiply_adds()
+                            + l.layer1x1.as_ref().map_or(0, Conv::multiply_adds)
+                            + l.head1x1.as_ref().map_or(0, Conv::multiply_adds)
+                    })
+                    .sum();
+                a.rechannel.multiply_adds() + layers + a.head_rechannel.multiply_adds()
+            })
+            .sum()
     }
 
     /// One step of the network; `settle` first fills every history with

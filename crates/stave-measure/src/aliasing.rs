@@ -15,6 +15,15 @@
 //! an alias, or noise, or a subharmonic, all of which a clean stage
 //! does not make.
 //!
+//! Beside the figure in dB below the fundamental, each step carries Sato
+//! & Smith's aliasing-to-signal ratio ([`AliasPoint::asr`]; "Aliasing
+//! reduction in neural amp modeling by smoothing activations", DAFx
+//! 2025): the same inharmonic energy over the *whole* harmonic energy,
+//! fundamental included, as a linear ratio, the scale neural-model
+//! papers quote beside their error-to-signal ratio. The two differ by
+//! the harmonics: a stage that distorts heavily has a lower ASR than its
+//! dB-re-fundamental figure suggests.
+//!
 //! ```
 //! use stave_measure::aliasing::SteppedTone;
 //!
@@ -52,6 +61,12 @@ pub struct AliasPoint {
     pub worst_db: f64,
     /// Where it is.
     pub worst_hz: f64,
+    /// Sato & Smith's aliasing-to-signal ratio, linear: the inharmonic
+    /// energy over the fundamental's and harmonics' together, `E_A /
+    /// E_H` with `E_A = E_Y − E_H` over the bins above DC. (The paper
+    /// sums `E_Y` from bin 0; a DC offset is not a fold, and a network's
+    /// biases make one, so it is left out here.)
+    pub asr: f64,
 }
 
 /// Split one capture (`n` samples, a power of two, a tone at the odd
@@ -95,6 +110,7 @@ pub fn classify(capture: &[f64], carrier_bin: usize, sample_rate: f64) -> AliasP
         audible_db: db(audible),
         worst_db: db(worst),
         worst_hz: worst_bin as f64 * bin_hz,
+        asr: inharmonic / (fundamental + harmonics),
     }
 }
 
@@ -213,6 +229,11 @@ impl Aliasing {
         self.worst_by(|p| p.audible_db)
     }
 
+    /// The step with the highest aliasing-to-signal ratio.
+    pub fn worst_asr(&self) -> AliasPoint {
+        self.worst_by(|p| p.asr)
+    }
+
     fn worst_by(&self, key: impl Fn(&AliasPoint) -> f64) -> AliasPoint {
         *self
             .points
@@ -260,6 +281,33 @@ mod tests {
         );
         assert!((p.inharmonic_db - p.worst_db).abs() < 1e-6, "{p:?}");
         assert!((p.audible_db - p.inharmonic_db).abs() < 1e-6, "{p:?}");
+    }
+
+    /// The aliasing-to-signal ratio divides by every harmonic, the dB
+    /// figure by the fundamental alone: for x + x² at 15 kHz (no
+    /// harmonic below Nyquist, one fold) they agree; at 1 kHz with a
+    /// fold-free harmonic the ratio is zero.
+    #[test]
+    fn asr_divides_by_the_whole_harmonic_energy() {
+        let tone = |hz: f64| SteppedTone {
+            low_hz: hz,
+            high_hz: hz,
+            steps: 1,
+            ..SteppedTone::default()
+        };
+        let high = tone(15_000.0).through(|| |x: f32| x + x * x).worst();
+        assert!(
+            (10.0 * high.asr.log10() - high.inharmonic_db).abs() < 1e-6,
+            "{high:?}"
+        );
+        let low = tone(1_000.0).through(|| |x: f32| x + x * x).worst();
+        assert!(low.asr < 1e-12, "{low:?}");
+        // A hard clip: harmonics carry energy, so the ratio sits below the
+        // dB-re-fundamental figure.
+        let clip = tone(5_000.0)
+            .through(|| |x: f32| (4.0 * x).clamp(-1.0, 1.0))
+            .worst();
+        assert!(10.0 * clip.asr.log10() < clip.inharmonic_db, "{clip:?}");
     }
 
     /// Steps are odd bins, log-spaced across the range.

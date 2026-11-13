@@ -76,6 +76,11 @@ impl Conv {
         (self.taps - 1) * self.dilation + 1
     }
 
+    /// Multiply-adds per frame: `inputs · outputs · taps`.
+    pub(crate) fn multiply_adds(&self) -> usize {
+        self.inputs * self.outputs * self.taps
+    }
+
     /// `out = bias + conv(history)` at the newest frame.
     #[inline]
     pub(crate) fn apply(&self, history: &History, out: &mut [f32]) {

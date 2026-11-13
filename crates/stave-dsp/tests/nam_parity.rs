@@ -154,6 +154,192 @@ fn errors_name_the_problem() {
         .contains("Linear"));
 }
 
+/// Run one size of a file against a trainer reference.
+fn size_matches(name: &str, net: nam::Network, expected: &str) -> f32 {
+    let mut net = net;
+    net.prepare(RATE);
+    let (x, y) = pairs(expected);
+    let err = max_error(&run(&mut net, &x), &y);
+    println!(
+        "{name}: max abs error {err:.2e}, {} multiply-adds",
+        net.multiply_adds()
+    );
+    assert!(
+        err <= BUDGET,
+        "{name}: max abs error {err:e} over the {BUDGET:e} budget"
+    );
+    err
+}
+
+/// DSP.md M7: a WaveNet trained for channel slicing (Atkinson 2025),
+/// exported by NAM 0.13, at every width it offers against NAM's forward
+/// pass slimmed to that width; the default network is the widest.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn slimmable_widths_match_the_trainer() {
+    type Widths = &'static [(usize, &'static str)];
+    let files: [(&str, &str, Widths); 2] = [
+        (
+            "slimmable_gated",
+            include_str!("reference/nam/slimmable_gated.nam"),
+            &[
+                (1, include_str!("reference/nam/slimmable_gated_c1.txt")),
+                (2, include_str!("reference/nam/slimmable_gated_c2.txt")),
+                (3, include_str!("reference/nam/slimmable_gated_c3.txt")),
+                (4, include_str!("reference/nam/slimmable_gated_c4.txt")),
+            ],
+        ),
+        (
+            "slimmable_plain",
+            include_str!("reference/nam/slimmable_plain.nam"),
+            &[
+                (2, include_str!("reference/nam/slimmable_plain_c2.txt")),
+                (4, include_str!("reference/nam/slimmable_plain_c4.txt")),
+                (6, include_str!("reference/nam/slimmable_plain_c6.txt")),
+            ],
+        ),
+    ];
+    for (name, text, widths) in files {
+        let file = nam::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let sizes = file.sizes();
+        assert_eq!(sizes.len(), widths.len(), "{name}");
+        for (i, (&(channels, expected), size)) in widths.iter().zip(sizes).enumerate() {
+            assert_eq!(size.channels, Some(channels), "{name}");
+            assert_eq!(size.ratio, i as f32 / widths.len() as f32, "{name}");
+            let net = file.network_at(i);
+            assert_eq!(net.multiply_adds(), size.multiply_adds);
+            size_matches(&format!("{name} at {channels} channels"), net, expected);
+            // NAM's slider in the middle of the size's interval selects it.
+            let mid = (i as f32 + 0.5) / widths.len() as f32;
+            assert_eq!(file.slimmed(mid).multiply_adds(), size.multiply_adds);
+        }
+        assert!(sizes
+            .windows(2)
+            .all(|w| w[0].multiply_adds < w[1].multiply_adds));
+        let (_, widest) = widths[widths.len() - 1];
+        size_matches(&format!("{name} default"), file.network, widest);
+    }
+}
+
+/// DSP.md M7: a `SlimmableContainer` of three NAM-exported submodels
+/// (two WaveNets and an LSTM): each submodel against the trainer's
+/// forward pass of it, offered smallest first, the default the largest.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn container_submodels_match_the_trainer() {
+    let text = include_str!("reference/nam/container.nam");
+    let expected = [
+        include_str!("reference/nam/container_0.txt"),
+        include_str!("reference/nam/container_1.txt"),
+        include_str!("reference/nam/container_2.txt"),
+    ];
+    let file = nam::parse(text).unwrap();
+    assert_eq!(file.sample_rate, Some(RATE));
+    let sizes = file.sizes();
+    assert_eq!(sizes.len(), 3);
+    assert!(sizes
+        .windows(2)
+        .all(|w| w[0].multiply_adds <= w[1].multiply_adds));
+    // The file lists its submodels smallest first, so slider order is file order.
+    for (i, reference) in expected.iter().enumerate() {
+        assert_eq!(sizes[i].channels, None);
+        size_matches(
+            &format!("container submodel {i}"),
+            file.network_at(i),
+            reference,
+        );
+    }
+    assert!(matches!(file.network_at(2), nam::Network::Lstm(_)));
+    size_matches("container default", file.network, expected[2]);
+
+    // Listed largest first, the sizes are the same, still smallest first.
+    let reversed = reverse_submodels(text);
+    let file = nam::parse(&reversed).unwrap();
+    for (i, reference) in expected.iter().enumerate() {
+        size_matches(
+            &format!("reversed submodel {i}"),
+            file.network_at(i),
+            reference,
+        );
+    }
+}
+
+/// The container's submodel list, reversed (each entry is one
+/// `{"model":…}` object; the split points are where one ends and the
+/// next begins).
+fn reverse_submodels(text: &str) -> String {
+    let start = text.find("\"submodels\":[").unwrap() + "\"submodels\":[".len();
+    let mut depth = 0;
+    let mut entries = Vec::new();
+    let mut from = start;
+    let mut end = start;
+    for (i, c) in text[start..].char_indices() {
+        match c {
+            '{' | '[' => depth += 1,
+            '}' | ']' if depth == 0 => {
+                end = start + i;
+                break;
+            }
+            '}' | ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    entries.push(&text[from..start + i + 1]);
+                }
+            }
+            ',' if depth == 0 => from = start + i + 1,
+            _ => {}
+        }
+    }
+    assert_eq!(entries.len(), 3);
+    entries.reverse();
+    format!("{}{}{}", &text[..start], entries.join(","), &text[end..])
+}
+
+/// Slimmable and container fields this reader does not implement are
+/// refused by name, never ignored.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn slimmable_fields_are_refused_by_name() {
+    let refused = |text: String| match nam::parse(&text) {
+        Err(LoadError::Unsupported(what)) => what,
+        other => panic!("expected Unsupported, got {other:?}"),
+    };
+    let slim = include_str!("reference/nam/slimmable_plain.nam");
+    assert!(refused(slim.replace("\"slice_channels_uniform\"", "\"prune\"")).contains("prune"));
+    assert!(refused(slim.replace(
+        "\"allowed_channels\"",
+        "\"min_channels\":1,\"allowed_channels\""
+    ))
+    .contains("min_channels"));
+    let container = include_str!("reference/nam/container.nam");
+    assert!(
+        refused(container.replacen("{\"model\":", "{\"max_value\":0.5,\"model\":", 1))
+            .contains("max_value")
+    );
+    assert!(
+        refused(container.replace("\"submodels\":", "\"selector\":\"x\",\"submodels\":"))
+            .contains("selector")
+    );
+    // A container inside a container, and a slimmable WaveNet inside one.
+    let nested = container.replacen(
+        "{\"model\":",
+        &format!("{{\"model\":{}}},{{\"model\":", container.trim()),
+        1,
+    );
+    assert!(refused(nested).contains("inside a SlimmableContainer"));
+    let inner = container.replacen(
+        "{\"model\":",
+        &format!("{{\"model\":{}}},{{\"model\":", slim.trim()),
+        1,
+    );
+    assert!(refused(inner).contains("inside a container"));
+    // Widths past the channels are a malformed file.
+    assert!(matches!(
+        nam::parse(&slim.replace("[2,4,6]", "[2,4,8]")),
+        Err(LoadError::Config(_))
+    ));
+}
+
 // ----- the independent f64 reference -----
 
 /// A fixed LCG: every random shape and weight is reproducible.

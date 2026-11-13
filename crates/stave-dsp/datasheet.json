@@ -158,6 +158,10 @@
     { "stage": "WaveNet (NAM standard)", "ns_per_sample": 2838.310, "spread_pct": 0.1, "rate_hz": 48000 },
     { "stage": "WaveNet (12 + 6 channels)", "ns_per_sample": 2231.237, "spread_pct": 0.1, "rate_hz": 48000 },
     { "stage": "LSTM (1 x 16)", "ns_per_sample": 400.363, "spread_pct": 0.1, "rate_hz": 48000 },
-    { "stage": "GRU (1 x 16)", "ns_per_sample": 273.539, "spread_pct": 0.4, "rate_hz": 48000 }
+    { "stage": "GRU (1 x 16)", "ns_per_sample": 273.539, "spread_pct": 0.4, "rate_hz": 48000 },
+    { "stage": "LSTM (1 x 16) Interpolated 48 -> 44.1 kHz", "ns_per_sample": 426.847, "spread_pct": 0.0, "rate_hz": 48000 },
+    { "stage": "GRU (1 x 16) Interpolated 48 -> 44.1 kHz", "ns_per_sample": 298.526, "spread_pct": 0.1, "rate_hz": 48000 },
+    { "stage": "WaveNet slimmable 1 x 20 layers at 4 of 16 channels", "ns_per_sample": 1463.605, "spread_pct": 0.0, "rate_hz": 48000 },
+    { "stage": "WaveNet slimmable 1 x 20 layers at 16 of 16 channels", "ns_per_sample": 3578.059, "spread_pct": 0.6, "rate_hz": 48000 }
   ]
 }

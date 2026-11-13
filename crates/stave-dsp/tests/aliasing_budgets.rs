@@ -19,6 +19,19 @@
 //! filters (S1) in the region each documents: the ladders and the
 //! Sallen–Key at 4x, the Korg35 at 2x (`Oversampled2x::front`).
 //!
+//! Learned stages (M7) run as they ship: at their own rate, no
+//! oversampler — a capture network's aliasing at its trained rate is
+//! part of what it learned. The `.nam` fixtures (`tests/reference/nam/`)
+//! and random networks of the standard sizes (Neural Amp Modeler's
+//! 16 + 8-channel WaveNet with weights in ±0.125 — the datasheet's ±0.5
+//! saturates all twenty layers into a fold generator no trained capture
+//! resembles — and the datasheet's one-layer 16-unit LSTM and GRU) are measured at 44.1 and 48 kHz as if trained
+//! there (the same weights, `RatePolicy::Any`), and each recurrent
+//! network once more as a 48 kHz network at 44.1 kHz through
+//! `RatePolicy::Interpolated`. The figures are not a quality ranking —
+//! random weights alias as they happen to — but a drift detector; each
+//! row also prints Sato & Smith's aliasing-to-signal ratio (ASR).
+//!
 //! The circuits (DSP.md A1) run every way instead, so each row compares:
 //! 1×, 2× and 4× (`Oversampled::linear`), each without and with stateful
 //! ADAA, one test per circuit (measured on an x86-64 Linux build host,
@@ -36,6 +49,7 @@ use stave_dsp::{
     Adaa, AdaaOrder, CurveStage, DiodeClipper, DiodeClipperConfig, Osc, Oversampled,
     Oversampled2x, PairSolver, Shockley, SmoothSat, Stage, Triode, Waveform, Wavetable,
 };
+use stave_dsp::learned::{nam, Gru, LoadError, RatePolicy};
 use stave_measure::aliasing::{Aliasing, SteppedTone};
 
 /// One stage's budget at one rate: the worst step's inharmonic energy
@@ -247,6 +261,34 @@ const OSCILLATORS: &[Budget] = &[
     row("Osc saw hard sync (minBLEP)", 48_000.0, -87.0, -89.4, -84.3),
     row("Wavetable saw", 44_100.0, -122.0, -124.6, -124.6),
     row("Wavetable saw", 48_000.0, -122.0, -124.6, -124.6),
+];
+
+/// The learned stages, the same stepped tone as the nonlinear stages.
+const LEARNED: &[Budget] = &[
+    row("WaveNet standard (fixture)", 44_100.0, -30.0, -32.2, -14.3),
+    row("WaveNet standard (fixture)", 48_000.0, -29.0, -31.7, -13.6),
+    row("WaveNet packed (fixture)", 44_100.0, -16.0, -18.6, -17.0),
+    row("WaveNet packed (fixture)", 48_000.0, -17.0, -19.5, -16.1),
+    row("WaveNet mixed (fixture)", 44_100.0, -3.0, -5.2, -5.2),
+    row("WaveNet mixed (fixture)", 48_000.0, -3.0, -5.4, -5.0),
+    row("Slimmable WaveNet, 1 of 4 channels (fixture)", 44_100.0, -48.0, -50.8, -17.3),
+    row("Slimmable WaveNet, 1 of 4 channels (fixture)", 48_000.0, -49.0, -51.1, -17.8),
+    row("Slimmable WaveNet, 4 of 4 channels (fixture)", 44_100.0, -37.0, -39.3, -19.2),
+    row("Slimmable WaveNet, 4 of 4 channels (fixture)", 48_000.0, -32.0, -34.7, -20.8),
+    row("LSTM 2 x 5 (fixture)", 44_100.0, -41.0, -43.0, -29.6),
+    row("LSTM 2 x 5 (fixture)", 48_000.0, -41.0, -43.4, -32.5),
+    row("GRU 2 x 4 (fixture)", 44_100.0, -30.0, -32.4, -18.8),
+    row("GRU 2 x 4 (fixture)", 48_000.0, -33.0, -35.3, -19.9),
+    row("WaveNet NAM standard (random, ±0.125)", 44_100.0, -70.0, -72.4, -59.0),
+    row("WaveNet NAM standard (random, ±0.125)", 48_000.0, -71.0, -73.4, -66.8),
+    row("LSTM 1 x 16 (random)", 44_100.0, -42.0, -44.7, -16.7),
+    row("LSTM 1 x 16 (random)", 48_000.0, -45.0, -47.0, -17.1),
+    row("GRU 1 x 16 (random)", 44_100.0, -44.0, -46.9, -23.5),
+    row("GRU 1 x 16 (random)", 48_000.0, -46.0, -48.9, -24.3),
+    row("LSTM 2 x 5 (fixture), 48 kHz, Interpolated", 44_100.0, -39.0, -41.5, -25.7),
+    row("GRU 2 x 4 (fixture), 48 kHz, Interpolated", 44_100.0, -28.0, -30.9, -23.1),
+    row("LSTM 1 x 16 (random), 48 kHz, Interpolated", 44_100.0, -44.0, -46.3, -18.4),
+    row("GRU 1 x 16 (random), 48 kHz, Interpolated", 44_100.0, -44.0, -46.9, -24.8),
 ];
 
 fn stage_sweep(rate: f64) -> SteppedTone {
@@ -503,6 +545,122 @@ fn circuit_rows(prefix: &str, rate: f64, adaa: bool) -> Vec<&'static Budget> {
     rows
 }
 
+/// Weights in ±0.5·`scale` from an LCG, rounded so the JSON stays short
+/// (the datasheet's generator: at scale 1 the random networks are its
+/// networks).
+fn weights(n: usize, scale: f32) -> String {
+    let mut lcg: u32 = 11;
+    let w: Vec<String> = (0..n)
+        .map(|_| {
+            lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
+            format!("{:.4}", scale * ((lcg >> 8) as f32 / (1u32 << 24) as f32 - 0.5))
+        })
+        .collect();
+    format!("[{}]", w.join(","))
+}
+
+/// A `.nam` network with `{w}` standing for as many weights as the
+/// loader says the architecture needs.
+fn random_network(template: &str, scale: f32) -> nam::Network {
+    let expected = match nam::parse(&template.replace("{w}", "[]")) {
+        Err(LoadError::Weights { expected, .. }) => expected,
+        other => panic!("{other:?}"),
+    };
+    nam::parse(&template.replace("{w}", &weights(expected, scale)))
+        .unwrap()
+        .network
+}
+
+/// A learned stage, as `nam::Network` or `Gru`, under a rate policy.
+#[derive(Clone)]
+enum Learned {
+    Nam(nam::Network),
+    Gru(Gru),
+}
+
+impl Learned {
+    fn with(&self, policy: RatePolicy) -> Box<dyn Stage> {
+        match self.clone() {
+            Learned::Nam(mut n) => {
+                n.set_rate_policy(policy);
+                Box::new(n)
+            }
+            Learned::Gru(mut g) => {
+                g.set_rate_policy(policy);
+                Box::new(g)
+            }
+        }
+    }
+}
+
+/// A learned stage by name (a row's name up to ", 48 kHz").
+fn learned(name: &str) -> Learned {
+    let file = |text: &str, size: usize| Learned::Nam(nam::parse(text).unwrap().network_at(size));
+    match name.split(", 48 kHz").next().unwrap() {
+        "WaveNet standard (fixture)" => file(include_str!("reference/nam/wavenet_standard.nam"), 0),
+        "WaveNet packed (fixture)" => file(include_str!("reference/nam/wavenet_packed.nam"), 0),
+        "WaveNet mixed (fixture)" => file(include_str!("reference/nam/wavenet_mixed.nam"), 0),
+        "Slimmable WaveNet, 1 of 4 channels (fixture)" => {
+            file(include_str!("reference/nam/slimmable_gated.nam"), 0)
+        }
+        "Slimmable WaveNet, 4 of 4 channels (fixture)" => {
+            file(include_str!("reference/nam/slimmable_gated.nam"), 3)
+        }
+        "LSTM 2 x 5 (fixture)" => file(include_str!("reference/nam/lstm.nam"), 0),
+        "GRU 2 x 4 (fixture)" => {
+            Learned::Gru(Gru::parse(include_str!("reference/nam/gru.json")).unwrap())
+        }
+        "WaveNet NAM standard (random, ±0.125)" => {
+            let array = |input: u32, channels: u32, head: u32, bias: bool| {
+                format!(
+                    r#"{{"input_size":{input},"condition_size":1,"channels":{channels},"head_size":{head},
+                    "kernel_size":3,"dilations":[1,2,4,8,16,32,64,128,256,512],"activation":"Tanh",
+                    "gated":false,"head_bias":{bias}}}"#
+                )
+            };
+            Learned::Nam(random_network(&format!(
+                r#"{{"version":"0.5.4","architecture":"WaveNet","sample_rate":48000,
+                "config":{{"layers":[{},{}],"head":null,"head_scale":0.02}},"weights":{{w}}}}"#,
+                array(1, 16, 8, false),
+                array(16, 8, 1, true)
+            ), 0.25))
+        }
+        "LSTM 1 x 16 (random)" => Learned::Nam(random_network(
+            r#"{"version":"0.5.4","architecture":"LSTM","sample_rate":48000,
+            "config":{"input_size":1,"hidden_size":16,"num_layers":1},"weights":{w}}"#,
+            1.0,
+        )),
+        "GRU 1 x 16 (random)" => {
+            let w = weights(3 * 16 * 17 + 6 * 16 + 17, 1.0);
+            Learned::Gru(
+                Gru::parse(&format!(
+                    r#"{{"input_size":1,"hidden_size":16,"num_layers":1,"sample_rate":48000,"weights":{w}}}"#
+                ))
+                .unwrap(),
+            )
+        }
+        other => panic!("no learned stage {other}"),
+    }
+}
+
+/// A row ending "Interpolated" runs a 48 kHz network at the row's rate
+/// through `RatePolicy::Interpolated`; any other runs the network as if
+/// trained at the row's rate (`RatePolicy::Any`).
+fn measure_learned(name: &str, rate: f64) -> Aliasing {
+    let policy = if name.ends_with("Interpolated") {
+        RatePolicy::Interpolated
+    } else {
+        RatePolicy::Any
+    };
+    let network = learned(name);
+    let fs = rate as f32;
+    stage_sweep(rate).through(move || {
+        let mut net = network.with(policy);
+        net.prepare(fs);
+        move |x: f32| net.tick(x)
+    })
+}
+
 fn check(rows: &[Budget], measure: impl Fn(&str, f64) -> Aliasing) {
     check_rows(rows.iter(), measure);
 }
@@ -516,7 +674,7 @@ fn check_rows<'a>(
         let report = measure(b.stage, b.rate);
         let (audible, full) = (report.worst_audible(), report.worst());
         println!(
-            "{:<42} {:>4.1} kHz  audible {:>7.1} dB at {:>5.0} Hz (budget {:>6.1}, recorded {:>6.1})  full band {:>7.1} dB (recorded {:>6.1}), loudest bin {:>6.1} dB at {:>5.0} Hz",
+            "{:<42} {:>4.1} kHz  audible {:>7.1} dB at {:>5.0} Hz (budget {:>6.1}, recorded {:>6.1})  full band {:>7.1} dB (recorded {:>6.1}), loudest bin {:>6.1} dB at {:>5.0} Hz, ASR {:.2e} at {:>5.0} Hz",
             b.stage,
             b.rate / 1e3,
             audible.audible_db,
@@ -526,7 +684,9 @@ fn check_rows<'a>(
             full.inharmonic_db,
             b.full_db,
             full.worst_db,
-            full.worst_hz
+            full.worst_hz,
+            report.worst_asr().asr,
+            report.worst_asr().hz
         );
         if audible.audible_db > b.budget_db {
             failures.push(format!(
@@ -695,4 +855,10 @@ fn dk_tube_screamer_plain_48k_holds_its_alias_budgets() {
 #[cfg_attr(miri, ignore)]
 fn dk_tube_screamer_adaa_48k_holds_its_alias_budgets() {
     check_rows(circuit_rows("Circuit<Dk> tube screamer", 48_000.0, true).into_iter(), measure_circuit);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn learned_stages_hold_their_alias_budgets() {
+    check(LEARNED, measure_learned);
 }

@@ -3,7 +3,7 @@
 
 use super::activation::{sigmoid_in_place, tanh_in_place, tanh_into};
 use super::error::{LoadError, Weights};
-use super::rate::{RateGuard, RateMismatch, RatePolicy};
+use super::rate::{RateGuard, RateMismatch, RatePolicy, StateDelay};
 use crate::kernel::node::{Stage, Tail};
 
 /// A stacked LSTM (Hochreiter & Schmidhuber 1997; for amplifier capture
@@ -46,22 +46,38 @@ use crate::kernel::node::{Stage, Tail};
 ///
 /// `4H(I + H)` multiply-adds and `5H` transcendental functions per
 /// layer per sample; one 16-unit layer is datasheet `"LSTM (1 x 16)"`.
+/// [`RatePolicy::Interpolated`] adds four multiply-adds per state float
+/// (the cubic read) and a copy: datasheet
+/// `"LSTM (1 x 16) Interpolated 48 -> 44.1 kHz"`.
 ///
 /// # Aliasing
 ///
 /// None added beyond what the network learned at its trained rate.
+/// Measured (`crates/stave-dsp/tests/aliasing_budgets.rs::learned_stages_hold_their_alias_budgets`,
+/// a stepped tone 500 Hz-12 kHz at 0.5, worst inharmonic energy at or
+/// below 20 kHz re the fundamental, 44.1/48 kHz): -43.0/-43.4 dB (the 2 x 5 fixture), -44.7/-47.0 (a random 1 x 16).
 ///
 /// # Valid ranges
 ///
 /// Input in the range it was trained on. Sample rate: the trained rate,
 /// [`sample_rate`](Self::sample_rate); at any other the stage outputs
-/// silence unless [`RatePolicy::Any`] is chosen.
+/// silence unless [`RatePolicy::Any`] is chosen, or
+/// [`RatePolicy::Interpolated`], which keeps the trained time constants
+/// from half to sixteen times the trained rate
+/// (`crates/stave-dsp/tests/learned_rates.rs::recurrent_networks_run_at_any_rate`:
+/// against the network at its trained rate, resampled, the harmonics
+/// agree to 47-58 dB at 44.1 kHz, 75-86 dB at 88.2 kHz and 122-139 dB
+/// at 96 and 192 kHz for a 48 kHz network; whole ratios interleave the
+/// trained recursion bit for bit,
+/// `crates/stave-dsp/tests/learned_rates.rs::whole_ratios_interleave_the_trained_recursion`).
 #[derive(Clone, Debug)]
 pub struct Lstm {
     cells: Vec<Cell>,
     head: Vec<f32>,
     head_bias: f32,
     rate: RateGuard,
+    /// Past states, for [`RatePolicy::Interpolated`] (empty until chosen).
+    delay: StateDelay,
 }
 
 #[derive(Clone, Debug)]
@@ -115,7 +131,8 @@ impl Lstm {
             cells,
             head,
             head_bias,
-            rate: RateGuard::new(sample_rate),
+            rate: RateGuard::recurrent(sample_rate),
+            delay: StateDelay::default(),
         })
     }
 
@@ -131,8 +148,46 @@ impl Lstm {
 
     /// What to do at a rate other than the trained one (default
     /// [`RatePolicy::Strict`]: silence).
+    ///
+    /// [`RatePolicy::Interpolated`] allocates its delay line of past
+    /// states the first time it is chosen: call this off the audio
+    /// thread, before or after [`prepare`](Stage::prepare).
     pub fn set_rate_policy(&mut self, policy: RatePolicy) {
         self.rate.set_policy(policy);
+        if policy == RatePolicy::Interpolated && !self.delay.allocated() {
+            let width = self.cells.iter().map(|c| 2 * c.hidden).sum();
+            self.delay = StateDelay::new(width);
+        }
+        self.configure_delay();
+    }
+
+    /// Multiply-adds per sample: the gate matrices and the head (the
+    /// transcendentals are extra).
+    pub fn multiply_adds(&self) -> usize {
+        self.cells
+            .iter()
+            .map(|c| 4 * c.hidden * (c.inputs + c.hidden))
+            .sum::<usize>()
+            + self.head.len()
+    }
+
+    /// The policy chosen by [`set_rate_policy`](Self::set_rate_policy).
+    pub fn rate_policy(&self) -> RatePolicy {
+        self.rate.policy()
+    }
+
+    /// Point the delay line at the prepared rate and fill it with the
+    /// resting state.
+    fn configure_delay(&mut self) {
+        let cells = &self.cells;
+        self.delay.configure(self.rate.delay(), |slot| {
+            let mut at = 0;
+            for cell in cells {
+                slot[at..at + cell.hidden].copy_from_slice(&cell.h0);
+                slot[at + cell.hidden..at + 2 * cell.hidden].copy_from_slice(&cell.c0);
+                at += 2 * cell.hidden;
+            }
+        });
     }
 }
 
@@ -160,6 +215,20 @@ impl Cell {
             c0,
             gates: vec![0.0; 4 * hidden],
         }
+    }
+
+    /// Take the delayed state (snapshot floats from `at`) as the last one.
+    #[inline]
+    fn recall(&mut self, delay: &StateDelay, at: usize) {
+        delay.read(at, &mut self.h);
+        delay.read(at + self.hidden, &mut self.c);
+    }
+
+    /// Store the new state (snapshot floats from `at`).
+    #[inline]
+    fn store(&self, delay: &mut StateDelay, at: usize) {
+        delay.write(at, &self.h);
+        delay.write(at + self.hidden, &self.c);
     }
 
     #[inline]
@@ -203,6 +272,7 @@ impl Stage for Lstm {
             cell.h.copy_from_slice(&cell.h0);
             cell.c.copy_from_slice(&cell.c0);
         }
+        self.configure_delay();
     }
 
     #[inline]
@@ -210,10 +280,25 @@ impl Stage for Lstm {
         if self.rate.muted() {
             return 0.0;
         }
-        self.cells[0].step(&[x]);
-        for l in 1..self.cells.len() {
+        let delayed = self.delay.active();
+        let mut at = 0;
+        for l in 0..self.cells.len() {
             let (done, rest) = self.cells.split_at_mut(l);
-            rest[0].step(&done[l - 1].h);
+            let cell = &mut rest[0];
+            if delayed {
+                cell.recall(&self.delay, at);
+            }
+            match done.last() {
+                None => cell.step(&[x]),
+                Some(prev) => cell.step(&prev.h),
+            }
+            if delayed {
+                cell.store(&mut self.delay, at);
+            }
+            at += 2 * cell.hidden;
+        }
+        if delayed {
+            self.delay.advance();
         }
         let h = &self.cells[self.cells.len() - 1].h;
         let mut y = self.head_bias;

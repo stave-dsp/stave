@@ -20,6 +20,14 @@ the fixture stays a few KB and both sides read exactly the same values
 The GRU fixture is torch.nn.GRU itself (NAM has no GRU), weights in
 stave's documented layout.
 
+Slimmable networks (DSP.md M7): `slimmable_*.nam` are WaveNets trained
+for channel slicing (Atkinson 2025), exported by NAM's exporter, and each
+`slimmable_*_c<N>.txt` is NAM's forward pass slimmed to N channels
+(`set_slimming`). `container.nam` is a `SlimmableContainer` holding
+NAM-exported submodels in the layout the trainer's export hooks read
+(`config.submodels[i].model`, a whole `.nam` dict each), with each
+`container_<i>.txt` the trainer's forward pass of submodel i.
+
     uv run scripts/nam-reference.py
 
 Offline only; tests read the files.
@@ -159,6 +167,96 @@ def main() -> None:
     write("lstm", round_file(export(lstm)), x)
 
     write_gru(x)
+    write_slimmable(x)
+    write_container(x)
+
+
+def forward(nam: dict, x: np.ndarray, slimming=None) -> np.ndarray:
+    model = init_from_nam(json.loads(json.dumps(nam)))
+    model.eval()
+    if slimming is not None:
+        model._net.set_slimming(slimming)
+    with torch.no_grad():
+        y = model(torch.tensor(x, dtype=torch.float32), pad_start=True).numpy()
+    assert y.shape == (N,), y.shape
+    return y
+
+
+def write_pairs(name: str, x: np.ndarray, y: np.ndarray) -> None:
+    lines = [f"{repr(float(xi))} {repr(float(np.float32(yi)))}" for xi, yi in zip(x, y)]
+    (OUT / f"{name}.txt").write_text("\n".join(lines) + "\n")
+
+
+def write_slimmable(x: np.ndarray) -> None:
+    """Two slimmable WaveNets (NAM 0.13: one layer array, channel
+    slicing): a gated one with the exporter's default list (every width
+    1..4) and a plain one restricted to widths 2, 4, 6. Each is run by
+    NAM at a slimming ratio per width (index floor(ratio * len))."""
+    slim = {"method": "slice_channels_uniform", "kwargs": {}}
+    gated = wavenet(
+        [{"input_size": 1, "condition_size": 1, "channels": 4, "kernel_size": 3,
+          "dilations": [1, 2, 4], "activation": {"name": "PairMultiply", "primary": "Tanh",
+                                               "secondary": "Sigmoid"},
+          "head": {"out_channels": 1, "kernel_size": 1, "bias": True}, "slimmable": slim}],
+        head_scale=0.4,
+    )
+    seed_weights(gated, 7, 0.5)
+    plain = wavenet(
+        [{"input_size": 1, "condition_size": 1, "channels": 6, "kernel_size": 2,
+          "dilations": [1, 2, 4, 8], "activation": {"name": "LeakyReLU", "negative_slope": 0.1},
+          "gated": False, "head": {"out_channels": 1, "kernel_size": 1, "bias": False},
+          "slimmable": {"method": "slice_channels_uniform",
+                        "kwargs": {"allowed_channels": [2, 4, 6]}}}],
+        head_scale=0.6,
+    )
+    seed_weights(plain, 8, 0.35)
+    for name, model, widths in (("slimmable_gated", gated, [1, 2, 3, 4]),
+                                ("slimmable_plain", plain, [2, 4, 6])):
+        nam = round_file(export(model))
+        (OUT / f"{name}.nam").write_text(json.dumps(nam, separators=(",", ":")) + "\n")
+        for i, c in enumerate(widths):
+            # The middle of the ratio interval that selects width i.
+            y = forward(nam, x, slimming=(i + 0.5) / len(widths))
+            write_pairs(f"{name}_c{c}", x, y)
+            print(f"{name} at {c} channels: output peak {float(np.max(np.abs(y))):.3f}")
+        full = forward(nam, x)
+        assert np.array_equal(full, forward(nam, x, slimming=1.0))
+
+
+def write_container(x: np.ndarray) -> None:
+    """A SlimmableContainer of three NAM-exported submodels, smallest
+    first: a 2-channel WaveNet, a 5-channel gated WaveNet and a 2 x 8
+    LSTM."""
+    small = wavenet(
+        [{"input_size": 1, "condition_size": 1, "channels": 2, "kernel_size": 3,
+          "dilations": [1, 2], "activation": "Tanh", "gated": False,
+          "head": {"out_channels": 1, "kernel_size": 1, "bias": True}}],
+        head_scale=0.5,
+    )
+    seed_weights(small, 9, 0.5)
+    medium = wavenet(
+        [{"input_size": 1, "condition_size": 1, "channels": 5, "kernel_size": 3,
+          "dilations": [1, 2, 4, 8], "activation": {"name": "PairMultiply", "primary": "Tanh",
+                                                  "secondary": "Sigmoid"},
+          "head": {"out_channels": 1, "kernel_size": 1, "bias": True}}],
+        head_scale=0.3,
+    )
+    seed_weights(medium, 10, 0.4)
+    lstm = LSTM(hidden_size=8, num_layers=2, sample_rate=RATE)
+    seed_weights(lstm, 11, 0.5)
+    submodels = [round_file(export(m)) for m in (small, medium, lstm)]
+    container = {
+        "version": submodels[0]["version"],
+        "metadata": {},
+        "architecture": "SlimmableContainer",
+        "config": {"submodels": [{"model": m} for m in submodels]},
+        "sample_rate": RATE,
+    }
+    (OUT / "container.nam").write_text(json.dumps(container, separators=(",", ":")) + "\n")
+    for i, m in enumerate(submodels):
+        y = forward(m, x)
+        write_pairs(f"container_{i}", x, y)
+        print(f"container submodel {i}: output peak {float(np.max(np.abs(y))):.3f}")
 
 
 def write_gru(x: np.ndarray) -> None:

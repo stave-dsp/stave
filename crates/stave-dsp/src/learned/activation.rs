@@ -94,6 +94,17 @@ impl Activation {
     }
 
     /// Channels this activation accepts (`None`: any count).
+    /// The activation on the first `c` channels (a per-channel PReLU
+    /// keeps its first `c` slopes; the rest are channel-blind).
+    pub(crate) fn sliced(&self, c: usize) -> Self {
+        match self {
+            Activation::Prelu { slopes } if slopes.len() > 1 => Activation::Prelu {
+                slopes: slopes[..c.min(slopes.len())].to_vec(),
+            },
+            other => other.clone(),
+        }
+    }
+
     pub(crate) fn channels(&self) -> Option<usize> {
         match self {
             Activation::Prelu { slopes } if slopes.len() > 1 => Some(slopes.len()),

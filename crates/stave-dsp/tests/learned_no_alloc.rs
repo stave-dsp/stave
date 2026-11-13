@@ -9,7 +9,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use stave_dsp::learned::{nam, Gru};
+use stave_dsp::learned::{nam, Gru, RatePolicy};
 use stave_dsp::Stage;
 
 struct Counting;
@@ -114,4 +114,43 @@ fn networks_process_without_allocating() {
     }
     let mut gru = Gru::parse(include_str!("reference/nam/gru.json")).unwrap();
     assert_no_alloc("gru", &mut gru);
+}
+
+/// `RatePolicy::Interpolated` allocates its delay line when chosen;
+/// after that, preparing at other rates and running is allocation-free.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn interpolated_recurrent_networks_process_without_allocating() {
+    let mut lstm = nam::parse(include_str!("reference/nam/lstm.nam"))
+        .unwrap()
+        .network;
+    lstm.set_rate_policy(RatePolicy::Interpolated);
+    let mut gru = Gru::parse(include_str!("reference/nam/gru.json")).unwrap();
+    gru.set_rate_policy(RatePolicy::Interpolated);
+    for (name, stage) in [
+        ("lstm", &mut lstm as &mut dyn Stage),
+        ("gru", &mut gru as &mut dyn Stage),
+    ] {
+        let n = allocations_in(|| {
+            for rate in [44_100.0, 96_000.0, 192_000.0] {
+                stage.prepare(rate);
+                for i in 0..256 {
+                    std::hint::black_box(stage.tick((i as f32 * 0.05).sin() * 0.7));
+                }
+            }
+        });
+        assert_eq!(n, 0, "{name} allocated {n} times on the audio path");
+    }
+}
+
+/// Every size of a slimmable file is built at load: choosing one only
+/// clones, and the clone runs allocation-free.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn slimmed_networks_process_without_allocating() {
+    let file = nam::parse(include_str!("reference/nam/slimmable_gated.nam")).unwrap();
+    for i in 0..file.sizes().len() {
+        let mut net = file.network_at(i);
+        assert_no_alloc("slimmable_gated", &mut net);
+    }
 }

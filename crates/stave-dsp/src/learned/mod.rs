@@ -23,6 +23,32 @@
 //! never the reverse. Training stays in Python, out of tree; inference
 //! is here. Wiener–Hammerstein blocks land here next (DSP.md M3). It
 //! may use every layer above it.
+//!
+//! # A recurrent network at the host's rate
+//!
+//! A WaveNet stays at its trained rate (oversample to it). An LSTM or
+//! GRU can follow the host instead: [`RatePolicy::Interpolated`] keeps
+//! its learned time constants by reading its state one trained period
+//! back (Carson et al. 2024).
+//!
+//! ```
+//! use stave_dsp::learned::{nam, RatePolicy};
+//! use stave_dsp::Stage;
+//!
+//! // One unit, trained at 48 kHz: c' = c + 0.5·tanh(x), y = h.
+//! let file = r#"{"version": "0.7.0", "architecture": "LSTM", "sample_rate": 48000,
+//!   "config": {"input_size": 1, "hidden_size": 1, "num_layers": 1},
+//!   "weights": [0, 0,  0, 0,  1, 0,  0, 0,   0, 9, 0, 9,  0, 0,  1, 0]}"#;
+//! let mut amp = nam::parse(file)?.network;
+//! amp.prepare(96_000.0);
+//! assert_eq!(amp.tick(0.5), 0.0); // strict: silent at a foreign rate
+//!
+//! amp.set_rate_policy(RatePolicy::Interpolated); // allocates: off the audio thread
+//! amp.prepare(96_000.0);
+//! assert!(amp.tick(0.5) > 0.0);
+//! assert!(amp.rate_mismatch().is_some()); // the rates still differ, knowingly
+//! # Ok::<(), stave_dsp::learned::LoadError>(())
+//! ```
 
 mod activation;
 mod conv;

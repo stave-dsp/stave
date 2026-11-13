@@ -15,12 +15,15 @@
 //! (both the legacy keys — `head_size`, `head_bias`, `gated`,
 //! `kernel_size` — and 0.13-trainer keys — `head`, `kernel_sizes`,
 //! `bottleneck`, `head1x1`, `layer1x1`, per-layer activations, `gating_mode`
-//! with `gated` and `blended` modes) and `LSTM`. Refused with
+//! with `gated` and `blended` modes) and `LSTM`; slimmable networks
+//! (Atkinson 2025, "Slimmable NAM"): a WaveNet trained for channel
+//! slicing (`"slimmable": {"method": "slice_channels_uniform", …}`, what
+//! the 0.13 trainer exports) and a `SlimmableContainer` of whole
+//! submodels, both offered as [`Nam::sizes`]. Refused with
 //! [`LoadError::Unsupported`] or [`LoadError::Architecture`], never
 //! silently ignored: FiLM, grouped convolutions, a condition DSP, a
-//! WaveNet post-head, slimmable and packed containers
-//! (`SlimmableContainer`), `ConvNet`, `Linear`, and multi-channel
-//! networks.
+//! WaveNet post-head, packed WaveNets, a container submodel field other
+//! than `model`, `ConvNet`, `Linear`, and multi-channel networks.
 //!
 //! ```
 //! use stave_dsp::learned::nam;
@@ -41,6 +44,45 @@
 //! amp.prepare(44_100.0);
 //! assert_eq!(amp.tick(0.25), 0.0);
 //! assert_eq!(amp.rate_mismatch().unwrap().trained, 48_000.0);
+//! # Ok::<(), stave_dsp::learned::LoadError>(())
+//! ```
+//!
+//! # Choosing a size
+//!
+//! A slimmable file runs at full size by default ([`Nam::network`]);
+//! [`Nam::sizes`] lists every size it offers, smallest first, with its
+//! cost, and [`Nam::network_at`] (or [`Nam::slimmed`], NAM's own 0–1
+//! slider) hands over a smaller one. Every size was built by [`parse`],
+//! so choosing one only clones; swap it in off the audio thread.
+//!
+//! ```
+//! use stave_dsp::learned::nam;
+//! use stave_dsp::Stage;
+//!
+//! // A two-channel WaveNet trained to also run on one channel.
+//! let file = r#"{"version": "0.7.0", "architecture": "WaveNet", "sample_rate": 48000,
+//!   "config": {"layers": [{"input_size": 1, "condition_size": 1, "channels": 2,
+//!     "head": {"out_channels": 1, "kernel_size": 1, "bias": false},
+//!     "kernel_sizes": [1], "dilations": [1], "activation": "Tanh", "gated": false,
+//!     "slimmable": {"method": "slice_channels_uniform",
+//!                   "kwargs": {"allowed_channels": [1, 2]}}}],
+//!     "head": null, "head_scale": 1.0},
+//!   "weights": [1, 1,  1, 0, 0, 1, 0, 0,  1, 1,  0, 0, 0, 0, 0, 0,  0.5, 0.25,  1]}"#;
+//! let amp = nam::parse(file)?;
+//! let sizes = amp.sizes();
+//! assert_eq!(sizes.len(), 2);
+//! assert_eq!((sizes[0].channels, sizes[1].channels), (Some(1), Some(2)));
+//! assert!(sizes[0].multiply_adds < sizes[1].multiply_adds);
+//!
+//! // Full size: 0.5·tanh(2x) + 0.25·tanh(2x); one channel keeps the first term.
+//! let (mut full, mut slim) = (amp.network.clone(), amp.network_at(0));
+//! full.prepare(48_000.0);
+//! slim.prepare(48_000.0);
+//! let t = 0.5f32.tanh();
+//! assert!((full.tick(0.25) - 0.75 * t).abs() < 1e-6);
+//! assert!((slim.tick(0.25) - 0.5 * t).abs() < 1e-6);
+//! // NAM's slider: index ⌊ratio · sizes⌋, so anything under 0.5 is one channel.
+//! assert_eq!(amp.slimmed(0.3).multiply_adds(), sizes[0].multiply_adds);
 //! # Ok::<(), stave_dsp::learned::LoadError>(())
 //! ```
 
@@ -69,6 +111,51 @@ pub struct Nam {
     /// [`DEFAULT_SAMPLE_RATE`]).
     pub sample_rate: Option<f32>,
     pub metadata: Metadata,
+    /// [`sizes`](Self::sizes).
+    sizes: Vec<Size>,
+    /// One network per size, in the same order.
+    networks: Vec<Network>,
+}
+
+/// One size a `.nam` file can run at: a width of a slimmable WaveNet,
+/// a submodel of a `SlimmableContainer`, or a plain file's one network.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Size {
+    /// The lowest value of NAM's 0–1 size slider that selects this size
+    /// (`i / sizes`): [`Nam::slimmed`] takes the same values.
+    pub ratio: f32,
+    /// Multiply-adds per sample ([`Network::multiply_adds`]): the cost
+    /// sizes compare by.
+    pub multiply_adds: usize,
+    /// Channels per layer, for a width of a slimmable WaveNet (`None`
+    /// for a container's submodel or a plain file).
+    pub channels: Option<usize>,
+}
+
+impl Nam {
+    /// Every size the file offers in slider order, the last being the
+    /// default [`network`](Self::network). A plain file offers one; a
+    /// slimmable WaveNet its `allowed_channels` in order; a container
+    /// its submodels, smallest first by multiply-adds.
+    pub fn sizes(&self) -> &[Size] {
+        &self.sizes
+    }
+
+    /// The network at [`sizes`](Self::sizes)`()[index]`, unprepared
+    /// (allocates a clone: call off the audio thread). An index past the
+    /// end is the full size.
+    pub fn network_at(&self, index: usize) -> Network {
+        self.networks[index.min(self.networks.len() - 1)].clone()
+    }
+
+    /// The network NAM's size slider selects at `ratio` (0–1):
+    /// `sizes[min(⌊ratio · n⌋, n − 1)]`, the trainer's own index rule for
+    /// channel slicing, applied to a container's submodels in cost order.
+    pub fn slimmed(&self, ratio: f32) -> Network {
+        let n = self.networks.len();
+        let i = (ratio.clamp(0.0, 1.0) * n as f32).floor() as usize;
+        self.network_at(i.min(n - 1))
+    }
 }
 
 /// The `metadata` fields a plugin may show or calibrate with; absent
@@ -112,21 +199,27 @@ pub struct Metadata {
 /// exported (`crates/stave-dsp/tests/nam_parity.rs::wavenet_standard_matches_the_trainer`,
 /// `crates/stave-dsp/tests/nam_parity.rs::lstm_matches_the_trainer`);
 /// legacy keys read the same network
-/// (`crates/stave-dsp/tests/nam_parity.rs::legacy_keys_read_the_same_network`).
-/// Budget: max abs error ≤ 1e-5 (measured ≤ 6e-7).
+/// (`crates/stave-dsp/tests/nam_parity.rs::legacy_keys_read_the_same_network`);
+/// every width of two slimmable WaveNets against the trainer slimmed to
+/// it (`crates/stave-dsp/tests/nam_parity.rs::slimmable_widths_match_the_trainer`)
+/// and every submodel of a `SlimmableContainer`
+/// (`crates/stave-dsp/tests/nam_parity.rs::container_submodels_match_the_trainer`).
+/// Budget: max abs error ≤ 1e-5 (measured ≤ 6e-7 on the plain files).
 ///
 /// # Cost
 ///
 /// The network it holds, plus one match per sample: see [`WaveNet`]
 /// (`"WaveNet (NAM standard)"`) and [`Lstm`] (`"LSTM (1 x 16)"`) on the
-/// datasheet.
+/// datasheet; [`multiply_adds`](Self::multiply_adds) compares the sizes
+/// of a slimmable file.
 ///
 /// # Aliasing
 ///
-/// None added beyond what the network learned at its trained rate. A
-/// host at half that rate runs it in an
-/// [`Oversampled2x`](crate::Oversampled2x) region; other ratios wait on
-/// DSP.md A2.
+/// None added beyond what the network learned at its trained rate,
+/// which is not little: `crates/stave-dsp/tests/aliasing_budgets.rs`
+/// (`learned_stages_hold_their_alias_budgets`) records each fixture's
+/// and each standard size's. A host at half the trained rate runs it in
+/// an [`Oversampled2x`](crate::Oversampled2x) region.
 ///
 /// # Valid ranges
 ///
@@ -134,9 +227,11 @@ pub struct Metadata {
 /// about −18 dBFS RMS). Sample rate: the trained rate,
 /// [`sample_rate`](Self::sample_rate); at any other it outputs silence
 /// and [`rate_mismatch`](Self::rate_mismatch) says why, unless
-/// [`RatePolicy::Any`] is chosen. Architectures the loader refuses
-/// (FiLM, grouped convolutions, condition DSP, post-head,
-/// `SlimmableContainer`) fail at [`parse`] by name.
+/// [`RatePolicy::Any`] is chosen, or [`RatePolicy::Interpolated`] for an
+/// LSTM (half to sixteen times the trained rate). Features the loader
+/// refuses (FiLM, grouped convolutions, condition DSP, post-head,
+/// packed WaveNets, unknown container fields) fail at [`parse`] by
+/// name.
 #[derive(Clone, Debug)]
 pub enum Network {
     WaveNet(WaveNet),
@@ -160,8 +255,19 @@ impl Network {
         }
     }
 
+    /// Multiply-adds per sample (see [`WaveNet::multiply_adds`],
+    /// [`Lstm::multiply_adds`]).
+    pub fn multiply_adds(&self) -> usize {
+        match self {
+            Network::WaveNet(n) => n.multiply_adds(),
+            Network::Lstm(n) => n.multiply_adds(),
+        }
+    }
+
     /// What to do at a rate other than the trained one (default
-    /// [`RatePolicy::Strict`]: silence).
+    /// [`RatePolicy::Strict`]: silence). [`RatePolicy::Interpolated`]
+    /// runs an LSTM at any rate and leaves a WaveNet strict; it
+    /// allocates, so call it off the audio thread.
     pub fn set_rate_policy(&mut self, policy: RatePolicy) {
         match self {
             Network::WaveNet(n) => n.set_rate_policy(policy),
@@ -209,12 +315,45 @@ impl Stage for Network {
 
 /// Read a `.nam` file's text (the caller reads the file; this crate
 /// does no I/O). Allocates: call it off the audio thread, then hand the
-/// network over.
+/// network over. A slimmable file builds every size it offers here, so
+/// [`Nam::network_at`] only clones.
 pub fn parse(text: &str) -> Result<Nam, LoadError> {
     let json = Json::parse(text).map_err(|e| LoadError::Json {
         offset: e.offset,
         reason: e.reason,
     })?;
+    let file = model(&json, false)?;
+    let count = file.networks.len();
+    let sizes = file
+        .networks
+        .iter()
+        .enumerate()
+        .map(|(i, (channels, n))| Size {
+            ratio: i as f32 / count as f32,
+            multiply_adds: n.multiply_adds(),
+            channels: *channels,
+        })
+        .collect();
+    let networks: Vec<Network> = file.networks.into_iter().map(|(_, n)| n).collect();
+    Ok(Nam {
+        network: networks[count - 1].clone(),
+        version: file.version,
+        sample_rate: file.sample_rate,
+        metadata: metadata(json.field("metadata")),
+        sizes,
+        networks,
+    })
+}
+
+/// One `.nam` document: its version, recorded rate, and the networks it
+/// offers in slider order (never empty; one for a plain file).
+struct File {
+    version: String,
+    sample_rate: Option<f32>,
+    networks: Vec<(Option<usize>, Network)>,
+}
+
+fn model(json: &Json, nested: bool) -> Result<File, LoadError> {
     let version = json
         .field("version")
         .and_then(Json::as_str)
@@ -236,27 +375,119 @@ pub fn parse(text: &str) -> Result<Nam, LoadError> {
             })? as f32),
         };
     let rate = sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE);
-    let weights = weights(&json)?;
-    let network = match architecture {
-        "WaveNet" => Network::WaveNet(wavenet::build(config, &weights, rate)?),
+    if architecture == "SlimmableContainer" {
+        if nested {
+            return Err(LoadError::Unsupported(
+                "a SlimmableContainer inside a SlimmableContainer".into(),
+            ));
+        }
+        let networks = container(json, config, rate)?;
+        return Ok(File {
+            version,
+            sample_rate,
+            networks,
+        });
+    }
+    let weights = weights(json)?;
+    let networks = match architecture {
+        "WaveNet" => wavenet::build(config, &weights, rate)?
+            .into_iter()
+            .map(|(c, n)| (c, Network::WaveNet(n)))
+            .collect(),
         "LSTM" => {
             mono(config, "LSTM")?;
-            Network::Lstm(Lstm::build(
-                size(config, "input_size")?,
-                size(config, "hidden_size")?,
-                size(config, "num_layers")?,
-                &weights,
-                rate,
-            )?)
+            vec![(
+                None,
+                Network::Lstm(Lstm::build(
+                    size(config, "input_size")?,
+                    size(config, "hidden_size")?,
+                    size(config, "num_layers")?,
+                    &weights,
+                    rate,
+                )?),
+            )]
         }
         other => return Err(LoadError::Architecture(other.to_string())),
     };
-    Ok(Nam {
-        network,
+    Ok(File {
         version,
         sample_rate,
-        metadata: metadata(json.field("metadata")),
+        networks,
     })
+}
+
+/// A `SlimmableContainer`: `config.submodels`, each `{"model": <a whole
+/// .nam document>}`, the layout Neural Amp Modeler 0.13's export hooks
+/// walk. Each submodel loads as its own file; they are offered smallest
+/// first by multiply-adds (a stable sort: equal costs keep file order).
+/// Any other submodel field is refused by name: this reader does not
+/// know what it would select.
+fn container(
+    json: &Json,
+    config: &Json,
+    rate: f32,
+) -> Result<Vec<(Option<usize>, Network)>, LoadError> {
+    if json.field("weights").is_some() {
+        return Err(LoadError::Config(
+            "a SlimmableContainer holds no weights of its own".into(),
+        ));
+    }
+    if let Some(key) = config.keys().find(|k| *k != "submodels") {
+        return Err(LoadError::Unsupported(format!(
+            "SlimmableContainer config field \"{key}\""
+        )));
+    }
+    let submodels = config
+        .field("submodels")
+        .and_then(Json::as_array)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            LoadError::Config("a SlimmableContainer needs a non-empty \"submodels\" list".into())
+        })?;
+    let mut networks = Vec::with_capacity(submodels.len());
+    for (i, entry) in submodels.iter().enumerate() {
+        if !matches!(entry, Json::Object(_)) {
+            return Err(LoadError::Config(format!(
+                "SlimmableContainer submodel {i} must be an object"
+            )));
+        }
+        if let Some(key) = entry.keys().find(|k| *k != "model") {
+            return Err(LoadError::Unsupported(format!(
+                "SlimmableContainer submodel {i}: field \"{key}\" (this reader knows only \"model\")"
+            )));
+        }
+        let inner = entry.field("model").ok_or_else(|| {
+            LoadError::Config(format!("SlimmableContainer submodel {i} has no \"model\""))
+        })?;
+        let file = model(inner, true).map_err(|e| in_submodel(i, e))?;
+        let mut sizes = file.networks.into_iter();
+        let (Some((_, network)), None) = (sizes.next(), sizes.next()) else {
+            return Err(LoadError::Unsupported(format!(
+                "SlimmableContainer submodel {i}: a slimmable network inside a container"
+            )));
+        };
+        if network.sample_rate() != rate {
+            return Err(LoadError::Config(format!(
+                "SlimmableContainer submodel {i} was trained at {} Hz, the container at {rate} Hz",
+                network.sample_rate()
+            )));
+        }
+        networks.push((None, network));
+    }
+    networks.sort_by_key(|(_, n)| n.multiply_adds());
+    Ok(networks)
+}
+
+/// A submodel's error, saying which submodel.
+fn in_submodel(i: usize, e: LoadError) -> LoadError {
+    let at = |what: String| format!("SlimmableContainer submodel {i}: {what}");
+    match e {
+        LoadError::Version(v) => LoadError::Config(at(format!("unsupported file version {v}"))),
+        LoadError::Architecture(a) => LoadError::Architecture(at(a)),
+        LoadError::Config(w) => LoadError::Config(at(w)),
+        LoadError::Unsupported(w) => LoadError::Unsupported(at(w)),
+        other => other,
+    }
 }
 
 /// Versions 0.5.x to 0.7.x: the range whose layout this reader
