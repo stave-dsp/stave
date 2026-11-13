@@ -253,7 +253,7 @@ circuit/
   stage uses today and give it a true pentode option.
 - [x] **E4** (c92b311: `opamp::Ideal` (the nullor) and `opamp::Macromodel` — one gain stage whose DC gain, GBW, slew, offset and swing are the datasheet's — as `ElementKind::OpAmp` in `Circuit<Dk>`; parts `TL072`, `JRC4558`, `LM308`; slewing/clipping at 2.6e-4 (128×) and a Tube Screamer on its JRC4558 at 3.1e-5 against ngspice. N5's WDF op-amp is not done) Op-amp beyond ideal: rail clipping, slew limit, finite gain-bandwidth,
   input offset, as a macromodel usable in N2/N5 (TL072, JRC4558, LM308).
-- [ ] **E5** OTA (CA3080, LM13700) with tanh transconductance and bias
+- [x] **E5** (c1a2e9a: `ota::BipolarPair` — `Iabc·tanh(vd/2Vt)`, the bias pin a junction whose current is mirrored — as `ElementKind::Ota`; parts `CA3080`, `LM13700`; transfer at 2.6e-8 and an LM13700 VCA at 4.1e-6 against ngspice; the LM13700's linearising diodes are not modelled) OTA (CA3080, LM13700) with tanh transconductance and bias
   current, for synth filters and VCA compressors.
 - [x] **E6** (c4b0105: `Shockley` holds the whole static card — `series_ohms`, `Breakdown` evaluated as ngspice's dioload.c; parts `N4148`, `N914`, `N4007`, `N34A`, `LED_RED`/`GREEN`/`BLUE`, Zeners `BZX84C6V2L`, `N750`; seven I–V decks at 2e-8–5e-7) Diode presets beyond Shockley defaults: 1N4148, 1N34A
   (germanium), red/blue LEDs, Zener breakdown; series resistance.
