@@ -20,17 +20,20 @@
 //! — upper triangular, solved from the highest order down. (Checked
 //! against `sin³ = (3 sin − sin 3·)/4`: `A₁₃ = 3a²/4`, `A₃₃ = −a²/4`.)
 //! The derivation is from the expansion and the synchronized sweep's
-//! phase property; the round trip in `block_models.rs` holds it.
+//! phase property; the round trip in `block_models.rs` holds it. The
+//! separation and the conversion are [`kernels`](super::kernels)'s,
+//! shared with the kernels as an analysis (DSP.md M6).
 
 use std::f64::consts::TAU;
 
 use stave_dsp::learned::block::{Linear, ParallelHammerstein};
 use stave_dsp::Stage;
 
-use super::periodic::{spectrum, waveform};
+use super::kernels::HarmonicResponses;
+use super::periodic::waveform;
 use super::rational::{Point, Rational};
 use crate::suite::sweep::Sweep;
-use crate::suite::{divide, Complex};
+use crate::suite::Complex;
 
 /// How each branch filter is stored.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -123,116 +126,19 @@ pub struct Fit {
 pub fn fit(sweep: &Sweep, rate: f64, input: &[f64], output: &[f64], options: &Options) -> Option<Fit> {
     let n = input.len();
     assert!(n.is_power_of_two() && output.len() == n, "pad the sweep to a power of two (stimulus())");
-    let (f1, f2) = (sweep.low_hz, sweep.high_hz.min(0.5 * rate));
-    let l = sweep.rate_constant();
-    if (f1 * l - (f1 * l).round()).abs() > 1e-6 {
-        // Not synchronized: the harmonics would not line up in phase.
-        return None;
-    }
     let a = sweep.amplitude;
-    let y = spectrum(output);
-    let df = rate / n as f64;
-    // Deconvolve by the sweep's analytic spectrum (Novak et al. 2015, by
-    // stationary phase): X̃(f) = (a/2)·√(L/f)·e^{j(2πfL(1 − ln(f/f₁)) − π/4)},
-    // times `rate` for the DFT. Dividing by it, not by the sampled sweep's
-    // spectrum, needs no band edges: 1/X̃ falls as √f towards DC, so the
-    // even branches' DC and whatever lies below f₁ fade instead of
-    // ringing through every window (a taper's ringing, cut by a window,
-    // leaves an error falling only as f₁/f).
-    let mut d = vec![Complex::new(0.0, 0.0); n];
-    for k in 1..n / 2 {
-        let f = k as f64 * df;
-        let phase = TAU * f * l * (1.0 - (f / f1).ln()) - std::f64::consts::FRAC_PI_4;
-        let mag = 0.5 * a * (l / f).sqrt() * rate;
-        let xt = Complex::new(mag * phase.cos(), mag * phase.sin());
-        d[k] = divide(y[k], xt);
-        d[n - k] = d[k].conj();
-    }
-    let ir = waveform(&d);
     let order = options.order.max(1);
-    // Each harmonic's window reaches halfway to its neighbours (harmonic
-    // n arrives at −L·ln n): back towards n + 1 and on towards n − 1
-    // (the linear response, with no neighbour ahead, as far on as
-    // harmonic 2 is behind it). A band-limited response rings both ways
-    // of its arrival; a window cut short before it leaves an error
-    // falling only as 1/f, so the reach back matters as much as on.
-    let gap = |a: usize, b: usize| l * (b as f64 / a as f64).ln() * rate;
-    let back: Vec<usize> = (1..=order).map(|h| (0.5 * gap(h, h + 1)).floor() as usize).collect();
-    let on: Vec<usize> = (1..=order)
-        .map(|h| if h == 1 { gap(1, 2).floor() as usize } else { (0.5 * gap(h - 1, h)).floor() as usize })
-        .collect();
-    if back.iter().chain(&on).any(|&w| w < 16) {
-        return None;
-    }
-    let widest = (0..order).map(|i| back[i] + on[i]).max()?;
-    let nfft = (2 * widest).next_power_of_two();
-    let mut harmonics: Vec<Vec<Complex<f64>>> = Vec::with_capacity(order);
-    for h in 1..=order {
-        let (pre, post) = (back[h - 1], on[h - 1]);
-        let p = -(l * (h as f64).ln() * rate);
-        let start = p.floor() as i64 - pre as i64;
-        let offset = p - start as f64;
-        let mut seg = vec![0.0; nfft];
-        let (fade_in, fade_out) = (pre / 2, post / 4);
-        for (i, s) in seg.iter_mut().enumerate().take(pre + post) {
-            let at = (start + i as i64).rem_euclid(n as i64) as usize;
-            let w = if i < fade_in {
-                0.5 - 0.5 * (std::f64::consts::PI * i as f64 / fade_in as f64).cos()
-            } else if i >= pre + post - fade_out {
-                let j = i - (pre + post - fade_out);
-                0.5 + 0.5 * (std::f64::consts::PI * j as f64 / fade_out as f64).cos()
-            } else {
-                1.0
-            };
-            *s = ir[at] * w;
-        }
-        let s = spectrum(&seg);
-        harmonics.push(
-            (0..=nfft / 2)
-                .map(|k| {
-                    let w = TAU * k as f64 / nfft as f64;
-                    let shift = Complex::new((w * offset).cos(), (w * offset).sin());
-                    s[k] * shift
-                })
-                .collect(),
-        );
-    }
+    let separated = HarmonicResponses::separate_with(sweep, rate, output, order, false)?;
+    let nfft = 2 * (separated.responses[0].len() - 1);
     // FIR branches keep the causal part, as long as the linear window.
     let len = match options.branches {
-        Branches::Fir { taps } => taps.min(on[0]),
-        Branches::Rational { .. } => on[0],
+        Branches::Fir { taps } => taps.min(separated.linear_window),
+        Branches::Rational { .. } => separated.linear_window,
     };
     let fade = len / 4;
-    // Branches from the highest power down, on each bin of the kernel grid.
-    let kdf = rate / nfft as f64;
-    let valid = |m: usize, k: usize| {
-        let f = k as f64 * kdf;
-        f >= 2.0 * f1 * m as f64 && f <= 0.9 * f2
-    };
-    // Below its band (output frequencies under 2·m·f₁, from inputs the
-    // sweep never played) a branch is unmeasured, yet the lower
-    // harmonics there still hold its contribution (sin³ has a
-    // fundamental): it is held at its lowest measured value, so the
-    // lower branches are not corrupted by its absence.
-    let mut g = vec![vec![Complex::new(0.0, 0.0); nfft / 2 + 1]; order];
-    for m in (1..=order).rev() {
-        for k in 0..=nfft / 2 {
-            if !valid(m, k) {
-                continue;
-            }
-            let mut rhs = harmonics[m - 1][k];
-            for q in m + 1..=order {
-                rhs = rhs - coefficient(m, q, a) * g[q - 1][k];
-            }
-            g[m - 1][k] = divide(rhs, coefficient(m, m, a));
-        }
-        if let Some(first) = (0..=nfft / 2).find(|&k| valid(m, k)) {
-            let held = g[m - 1][first];
-            for v in &mut g[m - 1][..first] {
-                *v = held;
-            }
-        }
-    }
+    let kdf = separated.bin_hz;
+    let valid = |m: usize, k: usize| separated.valid(m, k);
+    let g = separated.hammerstein();
     let kernels: Vec<Vec<(f64, Complex<f64>)>> = (1..=order)
         .map(|m| {
             (0..=nfft / 2)

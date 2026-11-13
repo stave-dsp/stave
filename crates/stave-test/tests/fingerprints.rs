@@ -18,7 +18,8 @@ use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
 use stave_dsp::primitives::filters::sallen_key::SallenKey;
 use stave_dsp::units::{db, hz};
 use stave_dsp::{CurveStage, Oversampled2x, SmoothSat, Stage, Triode};
-use stave_test::characterise::fingerprint::{path, pin_stage, stage_plan, Fingerprint};
+use stave_test::characterise::fingerprint::{path, pin_stage, pin_stage_with, stage_plan, Fingerprint};
+use stave_test::characterise::kernels::KernelPlan;
 use stave_test::characterise::model::Ticker;
 use stave_test::characterise::{Plan, Table};
 
@@ -27,9 +28,10 @@ fn ticker(mut s: impl Stage + 'static) -> Ticker {
     Box::new(move |x| f64::from(s.tick(x as f32)))
 }
 
+/// With its nonlinear kernels (C12, DSP.md M6) beside the tables.
 #[test]
 fn triode() {
-    pin_stage(
+    pin_stage_with(
         "stages/triode",
         "Triode, grid drive 77 V, first-order ADAA, at the host rate",
         Some("stave_dsp::circuit::topologies::triode_stage::Triode"),
@@ -39,6 +41,7 @@ fn triode() {
             t.set_grid_drive(77.0);
             ticker(t)
         },
+        Some(&KernelPlan::default()),
     );
 }
 

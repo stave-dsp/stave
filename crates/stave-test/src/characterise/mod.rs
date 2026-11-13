@@ -48,6 +48,7 @@
 pub mod black_box;
 pub mod compare;
 pub mod fingerprint;
+pub mod kernels;
 pub mod model;
 pub mod plan;
 pub mod table;
@@ -126,6 +127,7 @@ pub struct Characterise {
     model: Option<Model>,
     deck_name: String,
     catalogue: Option<String>,
+    kernels: Option<kernels::KernelPlan>,
 }
 
 impl Characterise {
@@ -151,6 +153,7 @@ impl Characterise {
             model: None,
             deck_name: name.to_string(),
             catalogue: None,
+            kernels: None,
         }
     }
 
@@ -159,6 +162,16 @@ impl Characterise {
     pub fn catalogue(self, path: &str) -> Self {
         Self {
             catalogue: Some(path.into()),
+            ..self
+        }
+    }
+
+    /// Measure the model's nonlinear kernels too (C12, DSP.md M6): the
+    /// plan's sweeps at levels re the knee, kept in the fingerprint and
+    /// drawn on the model catalogue ([`kernels`]).
+    pub fn kernels(self, plan: kernels::KernelPlan) -> Self {
+        Self {
+            kernels: Some(plan),
             ..self
         }
     }
@@ -275,6 +288,7 @@ impl Characterise {
                     reference: None,
                     model: String::new(),
                     catalogue: self.catalogue,
+                    kernels: None,
                 }
             }
         };
@@ -337,6 +351,10 @@ impl Characterise {
                 tables.push((rate, table));
             }
         }
+        let kernels = self.kernels.as_ref().map(|k| {
+            kernels::measure(model, &self.plan, k)
+                .unwrap_or_else(|| panic!("{}: no kernels (no knee, or the sweep did not separate)", self.name))
+        });
         let what = match model {
             Model::Circuit(_) => "Circuit<Dk>",
             Model::Wdf(_) => "Circuit<Wdf>",
@@ -356,6 +374,7 @@ impl Characterise {
             reference: Some((format!("{} ({})", reference.source, self.target.regenerate()), reference)),
             plan: self.plan,
             catalogue: self.catalogue,
+            kernels,
         }
     }
 }
@@ -425,6 +444,8 @@ pub struct Characterisation {
     /// What ran, for the fingerprint.
     pub model: String,
     pub catalogue: Option<String>,
+    /// The nonlinear kernels (C12), when asked for.
+    pub kernels: Option<kernels::KernelSet>,
 }
 
 impl Characterisation {
@@ -465,6 +486,7 @@ impl Characterisation {
             })
             .collect();
         Fingerprint::new(&self.name, &self.model, self.catalogue.as_deref(), tables, self.reference.as_ref().map(|r| r.0.as_str()), None, None)
+            .with_kernels(self.kernels.as_ref().map(kernels::KernelSet::record))
     }
 
     /// Hold the T0 matrix to the committed fingerprint (re-bless with

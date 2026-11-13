@@ -10,6 +10,8 @@
 //! rational            rational fits of a response (Sanathanan–Koerner), poles and zeros
 //! wiener_hammerstein  the best split of the BLA, the curve by least squares
 //! hammerstein         Novak's polynomial Hammerstein kernels from one sweep
+//! kernels             the sweep's harmonic responses, generalised Hammerstein and
+//!                     Volterra-diagonal kernels as an analysis (C12, M6)
 //! solve               least squares, normal equations, polynomial roots
 //! ```
 //!
@@ -42,6 +44,7 @@
 
 pub mod capture;
 pub mod hammerstein;
+pub mod kernels;
 pub mod periodic;
 pub mod rational;
 pub mod solve;

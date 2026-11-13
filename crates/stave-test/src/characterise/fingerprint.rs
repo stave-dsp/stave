@@ -18,6 +18,9 @@
 //! versions <metric/version …>         the R19 implementations
 //! metric <rate> <run> <name> <value>  NMR, ERB error, Rnonlin, GedLee per run
 //! plot <kind> <series> <x> <y…>       response, harmonics, compression, aliasing, anmr
+//! kernels <rate> <knee> <f1> <f2> <s> <order>   C12's sweeps (optional, DSP.md M6)
+//! kernel hammerstein <dB re knee> <m> <Hz> <dB> <degrees>
+//! kernel volterra <m> <Hz> <dB> <degrees>
 //! table <rate> <oversampled|shipping|both>
 //! <the R17 table at that rate>
 //! end
@@ -33,6 +36,11 @@
 //! only the tables; a separate test recomputes them from the committed
 //! tables (a metric's new version shows as a stale fingerprint, never as
 //! a moved model). `STAVE_BLESS=1` writes the fingerprint instead.
+//!
+//! **Kernels.** A case that asks for them
+//! ([`Characterise::kernels`](super::Characterise::kernels)) keeps its
+//! nonlinear kernels (C12, [`super::kernels`]) too: measured, like the
+//! tables, so diffed ([`super::kernels::diff`]) rather than recomputed.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -47,6 +55,7 @@ use stave_measure::suite::levels::{Criterion, Knee};
 use stave_measure::suite::{db, Complex};
 
 use super::compare::{compare, Check};
+use super::kernels::{KernelKind, KernelRecord, KernelRow};
 use super::plan::{Kind, Plan, Run, Tier, HARMONICS};
 use super::table::{fixtures, Table};
 use super::Rates;
@@ -155,6 +164,8 @@ pub struct Fingerprint {
     pub tables: Vec<(f64, Role, Table)>,
     pub metrics: Vec<Metric>,
     pub plots: Vec<Plot>,
+    /// The nonlinear kernels (C12), for a case that asks for them.
+    pub kernels: Option<KernelRecord>,
 }
 
 /// `crates/stave-test/fingerprints/<case>.fingerprint`.
@@ -201,7 +212,13 @@ impl Fingerprint {
             tables,
             metrics: Vec::new(),
             plots: Vec::new(),
+            kernels: None,
         }
+    }
+
+    /// With the nonlinear kernels (C12) measured beside the tables.
+    pub fn with_kernels(self, kernels: Option<KernelRecord>) -> Self {
+        Self { kernels, ..self }
     }
 
     /// With its metrics and plots computed over `plan`'s T0 runs against
@@ -325,6 +342,16 @@ impl Fingerprint {
             let v: Vec<String> = p.values.iter().map(|x| format!("{x:e}")).collect();
             let _ = writeln!(s, "plot {} {} {}", p.kind, p.series, v.join(" "));
         }
+        if let Some(k) = &self.kernels {
+            let _ = writeln!(s, "kernels {} {:e} {} {} {:e} {}", k.rate, k.knee, k.low_hz, k.high_hz, k.seconds, k.order);
+            for r in &k.rows {
+                let tail = format!("{} {:e} {:e} {:e}", r.order, r.hz, r.db, r.degrees);
+                let _ = match r.kind {
+                    KernelKind::Hammerstein { level_db } => writeln!(s, "kernel hammerstein {level_db} {tail}"),
+                    KernelKind::Volterra => writeln!(s, "kernel volterra {tail}"),
+                };
+            }
+        }
         for (rate, role, t) in &self.tables {
             let _ = writeln!(s, "table {rate} {}", role.word());
             s.push_str(&t.describe());
@@ -355,6 +382,7 @@ impl Fingerprint {
             tables: Vec::new(),
             metrics: Vec::new(),
             plots: Vec::new(),
+            kernels: None,
         };
         let num = |w: &str| w.parse::<f64>().map_err(|e| format!("fingerprint: {w}: {e}"));
         while let Some(line) = lines.next() {
@@ -397,6 +425,32 @@ impl Fingerprint {
                     series: w[1].to_string(),
                     values: w[2..].iter().map(|x| num(x)).collect::<Result<_, _>>()?,
                 }),
+                "kernels" if w.len() == 6 => {
+                    fp.kernels = Some(KernelRecord {
+                        rate: num(w[0])?,
+                        knee: num(w[1])?,
+                        low_hz: num(w[2])?,
+                        high_hz: num(w[3])?,
+                        seconds: num(w[4])?,
+                        order: w[5].parse().map_err(|e| format!("fingerprint: kernels order: {e}"))?,
+                        rows: Vec::new(),
+                    })
+                }
+                "kernel" => {
+                    let record = fp.kernels.as_mut().ok_or("fingerprint: a kernel row before `kernels`")?;
+                    let (kind, rest) = match (w.first(), w.len()) {
+                        (Some(&"hammerstein"), 6) => (KernelKind::Hammerstein { level_db: num(w[1])? }, &w[2..]),
+                        (Some(&"volterra"), 5) => (KernelKind::Volterra, &w[1..]),
+                        _ => return Err(format!("fingerprint: bad kernel row `{line}`")),
+                    };
+                    record.rows.push(KernelRow {
+                        kind,
+                        order: rest[0].parse().map_err(|e| format!("fingerprint: kernel order: {e}"))?,
+                        hz: num(rest[1])?,
+                        db: num(rest[2])?,
+                        degrees: num(rest[3])?,
+                    });
+                }
                 "table" => {
                     let rate = num(w[0])?;
                     let role = match w.get(1) {
@@ -551,13 +605,37 @@ pub fn of_black_box(
 /// fingerprint of `case`, at 48 kHz.
 #[track_caller]
 pub fn pin_stage(case: &str, model: &str, catalogue: Option<&str>, make: impl Fn(f64) -> super::model::Ticker + 'static) {
+    pin_stage_with(case, model, catalogue, make, None);
+}
+
+/// [`pin_stage`], with the stage's nonlinear kernels (C12) measured on
+/// `kernels`' sweeps at its knee and kept beside its tables.
+#[track_caller]
+pub fn pin_stage_with(
+    case: &str,
+    model: &str,
+    catalogue: Option<&str>,
+    make: impl Fn(f64) -> super::model::Ticker + 'static,
+    kernels: Option<&super::kernels::KernelPlan>,
+) {
     let committed = if blessing() {
         None
     } else {
         Fingerprint::committed(case).map(|c| c.unwrap_or_else(|e| panic!("fingerprint `{case}`: {e}")))
     };
-    let (fp, plan) = of_stage(case, model, catalogue, make, 48_000.0, committed.as_ref().and_then(|c| c.knee));
-    fp.pin(&plan, None);
+    let make = std::rc::Rc::new(make);
+    let shared = make.clone();
+    let (fp, plan) = of_stage(case, model, catalogue, move |r| shared(r), 48_000.0, committed.as_ref().and_then(|c| c.knee));
+    let record = kernels.map(|k| {
+        let stage = super::model::Model::Stage {
+            make: Box::new(move |r| make(r)),
+            operating_point: Vec::new(),
+        };
+        super::kernels::measure(&stage, &plan, k)
+            .unwrap_or_else(|| panic!("fingerprint `{case}`: the kernels' sweeps did not separate"))
+            .record()
+    });
+    fp.with_kernels(record).pin(&plan, None);
 }
 
 /// Every characteristic of `now` that moved from `committed` beyond
@@ -567,6 +645,12 @@ pub fn diff(committed: &Fingerprint, now: &Fingerprint, plan: &Plan) -> Vec<Stri
     if committed.knee.map(|k| k.amplitude) != now.knee.map(|k| k.amplitude) {
         let (a, b) = (committed.knee.map_or(0.0, |k| k.amplitude), now.knee.map_or(0.0, |k| k.amplitude));
         moved.push(format!("knee: {a:e} → {b:e} ({:+.2} dB)", db(b / a)));
+    }
+    match (&committed.kernels, &now.kernels) {
+        (Some(a), Some(b)) => moved.extend(super::kernels::diff(a, b)),
+        (Some(_), None) => moved.push("C12 kernels: committed, not measured now".into()),
+        (None, Some(_)) => moved.push("C12 kernels: measured now, none committed (bless them)".into()),
+        (None, None) => {}
     }
     for (rate, role, table) in &now.tables {
         let Some((_, _, old)) = committed.tables.iter().find(|t| t.0 == *rate) else {

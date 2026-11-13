@@ -28,7 +28,8 @@ Each assumes you know the [concepts](crate::concepts).
   goes in stave-dsp, what it is called, and how it is verified.
 - [Capture and fit a block model](crate::howto::block_models): the
   stimulus to play through a device, a Wiener–Hammerstein or polynomial
-  Hammerstein fit with `stave-fit`, and where block models fall short.
+  Hammerstein fit with `stave-fit`, where block models fall short, and
+  nonlinear kernels (Hammerstein, Volterra) as an analysis.
 - [Design a circuit](crate::howto::design_tools): import a KiCad
   netlist, find the part that moves the response most, and the spread
   of built units across part tolerances.

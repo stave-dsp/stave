@@ -7,6 +7,12 @@
 //! characterise tests derived from its tables), so they never drift from
 //! what CI diffs.
 //!
+//! A fingerprint that keeps its nonlinear kernels (C12, DSP.md M6: `kernels`
+//! and `kernel` lines) gets two more plots: the Volterra diagonals V2 and
+//! V3 at the knee, and the generalised Hammerstein kernels G2 and G3 at
+//! each level swept — each as its contribution at that level, the dBc the
+//! harmonic of a sine there reads.
+//!
 //! The build fails on a fingerprint that does not parse or names a
 //! catalogued model (`catalogue …`) the catalogue lacks. A supply's
 //! fingerprint (load steps, no tone) has nothing to plot and is listed
@@ -38,6 +44,11 @@ pub struct Fingerprint {
     pub metrics: BTreeMap<(String, String, String), f64>,
     /// `kind → [(series, values)]`.
     pub plots: BTreeMap<String, Vec<(String, Vec<f64>)>>,
+    /// The kernels' knee (a sine's peak), if the fingerprint keeps kernels.
+    pub knee: Option<f64>,
+    /// Kernel rows: `(level dB re knee, or None for a Volterra diagonal,
+    /// order, Hz, dB)`.
+    pub kernels: Vec<(Option<f64>, usize, f64, f64)>,
 }
 
 impl Fingerprint {
@@ -92,6 +103,8 @@ pub fn read(repo: &Path) -> Result<Vec<Fingerprint>> {
             tables: Vec::new(),
             metrics: BTreeMap::new(),
             plots: BTreeMap::new(),
+            knee: None,
+            kernels: Vec::new(),
         };
         let mut in_table = false;
         for line in lines {
@@ -114,6 +127,15 @@ pub fn read(repo: &Path) -> Result<Vec<Fingerprint>> {
                 "plot" if w.len() >= 3 => {
                     let values = w[2..].iter().map(|s| num(s)).collect::<std::result::Result<Vec<_>, _>>()?;
                     fp.plots.entry(w[0].into()).or_default().push((w[1].into(), values));
+                }
+                "kernels" if w.len() == 6 => fp.knee = Some(num(w[1])?),
+                "kernel" => {
+                    let order = |s: &str| s.parse::<usize>().map_err(|e| format!("{file}: kernel order {s}: {e}"));
+                    match (w.first(), w.len()) {
+                        (Some(&"hammerstein"), 6) => fp.kernels.push((Some(num(w[1])?), order(w[2])?, num(w[3])?, num(w[4])?)),
+                        (Some(&"volterra"), 5) => fp.kernels.push((None, order(w[1])?, num(w[2])?, num(w[3])?)),
+                        _ => return Err(format!("{file}: bad kernel row `{line}`").into()),
+                    }
                 }
                 "table" => {
                     fp.tables.push((w.first().unwrap_or(&"").to_string(), w.get(1).unwrap_or(&"").to_string()));
@@ -301,6 +323,63 @@ fn series_of(fp: &Fingerprint, kind: &str, xi: usize, yi: usize, keep: impl Fn(&
     out
 }
 
+/// Below this, a kernel's contribution is drawn at it (dB re the linear
+/// kernel): the separation's floor.
+const KERNEL_FLOOR_DB: f64 = -140.0;
+
+/// The kernel rows of `level` (`None`: the Volterra diagonals) and
+/// `order` as their contribution at that level: `|K|·(a/2)^{m−1}` re the
+/// peak of the same kind's linear kernel, dB, against Hz.
+fn contribution(fp: &Fingerprint, level: Option<f64>, order: usize) -> Vec<(f64, f64)> {
+    let Some(knee) = fp.knee else { return Vec::new() };
+    let rows = |m: usize| fp.kernels.iter().filter(move |r| r.0 == level && r.1 == m);
+    let linear = rows(1).map(|r| r.3).fold(f64::NEG_INFINITY, f64::max);
+    let a = knee * 10f64.powf(level.unwrap_or(0.0) / 20.0);
+    let scale = 20.0 * (0.5 * a).powi(order as i32 - 1).log10();
+    rows(order).map(|r| (r.2, (r.3 + scale - linear).max(KERNEL_FLOOR_DB))).collect()
+}
+
+/// The kernel plots (C12), if the fingerprint keeps kernels.
+fn kernel_plots(fp: &Fingerprint) -> String {
+    if fp.kernels.is_empty() {
+        return String::new();
+    }
+    let series = |label: String, class: &'static str, dashed: bool, points: Vec<(f64, f64)>| Series { label, class, dashed, points };
+    let volterra = vec![
+        series("V2 at the knee".into(), "ship", false, contribution(fp, None, 2)),
+        series("V3 at the knee".into(), "ship", true, contribution(fp, None, 3)),
+    ];
+    let mut levels: Vec<f64> = fp.kernels.iter().filter_map(|r| r.0).collect();
+    levels.sort_by(f64::total_cmp);
+    levels.dedup();
+    let classes = ["p1", "p2", "p0", "p3", "p4"];
+    let mut hammerstein = Vec::new();
+    for (i, &l) in levels.iter().enumerate() {
+        let class = classes[i % classes.len()];
+        hammerstein.push(series(format!("G2 at {l:+} dB re knee"), class, false, contribution(fp, Some(l), 2)));
+        hammerstein.push(series(format!("G3 at {l:+} dB re knee"), class, true, contribution(fp, Some(l), 3)));
+    }
+    let mut s = plot("Volterra V2, V3 (dashed), at knee", "Hz (output)", "dB re linear", true, &volterra, None);
+    s.push_str(&plot("Hammerstein G2, G3 (dashed)", "Hz (output)", "dB re linear", true, &hammerstein, None));
+    s
+}
+
+/// The kernel plots' caption: what they show, the levels' colours.
+fn kernel_caption(fp: &Fingerprint) -> String {
+    if fp.kernels.is_empty() {
+        return String::new();
+    }
+    let mut levels: Vec<f64> = fp.kernels.iter().filter_map(|r| r.0).collect();
+    levels.sort_by(f64::total_cmp);
+    levels.dedup();
+    let names = ["blue", "green", "red", "amber", "violet"];
+    let key: Vec<String> = levels.iter().enumerate().map(|(i, l)| format!("{l:+} dB re knee {}", names[i % names.len()])).collect();
+    format!(
+        r#"<p class="fp-versions">Kernels (C12): each kernel as its contribution at its level, the dBc of that harmonic of a sine there, against output frequency; floored at {KERNEL_FLOOR_DB} dB; below about 60 Hz the separation's leakage floor rises (−100 dB re linear at 60 Hz). Hammerstein levels: {}. A G that moves with level is a system no generalised Hammerstein model holds.</p>"#,
+        key.join(", ")
+    )
+}
+
 /// One fingerprint's section: its plots and metrics.
 pub fn section(fp: &Fingerprint) -> String {
     let mut s = format!(r#"<section class="fingerprint" id="{}"><h3><code>{}</code></h3><p>{} · reference: {} · playback {} (dB SPL, full scale) · <a href="{GITHUB}/blob/main/{}">fingerprint</a></p>"#, fp.anchor(), esc(&fp.case), esc(&fp.model), esc(&fp.reference), esc(&fp.playback), esc(&fp.file));
@@ -342,7 +421,9 @@ pub fn section(fp: &Fingerprint) -> String {
         alias.push(se);
     }
     s.push_str(&plot("Aliasing (1 kHz)", "dB re knee", "dB", false, &alias, Some((-10.0, "ANMR −10 dB: audible above"))));
+    s.push_str(&kernel_plots(fp));
     s.push_str("</div>");
+    s.push_str(&kernel_caption(fp));
     // The metrics at the shipping rate, a row per run.
     if let Some(rate) = fp.shipping() {
         let names = [
