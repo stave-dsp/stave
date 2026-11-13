@@ -250,6 +250,53 @@ compares the transform with a direct DFT at every length from 2 to
 2^16, and `tests/convolver_properties.rs` compares the convolver with
 direct-form convolution over random responses and ragged blocks.
 
+### FIR design
+
+[`Fir`](stave_dsp::primitives::spectral::Fir) designs a filter's taps
+once, off the audio thread, from a specification; the
+[`Convolver`](stave_dsp::Convolver) runs them. Frequencies are fractions
+of the sample rate (`hz / sample_rate`, `0` to `0.5`), since a design is
+made for one rate.
+
+- [`Fir::kaiser`](stave_dsp::primitives::spectral::Fir::kaiser) takes a
+  [`Passband`](stave_dsp::primitives::spectral::Passband) (lowpass,
+  highpass or bandpass), the stopband attenuation in dB and the
+  transition width, and picks the length and the Kaiser window for you;
+  [`Fir::windowed_sinc`](stave_dsp::primitives::spectral::Fir::windowed_sinc)
+  takes the length and any [`Window`](stave_dsp::primitives::spectral::Window).
+- [`Fir::least_squares`](stave_dsp::primitives::spectral::Fir::least_squares)
+  fits weighted [`Band`](stave_dsp::primitives::spectral::Band)s, leaving
+  the gaps between them free.
+- Both are linear phase: symmetric taps, `(len − 1)/2` samples of delay.
+  [`Fir::minimum_phase`](stave_dsp::primitives::spectral::Fir::minimum_phase)
+  keeps the magnitude and gives up linear phase for the least delay.
+
+A lowpass at 4.8 kHz (at 48 kHz), 80 dB down from 6.72 kHz, checked
+against its specification and run at zero latency:
+
+```rust
+use stave_dsp::primitives::spectral::{Fir, Head, Passband};
+use stave_dsp::{Convolver, Stage};
+
+let sample_rate = 48_000.0;
+let fir = Fir::kaiser(Passband::Lowpass { cutoff: 4_800.0 / sample_rate }, 80.0, 0.04);
+assert!(fir.gain_db(1_000.0 / sample_rate).abs() < 0.001); // passband: flat
+assert!(fir.gain_db(8_000.0 / sample_rate) < -79.0); // stopband: 80 dB down
+
+// Linear phase delays every frequency by half the length; the
+// minimum-phase version keeps the magnitude and arrives at once.
+let quick = fir.minimum_phase();
+assert!((quick.gain_db(1_000.0 / sample_rate) - fir.gain_db(1_000.0 / sample_rate)).abs() < 0.001);
+assert!(quick.gain_db(8_000.0 / sample_rate) < -77.0);
+let peak = |f: &Fir| (0..f.len()).max_by(|&a, &b| f.taps()[a].abs().total_cmp(&f.taps()[b].abs())).unwrap();
+assert_eq!(peak(&fir), (fir.len() - 1) / 2);
+assert!(peak(&quick) < 16);
+
+let mut conv = Convolver::uniform(&quick.impulse_response(), 64, Head::Direct);
+conv.prepare(sample_rate as f32);
+assert_eq!(conv.latency(), 0);
+```
+
 ## The circuit layer
 
 [`circuit`](stave_dsp::circuit) follows SPICE practice: `devices/`

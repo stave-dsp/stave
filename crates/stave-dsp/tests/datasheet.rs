@@ -34,7 +34,7 @@ use stave_dsp::{AdaaOrder, AdsrConfig};
 use std::hint::black_box;
 use std::time::Instant;
 
-use stave_dsp::primitives::spectral::{Complex, Head};
+use stave_dsp::primitives::spectral::{Complex, Fir, Head, Passband};
 use stave_dsp::{
     Adaa, Adsr, Allpass1, Biquad, Convolver, Curve, DelayLine, DiodeClipper, DiodeClipperConfig,
     Fft, Hysteresis, ImpulseResponse, Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley,
@@ -237,6 +237,13 @@ fn primitive_datasheet() {
         );
         bench(&name, &input, |x| conv.tick(x));
     }
+
+    // F6: a designed FIR (80 dB Kaiser lowpass, 127 taps) run through
+    // the convolver at zero latency.
+    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, 80.0, 0.04);
+    let mut conv = Convolver::uniform(&fir.impulse_response(), 64, Head::Direct);
+    conv.prepare(sr);
+    bench(&format!("Fir {} taps B=64 direct", fir.len()), &input, |x| conv.tick(x));
 
     // F3: the same lengths with a direct head and doubling partitions
     // up to 8192; the worst 64-sample block shows the spike where the

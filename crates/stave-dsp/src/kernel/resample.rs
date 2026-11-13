@@ -44,7 +44,7 @@ const HB_HALF: usize = (HB_TAPS - 1) / 4; // 33
 /// Ring size (power of two ≥ HB_TAPS).
 const HB_RING: usize = 256;
 /// Kaiser β for ~96 dB stopband: β = 0.1102·(A − 8.7), A = 96.
-const HB_BETA: f64 = 9.62;
+pub(crate) const HB_BETA: f64 = 9.62;
 
 /// Zeroth-order modified Bessel function of the first kind (series;
 /// converges fast for the β range used here).
@@ -69,14 +69,19 @@ fn bessel_i0(x: f64) -> f64 {
 /// wider than the outer stage's. 73 taps (≡ 1 mod 4 ⇒ 18 base samples,
 /// exactly integer) delivers the same ~96 dB stopband there at 45 % of
 /// the outer filter's cost.
-const HB_TAPS_INNER: usize = 73;
+pub(crate) const HB_TAPS_INNER: usize = 73;
 const HB_M_INNER: usize = (HB_TAPS_INNER - 1) / 2; // 36
 const HB_HALF_INNER: usize = (HB_TAPS_INNER - 1) / 4; // 18
 
+/// The same taps as `primitives::spectral::Fir::windowed_sinc` with a
+/// quarter-rate lowpass and `Window::Kaiser { beta: HB_BETA }`, bit for
+/// bit (pinned by `the_oversampler_half_bands_are_kaiser_designs`); the
+/// kernel sits below `primitives`, so it keeps its own copy.
+///
 /// Compute the nonzero half-band coefficients for a given tap count:
 /// `(center, side[j])`, `side[j]` multiplying the symmetric pair at odd
 /// offset `2j+1`. Normalised so the DC gain is exactly 1.
-fn halfband_coeffs_n(taps: usize) -> (f64, [f64; HB_HALF]) {
+pub(crate) fn halfband_coeffs_n(taps: usize) -> (f64, [f64; HB_HALF]) {
     let m = ((taps - 1) / 2) as f64;
     let n_side = (taps - 1) / 4;
     let inv_i0 = 1.0 / bessel_i0(HB_BETA);

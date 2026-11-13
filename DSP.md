@@ -209,7 +209,7 @@ circuit/
   rate, normalised, mono/stereo/true-stereo; minimum-phase conversion.
 - [ ] **F5** STFT (analysis/synthesis with COLA windows) as a stage, the
   base for spectral effects and the phase vocoder (S6).
-- [ ] **F6** Linear-phase and minimum-phase FIR design (windowed sinc,
+- [x] **F6** (this commit: `primitives::spectral::Fir` — `windowed_sinc`/`kaiser` lowpass, highpass, bandpass, `least_squares` over weighted `Band`s, `minimum_phase` by the cepstrum, into a `Convolver` via `impulse_response`; one `Window` type for FIR and STFT. The oversampler's half-band tables are `Fir::windowed_sinc` Kaiser designs bit for bit, pinned by a test, but stay in `kernel`, which may not depend on `primitives`) Linear-phase and minimum-phase FIR design (windowed sinc,
   Parks–McClellan or least squares) as a library, used by F2's EQ and A3.
 
 ### N — circuit solvers
