@@ -27,6 +27,12 @@
 /// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::koren_matches_12ax7_datasheet`
 /// (the 12AX7 datasheet's plate current).
 ///
+/// Against the part (DSP.md R13):
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::ecc83_koren`,
+/// the T12AX7 on Philips' ECC83 plate curves — 11.7% of the peak reading
+/// at worst against a 6.3% budget, a known gap (the other parts have no
+/// digitised curves yet).
+///
 /// # Cost
 /// Per evaluation inside its circuit's line:
 /// `"CommonCathode x5 (Koren)"`.

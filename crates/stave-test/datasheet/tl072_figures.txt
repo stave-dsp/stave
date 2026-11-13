@@ -1,0 +1,19 @@
+# title: TL072 typical slew rate and unity-gain bandwidth from the electrical characteristics tables, at +/-15 V and 25 °C.
+# document: Texas Instruments, TL07xx Low-Noise FET-Input Operational Amplifiers, SLOS080W (September 1978, revised July 2025)
+# url: https://www.ti.com/lit/ds/symlink/tl072.pdf
+# figure: Electrical Characteristics (DC) table 5.8 (GBW), page 15, and Electrical Characteristics (AC) table 5.9 (SR), page 16
+# method: transcribed from the tables
+# x: supply voltage per rail (V)
+# y: slew rate (V/s) on curve slew; unity-gain bandwidth (Hz) on curve gbw
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 15
+# full-scale-y: 20e6
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: vcc=15 t=25
+# notes: TL07xC/AC/BC/I/M rows (the classic die; the TL07xH rows are a newer die at 5.25 MHz, 20 V/us, VS = 40 V). GBW: 3 MHz typical for "all NS and PS packages; all TL07xM devices", 5.25 MHz for "all other devices" in this revision; the classic part's value (3 MHz, the macromodel's) is transcribed. SR: VI = 10 V, CL = 100 pF, RL = 2 kOhm, typical 20 V/us (minimum 8 V/us for TL07xC/AC/BC/I, 5 V/us for TL07xM). Earlier revisions (SLOS080J, 2005) gave 13 V/us typical for the same part; the macromodel uses 13 V/us. The same sheet's Fig. 5-55 voltage-follower pulse response (tl072_pulse.txt) slews at about 10 V/us rising and 12.6 V/us falling.
+# curve slew=1
+15 20e6
+# curve gbw=1
+15 3e6

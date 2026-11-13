@@ -1,0 +1,38 @@
+# title: NJM4558 (JRC4558) open-loop voltage gain magnitude against frequency, typical.
+# document: Nisshinbo Micro Devices (formerly New Japan Radio), NJM4558 Dual Operational Amplifier, datasheet NJM4558_E, Ver. 20260723
+# url: https://www.nisshinbo-microdevices.co.jp/en/pdf/datasheet/NJM4558_E.pdf
+# figure: "Open Loop Voltage Gain vs. Frequency" (Typical Characteristics, top left), PDF page 3
+# method: page rasterised at 300 dpi; frequency axis calibrated on the eight decade gridlines 1 Hz (x 351.5 px) to 10 MHz (x 1041.5 px), log, linear fit 98.58 px/decade, residuals within 0.42 px; gain axis on the seven 20 dB gridlines 120 dB (y 543.5 px) to 0 dB (y 1169.5 px), linear in dB, 5.22 px/dB, residuals within 0.46 px; each point is the centre of the curve's 6-10 px stroke in a column clear of gridlines, given at that column's frequency; dB converted to V/V as 10^(dB/20).
+# x: frequency (Hz)
+# y: open-loop voltage gain magnitude (V/V)
+# scale-x: log
+# scale-y: log
+# full-scale-x: 10e6
+# full-scale-y: 1e6
+# uncertainty-x: 5%
+# uncertainty-y: 5%
+# conditions: vcc=15 rl=2000 t=25
+# notes: the plotted low-frequency gain is 110 dB (3.1e5), 10 dB above the table's 100 dB typical (86 dB minimum) -- the table and the plot disagree; the -20 dB/decade line crosses unity near 2.8 MHz (the table's GB 3 MHz). The curve meets the 0 dB frame edge near 3 MHz; points from there are omitted.
+# curve vcc=15
+1.04 3.104e5
+2.047 3.104e5
+5.09 3.104e5
+10.26 2.602e5
+14.9 1.953e5
+20.67 1.466e5
+30.74 1.03e5
+51.39 6.273e4
+96.56 3.309e4
+203.9 1.563e4
+495.3 6327
+975 3194
+2059 1492
+5120 590.8
+1.032e4 288.5
+1.984e4 148.9
+5.17e4 56.4
+9.713e4 29.75
+2.051e5 13.75
+5.1e5 5.444
+1.028e6 2.688
+2.071e6 1.327

@@ -1,0 +1,83 @@
+# title: 6L6GC beam power tube, average screen-grid current against plate voltage at several control-grid voltages, screen at 250 V.
+# document: Tung-Sol Electric Inc., Electron Tube Division, "6L6GC" tentative data sheet (plate dated April 1, 1960 on the sheet footer)
+# url: https://frank.pocnet.net/sheets/127/6/6L6GC.pdf
+# figure: untitled chart "6L6GC, Ef = 6.3 Volts, Ec2 = 250 Volts", screen current in mA against plate volts 0-500, Ec1 = 0, -8, -16, -24, -32 V; upper chart of PDF page 5
+# method: page rasterised at 300 dpi; affine axis calibration on gridline intersections: plate volts on the 0-500 V labelled gridlines near the top and bottom of the grid (px 413.5 -> 0 V, px 1374.5 -> 500 V; 10 points, residual max 0.6 V), screen current on the 0, 10, 20, 30, 40 mA gridlines at both sides (px 1081.5 -> 0 mA, px 316 -> 40 mA at the left; 10 points, residual max 0.1 mA); points are the centroid of the curve trace along pixel columns between the 20 V gridlines, curves identified by order, points where a curve label touches the trace dropped
+# x: plate voltage Va (V)
+# y: screen current Ig2 (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 500
+# full-scale-y: 0.04
+# uncertainty-x: 5
+# uncertainty-y: 5e-4
+# conditions: vg2=250 vf=6.3
+# notes: Average-tube curves, the companion of 6l6gc_plate.txt (same sheet, same screen voltage). The screen-current spikes below 50 V (0 V and -8 V curves rise to 43 and 27 mA as the plate voltage falls toward the knee) are not read: steep and ill-conditioned in this form. The -24 and -32 V curves fall to a few hundred microamps above 250 V, near the trace width (about 0.25 mA).
+# curve vg1=0
+50 0.0213
+70 0.01915
+90 0.01798
+110 0.01701
+130 0.01612
+150 0.01552
+190 0.01451
+230 0.01386
+310 0.01292
+350 0.01269
+390 0.01251
+# curve vg1=-8
+50 0.0164
+70 0.01554
+90 0.01458
+110 0.01343
+130 0.01215
+150 0.01136
+190 0.01009
+230 0.00936
+270 0.00873
+310 0.00821
+350 0.00788
+390 0.00759
+# curve vg1=-16
+50 0.01209
+70 0.01183
+90 0.0105
+110 0.00914
+130 0.00794
+150 0.00692
+190 0.0053
+230 0.00428
+270 0.00355
+310 0.00319
+350 0.00293
+430 0.00263
+# curve vg1=-24
+50 0.00871
+70 0.00851
+90 0.00785
+110 0.00655
+130 0.00461
+150 0.00323
+190 0.00195
+230 0.0018
+270 0.00157
+310 0.00146
+350 0.00136
+390 0.00126
+430 0.00116
+450 0.00114
+# curve vg1=-32
+50 0.00479
+70 0.005
+90 0.00477
+110 0.0039
+130 0.00294
+150 0.0021
+190 0.00101
+230 0.00052
+270 0.00047
+310 0.00047
+350 0.00047
+390 0.00048
+430 0.00051
+450 0.00054

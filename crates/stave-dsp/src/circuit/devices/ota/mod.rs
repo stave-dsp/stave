@@ -76,6 +76,13 @@ pub trait Ota: Copy {
 /// `crates/stave-dsp/src/circuit/devices/ota/tests.rs::the_bias_pin_sits_where_the_datasheet_says`
 /// (`gm` within 1% of the datasheets' 9600 µS at 500 µA).
 ///
+/// Against the parts (DSP.md R13):
+/// `crates/stave-test/tests/matches_datasheet.rs::otas::ca3080` and
+/// `crates/stave-test/tests/matches_datasheet.rs::otas::lm13700`,
+/// transconductance and bias-pin voltage against bias current on the
+/// sheets' typical curves: all within budget (CA3080 gm 2.4%, LM13700 gm
+/// 15.7% against 18.8%).
+///
 /// # Cost
 ///
 /// The datasheet's `"Circuit<Dk> OTA VCA (LM13700) x15"`: two controls in

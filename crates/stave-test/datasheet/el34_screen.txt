@@ -1,0 +1,26 @@
+# title: EL34 output pentode: screen-grid current against control-grid voltage, anode and screen at 250 V, suppressor at 0 V (average characteristics).
+# document: Philips, Electronic Tube Handbook, "EL34" data sheets; sheet A, chart drawing 57380 dated 2-2-1949
+# url: https://frank.pocnet.net/sheets/030/e/EL34.pdf
+# figure: transfer characteristics "I (mA) against Vg1 (V)", Ia solid and Ig2 dashed, curve 1: Va = 250 V, Vg2 = 250 V, Vg3 = 0 V; sheet A, PDF page 9
+# method: page rasterised at 400 dpi greyscale (not rotated); axes calibrated by least squares on the heavy gridlines found as dark pixel runs: Vg1 on the 0, -20, -40, -60 V lines (px 1488.5 -> 0 V, px 353.5 -> -60 V; Vg1 = -78.666 + 0.0528117*px; residual max 0.11 V), I on the 0, 50, 100, 150 mA lines (px 2230 -> 0 mA, px 1097 -> 150 mA; I = 295.28 - 0.13238*px mA; residual max 0.09 mA); points are the centre of the dashed trace from a line fitted to the trace centres over pixel columns within 16 px of the target Vg1, skipping the 2 V minor gridlines; the dashed Ig2 curve 1 was told from the solid Ia curve 1 (which crosses it near -28 V) by continuity and checked against zoomed crops
+# x: control-grid voltage Vg1 (V)
+# y: screen current Ig2 (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 60
+# full-scale-y: 0.25
+# uncertainty-x: 0.3
+# uncertainty-y: 1e-3
+# conditions: va=250 vg2=250 vg3=0 vf=6.3
+# notes: Average-tube curve. The sheet's plate family (el34_plate.txt) gives no screen current, so the screen current is taken from this transfer chart at the same screen voltage. Only curve 1 is taken: the dashed Ig2 curves 2 (Va = 350 V, Vg2 = 375 V) and 3 (Va = 400 V, Vg2 = 425 V) cross the solid Ia curves and each other below 25 mA and could not be read unambiguously. Below -24 V curve 1 merges with the axis and the solid Ia curve; it ends at its label near -5 V.
+# curve va=250 vg2=250
+-24 1.77e-3
+-22 2.39e-3
+-20 3.38e-3
+-18 4.84e-3
+-16 6.63e-3
+-14 9.13e-3
+-12 11.98e-3
+-10 15.35e-3
+-8 19.19e-3
+-6 23.60e-3

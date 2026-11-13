@@ -1,0 +1,93 @@
+# title: EL84 output pentode, screen-grid current against anode voltage at several control-grid voltages, screen at 250 V.
+# document: Mullard, "EL84 Output Pentode" data sheet, page C3, dated February 1961 (1)
+# url: https://frank.pocnet.net/sheets/129/e/EL84.pdf
+# figure: "Screen-grid current plotted against anode voltage with control-grid voltage as parameter. Vg2 = 250V" (drawing 6892), Ig2 (mA) 0-60+ against Va (V) 0-400, Vg1 = 0 to -10 V in 2 V steps; PDF page 7 (printed rotated)
+# method: page rasterised at 300 dpi (the scan's native 300 ppi, 1-bit) and rotated 90 deg; affine axis calibration on gridline intersections: anode volts on the 0-400 V major gridlines near the top and bottom of the grid (px 422.5 -> 0 V, px 1703.5 -> 400 V at the bottom; 10 points, residual max 0.5 V), screen current on the 20, 40, 60 mA gridlines at both sides (px 1002.5 -> 20 mA, px 363.5 -> 60 mA at the left; 6 points, residual max 0.03 mA; the 0 mA line is the frame); points are the centroid of the curve trace along pixel columns at 5 V past the 10 V gridlines, curves identified by order (all six resolved at every column used); checked by overlaying the points on the scan
+# x: anode voltage Va (V)
+# y: screen current Ig2 (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 400
+# full-scale-y: 0.06
+# uncertainty-x: 4
+# uncertainty-y: 6e-4
+# conditions: vg2=250
+# notes: Average-tube curves, a different manufacturer's sheet from el84_plate.txt (Philips) at the same screen voltage. The steep rise below 35 V (and the low-voltage wiggles of the -6 to -10 V curves below 25 V) is not read. The curves end at 400 V, where their labels start.
+# curve vg1=0
+35 0.04299
+45 0.03651
+55 0.03218
+75 0.02695
+95 0.02396
+125 0.02129
+155 0.01989
+205 0.01867
+255 0.01832
+305 0.01816
+355 0.01813
+395 0.01807
+# curve vg1=-2
+35 0.03595
+45 0.0306
+55 0.02699
+75 0.02194
+95 0.01933
+125 0.01706
+155 0.01573
+205 0.01457
+255 0.01407
+305 0.01391
+355 0.01388
+395 0.01382
+# curve vg1=-4
+35 0.02801
+45 0.02406
+55 0.02108
+75 0.01719
+95 0.01502
+125 0.01315
+155 0.01201
+205 0.01097
+255 0.01047
+305 0.01022
+355 0.01013
+395 0.01004
+# curve vg1=-6
+35 0.02037
+45 0.01771
+55 0.01558
+75 0.01231
+95 0.01058
+125 0.00921
+155 0.00844
+205 0.00803
+255 0.00788
+305 0.00769
+355 0.00756
+395 0.00741
+# curve vg1=-8
+35 0.01525
+45 0.01289
+55 0.01095
+75 0.00818
+95 0.00654
+125 0.00515
+155 0.00488
+205 0.00459
+255 0.00459
+305 0.00462
+355 0.00462
+395 0.00456
+# curve vg1=-10
+35 0.01062
+45 0.00886
+55 0.00713
+75 0.00471
+95 0.00335
+125 0.00246
+155 0.00213
+205 0.00206
+255 0.00206
+305 0.00209
+355 0.00206
+395 0.00209

@@ -1,0 +1,17 @@
+# title: 1N34A germanium diode maximum instantaneous forward voltage at its specified forward current, 25 °C (a table limit, not a curve).
+# document: Micro Commercial Components, 1N34A Germanium Diode, Revision 8, 2009/05/08
+# url: https://www.mccsemi.com/pdf/Products/1N34A(DO-7).pdf
+# figure: "Electrical Characteristics @ 25 °C", row "Maximum Instantaneous Forward Voltage", VF 1.00 V at IFM = 5.0 mA, TJ = 25 °C (pulse test, 300 us, 2% duty), PDF page 1
+# method: transcribed from the printed table (text layer read with pdftotext); no curve is printed in this sheet
+# x: forward voltage VF (V), the maximum
+# y: forward current IF (A)
+# scale-x: linear
+# scale-y: log
+# full-scale-x: 1.0
+# full-scale-y: 0.005
+# uncertainty-x: 0
+# uncertainty-y: 0%
+# conditions: t=25
+# notes: a MAXIMUM, not a typical value: a model passes if its VF at 5 mA is at or below 1.00 V. The sheet prints no forward curve, so no typical germanium knee can be held to it. Other rows of the same table: IR <= 30 uA at VR = 10 V and <= 500 uA at VR = 50 V, CJ 0.8 pF typical at 0 V, 1 MHz.
+# curve t=25 limit=1
+1.00 0.005

@@ -1,0 +1,56 @@
+# title: 2N3904 "ON" voltages against collector current at 25 °C: VBE at VCE = 1.0 V, VBE(sat) and VCE(sat) at IC/IB = 10, typical.
+# document: onsemi, 2N3903, 2N3904 General Purpose Transistors NPN Silicon, data sheet 2N3903/D
+# url: https://www.onsemi.com/download/data-sheet/pdf/2n3903-d.pdf
+# figure: Figure 17, "'ON' Voltages", PDF page 6
+# method: vector extraction: page converted to SVG (pdftocairo -svg), curve path vertices read exactly in page points; axes calibrated piecewise on every drawn gridline, IC: x 84.76 pt -> 1 mA, 174.79 pt -> 10 mA, 263.00 pt -> 100 mA, 290.04 pt -> 200 mA, log; V: y 500.71 pt -> 1.2 V, 644.77 pt -> 0 V, linear (13 gridlines, worst deviation from one straight line 0.0002 V); the x grid deviates from a single log line by up to 0.015 decade, so the piecewise mapping follows the drawing; curves told apart by their order at 10 mA (VBE(sat) above VBE(on) there, as labelled) and interpolated at the listed currents
+# x: collector current IC (A)
+# y: voltage (V): VBE for curves vce=1 and kind=1, VCE(sat) for kind=2
+# scale-x: log
+# scale-y: linear
+# full-scale-x: 0.2
+# full-scale-y: 1.2
+# uncertainty-x: 3%
+# uncertainty-y: 0.01
+# conditions: t=25
+# notes: three curves of two quantities; the curve keys say which: `vce=1` is VBE(on) at VCE = 1 V, `ic_over_ib=10 kind=1` is VBE(sat), `ic_over_ib=10 kind=2` is VCE(sat) (kind 1 = VBE, kind 2 = VCE). Typical curves. Uncertainty: stroke width 1.4 pt = 0.012 V full width on 12.0 pt per 0.1 V.
+# curve vce=1
+0.001 0.6514
+0.002 0.6607
+0.003 0.6685
+0.005 0.6836
+0.007 0.6954
+0.01 0.7088
+0.02 0.7367
+0.03 0.7572
+0.05 0.7914
+0.07 0.8231
+0.1 0.8649
+0.15 0.9355
+0.195 0.9989
+# curve ic_over_ib=10 kind=1
+0.002 0.6777
+0.003 0.6903
+0.005 0.709
+0.007 0.7269
+0.01 0.7468
+0.02 0.7856
+0.03 0.811
+0.05 0.8499
+0.07 0.8843
+0.1 0.924
+0.15 0.9734
+0.195 1.015
+# curve ic_over_ib=10 kind=2
+0.001 0.1
+0.002 0.1
+0.003 0.1
+0.005 0.1
+0.007 0.09955
+0.01 0.102
+0.02 0.117
+0.03 0.1362
+0.05 0.1996
+0.07 0.2684
+0.1 0.3552
+0.15 0.465
+0.195 0.5601

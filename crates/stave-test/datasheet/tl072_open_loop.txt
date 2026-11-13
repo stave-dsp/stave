@@ -1,0 +1,38 @@
+# title: TL072 large-signal differential voltage amplification (open-loop gain magnitude) against frequency, typical.
+# document: Texas Instruments, TL07xx Low-Noise FET-Input Operational Amplifiers, SLOS080W (September 1978, revised July 2025)
+# url: https://www.ti.com/lit/ds/symlink/tl072.pdf
+# figure: Figure 5-46, "Large-Signal Differential Voltage Amplification and Phase Shift vs Frequency" (section 5.11, Typical Characteristics: All Devices Except TL07xH), PDF page 25; the AVD curve (not the phase curve)
+# method: page rasterised at 300 dpi; frequency axis calibrated on the eight decade gridlines 1 Hz (x 515 px) to 10 MHz (x 1060.5 px), log, 77.9 px/decade, residuals within 1 px; AVD axis on the seven decade gridlines 1 (y 1814.5 px) to 10^6 (y 1268.5 px), log, 91.0 px/decade, residuals within 1 px; the curve followed column by column (centre of its 6 px stroke), the listed points read at the column nearest each frequency (gridline columns skipped; each point is given at the frequency of the column actually read).
+# x: frequency (Hz)
+# y: open-loop differential voltage gain magnitude (V/V)
+# scale-x: log
+# scale-y: log
+# full-scale-x: 10e6
+# full-scale-y: 1e6
+# uncertainty-x: 5%
+# uncertainty-y: 5%
+# conditions: vcc=15 rl=2000 t=25
+# notes: the plot is labelled VCC = +/-5 V to +/-15 V; the low-frequency plateau (2.0e5) is the table's AOL 200 V/mV typical and the -20 dB/decade line crosses unity near 2.9 MHz (the table's 3 MHz). The plot is a drawn typical curve, not a measurement; its 1 Hz-10 Hz plateau is flat by construction. Points above 2 MHz end at the frame's bottom edge and are omitted.
+# curve vcc=15
+1.159 2.005e5
+1.973 2.005e5
+4.931 2.005e5
+11.28 2.031e5
+15.16 1.931e5
+19.77 1.723e5
+29.9 1.194e5
+49.42 7.106e4
+113 3.083e4
+198.1 1.723e4
+495.2 6756
+1133 2894
+1986 1597
+4962 634.2
+1.135e4 271.7
+1.99e4 153.7
+4.973e4 59.53
+1.137e5 25.5
+1.994e5 14.43
+4.983e5 5.659
+1.14e6 2.394
+1.998e6 1.355

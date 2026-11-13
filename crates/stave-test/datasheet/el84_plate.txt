@@ -1,0 +1,100 @@
+# title: EL84 output pentode, anode characteristics: anode current against anode voltage at several control-grid voltages, screen at 250 V.
+# document: Philips, "EL 84" data sheet (Philips Electronic Tube Handbook; chart dated EL 84 13-2-'53, drawing 7R03703; pages dated 10.10.1957)
+# url: https://frank.pocnet.net/sheets/030/e/EL84.pdf
+# figure: chart B, "Vg2 = 250V", Ia (mA) 0-200 against Va (V) 0-300, Vg1 = 0 to -10 V in 2 V steps, with the Wa = 12 W dissipation hyperbola; PDF page 8 (printed rotated)
+# method: page rasterised at 300 dpi (the scan's native 300 ppi, 1-bit) and rotated 90 deg; affine axis calibration on gridline intersections: anode volts on the 50-300 V major gridlines near the top and bottom of the grid (px 545 -> 50 V, px 1722 -> 300 V at the top; 12 points, residual max 0.2 V), anode current on the 0, 50, 100, 150, 200 mA gridlines at both sides (px 1054 -> 0 mA, px 107.5 -> 200 mA at the left; 10 points, residual max 0.3 mA); points are the centroid of the curve trace along pixel columns at 2.5 V past each 5 V gridline, each curve followed by continuity from its order at 52.5 V, columns where the trace crosses the 12 W hyperbola or a label dropped; checked by overlaying the points on the scan
+# x: anode voltage Va (V)
+# y: anode current Ia (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 300
+# full-scale-y: 0.2
+# uncertainty-x: 3
+# uncertainty-y: 2e-3
+# conditions: vg2=250
+# notes: Average-tube curves. Beyond the 12 W dissipation hyperbola the sheet draws each curve dashed (0 V above ~85 V, -2 V above ~105 V, -4 V above ~140 V, -6 V above ~195 V, -8 V above ~285 V); the dashed parts are the published characteristic outside the rated dissipation and are included. 0 V ends at its label (~200 V), -2 V at ~250 V. The steep rise below ~15 V (0 V below ~25 V) is not read.
+# curve vg1=0
+27.5 0.1135
+37.5 0.124
+52.5 0.1328
+72.5 0.1394
+97.5 0.1447
+127.5 0.1491
+152.5 0.1515
+177.5 0.1532
+197.5 0.1543
+# curve vg1=-2
+17.5 0.07861
+27.5 0.09078
+37.5 0.09914
+52.5 0.1053
+72.5 0.1097
+102.5 0.1138
+127.5 0.1158
+152.5 0.1179
+177.5 0.1197
+202.5 0.1213
+227.5 0.1229
+247.5 0.1239
+# curve vg1=-4
+12.5 0.05408
+17.5 0.05948
+27.5 0.06669
+37.5 0.07125
+52.5 0.07656
+72.5 0.08125
+102.5 0.08533
+127.5 0.08739
+152.5 0.08924
+177.5 0.09013
+202.5 0.09124
+227.5 0.09246
+247.5 0.09334
+272.5 0.09424
+297.5 0.09514
+# curve vg1=-6
+12.5 0.03697
+17.5 0.03909
+27.5 0.04429
+37.5 0.04822
+52.5 0.05216
+72.5 0.056
+102.5 0.05923
+127.5 0.06013
+152.5 0.06145
+177.5 0.06256
+202.5 0.06409
+227.5 0.06509
+247.5 0.06608
+297.5 0.06851
+# curve vg1=-8
+12.5 0.02355
+17.5 0.02419
+27.5 0.02538
+37.5 0.02825
+52.5 0.03293
+72.5 0.03551
+102.5 0.03747
+127.5 0.03816
+152.5 0.03884
+177.5 0.03953
+202.5 0.04021
+227.5 0.0409
+247.5 0.04157
+297.5 0.04305
+# curve vg1=-10
+12.5 0.01362
+17.5 0.01331
+27.5 0.01312
+37.5 0.01399
+52.5 0.01518
+72.5 0.01744
+102.5 0.01919
+127.5 0.01956
+152.5 0.02004
+177.5 0.0204
+202.5 0.0212
+227.5 0.02167
+247.5 0.02213
+272.5 0.02261
+297.5 0.02308

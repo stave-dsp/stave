@@ -1,0 +1,31 @@
+# title: 2N3904 DC current gain hFE against collector current at VCE = 1.0 V, normalized (the 25 °C curve peaks at 1.0), typical.
+# document: onsemi, 2N3903, 2N3904 General Purpose Transistors NPN Silicon, data sheet 2N3903/D
+# url: https://www.onsemi.com/download/data-sheet/pdf/2n3903-d.pdf
+# figure: Figure 15, "DC Current Gain" (TYPICAL STATIC CHARACTERISTICS), PDF page 6
+# method: vector extraction: the page converted to SVG (pdftocairo -svg) and the +25 °C curve's path vertices read exactly, in page points; axes calibrated piecewise log-linear on every drawn gridline, Ic: x 85.32 pt -> 0.1 mA, 223.14 pt -> 1 mA, 358.47 pt -> 10 mA, 493.80 pt -> 100 mA, 535.86 pt -> 200 mA (labels from pdftotext -bbox); hFE: y 82.66 pt -> 2.0, 115.65 pt -> 1.0, 148.82 pt -> 0.5, 226.71 pt -> 0.1; the drawn grid deviates from a single log line by up to 0.010 decade in x and 0.007 decade in y (the first decade is drawn 2% wider), so the piecewise mapping follows the drawing; curve interpolated at the listed currents
+# x: collector current IC (A)
+# y: DC current gain hFE, normalized (dimensionless)
+# scale-x: log
+# scale-y: log
+# full-scale-x: 0.2
+# full-scale-y: 2.0
+# uncertainty-x: 3%
+# uncertainty-y: 3%
+# conditions: vce=1.0
+# notes: normalized: the sheet prints no normalizing point; the +25 °C curve peaks at 1.009 near IC = 7 mA, so hFE/hFE(peak) is what is stored. The same sheet's table gives the 2N3904 hFE at VCE = 1 V as 40 min at 0.1 mA, 70 min at 1 mA, 100-300 at 10 mA, 60 min at 50 mA, 30 min at 100 mA. Typical curve, not a limit. Uncertainty is the stroke width (1.4 pt, ~0.01 decade) plus the grid's departure from log spacing.
+# curve t=25
+0.00015 0.495
+0.0002 0.5366
+0.0003 0.5967
+0.0005 0.6719
+0.001 0.7673
+0.002 0.862
+0.005 0.9775
+0.01 0.9941
+0.02 0.8437
+0.03 0.7001
+0.05 0.4864
+0.07 0.3647
+0.1 0.2732
+0.15 0.185
+0.195 0.1383

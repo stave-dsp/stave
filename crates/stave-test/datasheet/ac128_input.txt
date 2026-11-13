@@ -1,0 +1,31 @@
+# title: AC128 input characteristic: base current against base-emitter voltage at -VCE = 1 V, common emitter, typical, Tamb = 25 °C.
+# document: Mullard, AC128 AC128/01 2-AC128 2-AC128/01 P-N-P Germanium Medium Power Transistors, Mullard Technical Handbook Book 1 Part 1 (1974), data dated June 1974
+# url: https://www.worldradiohistory.com/Archive-Catalogs/Suppliers/MNO/Mullard-Technical-Handbook-Book1-Part1-1974-695-pages.pdf
+# figure: drawing D3855, the four-quadrant "typical curves, Tamb = 25 °C" chart (lower-left quadrant: -IB against -VBE (mV), "-VCE = 1V"), printed rotated 90°; AC128 Page 5, PDF page 5 of the extract
+# method: 900 dpi 1-bit scan rasterised at 300 dpi and rotated 90° clockwise; gridlines by dark-pixel profiles (1 grid = 26.5 px); IB: px 412 -> 0, 147.5 -> 10 mA, linear (26.45 px/mA); VBE: px 822 -> 0, 1087 -> 500 mV, linear (0.53 px/mV); steep part (VBE < 0.24 V) traced row by row, flat part column by column, on gridline-free rows/columns (stroke 6-8 px), then IB interpolated at each listed VBE
+# x: base-emitter voltage magnitude |VBE| (V)
+# y: base current magnitude |IB| (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 0.5
+# full-scale-y: 0.012
+# uncertainty-x: 0.01
+# uncertainty-y: 0.0001
+# conditions: vce=1 t=25
+# notes: PNP: values are magnitudes. Below |VBE| ~ 0.1 V the printed curve runs along the IB = 0 axis (IB under the 0.04 mA reading resolution), so the table starts at 0.1 V; at 0.1-0.15 V the IB values are at the resolution limit (1 px = 0.04 mA). The curve ends at |VBE| = 0.46 V, IB = 11.4 mA. The sheet's table limits: |VBE| <= 300 mV at IE = 50 mA and <= 450 mV at IE = 300 mA (VCB = 0); VBE falls about 2.3 mV/°C.
+# curve vce=1
+0.1 9.452e-06
+0.125 5.671e-05
+0.15 0.0001292
+0.175 0.0002977
+0.2 0.0005444
+0.225 0.0009121
+0.25 0.001353
+0.275 0.001824
+0.3 0.00249
+0.325 0.003261
+0.35 0.004242
+0.375 0.00551
+0.4 0.006906
+0.425 0.008459
+0.45 0.01025

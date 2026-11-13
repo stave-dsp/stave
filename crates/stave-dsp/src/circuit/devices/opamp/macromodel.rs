@@ -55,6 +55,14 @@ use crate::units::{Hz, Volts};
 /// (every part's DC gain within 1% and its −3 dB point within 0.01 of
 /// 1/√2 at the datasheet's GBW, through `Circuit<Dk>`).
 ///
+/// Against the parts (DSP.md R13):
+/// `crates/stave-test/tests/matches_datasheet.rs::opamps::tl072` and
+/// `crates/stave-test/tests/matches_datasheet.rs::opamps::jrc4558` —
+/// gain-bandwidth and the tables' slew rates read back from a follower;
+/// the TL072's rising edge (sheet ~10 V/µs) and this revision's 20 V/µs
+/// table figure, both open-loop plots and the JRC4558's full-power swing
+/// are known gaps.
+///
 /// # Cost
 ///
 /// The datasheet's `"Circuit<Dk> Tube Screamer (JRC4558)"`: a

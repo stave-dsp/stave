@@ -1,0 +1,90 @@
+# title: ECC83 (12AX7) double triode, one section: anode current against anode voltage at several grid voltages (average characteristics).
+# document: Philips, Electronic Tube Handbook, "ECC83" data sheets; sheet B, chart drawing 7R03833 dated 20-6-1953
+# url: https://frank.pocnet.net/sheets/030/e/ECC83.pdf
+# figure: anode characteristics "Ia (mA) against Va (V), parameter Vg" (Vg = 0 to -4 V in 0.5 V steps), sheet B, PDF page 10 (printed rotated 90 degrees)
+# method: page rasterised at 400 dpi greyscale and rotated 90 deg clockwise; axes calibrated by least squares on the heavy gridlines found as dark pixel runs: Va on the 0, 50, ..., 350 V lines (px 358.5 -> 0 V, px 2123.5 -> 350 V; Va = -71.130 + 0.198412*px; residual max 0.2 V), Ia on the 0, 1, ..., 5 mA lines (px 1396.5 -> 0 mA, px 135.5 -> 5 mA; Ia = 5.54514 - 0.00396503*px mA; residual max 0.013 mA); points are the centre of the curve trace (about 10 px thick) averaged over pixel columns 4-6 px either side of the target Va (clear of the 5 V minor gridlines), curves identified by their order and checked against zoomed crops of the scan
+# x: anode voltage Va (V)
+# y: anode current Ia (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 375
+# full-scale-y: 5e-3
+# uncertainty-x: 2
+# uncertainty-y: 0.05e-3
+# conditions: vf=6.3
+# notes: Average-tube curves. Every printed curve is taken. Points where a curve runs into its printed label or the 5 mA frame are omitted (Vg = 0 V above 175 V, the -0.5 V curve's end at 250 V, the -2.5 V curve's end at 350 V), as are points below 0.07 mA where a curve merges into the Va axis. The curves' top ends (where each label is printed) are not read.
+# curve vg=0
+10 0.362e-3
+25 0.688e-3
+50 1.141e-3
+75 1.584e-3
+100 2.115e-3
+125 2.677e-3
+150 3.255e-3
+175 3.845e-3
+# curve vg=-0.5
+10 0.080e-3
+25 0.191e-3
+50 0.453e-3
+75 0.795e-3
+100 1.191e-3
+125 1.633e-3
+150 2.161e-3
+175 2.716e-3
+200 3.298e-3
+225 3.866e-3
+# curve vg=-1
+50 0.100e-3
+75 0.249e-3
+100 0.483e-3
+125 0.806e-3
+150 1.214e-3
+175 1.691e-3
+200 2.198e-3
+225 2.730e-3
+250 3.294e-3
+275 3.834e-3
+# curve vg=-1.5
+100 0.110e-3
+125 0.273e-3
+150 0.493e-3
+175 0.790e-3
+200 1.181e-3
+225 1.629e-3
+250 2.144e-3
+275 2.696e-3
+300 3.261e-3
+# curve vg=-2
+150 0.142e-3
+175 0.281e-3
+200 0.486e-3
+225 0.784e-3
+250 1.178e-3
+275 1.638e-3
+300 2.157e-3
+325 2.688e-3
+# curve vg=-2.5
+200 0.116e-3
+225 0.277e-3
+250 0.498e-3
+275 0.814e-3
+300 1.213e-3
+325 1.667e-3
+345 2.070e-3
+# curve vg=-3
+250 0.175e-3
+275 0.357e-3
+300 0.592e-3
+325 0.905e-3
+350 1.273e-3
+370 1.588e-3
+# curve vg=-3.5
+275 0.072e-3
+300 0.182e-3
+325 0.368e-3
+350 0.614e-3
+370 0.853e-3
+# curve vg=-4
+325 0.105e-3
+350 0.236e-3
+370 0.358e-3

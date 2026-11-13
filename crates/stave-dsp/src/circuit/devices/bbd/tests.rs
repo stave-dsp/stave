@@ -194,11 +194,11 @@ fn noise_floor_is_the_datasheet_s_n() {
     let predicted = sigma * (2.0 * integral / clock).sqrt();
     let error = 20.0 * (measured / predicted).log10();
     println!(
-        "noise: {:.2} µV RMS measured, {:.2} µV predicted ({:+.2} dB); S/N re 0.78 V: {:.1} dB at the output",
+        "noise: {:.2} µV RMS measured, {:.2} µV predicted ({:+.2} dB); S/N re the nominal level: {:.1} dB at the output",
         measured * 1e6,
         predicted * 1e6,
         error,
-        20.0 * (0.78 / measured).log10()
+        20.0 * (Chip::MN3007.nominal.get() / measured).log10()
     );
     assert!(error.abs() < 0.2, "{error} dB");
 }

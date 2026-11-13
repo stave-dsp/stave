@@ -1,0 +1,33 @@
+# title: LM13700 amplifier bias voltage against amplifier bias current at 25 °C, typical.
+# document: Texas Instruments, LM13700 Dual Operational Transconductance Amplifiers with Linearizing Diodes and Buffers, SNOSBW2F (November 1999, revised November 2015)
+# url: https://www.ti.com/lit/ds/symlink/lm13700.pdf
+# figure: Figure 10, "Amplifier Bias Voltage vs. Amplifier Bias Current" (Typical Characteristics), PDF page 7; the +25 °C curve (the middle of three: -55, +25, +125 °C)
+# method: page rasterised at 300 dpi (an embedded raster scan); IABC axis calibrated on all 37 drawn gridlines from 0.1 uA (x 1540.5 px) to 1000 uA (x 2064 px), log, piecewise-linear between gridlines (decades 130-132.5 px; a single log line misses them by up to 2.2 px); voltage axis on the gridlines 2000 mV (y 1158 px) to 0 mV (y 1679.5 px), linear fit 0.261 px/mV, residuals within 1.4 px; each point is the centre of the +25 °C stroke in a column clear of gridlines, given at that column's current.
+# x: amplifier bias current IABC (A)
+# y: amplifier bias voltage, bias pin to V- (V)
+# scale-x: log
+# scale-y: linear
+# full-scale-x: 1e-3
+# full-scale-y: 2.0
+# uncertainty-x: 3%
+# uncertainty-y: 0.015
+# conditions: t=25
+# notes: the figure states no supply; the bias pin sits "2 diode drops above the negative supply" (the sheet's text). The curve rises about 127 mV per decade over the listed points: two junctions at about 1.07 times 2.303 Vt (59.5 mV) each.
+# curve t=25
+1.26e-7 0.989
+3.31e-7 1.042
+5.27e-7 1.067
+7.55e-7 1.088
+1.25e-6 1.117
+1.88e-6 1.142
+3.14e-6 1.171
+7.48e-6 1.223
+1.25e-5 1.247
+1.88e-5 1.272
+3.14e-5 1.297
+5.30e-5 1.326
+8.40e-5 1.351
+1.25e-4 1.374
+3.18e-4 1.418
+5.33e-4 1.452
+8.34e-4 1.475

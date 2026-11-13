@@ -1,0 +1,138 @@
+# title: 6L6GC beam power tube, pentode-connected average plate characteristics: plate current against plate voltage at several control-grid voltages, screen at 250 V.
+# document: Tung-Sol Electric Inc., Electron Tube Division, "6L6GC" tentative data sheet (plate dated April 1, 1960 on the sheet footer)
+# url: https://frank.pocnet.net/sheets/127/6/6L6GC.pdf
+# figure: untitled plate family "6L6GC, Ef = 6.3 Volts, Ec2 = 250 Volts", plate current (Ib) in mA against plate volts 0-700, Ec1 = 0 to -40 V; lower chart of PDF page 4
+# method: page rasterised at 300 dpi; axis calibration fitted as an affine map (corrects the scan rotation of about 0.2 deg) on gridline intersections: plate volts on the 0-700 V labelled gridlines measured near the top and bottom of the grid (px 221 -> 0 V, px 1403 -> 700 V at the bottom; 14 points, residual max 1.0 V), plate current on the 0, 50, 100, 150, 200 mA gridlines at both sides (px 1019.5 -> 0 mA, px 344 -> 200 mA at the left; 10 points, residual max 0.5 mA); points are the centroid of the curve trace (about 5 px thick) along pixel columns at plate voltages between the 20 V gridlines, curves identified by order (all 18 curves resolved at 150-470 V) and tracked beyond; checked by overlaying the points on the scan
+# x: plate voltage Va (V)
+# y: plate current Ia (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 700
+# full-scale-y: 0.2
+# uncertainty-x: 5
+# uncertainty-y: 3e-3
+# conditions: vg2=250 vf=6.3
+# notes: Average-tube curves. Every second printed curve is taken (0 to -24 V in 4 V steps, and -32 V); -2, -6, ... and -28, -36, -40 V are printed but omitted to keep the table small. Points at 50-110 V only for 0 to -20 V (lower curves crowd and cross there). The steep rise below 50 V is not read: plate current at a fixed plate voltage is ill-conditioned on it. Below ~120 V the low-bias curves show the printed humps of the screen/plate current exchange.
+# curve vg1=0
+50 0.1656
+70 0.1722
+110 0.177
+150 0.18
+190 0.1832
+230 0.1858
+270 0.1881
+310 0.1902
+350 0.1922
+390 0.1938
+430 0.1954
+470 0.1968
+# curve vg1=-4
+50 0.1245
+70 0.1289
+110 0.135
+150 0.1395
+190 0.1424
+230 0.1452
+270 0.1474
+310 0.1496
+350 0.1514
+390 0.1529
+430 0.1543
+470 0.1558
+510 0.1568
+# curve vg1=-8
+50 0.0928
+70 0.095
+110 0.1006
+150 0.1057
+190 0.1095
+230 0.1118
+270 0.1139
+310 0.1156
+350 0.1172
+390 0.1189
+430 0.1198
+470 0.1209
+510 0.1221
+550 0.1231
+# curve vg1=-12
+50 0.06711
+70 0.06946
+110 0.07429
+150 0.07795
+190 0.08116
+230 0.08334
+270 0.08523
+310 0.08696
+350 0.08885
+390 0.0897
+430 0.09025
+470 0.09125
+510 0.09181
+550 0.09251
+590 0.09277
+# curve vg1=-16
+50 0.04468
+70 0.04643
+110 0.05127
+150 0.05463
+190 0.0574
+230 0.05987
+270 0.06205
+310 0.06423
+350 0.06597
+390 0.06711
+430 0.06826
+470 0.06911
+510 0.06952
+550 0.06978
+590 0.06989
+630 0.06985
+# curve vg1=-20
+50 0.02755
+70 0.02783
+110 0.03193
+150 0.03588
+190 0.0388
+230 0.04127
+270 0.04315
+310 0.0446
+350 0.04574
+390 0.04644
+430 0.04715
+470 0.0477
+510 0.04796
+550 0.04808
+590 0.04819
+630 0.04815
+# curve vg1=-24
+150 0.02259
+190 0.02462
+230 0.02636
+270 0.0278
+310 0.02909
+350 0.03009
+390 0.03094
+430 0.0315
+470 0.03176
+510 0.03217
+550 0.03243
+590 0.03254
+630 0.03265
+670 0.03262
+# curve vg1=-32
+150 0.00621
+190 0.00765
+230 0.00909
+270 0.01009
+310 0.01064
+350 0.01194
+390 0.01249
+430 0.0129
+470 0.01301
+510 0.01312
+550 0.01338
+590 0.01335
+630 0.01346
+670 0.01357
+690 0.01341

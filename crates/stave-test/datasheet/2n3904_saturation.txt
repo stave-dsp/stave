@@ -1,0 +1,51 @@
+# title: 2N3904 collector saturation region: collector-emitter voltage against base current at fixed collector currents, 25 °C, typical.
+# document: onsemi, 2N3903, 2N3904 General Purpose Transistors NPN Silicon, data sheet 2N3903/D
+# url: https://www.onsemi.com/download/data-sheet/pdf/2n3903-d.pdf
+# figure: Figure 16, "Collector Saturation Region", PDF page 6
+# method: vector extraction: page converted to SVG (pdftocairo -svg), curve path vertices read exactly in page points; axes calibrated piecewise on every drawn gridline, IB: x 85.66 pt -> 0.01 mA, 235.11 pt -> 0.1 mA, 386.19 pt -> 1 mA, 535.98 pt -> 10 mA, log (worst deviation from one log line 0.014 decade); VCE: y 293.61 pt -> 1.0 V, 437.67 pt -> 0 V, linear (11 gridlines, worst deviation 0.0002 V); curves assigned left to right to the labels IC = 1, 10, 30, 100 mA; the steep (active-region) part of each curve sampled at fixed VCE (0.9, 0.6, 0.4, 0.3, 0.2 V), the saturated part at fixed IB
+# x: base current IB (A)
+# y: collector-emitter voltage VCE (V)
+# scale-x: log
+# scale-y: linear
+# full-scale-x: 0.01
+# full-scale-y: 1.0
+# uncertainty-x: 3%
+# uncertainty-y: 0.01
+# conditions: t=25
+# notes: in the near-vertical part of each curve (VCE >= 0.3 V) the base current is the well-determined coordinate (to 3%) and VCE is not: compare there in IB, not in VCE. The curves end where printed (IC = 1 mA ends at IB = 0.1 mA, 10 mA at 1 mA, 30 mA at 3 mA, 100 mA at 10 mA). Uncertainty-y: stroke 1.4 pt = 0.01 V on 14.4 pt per 0.1 V.
+# curve ic=0.001
+1.901e-05 0.9
+1.904e-05 0.6
+1.913e-05 0.4
+1.998e-05 0.3
+2.569e-05 0.2
+3e-05 0.1725
+5e-05 0.1287
+7e-05 0.113
+9.819e-05 0.1022
+# curve ic=0.01
+8.203e-05 0.9
+8.549e-05 0.6
+8.826e-05 0.4
+9.475e-05 0.3
+0.0001485 0.2
+0.0002 0.1749
+0.0003 0.1499
+0.0005 0.1256
+0.0007 0.1114
+0.001 0.09925
+# curve ic=0.03
+0.0003581 0.9
+0.0003782 0.6
+0.0004275 0.4
+0.0005334 0.3
+0.001003 0.2
+0.0015 0.1756
+0.002 0.161
+0.00296 0.15
+# curve ic=0.1
+0.003077 0.9
+0.003439 0.6
+0.004948 0.4
+0.007 0.3547
+0.009826 0.3417

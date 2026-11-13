@@ -1,0 +1,26 @@
+# title: AC128 transfer characteristic: collector current against base current at -VCE = 1 V, common emitter, typical, Tamb = 25 °C.
+# document: Mullard, AC128 AC128/01 2-AC128 2-AC128/01 P-N-P Germanium Medium Power Transistors, Mullard Technical Handbook Book 1 Part 1 (1974), data dated June 1974
+# url: https://www.worldradiohistory.com/Archive-Catalogs/Suppliers/MNO/Mullard-Technical-Handbook-Book1-Part1-1974-695-pages.pdf
+# figure: drawing D3855, the four-quadrant "typical curves, Tamb = 25 °C" chart (upper-left quadrant: -IC against -IB, "-VCE = 1V"), printed rotated 90°; AC128 Page 5, PDF page 5 of the extract
+# method: 900 dpi 1-bit scan rasterised at 300 dpi and rotated 90° clockwise; gridlines by dark-pixel profiles; IB: px 412 -> 0, 147.5 -> 10 mA, linear (26.45 px/mA); IC: px 822 -> 0, 165 -> 1.0 A, linear (657 px/A); the line read row by row on gridline-free rows (stroke 7 px) and IB taken as the median stroke centre within ±5 rows of each listed IC
+# x: base current magnitude |IB| (A)
+# y: collector current magnitude |IC| (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 0.011
+# full-scale-y: 1.0
+# uncertainty-x: 0.00015
+# uncertainty-y: 0.01
+# conditions: vce=1 t=25
+# notes: PNP: values are magnitudes. Agrees within 0.12 mA in IB with the output family on the same chart at |VCE| = 1 V (IB = 1, 5, 9 mA give 0.104, 0.507, 0.847 A there) and with the hFE curve of Page 7 (~90). The line ends at IC = 0.99 A, IB = 10.8 mA.
+# curve vce=1
+0.0004537 0.05
+0.0008507 0.1
+0.001834 0.2
+0.002817 0.3
+0.003781 0.4
+0.00482 0.5
+0.005803 0.6
+0.007108 0.7
+0.00828 0.8
+0.009631 0.9

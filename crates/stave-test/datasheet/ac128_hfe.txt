@@ -1,0 +1,34 @@
+# title: AC128 static forward current transfer ratio hFE against collector current at -VCE = 1 V, typical.
+# document: Mullard, AC128 AC128/01 2-AC128 2-AC128/01 P-N-P Germanium Medium Power Transistors, Mullard Technical Handbook Book 1 Part 1 (1974), data dated June 1974
+# url: https://www.worldradiohistory.com/Archive-Catalogs/Suppliers/MNO/Mullard-Technical-Handbook-Book1-Part1-1974-695-pages.pdf
+# figure: drawing D3862, lower chart of AC128 Page 7 ("hFE at -VCE = 1V, typ"; the other curve on it, Ai, is not this), PDF page 7 of the extract
+# method: 900 dpi 1-bit scan rasterised at 300 dpi; gridlines located by dark-pixel profiles; IC: px 168 -> 0, 344.5 -> 100 mA, 522.5 -> 200 mA, 875.5 -> 400 mA, 1052.5 -> 500 mA, linear (1.769 px/mA, worst gridline residual 1.2 px = 0.7 mA); hFE: px 752 -> 50, 395.5 -> 100, 38 -> 150, linear (7.14 px per unit), referred to the local hFE = 90 gridline (scan tilt 1.5 px across the chart corrected); the curve traced column by column (stroke 5-6 px) and read as the median stroke centre within ±4 px of each listed current. From 50 mA up the curve lies on the hFE = 90 gridline, so its centre is read with the gridline merged into the stroke (bias <= 1 px = 0.15)
+# x: collector current magnitude |IC| (A)
+# y: static forward current transfer ratio hFE (dimensionless)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 0.5
+# full-scale-y: 150
+# uncertainty-x: 0.003
+# uncertainty-y: 1.0
+# conditions: vce=1 t=25
+# notes: PNP: currents and voltages are magnitudes. Typical curve. The curve starts at 10 mA as printed. The sheet's table (VCB = 0): hFE 55 min / 90 typ / 175 max at 50 mA and at 300 mA, 45 / 80 / 165 at 1 A. The spread (55 to 175) is far wider than the digitising error, so a model fitted to a different unit can sit well off this typical curve and still be an AC128.
+# curve vce=1
+0.0105 80.68
+0.015 82.47
+0.02 83.9
+0.025 85.62
+0.03 87.05
+0.04 88.62
+0.05 89.5
+0.06 89.56
+0.08 89.62
+0.1 89.65
+0.15 89.66
+0.2 89.64
+0.25 89.55
+0.3 89.6
+0.35 89.78
+0.4 89.97
+0.45 89.92
+0.495 90

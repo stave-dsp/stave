@@ -90,7 +90,7 @@ fn fold(filter: &Filter, ts: f64, output: bool) -> ([Pole; MAX_POLES], usize, f6
 /// 0.2 dB: −69.3 and −73.7 dB at a 40 kHz clock),
 /// `crates/stave-dsp/src/circuit/devices/bbd/tests.rs::noise_floor_is_the_datasheet_s_n`
 /// (idle noise within 0.2 dB of the quoted S/N held a clock period and
-/// shaped by the output filter: 26 µV, 89.5 dB below 0.78 V for the
+/// shaped by the output filter: 89 µV, 84.5 dB below 1.5 V for the
 /// MN3007 at 40 kHz),
 /// `crates/stave-dsp/src/circuit/devices/bbd/tests.rs::feedthrough_is_the_clock_through_the_output_filter`
 /// (the clock's square wave through the output filter, within 0.1 dB)

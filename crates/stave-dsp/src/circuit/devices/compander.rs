@@ -23,13 +23,15 @@ pub struct Chip {
 }
 
 impl Chip {
-    /// NE570 (Signetics/Philips; ON Semi NE570/D): unity gain at 0 dBm
-    /// (775 mV RMS) with the internal resistors, the rectifier's 10 kΩ
-    /// with the datasheet's 1 µF (10 ms), and 80 dB of range below
-    /// unity level.
+    /// NE570 (onsemi NE570/D, Rev. 4, May 2006): unity gain level 0 dBm
+    /// (775 mV RMS, ±1 dB) with the internal resistors; the rectifier's
+    /// `τ = 10 kΩ · C_RECT` with the 2.2 µF of the sheet's Figure 3 test
+    /// circuit (22 ms); 80 dB of range below unity level, the −80 dB end
+    /// of the input range its Figure 2 transfer curve shows (+20 to
+    /// −80 dB; "greater than 110 dB" of dynamic range overall).
     pub const NE570: Chip = Chip {
         unity: Volts::new(0.775),
-        rectifier: Seconds::new(0.010),
+        rectifier: Seconds::new(0.022),
         range: Db::new(80.0),
     };
 }
@@ -81,7 +83,7 @@ const AVERAGE_OF_RMS: f64 = 2.0 * core::f64::consts::SQRT_2 / core::f64::consts:
 /// # Aliasing
 /// The gain moves at the rectifier's rate, so the ripple it puts on a
 /// low tone (the chip's own distortion) sits at harmonics of the input,
-/// well below Nyquist for the default 10 ms; no oversampling expected.
+/// well below Nyquist for the default 22 ms; no oversampling expected.
 ///
 /// # Valid ranges
 /// Levels in volts; compressor gain bounded by `range` below unity level;

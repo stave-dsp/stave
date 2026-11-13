@@ -1,0 +1,115 @@
+# title: KT88 beam tetrode, anode characteristics: anode current against anode voltage at several control-grid voltages, screen at 300 V.
+# document: The M-O Valve Co. Ltd / The General Electric Co. Ltd of England (GEC), "KT88 Beam Tetrode" data sheets with circuit supplement
+# url: https://frank.pocnet.net/sheets/084/k/KT88_GEC.pdf
+# figure: untitled anode family "Vg2 = 300V" (drawing no. 1473), Ia (mA) 0-400 against Va (V) 0-500, Vg1 = 0 to -45 V in 5 V steps, with Ig2 (Vg1 = 0V) dashed; lower chart of printed page 6, PDF page 7
+# method: page rasterised at 400 dpi; affine axis calibration on gridline intersections (corrects the scan rotation of about 0.3 deg): anode volts on the 0-500 V major gridlines near the top of the grid and the 100-450 V lines near the bottom (px 332.5 -> 0 V, px 1994 -> 500 V at the top; 12 points, residual max 0.3 V), anode current on the 0, 100, 200, 300, 400 mA gridlines at both sides (px 1485.5 -> 0 mA, px 151.5 -> 400 mA at the left; 10 points, residual max 0.5 mA); points are the centroid of the curve trace along pixel columns at 5 V past each 10 V gridline, each curve followed by continuity from its order at 325 V, columns where the trace merges with a gridline, label or the dashed Ig2 curve dropped; checked by overlaying the points on the scan
+# x: anode voltage Va (V)
+# y: anode current Ia (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 500
+# full-scale-y: 0.4
+# uncertainty-x: 5
+# uncertainty-y: 6e-3
+# conditions: vg2=300
+# notes: Average-tube curves from a poor scan (grid broken up, about 0.3 deg rotation). Vg1 = 0 V is not read: it is printed only as the steep rise to 400 mA below 80 V. -5 V ends at 365 V and -10 V at 400 V where their labels start; -40 V is read to 345 V only (the trace is faint beyond); -45 V is read from 305 V (below, it lies within a trace width of the axis) to 455 V (its label beyond). The sheet prints a Vg2 = 200 V family above this one (same page) and 100/150 V families on PDF page 6; this table is the 300 V one.
+# curve vg1=-5
+55 0.3099
+65 0.3126
+105 0.3231
+155 0.3351
+205 0.3447
+255 0.3533
+305 0.3608
+355 0.368
+# curve vg1=-10
+35 0.2204
+45 0.2296
+55 0.236
+105 0.2513
+145 0.2584
+205 0.2666
+255 0.274
+305 0.2806
+355 0.2871
+395 0.2925
+# curve vg1=-15
+35 0.1554
+45 0.1611
+65 0.1687
+105 0.1786
+155 0.1876
+205 0.1944
+265 0.2008
+305 0.2052
+345 0.2084
+405 0.2142
+455 0.2187
+495 0.2218
+# curve vg1=-20
+35 0.1088
+45 0.1134
+55 0.1173
+95 0.1278
+155 0.1374
+205 0.1434
+255 0.1494
+305 0.1545
+355 0.1586
+405 0.1628
+455 0.1661
+495 0.169
+# curve vg1=-25
+25 0.07179
+35 0.07575
+65 0.08358
+105 0.09146
+155 0.09895
+205 0.1043
+245 0.1088
+305 0.1153
+345 0.1189
+405 0.1241
+455 0.128
+495 0.1309
+# curve vg1=-30
+25 0.04536
+45 0.04517
+65 0.04768
+105 0.05572
+155 0.06381
+215 0.07135
+255 0.07533
+315 0.08152
+355 0.08415
+405 0.08773
+455 0.09131
+495 0.09454
+# curve vg1=-35
+25 0.02283
+45 0.02084
+65 0.02035
+105 0.02327
+155 0.02836
+205 0.03405
+245 0.03877
+305 0.04542
+355 0.0502
+405 0.05529
+445 0.05881
+495 0.0633
+# curve vg1=-40
+25 0.00661
+45 0.00462
+65 0.00323
+105 0.00285
+155 0.00613
+205 0.00971
+255 0.0142
+305 0.01763
+345 0.01951
+# curve vg1=-45
+305 0.00276
+355 0.00484
+405 0.00542
+455 0.0054

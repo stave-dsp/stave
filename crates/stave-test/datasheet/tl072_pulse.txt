@@ -1,0 +1,52 @@
+# title: TL072 voltage-follower large-signal pulse response, typical: output and input voltage against time.
+# document: Texas Instruments, TL07xx Low-Noise FET-Input Operational Amplifiers, SLOS080W (September 1978, revised July 2025)
+# url: https://www.ti.com/lit/ds/symlink/tl072.pdf
+# figure: Figure 5-55, "Voltage-Follower Large-Signal Pulse Response" (section 5.11, Typical Characteristics: All Devices Except TL07xH), PDF page 26
+# method: page rasterised at 300 dpi; time axis calibrated on the nine gridlines -0.5 us (x 1555 px, the frame) to 3.5 us (x 2107 px), linear fit 138.0 px/us, residuals within 0.4 px; voltage axis on the seven gridlines +6 V (y 2071 px) to -6 V (y 2621 px), linear fit 45.86 px/V, residuals within 0.5 px; each point is the centre of the solid output stroke (or the dashed input stroke) in the column at that time; on the slewing edges the stroke is 14-19 px tall in a column (a slanted 5 px line), its centre taken.
+# x: time from the input step (s)
+# y: voltage (V)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 3.5e-6
+# full-scale-y: 6
+# uncertainty-x: 0.02e-6
+# uncertainty-y: 0.1
+# conditions: vcc=15 rl=2000 cl=100e-12 t=25 gain=1
+# notes: an idealised drawing (straight segments), not a scope capture: the output jumps at t = 0 from -4.94 V to about -3.1 V (drawn as a vertical step), slews up at about 10.0 V/us to +5 V near 0.85 us, and slews down from 2 us at about 12.6 V/us, reaching -4.94 V near 2.78 us. The flat levels read +5.02 V and -4.94 V (stroke centres; nominally +/-5 V). Where output and input overlap at +5 V (0.85-2 us) the output is read on the shared stroke. Compare the edges' slopes (the slew rate) rather than the drawn step at t = 0.
+# curve output=1
+-0.4e-6 -4.944
+-0.1e-6 -4.944
+0.02e-6 -3.003
+0.05e-6 -2.72
+0.1e-6 -2.218
+0.2e-6 -1.215
+0.3e-6 -0.277
+0.4e-6 0.715
+0.6e-6 2.721
+0.7e-6 3.724
+0.8e-6 4.651
+0.9e-6 5.022
+1.24e-6 5.022
+1.9e-6 5.022
+2.02e-6 4.924
+2.1e-6 3.964
+2.2e-6 2.656
+2.3e-6 1.347
+2.4e-6 0.126
+2.6e-6 -2.491
+2.7e-6 -3.799
+2.75e-6 -4.453
+2.9e-6 -4.944
+3.2e-6 -4.944
+# curve input=1
+-0.4e-6 -4.944
+-0.1e-6 -4.944
+0.04e-6 5.022
+0.44e-6 5.022
+1.04e-6 5.022
+1.44e-6 5.022
+1.94e-6 5.022
+2.04e-6 -4.944
+2.44e-6 -4.944
+3.04e-6 -4.944
+3.44e-6 -4.944

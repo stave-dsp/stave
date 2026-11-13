@@ -43,6 +43,18 @@ use crate::circuit::devices::triode::softplus;
 /// `crates/stave-dsp/src/circuit/devices/pentode/koren.rs::the_fits_land_near_the_datasheet_class_a_points`
 /// (within 20% of each sheet's class-A plate current; measured 3–16%).
 ///
+/// Against the parts (DSP.md R13), on digitised plate and screen curves:
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::el84_plate`
+/// passes (5.6% of the peak reading, budget 6.3%);
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::el34_plate`,
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::t6l6gc_plate`
+/// and `crates/stave-test/tests/matches_datasheet.rs::tubes::kt88_plate`
+/// miss by 10–14% (known gaps), and every screen curve
+/// (`crates/stave-test/tests/matches_datasheet.rs::tubes::el34_screen`,
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::t6l6gc_screen`,
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::el84_screen`) by
+/// 38–89%: the screen law is the weak part.
+///
 /// # Cost
 ///
 /// The datasheet's `"Circuit<Dk> EL34 push-pull x100 (Koren)"` (two

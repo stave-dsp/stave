@@ -35,6 +35,12 @@ use crate::circuit::devices::junction;
 /// `crates/stave-dsp/src/circuit/devices/bjt/tests.rs::ebers_moll_is_gummel_poon_s_limit`
 /// holds its currents to that card's to 1e-12.
 ///
+/// Against the part (DSP.md R13):
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::n2n3904_ebers_moll`,
+/// the 2N3904 card's Ebers–Moll core on onsemi's figures — a known gap
+/// everywhere (no roll-off, no ohmic drops), which is what Gummel–Poon's
+/// terms buy.
+///
 /// # Cost
 ///
 /// Two exponentials an evaluation, below [`GummelPoon`]'s; no datasheet

@@ -1,0 +1,33 @@
+# title: LM13700 forward transconductance against amplifier bias current at 25 °C, typical.
+# document: Texas Instruments, LM13700 Dual Operational Transconductance Amplifiers with Linearizing Diodes and Buffers, SNOSBW2F (November 1999, revised November 2015)
+# url: https://www.ti.com/lit/ds/symlink/lm13700.pdf
+# figure: Figure 8, "Transconductance" (Typical Characteristics), PDF page 7; the +25 °C curve (the middle of three: -55, +25, +125 °C)
+# method: page rasterised at 300 dpi (the figure is an embedded raster scan with a hand-drafted, slightly sheared grid); IABC axis calibrated on all 37 drawn gridlines from 0.1 uA (x 1550.5 px) to 1000 uA (x 2068.5 px), log, piecewise-linear between gridlines (decades 124.5-132 px; a single log line misses them by up to 4.6 px); gm axis on all 37 gridlines from 10 umho (y 936 px) to 10^5 umho (y 413.5 px) measured at x 1568 px, piecewise-linear in log, with the measured shear (gridlines 0-3 px lower at x 1987 px, growing with gm) removed by linear interpolation across the plot; each point is the centre of the middle stroke of the three where all three strokes are separated in a column clear of gridlines, given at that column's current; columns where the -55 and +25 strokes merge or cross a gridline are skipped.
+# x: amplifier bias current IABC (A)
+# y: forward transconductance gm (S)
+# scale-x: log
+# scale-y: log
+# full-scale-x: 1e-3
+# full-scale-y: 0.1
+# uncertainty-x: 5%
+# uncertainty-y: 8%
+# conditions: vcc=15 t=25
+# notes: pins 2 and 15 (linearizing diodes) open, VS = +/-15 V. The printed +25 °C curve reads 22-23 uS/uA from 0.6 uA to 200 uA, about 15% above Iabc/(2 Vt) = 19.3 uS/uA, and 20-21 uS/uA near 500-640 uA; the electrical table's typical is 9600 uS at 500 uA (19.2 uS/uA), so the table and the plotted curve disagree by about 10-15% in the scan as read. The -55 and +125 °C curves read 27.8 and 14.3 uS/uA, within 5% of Iabc/(2 Vt) at those temperatures, which argues the calibration is sound and the offset belongs to the printed +25 °C curve.
+# curve t=25
+6.32e-7 13.7e-6
+8.40e-7 19.1e-6
+1.05e-6 23.7e-6
+1.25e-6 28.7e-6
+1.88e-6 42.4e-6
+3.77e-6 88.5e-6
+5.28e-6 121e-6
+6.34e-6 146e-6
+1.06e-5 235e-6
+1.26e-5 287e-6
+3.17e-5 706e-6
+5.31e-5 1190e-6
+6.36e-5 1420e-6
+1.27e-4 2880e-6
+2.11e-4 4790e-6
+5.31e-4 10800e-6
+6.36e-4 13300e-6

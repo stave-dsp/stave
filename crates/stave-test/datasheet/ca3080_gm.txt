@@ -1,0 +1,35 @@
+# title: CA3080 forward transconductance against amplifier bias current at 25 °C, typical.
+# document: Intersil, CA3080, CA3080A 2MHz Operational Transconductance Amplifier (OTA), File Number 475.5 (April 2001)
+# url: https://www.komponenten.es.aau.dk/fileadmin/komponenten/Data_Sheet/Linear/CA3080.pdf
+# figure: Figure 21, "Transconductance vs Amplifier Bias Current", PDF page 9; the 25 °C curve (the middle of three: -55, 25, 125 °C)
+# method: page rasterised at 300 dpi; IABC axis calibrated on the decade gridlines 0.1 uA (x 1491.5 px, the frame), 10 uA (x 1902.5 px), 100 uA (x 2108.5 px) and 1000 uA (x 2316.5 px, the frame), log, linear fit 206.1 px/decade, residuals within 1 px (the 1 uA label, from the PDF's text layer, sits at x 1700 px, 3 px from the fit); gm axis on the decade gridlines 10^4 uS (y 1447.5 px) to 1 uS (y 1919.5 px, the frame), log, linear fit 118.0 px/decade, residuals within 2 px; the drawn minor gridlines sit up to 4 px off a log scale, so they were not used; each point is the centre of the middle of three separated strokes (8-12 px tall) in a column clear of gridlines, given at that column's current.
+# x: amplifier bias current IABC (A)
+# y: forward transconductance gm (S)
+# scale-x: log
+# scale-y: log
+# full-scale-x: 1e-3
+# full-scale-y: 0.1
+# uncertainty-x: 4%
+# uncertainty-y: 6%
+# conditions: vcc=15 t=25
+# notes: VS = +/-15 V. The 25 °C curve reads 18.9-19.4 uS/uA from 0.1 uA to 100 uA (Iabc/(2 Vt) = 19.3 uS/uA at 25 °C) and bends down above that, to 18.5 uS/uA at 445 uA and 18.1 uS/uA at 711 uA; the electrical table gives 9600 uS typical at 500 uA (19.2 uS/uA; CA3080 6700 minimum, 13000 maximum; CA3080A 7700-12000).
+# curve t=25
+1.12e-7 2.12e-6
+1.77e-7 3.32e-6
+2.83e-7 5.356e-6
+4.47e-7 8.308e-6
+7.07e-7 13.4e-6
+1.12e-6 21.61e-6
+1.79e-6 35.55e-6
+4.46e-6 86.39e-6
+7.06e-6 139.3e-6
+1.13e-5 218.3e-6
+1.78e-5 348.6e-6
+2.82e-5 551.5e-6
+4.46e-5 863.9e-6
+7.05e-5 1353e-6
+1.13e-4 2120e-6
+1.78e-4 3419e-6
+2.81e-4 5304e-6
+4.45e-4 8227e-6
+7.11e-4 12890e-6

@@ -1,0 +1,37 @@
+# title: NJM4558 (JRC4558) maximum output voltage swing (peak to peak) against frequency, typical: the slew-limited full-power bandwidth.
+# document: Nisshinbo Micro Devices (formerly New Japan Radio), NJM4558 Dual Operational Amplifier, datasheet NJM4558_E, Ver. 20260723
+# url: https://www.nisshinbo-microdevices.co.jp/en/pdf/datasheet/NJM4558_E.pdf
+# figure: "Maximum Output Voltage Swing vs. Frequency" (Typical Characteristics, top right), PDF page 3
+# method: page rasterised at 300 dpi; frequency axis calibrated on the seven decade gridlines 1 Hz (x 1420.5 px) to 1 MHz (x 2112.5 px), log, linear fit 115.36 px/decade, residuals within 0.36 px; swing axis on the gridlines 30 V (y 545.5 px) to 0 V (y 1172.5 px), linear, 20.9 px/V, residuals within 0.29 px; on the plateau and the shallow tail each point is the stroke centre in a column (given at the column's frequency); on the near-vertical drop (22-34 kHz, 39-56 kHz) the curve is read along rows instead, at whole volts, giving the frequency of the stroke centre in that row.
+# x: frequency (Hz)
+# y: maximum output voltage swing, peak to peak (V)
+# scale-x: log
+# scale-y: linear
+# full-scale-x: 1e6
+# full-scale-y: 30
+# uncertainty-x: 4%
+# uncertainty-y: 0.3
+# conditions: vcc=15 rl=2000 t=25
+# notes: a sine's slew rate is pi f Vpp: the knee (26 Vpp up to about 21 kHz, then falling) implies about 1.86 V/us just past the knee (24 Vpp at 24.6 kHz), 1.67 V/us at 31 kHz (17 Vpp), rising to 2.4 V/us near 96 kHz (8 Vpp), where the gain-bandwidth also limits -- not the constant-slew 1/f law. The table gives SR 1 V/us typical. Plateau 26.2 Vpp (the table's VOM2 +/-13 V into 2 kOhm).
+# curve vcc=15
+1.053 26.16
+95.81 26.16
+951.3 26.16
+1.044e4 26.16
+1.587e4 26.16
+2.017e4 26.06
+2.184e4 25.87
+2.462e4 24
+2.537e4 22
+2.803e4 19
+3.129e4 17
+3.355e4 16
+3.975e4 14
+4.952e4 12
+6.952e4 9.63
+9.568e4 7.98
+1.514e5 6.09
+2.002e5 5.03
+2.985e5 3.62
+5.015e5 2.14
+8.948e5 1.11

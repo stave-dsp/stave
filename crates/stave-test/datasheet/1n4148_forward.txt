@@ -1,0 +1,32 @@
+# title: 1N4148 forward current against forward voltage at Tj = 25 °C, typical.
+# document: Vishay Semiconductors, 1N4148 Small Signal Fast Switching Diode, document number 81857, Rev. 1.6, 07-Nov-2024
+# url: https://www.vishay.com/docs/81857/1n4148.pdf
+# figure: Fig. 2, "Forward Current vs. Forward Voltage" (the Tj = 25 °C curve, the rightmost of three), PDF page 2
+# method: vector extraction: page converted to SVG (pdftocairo -svg), the 25 °C curve's path (Bezier segments flattened at 20 points each) read exactly in page points; axes calibrated on the drawn gridlines, VF: x 98.34 pt -> 0 V, 127.86 pt -> 0.2 V, 245.94 pt -> 1.0 V, linear (6 gridlines, evenly spaced to 0.01 pt); IF: y 514.66 pt -> 100 mA, 541.30 pt -> 10 mA, 567.95 pt -> 1 mA, 594.71 pt -> 0.1 mA, 621.35 pt -> 0.01 mA, 647.99 pt -> 0.001 mA, log (worst deviation from one log line 0.002 decade); the curve's VF interpolated at each listed IF. Cross-check against the same sheet's Fig. 1 (VF vs Tj at IF = 0.1, 1, 10, 100 mA, read at its vertex nearest 25 °C, 24.1 °C): 0.499, 0.610, 0.731, 0.878 V against 0.496, 0.609, 0.729, 0.873 V here, within 5 mV.
+# x: forward voltage VF (V)
+# y: forward current IF (A)
+# scale-x: linear
+# scale-y: log
+# full-scale-x: 1.0
+# full-scale-y: 0.1
+# uncertainty-x: 0.01
+# uncertainty-y: 5%
+# conditions: t=25
+# notes: typical curve; the table's limit is VF <= 1 V at IF = 10 mA. Compare in VF at each IF (the voltage is the well-determined coordinate on a log-current plot). The lowest point (1 uA) sits on the frame's bottom edge. Uncertainty-x: stroke 1.5 pt = 0.010 V full width on 147.6 pt/V, plus the Fig. 1 cross-check spread.
+# curve t=25
+0.2627 1e-06
+0.2975 2e-06
+0.3443 5e-06
+0.3794 1e-05
+0.4149 2e-05
+0.4619 5e-05
+0.4963 0.0001
+0.5303 0.0002
+0.575 0.0005
+0.6091 0.001
+0.6438 0.002
+0.6913 0.005
+0.729 0.01
+0.7688 0.02
+0.8257 0.05
+0.8731 0.1

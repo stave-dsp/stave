@@ -1,0 +1,19 @@
+# title: NJM4558 (JRC4558) typical slew rate and gain-bandwidth product from the electrical characteristics table, at +/-15 V and 25 °C.
+# document: Nisshinbo Micro Devices (formerly New Japan Radio), NJM4558 Dual Operational Amplifier, datasheet NJM4558_E, Ver. 20260723
+# url: https://www.nisshinbo-microdevices.co.jp/en/pdf/datasheet/NJM4558_E.pdf
+# figure: Electrical Characteristics table, page 2
+# method: transcribed from the table
+# x: supply voltage per rail (V)
+# y: slew rate (V/s) on curve slew; gain-bandwidth product (Hz) on curve gbw
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 15
+# full-scale-y: 3e6
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: vcc=15 t=25
+# notes: typical values only (no minimum or maximum is given for SR or GB); the table states no test conditions for either. The same sheet's open-loop gain plot (jrc4558_open_loop.txt) crosses unity near 2.8 MHz, and its maximum output swing vs frequency plot (jrc4558_swing.txt) is slew-limited from about 22 kHz, implying about 1.7-1.9 V/us for a sine (SR = pi f Vpp) -- above the table's 1 V/us.
+# curve slew=1
+15 1e6
+# curve gbw=1
+15 3e6

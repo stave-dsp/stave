@@ -11,6 +11,10 @@
 //! (`target/reference-diff/<case>.tsv`: abscissa, reference, model and
 //! error columns).
 //!
+//! A reference can also be a published curve, digitised from a
+//! manufacturer's datasheet ([`Datasheet`], DSP.md R23): the only
+//! hardware truth where no capture exists.
+//!
 //! ```
 //! use stave_dsp::{Coupler, Stage};
 //! use stave_test::reference::{Case, Drive, Metric, Stimulus};
@@ -30,6 +34,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use stave_measure::waveform::Waveform;
+
+mod datasheet;
+pub use datasheet::{Curve, Datasheet, Uncertainty};
 
 /// Where the committed references live: `crates/stave-test/`.
 const FIXTURES: &str = env!("CARGO_MANIFEST_DIR");
@@ -73,6 +80,9 @@ pub enum Source {
     Ngspice { netlist: PathBuf },
     /// `reference/<name>.txt`, written by a script in `scripts/`.
     Generated { script: &'static str },
+    /// `datasheet/<name>.txt`, digitised once from a published figure
+    /// (see [`Datasheet`]); never regenerated.
+    Datasheet { document: String, figure: String },
 }
 
 /// A committed reference waveform: two columns, the abscissa (see
@@ -124,6 +134,7 @@ impl Reference {
         let regenerate = match &source {
             Source::Ngspice { .. } => "scripts/ngspice-simulate.py",
             Source::Generated { script } => script,
+            Source::Datasheet { .. } => "nothing: a digitised table is restored, not regenerated",
         };
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("{}: {e} (regenerate with {regenerate})", path.display()));
@@ -134,6 +145,27 @@ impl Reference {
             path,
             axis,
             waveform,
+        }
+    }
+
+    /// A reference from points already read (a [`Datasheet`] curve).
+    fn from_points(
+        name: String,
+        source: Source,
+        path: PathBuf,
+        axis: Axis,
+        abscissa: Vec<f64>,
+        values: Vec<f64>,
+    ) -> Self {
+        Self {
+            name,
+            source,
+            path,
+            axis,
+            waveform: Waveform {
+                time_s: abscissa,
+                value: values,
+            },
         }
     }
 
@@ -149,7 +181,7 @@ impl Reference {
     pub fn netlist(&self) -> Option<&Path> {
         match &self.source {
             Source::Ngspice { netlist } => Some(netlist),
-            Source::Generated { .. } => None,
+            Source::Generated { .. } | Source::Datasheet { .. } => None,
         }
     }
 
@@ -186,6 +218,9 @@ impl Reference {
                 format!("{file} (ngspice; regenerate with scripts/ngspice-simulate.py)")
             }
             Source::Generated { script } => format!("{file} (regenerate with {script})"),
+            Source::Datasheet { document, figure } => {
+                format!("{file} (digitised from {document}, {figure})")
+            }
         }
     }
 }

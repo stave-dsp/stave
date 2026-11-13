@@ -71,6 +71,13 @@ impl Diode for Shockley {
 /// to its card as the netlist parser reads it. Unit tests beside this file
 /// check the partials and the breakdown knee.
 ///
+/// Against the parts (DSP.md R13):
+/// `crates/stave-test/tests/matches_datasheet.rs::diodes::n4148`
+/// (Vishay's 1N4148 forward curve: 37.5 mV at worst against 35.1 mV, a
+/// known gap at 20 mA) and
+/// `crates/stave-test/tests/matches_datasheet.rs::diodes::n34a` (the
+/// 1N34A within MCC's 1.00 V maximum at 5 mA).
+///
 /// # Cost
 ///
 /// One `exp_m1` per evaluation, one more with breakdown;

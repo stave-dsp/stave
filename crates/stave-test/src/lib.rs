@@ -14,7 +14,7 @@
 //!   - `image`          golden pictures: compare a canvas within a tolerance
 //!   - `no_alloc`       no allocation on the audio thread
 //!   - `perf`           the perf report
-//!   - `reference`      a model against ngspice or a solved reference, within a budget
+//!   - `reference`      a model against ngspice, a solved reference or a datasheet curve, within a budget
 //!   - `stability`      no pumping, no runaway energy
 
 #![forbid(unsafe_code)]

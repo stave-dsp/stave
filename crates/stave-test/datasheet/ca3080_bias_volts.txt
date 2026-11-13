@@ -1,0 +1,32 @@
+# title: CA3080 amplifier bias voltage against amplifier bias current at 25 °C, typical.
+# document: Intersil, CA3080, CA3080A 2MHz Operational Transconductance Amplifier (OTA), File Number 475.5 (April 2001)
+# url: https://www.komponenten.es.aau.dk/fileadmin/komponenten/Data_Sheet/Linear/CA3080.pdf
+# figure: Figure 27, "Amplifier Bias Voltage vs Amplifier Bias Current", PDF page 10; the 25 °C curve (the middle of three: -55, 25, 125 °C)
+# method: page rasterised at 300 dpi; IABC axis calibrated on the gridlines 0.1 uA (x 1482.5 px, the frame), 1 uA (x 1690.5 px), 100 uA (x 2109.5 px) and 1000 uA (x 2317.5 px, the frame), log, linear fit 208.9 px/decade, residuals within 0.6 px; voltage axis on the eight gridlines 1000 mV (y 1244.5 px, the frame) to 100 mV (y 1787.5 px), piecewise-linear between gridlines (spacing 57-64 px per 100 mV as drawn; a single line misses them by up to 2.2 px); each point is the centre of the middle of three separated strokes in a column clear of gridlines, given at that column's current.
+# x: amplifier bias current IABC (A)
+# y: amplifier bias voltage, bias pin to V- (V)
+# scale-x: log
+# scale-y: linear
+# full-scale-x: 1e-3
+# full-scale-y: 1.0
+# uncertainty-x: 3%
+# uncertainty-y: 0.01
+# conditions: vcc=15 t=25
+# notes: VS = +/-15 V. The curve rises about 59 mV per decade over the listed points (one junction); the electrical table gives 0.71 V typical at IABC = 500 uA (CA3080), and the curve reads about 0.706 V there (interpolated in log current between 356 and 631 uA).
+# curve t=25
+1.13e-7 0.4933
+2.07e-7 0.5061
+3.54e-7 0.5211
+6.29e-7 0.5368
+1.13e-6 0.5526
+2.00e-6 0.5684
+3.55e-6 0.5825
+6.29e-6 0.5982
+1.12e-5 0.6125
+2.07e-5 0.6266
+3.55e-5 0.6391
+6.30e-5 0.6531
+1.12e-4 0.6672
+2.07e-4 0.6812
+3.56e-4 0.6945
+6.31e-4 0.7136

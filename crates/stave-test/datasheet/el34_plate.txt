@@ -1,0 +1,93 @@
+# title: EL34 output pentode: anode current against anode voltage at several control-grid voltages, screen at 250 V, suppressor at 0 V (average characteristics).
+# document: Philips, Electronic Tube Handbook, "EL34" data sheets; sheet B, chart drawing 7R02614 dated 3-11-1949
+# url: https://frank.pocnet.net/sheets/030/e/EL34.pdf
+# figure: anode characteristics "Ia (mA) against Va (V)", Vg2 = 250 V, Vg3 = 0 V, Vg1 = 0, -5, -10, -15, -20, -25 V, with the Wa = 25 W dissipation hyperbola; sheet B, PDF page 10 (printed rotated 90 degrees)
+# method: page rasterised at 400 dpi greyscale and rotated 90 deg clockwise; axes calibrated by least squares on the heavy gridlines found as dark pixel runs: Va on the 0, 100, ..., 500 V lines (px 334.5 -> 0 V, px 2217.5 -> 500 V; Va = -88.900 + 0.265544*px; residual max 0.12 V), Ia on the 0, 100, 200, 300 mA lines (px 1412.5 -> 0 mA, px 281.5 -> 300 mA; Ia = 374.618 - 0.265075*px mA; residual max 0.4 mA); points are the centre of the curve trace (about 9 px thick) from a line fitted to the trace centres over pixel columns within 14 px of the target Va, skipping the 10 V minor gridlines (this bridges the dashed segments), curves identified by their order and checked against zoomed crops; points on the Wa = 25 W hyperbola were identified (Ia = 25 W / Va) and discarded
+# x: anode voltage Va (V)
+# y: anode current Ia (A)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 500
+# full-scale-y: 0.34
+# uncertainty-x: 3
+# uncertainty-y: 3e-3
+# conditions: vg2=250 vg3=0 vf=6.3
+# notes: Average-tube curves; beyond the 25 W hyperbola the printed curves are dashed. Every printed curve is taken. The steep rise below 25 V (below 50 V for Vg1 = 0) is not read: current at a fixed Va is ill-conditioned there. Omitted where a curve crosses the 25 W hyperbola or runs into its printed label: Vg1 = 0 V at 100 V and beyond 225 V (curve ends at about 260 V), -5 V at 150 V and beyond 350 V, -10 V at 150 and 200 V, -15 V at 150 and 350 V. The low-bias curves' kinks below 100 V (screen/anode current exchange) are printed and read as printed.
+# curve vg1=0
+50 0.2138
+75 0.2378
+125 0.2580
+175 0.2667
+200 0.2701
+225 0.2727
+# curve vg1=-5
+25 0.1061
+35 0.1247
+50 0.1437
+75 0.1637
+100 0.1750
+125 0.1825
+175 0.1924
+200 0.1954
+225 0.1973
+250 0.1990
+300 0.2012
+350 0.2047
+# curve vg1=-10
+25 0.0610
+35 0.0714
+50 0.0835
+75 0.0986
+100 0.1082
+125 0.1149
+175 0.1215
+225 0.1255
+250 0.1273
+300 0.1296
+350 0.1333
+400 0.1367
+450 0.1404
+490 0.1434
+# curve vg1=-15
+25 0.0272
+35 0.0306
+50 0.0364
+75 0.0466
+100 0.0548
+125 0.0594
+175 0.0633
+200 0.0648
+225 0.0663
+250 0.0674
+300 0.0697
+400 0.0744
+450 0.0776
+490 0.0804
+# curve vg1=-20
+25 0.0132
+50 0.0134
+75 0.0170
+100 0.0214
+125 0.0246
+175 0.0278
+200 0.0284
+250 0.0289
+300 0.0301
+350 0.0308
+400 0.0325
+450 0.0343
+490 0.0364
+# curve vg1=-25
+25 0.0046
+50 0.0042
+75 0.0046
+100 0.0067
+125 0.0084
+175 0.0088
+200 0.0090
+250 0.0094
+300 0.0102
+350 0.0108
+400 0.0110
+450 0.0118
+490 0.0121

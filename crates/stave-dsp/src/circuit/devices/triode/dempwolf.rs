@@ -27,6 +27,11 @@ use super::{TriodeCurrents, Triode};
 /// `crates/stave-test/tests/matches_ngspice.rs::common_cathode_grid_current_matches_ngspice`
 /// (2e-5 normalized RMS at 4×).
 ///
+/// Against the part (DSP.md R13):
+/// `crates/stave-test/tests/matches_datasheet.rs::tubes::ecc83_dempwolf`,
+/// each measured 12AX7 on Philips' average ECC83 plate curves —
+/// 11.4–13.8% of the peak reading at worst against 6.3%, a known gap.
+///
 /// # Cost
 /// Per evaluation inside its circuit's line; no datasheet line of its
 /// own yet (DSP.md P1).

@@ -55,6 +55,18 @@ use crate::circuit::devices::junction;
 /// `crates/stave-dsp/src/circuit/devices/bjt/tests.rs::every_part_s_partials_match_finite_differences`
 /// holds the partials to finite differences.
 ///
+/// Against the parts (DSP.md R13):
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::n2n3904_gummel_poon`
+/// (onsemi's hFE, ON-voltage and saturation figures; inside the table's
+/// hFE limits, but its roll-off, high-current VBE and saturation edge are
+/// known gaps) and
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::ac128_output`,
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::ac128_hfe`,
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::ac128_transfer`,
+/// `crates/stave-test/tests/matches_datasheet.rs::transistors::ac128_input`
+/// (Mullard's typical AC128, 12–45% of the peak reading: known gaps; the
+/// card is a measured vintage part).
+///
 /// # Cost
 ///
 /// Three to five exponentials an evaluation; in a circuit, the
