@@ -411,6 +411,9 @@ other references; a model with a capture is held to it within budget.
 - [x] **F6** (fd8b284: `primitives::spectral::Fir` — `windowed_sinc`/`kaiser` lowpass, highpass, bandpass, `least_squares` over weighted `Band`s, `minimum_phase` by the cepstrum, into a `Convolver` via `impulse_response`; one `Window` type for FIR and STFT. The oversampler's half-band tables are `Fir::windowed_sinc` Kaiser designs bit for bit, pinned by a test, but stay in `kernel`, which may not depend on `primitives`) Linear-phase and minimum-phase FIR design (windowed sinc,
   Parks–McClellan or least squares) as a library, used by F2's EQ and A3.
 
+- [ ] **F3b** The worker-thread half of non-uniform convolution: one thread per
+  partition size with deadlines and slack (Battenberg & Avizienis 2011), and
+  click-free impulse-response swapping (Wefers 2015) for H7's mic blending.
 ### N — circuit solvers
 
 - [x] **N1** (c2c2a54) A netlist type in Rust: nodes, elements (R, C, L, sources,
@@ -423,16 +426,16 @@ other references; a model with a capture is held to it within budget.
 - [x] **N3** (f2222e2; the precomputed solution table is not done) Nonlinear solve strategies for N2: damped Newton with junction
   limiting (exists, generalise it), homotopy / source stepping for hard starts,
   a warm start from the previous sample, and an optional precomputed
-  solution table with interpolation (and its error bound) for low-cost runtime.
+  solution table with interpolation (and its error bound) for low-cost runtime. Non-iterative schemes with a fixed per-sample cost (Holters 2024; Danish 2021; and others) are an option where worst-case cost matters.
 - [ ] **N4** WDF R-type adaptors (Werner et al. 2015) via the scattering
   matrix from MNA, so non-tree topologies (bridged-T, tone stacks,
-  multiple nonlinearities through SIM/multi-port roots) are expressible.
+  multiple nonlinearities through SIM/multi-port roots) are expressible. Also the Scattering Iterative Method (Bernardini, Sarti et al.): a scalar solver per one-port nonlinearity iterated through the linear R-type junction — convergent for passive one-ports and parallel across lanes.
 - [ ] **N5** WDF element set: inductor, ideal/resistive voltage and current
   sources, switches, short/open, polarity inverter, ideal transformer,
   op-amp (Paiva, Kemper) as roots or adaptors.
 - [ ] **N6** Parameter changes in a running circuit: re-adapting port
   resistances and recomputing DK matrices without clicks, with smoothing
-  and a bounded cost per block.
+  and a bounded cost per block. Design: low-rank (Woodbury) matrix updates per potentiometer (Holters & Zölzer 2011).
 - [ ] **N7** (exploratory) Port-Hamiltonian formulation (Falaize & Hélie):
   energy-preserving discretisation with a passivity guarantee, checked
   against N2 on shared netlists.
@@ -457,7 +460,7 @@ other references; a model with a capture is held to it within budget.
 - [x] **E6** (c4b0105: `Shockley` holds the whole static card — `series_ohms`, `Breakdown` evaluated as ngspice's dioload.c; parts `N4148`, `N914`, `N4007`, `N34A`, `LED_RED`/`GREEN`/`BLUE`, Zeners `BZX84C6V2L`, `N750`; seven I–V decks at 2e-8–5e-7) Diode presets beyond Shockley defaults: 1N4148, 1N34A
   (germanium), red/blue LEDs, Zener breakdown; series resistance.
 - [ ] **E7** Photocell (LDR/vactrol) with asymmetric attack/release and
-  memory, for opto compressors and tremolos.
+  memory, for opto compressors and tremolos. A ready vactrol model: Najnudel 2023.
 - [ ] **E8** Tape: head gap loss, bias, Jiles–Atherton record hysteresis
   (Chowdhury 2019 as the reference design), wow/flutter.
 - [ ] **E9** Loudspeaker: Thiele–Small low-frequency model with
@@ -470,7 +473,7 @@ other references; a model with a capture is held to it within budget.
 
 - [ ] **A1** ADAA for stateful nonlinearities (Holters 2019) and inside
   WDF one-ports (Albertini et al. 2020), so circuits get the anti-aliasing
-  memoryless shapes already have.
+  memoryless shapes already have. Both halves are published: Holters 2019 (stateful ADAA, for DK) and Albertini, Bernardini & Sarti 2021 (in WDF), each compensating the half-sample delay in the linear part; linear interpolation is the stable choice (Zheleznov 2024); tabulated antiderivatives (Gabrielli 2025) cover laws with no closed form, reusing N3's tables.
 - [x] **A2** (e0f9423: `Oversampled::linear(s, factor)` / `Oversampled::minimum(s, factor)`, any whole factor from its primes — 2s as half-bands, odd primes as polyphase Kaiser designs, the outer stage steep and the inner ones relaxed; minimum phase as elliptic allpass half-bands, an odd factor staying linear; `latency_exact()` exact (DC group delay for minimum phase), `latency()` rounded to nearest, half up; `linear(s, 2/4)` is `Oversampled2x` bit for bit, which is untouched. At 44.1 kHz: ripple ≤ 6.7e-4 dB, fold-in and images ≤ −95.4 dB linear, −111.5 minimum; latency 66/66/84/73/87 linear at 2/3/4/6/8×, 3.94/5.63/6.42 minimum at 2/4/8×; 41–176 ns/sample linear, 47–222 minimum) Arbitrary-ratio oversampling (3×, 6×, 8×) and an IIR
   minimum-phase half-band option for low latency, with the latency
   reported exactly.
@@ -488,6 +491,12 @@ other references; a model with a capture is held to it within budget.
   Check the format's licence terms before shipping a loader.
 - [x] **M2** (8ddd42c: `tests/nam_parity.rs` against NAM 0.13's own export and forward pass (three WaveNets, an LSTM; a torch GRU), regenerated by `scripts/nam-reference.py`, and against an independent f64 forward pass on random shapes; budget 1e-5, measured ≤ 6e-7) Parity tests for M1 against the reference implementation's
   output on shared models and inputs (bit-close, with an error budget).
+- [ ] **M7** Neural follow-ups from the survey: load NAM's `SlimmableContainer`
+  (Atkinson 2025 makes it a first-class format feature; stave refuses it
+  today); run recurrent models at any rate by interpolating their state
+  (Carson et al. 2024, cubic Lagrange from S2) instead of waiting on A2;
+  measure learned stages' aliasing (Sato & Smith's aliasing-to-signal ratio)
+  under A4's budgets, and consider ADAA inside RNNs (Mikkonen & Werner 2025).
 - [ ] **M3** Block-oriented models: Wiener, Hammerstein,
   Wiener–Hammerstein (linear filters around a static curve), with a
   fitting tool in `tools/` that captures from a plugin or audio pair.
@@ -511,11 +520,16 @@ other references; a model with a capture is held to it within budget.
   `DelayLine` takes the interpolator as a type parameter.
 - [x] **S3** (d64817a; decay as `set_t60_s` in f32 seconds until U4 moves setters to `units::Seconds`) Reverb structures: FDN (Householder/Hadamard, modulated),
   Dattorro plate, Schroeder/Moorer, each with decay in `Seconds` (U1).
+- [ ] **S3b** Reverb accuracy and engines: T60 held by graphic-EQ attenuation
+  filters with a tested accuracy (Schlecht 2017; Prawda et al. 2019);
+  orthogonal energy-preserving feedback matrices with continuous angle
+  controls for modulation and freeze (Coppola 2026); velvet-noise late reverb
+  as a cheap engine.
 - [ ] **S4** Hilbert transform (IIR allpass pair), frequency shifter,
   single-sideband modulation.
 - [ ] **S5** Linear-phase and dynamic EQ on F2/F6.
 - [ ] **S6** Pitch: phase vocoder on F5, PSOLA, granular engine with
-  windowed grains and a voice pool.
+  windowed grains and a voice pool. Průša's phase-gradient reconstruction (PVDR: no peak picking, real-time variant) is the default vocoder; Laroche–Dolson identity phase locking the cheap mode.
 - [ ] **S7** Formant and vowel filters; comb/Karplus–Strong resonators as
   library stages (aeolian and smear carry their own today).
 
@@ -538,9 +552,9 @@ other references; a model with a capture is held to it within budget.
   chorus, flanger and delay.
 - [ ] **H2** Spring reverb: dispersive waveguides with chirp allpass
   cascades (Välimäki, Parker, Abel 2010), drive transducer and pickup,
-  boing on transients; multi-spring tanks.
+  boing on transients; multi-spring tanks. Consider a modal engine too (van Walstijn 2020; McQuillan 2021): physically exact and SIMD-friendly. Before shipping, check US 8,391,504 (spring emulation with dispersive allpass delays), likely in force until about 2027–28.
 - [ ] **H3** Plate reverb: modal synthesis of a thin plate, damping by
-  frequency, pickup positions; checked against published plate modes.
+  frequency, pickup positions; checked against published plate modes. Verify against the DAFx-26 parameter-estimation challenge's public plate simulator and dataset; Mathews–Smith phasor-filter resonators for the modal bank.
 - [ ] **H4** Rotary speaker: horn and drum rotors with Doppler, amplitude
   and directivity modulation, crossover, cabinet, acceleration and braking.
 - [ ] **H5** Tape transport: wow and flutter as measured spectra, speed
@@ -615,17 +629,17 @@ other references; a model with a capture is held to it within budget.
   with ngspice decks that keep them. Today's transistor decks use only the
   DC part of each card on both sides, and diode `Cjo` is read but ignored,
   so the high-frequency behaviour that Miller capacitance gives a fuzz or a
-  tube stage is in neither model nor reference.
+  tube stage is in neither model nor reference. Priority: Holmes et al. 2017 conclude the first extension to a BJT model should be AC effects (junction capacitances), ahead of costlier DC refinements.
 - [ ] **R12** Shipping-rate accuracy: every circuit case also measured at
   1× and 2× the host rate (today most transients run at 4–16×), with its
   own budget, and both numbers shown in the model catalogue, so an
-  author sees the error the plugin will actually have.
+  author sees the error the plugin will actually have. Trapezoidal integration rings with nonlinear elements where implicit midpoint does not (Germain 2017): compare both at the shipping rate.
 - [ ] **R13** Hardware truth beyond SPICE: compare each device model to
   published datasheet curves (Ic–Vce families, tube plate curves, diode
   I–V, op-amp slew) digitised once with their source cited, then to
   captures (R8). ngspice proves we solve the model; this proves the model.
 - [ ] **R14** A second independent simulator (Xyce, or LTspice in CI if its
-  licence allows) on the key decks, to rule out ngspice-specific numerics.
+  licence allows) on the key decks, to rule out ngspice-specific numerics. ACME.jl (Holters), which implements the same DK method, is a natural second reference.
 - [ ] **R15** Dynamic checks for topologies verified only on their static
   transfer (push-pull, triode stage): transients and small-signal AC
   against ngspice.
