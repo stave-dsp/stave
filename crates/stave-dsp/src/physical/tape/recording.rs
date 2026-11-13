@@ -26,7 +26,10 @@ use crate::kernel::node::Stage;
 /// [`circuit::devices::magnetic`](crate::circuit::devices::magnetic)'s
 /// Jiles–Atherton, advanced by the trapezoidal rule in H with a Newton
 /// solve per sample (Holters & Zölzer) where Chowdhury uses RK4 in time:
-/// the ODE in H is rate independent, so both solve the same loop.
+/// the ODE in H is rate independent, so both solve the same loop. The
+/// bias dominates the field and repeats every cycle, so each sample's
+/// Newton starts from the susceptibility the same sample of the last
+/// bias cycle saw (the solution is the same; it takes fewer iterations).
 ///
 /// # Verified
 /// `crates/stave-dsp/src/physical/tape/tests.rs::bias_linearises_the_dead_zone`
@@ -56,6 +59,10 @@ pub struct Recording {
     increment: f64,
     bias_samples: Option<u32>,
     gain: f64,
+    /// Each step's mean susceptibility ΔM/ΔH over the last bias cycle, by
+    /// its place in the cycle: the next cycle's Newton guesses.
+    secants: Vec<f64>,
+    at: usize,
 }
 
 impl Recording {
@@ -69,6 +76,8 @@ impl Recording {
             increment: 0.0,
             bias_samples: None,
             gain: 0.0,
+            secants: Vec::new(),
+            at: 0,
         };
         r.configure();
         r.prepare(720_000.0);
@@ -114,7 +123,13 @@ impl Recording {
             self.phase -= 1.0;
         }
         let h = self.signal_field * x + bias;
-        (self.core.step(h) * self.gain, h)
+        let (m0, h0) = (self.core.magnetization(), self.core.field());
+        let m = self.core.step_predicted(h, self.secants.get(self.at).copied());
+        if let Some(secant) = self.secants.get_mut(self.at) {
+            *secant = if h != h0 { (m - m0) / (h - h0) } else { f64::NAN };
+            self.at = (self.at + 1) % self.secants.len();
+        }
+        (m * self.gain, h)
     }
 }
 
@@ -150,11 +165,16 @@ impl Recording {
 
 impl Stage for Recording {
     fn prepare(&mut self, sample_rate: f32) {
-        self.increment = 1.0 / self.samples_per_bias(f64::from(sample_rate));
+        let period = self.samples_per_bias(f64::from(sample_rate));
+        self.increment = 1.0 / period;
+        self.secants = vec![f64::NAN; period as usize];
+        self.at = 0;
     }
     fn reset(&mut self) {
         self.core.reset();
         self.phase = 0.0;
+        self.secants.iter_mut().for_each(|s| *s = f64::NAN);
+        self.at = 0;
     }
     fn tick(&mut self, x: f32) -> f32 {
         self.write(f64::from(x)).0 as f32

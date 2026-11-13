@@ -7,6 +7,7 @@
 /// records. `false` when a pivot vanishes against the matrix's scale
 /// (a floating node, a loop of voltage sources).
 pub(crate) fn lu(a: &mut [f64], n: usize, pivots: &mut [usize]) -> bool {
+    let a = &mut a[..n * n];
     let scale = a.iter().fold(0.0f64, |m, x| m.max(x.abs()));
     let floor = scale * 1e-15;
     for k in 0..n {
@@ -22,17 +23,21 @@ pub(crate) fn lu(a: &mut [f64], n: usize, pivots: &mut [usize]) -> bool {
             return false;
         }
         if row != k {
-            for j in 0..n {
-                a.swap(k * n + j, row * n + j);
-            }
+            let (top, bottom) = a.split_at_mut(row * n);
+            top[k * n..(k + 1) * n].swap_with_slice(&mut bottom[..n]);
         }
-        let pivot = a[k * n + k];
-        for i in k + 1..n {
-            let f = a[i * n + k] / pivot;
-            a[i * n + k] = f;
+        // Rows below eliminated against the pivot row, as slices (one
+        // bounds check a row, and the update vectorises).
+        let (upper, lower) = a.split_at_mut((k + 1) * n);
+        let pivot_row = &upper[k * n..];
+        let pivot = pivot_row[k];
+        let tail = &pivot_row[k + 1..];
+        for row in lower.chunks_exact_mut(n) {
+            let f = row[k] / pivot;
+            row[k] = f;
             if f != 0.0 {
-                for j in k + 1..n {
-                    a[i * n + j] -= f * a[k * n + j];
+                for (x, &p) in row[k + 1..].iter_mut().zip(tail) {
+                    *x -= f * p;
                 }
             }
         }
@@ -42,20 +47,21 @@ pub(crate) fn lu(a: &mut [f64], n: usize, pivots: &mut [usize]) -> bool {
 
 /// Solve with an [`lu`] factorisation, `b` overwritten by the solution.
 pub(crate) fn lu_solve(a: &[f64], n: usize, pivots: &[usize], b: &mut [f64]) {
+    let b = &mut b[..n];
     for k in 0..n {
         b.swap(k, pivots[k]);
     }
     for i in 0..n {
         let mut s = b[i];
-        for j in 0..i {
-            s -= a[i * n + j] * b[j];
+        for (x, y) in a[i * n..i * n + i].iter().zip(&b[..i]) {
+            s -= x * y;
         }
         b[i] = s;
     }
     for i in (0..n).rev() {
         let mut s = b[i];
-        for j in i + 1..n {
-            s -= a[i * n + j] * b[j];
+        for (x, y) in a[i * n + i + 1..(i + 1) * n].iter().zip(&b[i + 1..]) {
+            s -= x * y;
         }
         b[i] = s / a[i * n + i];
     }
@@ -101,11 +107,11 @@ pub(crate) fn product(a: &[f64], b: &[f64], rows: usize, inner: usize, cols: usi
 /// `y = M·x` for `rows`×`cols` `m`, accumulated into `y`.
 #[inline]
 pub(crate) fn accumulate(m: &[f64], x: &[f64], y: &mut [f64], cols: usize) {
+    let x = &x[..cols];
     for (i, yi) in y.iter_mut().enumerate() {
-        let row = &m[i * cols..(i + 1) * cols];
         let mut s = 0.0;
-        for j in 0..cols {
-            s += row[j] * x[j];
+        for (a, b) in m[i * cols..(i + 1) * cols].iter().zip(x) {
+            s += a * b;
         }
         *yi += s;
     }

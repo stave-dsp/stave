@@ -124,6 +124,7 @@ impl Dk {
         }
         self.tail = self.estimate_tail();
         self.adaa.kernel.find_one_port(&self.bq, self.n, &self.k, &self.devices);
+        self.work.decompose(&self.k, &self.devices);
         Ok(())
     }
 

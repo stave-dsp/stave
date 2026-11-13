@@ -174,6 +174,22 @@ impl Playback {
     }
 }
 
+/// `Σ a[k]·b[k]` in eight running sums: a fixed order the compiler
+/// vectorises (one sum is a chain of 1029 dependent adds).
+#[inline]
+fn dot(a: &[f64], b: &[f64]) -> f64 {
+    let mut sums = [0.0f64; 8];
+    let (ca, cb) = (a.chunks_exact(8), b.chunks_exact(8));
+    let (ra, rb) = (ca.remainder(), cb.remainder());
+    for (x, y) in ca.zip(cb) {
+        for k in 0..8 {
+            sums[k] += x[k] * y[k];
+        }
+    }
+    let tail: f64 = ra.iter().zip(rb).map(|(x, y)| x * y).sum();
+    ((sums[0] + sums[4]) + (sums[1] + sums[5])) + ((sums[2] + sums[6]) + (sums[3] + sums[7])) + tail
+}
+
 /// Blackman window point `j` of `n`.
 fn blackman(j: usize, n: usize) -> f64 {
     let x = std::f64::consts::TAU * j as f64 / (n - 1) as f64;
@@ -215,8 +231,7 @@ impl Stage for Playback {
         let x = f64::from(x);
         self.history[self.pos] = x;
         self.history[self.pos + n] = x;
-        let window = &self.history[self.pos + 1..=self.pos + n];
-        let y: f64 = window.iter().zip(&self.taps).map(|(a, b)| a * b).sum();
+        let y = dot(&self.history[self.pos + 1..=self.pos + n], &self.taps);
         self.pos += 1;
         if self.pos == n {
             self.pos = 0;
