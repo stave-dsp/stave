@@ -93,7 +93,7 @@ fn vowels_peak_at_the_table() {
                 if at > lo as f64 + 1.0 && at < hi as f64 - 1.0 {
                     shown += 1;
                     let e = (at / c - 1.0).abs();
-                    if e > 0.025 {
+                    if e > 0.015 {
                         eprintln!("{speaker:?} {vowel:?} F{}: {:.2} %", i + 1, 100.0 * (at / c - 1.0));
                     }
                     worst = worst.max(e);
@@ -105,23 +105,136 @@ fn vowels_peak_at_the_table() {
         }
     }
     eprintln!("cascade: worst {worst:.4} over {shown} peaks, {missing} merged, loudest {loudest:.3} dB");
-    // The crowded F2/F3 of /i/ pull its F3 peak 4–6 % below the pole;
-    // every other formant peaks within 2.5 % of its centre.
-    assert!(worst < 0.06, "a vowel's peak {:.2} % off the table", 100.0 * worst);
+    // Every formant peaks within 2 % of its centre (1.26 % worst).
+    assert!(worst < 0.02, "a vowel's peak {:.2} % off the table", 100.0 * worst);
     assert!(missing <= 2, "{missing} formants show no peak");
     assert!(loudest < 0.3, "the strongest formant at {loudest:.2} dB, not 0");
 }
 
 #[test]
 fn the_table_is_peterson_and_barney() {
-    // Slaney's Auditory Toolbox (1998), MakeVowel, quotes these.
+    // Peterson & Barney 1952, Table II (p. 183), F1/F2/F3 rows in the
+    // table's vowel order i ɪ ɛ æ ɑ ɔ ʊ u ʌ ɝ, transcribed from the
+    // printed page independently of `tables.rs`.
+    let printed: [(Speaker, [[f32; 10]; 3]); 3] = [
+        (
+            Speaker::Man,
+            [
+                [270., 390., 530., 660., 730., 570., 440., 300., 640., 490.],
+                [2290., 1990., 1840., 1720., 1090., 840., 1020., 870., 1190., 1350.],
+                [3010., 2550., 2480., 2410., 2440., 2410., 2240., 2240., 2390., 1690.],
+            ],
+        ),
+        (
+            Speaker::Woman,
+            [
+                [310., 430., 610., 860., 850., 590., 470., 370., 760., 500.],
+                [2790., 2480., 2330., 2050., 1220., 920., 1160., 950., 1400., 1640.],
+                [3310., 3070., 2990., 2850., 2810., 2710., 2680., 2670., 2780., 1960.],
+            ],
+        ),
+        (
+            Speaker::Child,
+            [
+                [370., 530., 690., 1010., 1030., 680., 560., 430., 850., 560.],
+                [3200., 2730., 2610., 2320., 1370., 1060., 1410., 1170., 1590., 1820.],
+                [3730., 3600., 3570., 3320., 3170., 3180., 3310., 3260., 3360., 2160.],
+            ],
+        ),
+    ];
+    for (speaker, rows) in printed {
+        for (v, vowel) in Vowel::ALL.iter().enumerate() {
+            let want = [rows[0][v], rows[1][v], rows[2][v]];
+            assert_eq!(vowel.centres(speaker), want, "{speaker:?} {vowel:?}");
+        }
+    }
+    // Slaney's Auditory Toolbox (1998), MakeVowel, quotes the men's too.
     assert_eq!(Vowel::Aa.centres(Speaker::Man), [730.0, 1090.0, 2440.0]);
-    assert_eq!(Vowel::Iy.centres(Speaker::Man), [270.0, 2290.0, 3010.0]);
-    assert_eq!(Vowel::Uw.centres(Speaker::Man), [300.0, 870.0, 2240.0]);
-    // Fant's bandwidth law at its anchors.
-    let b = |f: f32| bandwidth(Hz::new(f)).get();
-    assert!((b(500.0) - 40.0).abs() < 1e-4);
-    assert!(b(270.0) > b(500.0) && b(3_000.0) > 200.0);
+}
+
+/// Fant 1972, Table I-C-II (men): measured F1–F3 and the bandwidths
+/// his eqs. 56–58 predict for them, Hz.
+const FANT_MEN: [(&str, [f32; 3], [f32; 3]); 16] = [
+    ("u", [315., 605., 2450.], [57., 35., 39.]),
+    ("o", [410., 690., 2600.], [43., 39., 54.]),
+    ("ɔ", [505., 900., 2950.], [40., 43., 71.]),
+    ("ɑ", [600., 1030., 2700.], [40., 52., 86.]),
+    ("a", [710., 1150., 2700.], [42., 62., 104.]),
+    ("æ", [700., 1430., 2450.], [42., 65., 106.]),
+    ("ɛ", [450., 1825., 2425.], [42., 73., 96.]),
+    ("e", [325., 1900., 2450.], [56., 51., 92.]),
+    ("ɪ", [290., 2025., 2875.], [63., 41., 120.]),
+    ("i", [230., 2000., 3000.], [86., 37., 129.]),
+    ("y", [245., 1875., 2075.], [84., 86., 78.]),
+    ("ʉ", [265., 1480., 2060.], [68., 46., 56.]),
+    ("ø", [400., 1650., 2250.], [45., 52., 77.]),
+    ("œ", [510., 1150., 2350.], [40., 47., 68.]),
+    ("θ", [420., 1000., 2250.], [36., 42., 52.]),
+    ("ɜ", [520., 1500., 2500.], [39., 51., 87.]),
+];
+
+/// The same, Table I-C-III (women).
+const FANT_WOMEN: [(&str, [f32; 3], [f32; 3]); 13] = [
+    ("u", [365., 690., 2700.], [56., 36., 75.]),
+    ("o", [445., 780., 2850.], [48., 41., 64.]),
+    ("ɔ", [610., 1100., 2800.], [43., 53., 87.]),
+    ("ɑ", [700., 1100., 3000.], [45., 59., 111.]),
+    ("a", [760., 1360., 3000.], [46., 64., 130.]),
+    ("æ", [730., 1660., 2850.], [44., 66., 111.]),
+    ("e", [395., 2200., 2850.], [52., 51., 128.]),
+    ("i", [345., 2060., 3100.], [61., 42., 132.]),
+    ("y", [295., 2000., 2650.], [73., 47., 98.]),
+    ("ʉ", [305., 1770., 2380.], [70., 48., 77.]),
+    ("ø", [410., 1740., 2350.], [51., 53., 84.]),
+    ("œ", [525., 1490., 2600.], [44., 51., 87.]),
+    ("θ", [490., 1240., 2650.], [45., 47., 74.]),
+];
+
+#[test]
+fn bandwidths_are_fants() {
+    // Printed predictions that no reading of eqs. 56–58 reproduces
+    // (by row and formant index), most likely misprints in the tables.
+    let misprints = [
+        (Speaker::Man, "θ", 0),
+        (Speaker::Man, "ɛ", 1),
+        (Speaker::Man, "ɔ", 2),
+        (Speaker::Woman, "u", 2),
+        (Speaker::Woman, "æ", 2),
+    ];
+    let mut worst = [[0.0f32; 3]; 2];
+    for (s, (speaker, table)) in [(Speaker::Man, &FANT_MEN[..]), (Speaker::Woman, &FANT_WOMEN[..])]
+        .into_iter()
+        .enumerate()
+    {
+        for &(vowel, f, printed) in table {
+            let got = bandwidths(f.map(Hz::new), speaker).map(Hz::get);
+            for k in 0..3 {
+                if misprints.contains(&(speaker, vowel, k)) {
+                    continue;
+                }
+                // In dB, Fant's own error measure: the men's within 1 dB
+                // (his stated accuracy; 0.97 worst, B3 of /i/), the
+                // women's within 0.35 dB (0.31 worst).
+                let err = (20.0 * (got[k] / printed[k]).log10()).abs();
+                let budget = if speaker == Speaker::Man { 1.0 } else { 0.35 };
+                assert!(err <= budget, "{speaker:?} {vowel} B{}: {} vs printed {}", k + 1, got[k], printed[k]);
+                worst[s][k] = worst[s][k].max(err);
+            }
+        }
+    }
+    eprintln!("Fant, worst dB per formant: men {:?}, women {:?}", worst[0], worst[1]);
+}
+
+#[test]
+fn bandwidths_stay_positive_and_finite() {
+    for speaker in SPEAKERS {
+        for vowel in Vowel::ALL {
+            for f in vowel.formants(speaker) {
+                let b = f.bandwidth.get();
+                assert!(b.is_finite() && b > 0.0 && b < 400.0, "{speaker:?} {vowel:?}: {b} Hz");
+            }
+        }
+    }
 }
 
 #[test]

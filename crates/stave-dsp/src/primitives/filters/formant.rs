@@ -8,7 +8,7 @@ use crate::units::Hz;
 
 mod tables;
 
-pub use tables::{bandwidth, Speaker, Vowel};
+pub use tables::{bandwidths, Speaker, Vowel};
 
 /// One formant: a resonance's centre and its −3 dB bandwidth.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -169,13 +169,12 @@ impl Stage for Resonator {
 /// # Verified
 ///
 /// `crates/stave-dsp/src/primitives/filters/formant/tests.rs::vowels_peak_at_the_table`:
-/// for all 30 vowels of the table (men, women, children) every formant
-/// shows as a peak of the cascade's measured response, within 2.5 % of
-/// its centre except /i/'s F3 for women and children (5.5 % and 4.4 %
-/// low, pulled by the F2 crowding it; budget 6 %), and the maximum is
-/// 0 dB within 0.3 dB (0.016 dB worst).
+/// for all 30 vowels of the table (men, women, children) every formant,
+/// with Fant's bandwidths ([`bandwidths`]), shows as a peak of the
+/// cascade's measured response within 2 % of its centre (1.26 %
+/// worst), and the maximum is 0 dB within 0.3 dB (0.016 dB worst).
 /// `crates/stave-dsp/src/primitives/filters/formant/tests.rs::the_table_is_peterson_and_barney`
-/// holds the men's /a/, /i/, /u/ to the values Slaney 1998 quotes.
+/// holds all 90 centres to Peterson & Barney's printed Table II.
 ///
 /// # Cost
 ///

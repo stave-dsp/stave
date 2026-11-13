@@ -76,19 +76,24 @@ impl Vowel {
         }
     }
 
-    /// The vowel's three formants: Peterson & Barney's centres, each
-    /// with [`bandwidth`] of its centre.
+    /// The vowel's three formants: Peterson & Barney's centres with
+    /// Fant's bandwidths for them ([`bandwidths`]).
     pub fn formants(self, speaker: Speaker) -> [Formant; 3] {
-        self.centres(speaker).map(|f| Formant {
-            centre: Hz::new(f),
-            bandwidth: bandwidth(Hz::new(f)),
+        let centres = self.centres(speaker).map(Hz::new);
+        let widths = bandwidths(centres, speaker);
+        [0, 1, 2].map(|i| Formant {
+            centre: centres[i],
+            bandwidth: widths[i],
         })
     }
 }
 
 /// Peterson, G. E. & Barney, H. L. (1952), "Control methods used in a
-/// study of the vowels", JASA 24(2):175–184, Table II: average formant
-/// frequencies (Hz), men.
+/// study of the vowels", JASA 24(2):175–184, Table II ("Averages of
+/// fundamental and formant frequencies and formant amplitudes of vowels
+/// by 76 speakers", p. 183): average formant frequencies (Hz), men. All
+/// 90 values of the three tables were checked against the printed
+/// Table II.
 const MEN: [[f32; 3]; 10] = [
     [270.0, 2290.0, 3010.0],
     [390.0, 1990.0, 2550.0],
@@ -130,12 +135,60 @@ const CHILDREN: [[f32; 3]; 10] = [
     [560.0, 1820.0, 2160.0],
 ];
 
-/// A formant's bandwidth from its centre, Peterson & Barney giving
-/// none: Fant's (1972) fit of measured vocal-tract bandwidths,
-/// `B = 15·(500/F)² + 20·(F/500)^½ + 5·(F/500)²` Hz — wall losses
-/// dominate low formants, radiation and viscosity high ones (about 40
-/// Hz at 500 Hz, 80 at 1.5 kHz, 230 at 3 kHz).
-pub fn bandwidth(centre: Hz) -> Hz {
-    let x = f64::from(centre.get().max(1.0)) / 500.0;
-    Hz::new((15.0 / (x * x) + 20.0 * x.sqrt() + 5.0 * x * x) as f32)
+/// Fant's average fourth formant `F4a` (Hz), which his B3 formula
+/// measures F3's proximity to: 3400 for men, 3700 for women (Fant 1972,
+/// p. 47). Fant measured no children; theirs is *our extrapolation*:
+/// the women's value scaled by the ratio of Peterson & Barney's mean
+/// child F3 to mean woman F3 (3266/2783), 4342 Hz.
+const F4A: [f64; 3] = [3400.0, 3700.0, 3700.0 * 3266.0 / 2783.0];
+
+/// The bandwidths (Hz) of formants `[F1, F2, F3]` spoken by `speaker`,
+/// Peterson & Barney giving none: Fant's empirical formulas from the
+/// formant pattern (G. Fant 1972, "Vocal tract wall effects, losses,
+/// and resonance bandwidths", STL-QPSR 13(2-3):28–52, eqs. 56–58, p. 47),
+/// with `x = F/500`:
+///
+/// - `B1 = 15·w/x1² + 20·x1^½ + 5·x1²` — cavity wall, surface and
+///   radiation losses; `w` = 1 for men, 1.3 for women (Fant's female
+///   rule, p. 47).
+/// - `B2 = 22 + 16·x1² + 12000/(F3 − F2)`.
+/// - `B3 = 25·x1² + 4·x2² + 10·F3/(F4a − F3)`, with `F4a` 3400 Hz for
+///   men, 3700 for women. The paper prints the last term as
+///   `10 F3(F4a−F3)`, which is not dimensionally a bandwidth; the
+///   quotient is our reading, chosen because it reproduces Fant's own
+///   predicted column (Tables I-C-II and I-C-III) — see Verified.
+///
+/// Fant fitted Swedish vowels from two speakers per sex; applying the
+/// fit to Peterson & Barney's American English averages is our choice.
+/// Children are not in Fant's data: they get the women's formulas with
+/// an extrapolated `F4a` (4342 Hz) — a choice, not a measurement.
+///
+/// # Verified
+///
+/// `crates/stave-dsp/src/primitives/filters/formant/tests.rs::bandwidths_are_fants`
+/// recomputes Fant's predicted bandwidths for the 16 male and 13 female
+/// vowels of his Tables I-C-II and I-C-III, in dB as Fant scores them:
+/// every men's value within 1 dB (0.97 worst, B3 of /i/) and every
+/// women's within 0.35 dB (0.31 worst), except five printed
+/// predictions no reading of the formulas reproduces, taken to be
+/// table misprints: men's θ B1 (+1.6 dB), ɛ B2 (−2.5), ɔ B3 (+3.3);
+/// women's u B3 (−3.9), æ B3 (+1.4).
+///
+/// # Valid ranges
+///
+/// `0 < F1`, `F2 < F3 < F4a`: the formulas divide by the gaps, which
+/// are floored at 1 Hz so a degenerate pattern gives a very wide
+/// formant rather than an infinite or negative one.
+pub fn bandwidths(formants: [Hz; 3], speaker: Speaker) -> [Hz; 3] {
+    let [f1, f2, f3] = formants.map(|f| f64::from(f.get()).max(1.0));
+    let (wall, f4a) = match speaker {
+        Speaker::Man => (1.0, F4A[0]),
+        Speaker::Woman => (1.3, F4A[1]),
+        Speaker::Child => (1.3, F4A[2]),
+    };
+    let (x1, x2) = (f1 / 500.0, f2 / 500.0);
+    let b1 = 15.0 * wall / (x1 * x1) + 20.0 * x1.sqrt() + 5.0 * x1 * x1;
+    let b2 = 22.0 + 16.0 * x1 * x1 + 12_000.0 / (f3 - f2).max(1.0);
+    let b3 = 25.0 * x1 * x1 + 4.0 * x2 * x2 + 10.0 * f3 / (f4a - f3).max(1.0);
+    [b1, b2, b3].map(|b| Hz::new(b as f32))
 }
