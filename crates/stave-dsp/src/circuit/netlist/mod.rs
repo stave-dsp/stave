@@ -2,8 +2,10 @@
 //! independent and controlled sources, devices, behavioural sources),
 //! with the stimulus, analyses and probe a SPICE deck carries. One
 //! netlist feeds ngspice and stave alike: [`Netlist::parse_spice`] reads
-//! the SPICE subset `stave-test/spice/*.cir` uses, and a circuit method
-//! solves it.
+//! the SPICE subset `stave-test/spice/*.cir` uses,
+//! [`Netlist::parse_kicad`] a KiCad schematic's netlist export
+//! ([`kicad`]), and a circuit method solves it. [`tolerance`] draws
+//! built units of a netlist from its parts' tolerances (DSP.md E10).
 //!
 //! ```
 //! use stave_dsp::circuit::netlist::Netlist;
@@ -22,7 +24,9 @@
 //! ```
 
 pub mod expr;
+pub mod kicad;
 pub mod spice;
+pub mod tolerance;
 pub mod variable;
 
 use std::fmt;
@@ -392,6 +396,11 @@ impl Netlist {
     /// Nodes, ground included.
     pub fn node_count(&self) -> usize {
         self.names.len().max(1)
+    }
+
+    /// Every node in index order, ground first.
+    pub fn nodes(&self) -> impl Iterator<Item = Node> + use<> {
+        (0..self.node_count()).map(Node)
     }
 
     pub fn elements(&self) -> &[Element] {

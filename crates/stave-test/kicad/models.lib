@@ -1,0 +1,12 @@
+* SPICE models the KiCad round-trip fixtures name (kicad_import.rs):
+* the cards the decks in ../spice use, so a schematic and a deck
+* describe one circuit.
+*
+* 1N4148, static and charge parameters as spice/diode_clipper.cir.
+.model D1N4148 D(Is=2.52n N=1.752 Rs=0.568 Cjo=4p M=0.4 tt=20n Bv=100)
+*
+* AC128 germanium PNP as spice/fuzz_face.cir (Holmes, Holters & van
+* Walstijn, DAFx-17, with the Mullard sheet's CJC and fT).
+.model AC128 PNP(IS=20.66u BF=229.6 BR=14.66 NF=1.133 NR=1.140 VAF=19.68 VAR=88.28 IKF=463.0m IKR=241.5m ISE=2.190u ISC=7.546u NE=1.796 NC=1.364 RB=1.885 RE=306.4m
++ CJC=200p TF=159.2n)
+.end
