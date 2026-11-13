@@ -13,11 +13,15 @@
 //! | [`opamp`] | [`OpAmp`](opamp::OpAmp) | [`Ideal`](opamp::Ideal), [`Macromodel`](opamp::Macromodel), the run-time choice [`Amp`](opamp::Amp) |
 //! | [`ota`] | [`Ota`](ota::Ota) | [`BipolarPair`](ota::BipolarPair) |
 //! | [`magnetic`] | [`Magnetic`](magnetic::Magnetic) | [`JilesAtherton`](magnetic::JilesAtherton) |
+//! | [`bbd`] | — (clocked: a stage, not a netlist element) | [`HoltersParker`](bbd::HoltersParker); parts [`Chip::MN3007`](bbd::Chip::MN3007), `MN3008`, `MN3205` |
+//! | [`compander`] | — (a stage) | [`Compander`](compander::Compander); part [`Chip::NE570`](compander::Chip::NE570) |
 //!
 //! Transistors come in two [`Polarity`]s; a P device is its N twin with
 //! terminal voltages and currents negated.
 
+pub mod bbd;
 pub mod bjt;
+pub mod compander;
 pub mod diode;
 pub mod jfet;
 pub(crate) mod junction;

@@ -1,3 +1,4 @@
+pub mod bucket_brigade;
 pub mod common_cathode;
 pub mod coupler;
 pub mod diode_clipper;

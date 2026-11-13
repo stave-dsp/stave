@@ -52,6 +52,14 @@
 //! standard size 2.2 µs/sample (12 + 6 channels 1.7), LSTM 1 x 16 0.32,
 //! GRU 1 x 16 0.23 — a different scale: a capture network is the whole
 //! amp, and costs like one.
+//!
+//! Hardware beyond circuits (H1, H2; the reference machine, 2026-11-12):
+//! the BBD line costs by its clock — HoltersParker with the Juno-60's
+//! fifth-order filters 74 ns/sample at 40 kHz, 154 at 100 kHz; the
+//! compandored line on fourth-order filters 60. A spring is its allpass
+//! sections: 167 with the low chirps alone (100 sections), 566 with the
+//! wide-band chirps (300); a three-spring tank 1.7 µs, which is where
+//! Parker 2011's multirate structures would pay.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
@@ -69,7 +77,6 @@ use stave_dsp::effects::dynamics::{
     Compressor, GainComputer, Limiter, Peak, Peaks, ProgramDependent, Rms, Sidechain, Topology,
 };
 use stave_dsp::effects::modulation::{FrequencyShifter, Sideband, SingleSideband};
-use stave_dsp::effects::reverb::{Dattorro, Fdn, Mixing, Schroeder};
 use stave_dsp::circuit::topologies::diode_ladder::DiodeLadder;
 use stave_dsp::circuit::topologies::transistor_ladder::TransistorLadder;
 use stave_dsp::primitives::filters::hilbert::Hilbert;
@@ -77,6 +84,12 @@ use stave_dsp::primitives::filters::korg35::Korg35;
 use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
 use stave_dsp::primitives::filters::sallen_key::SallenKey;
 use stave_dsp::units::hz;
+use stave_dsp::circuit::devices::bbd::{Chip, Filter, HoltersParker};
+use stave_dsp::circuit::devices::compander::{self, Compander, Mode};
+use stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade;
+use stave_dsp::effects::reverb::{Dattorro, Fdn, Mixing, Schroeder};
+use stave_dsp::physical::spring::{Chirp, Spring, Tank};
+use stave_dsp::units;
 use stave_dsp::primitives::time::delay::Delay;
 use stave_dsp::primitives::time::interpolators::{
     Interpolator, Lagrange3, Lagrange5, Linear, Sinc, Thiran,
@@ -280,6 +293,35 @@ fn primitive_datasheet() {
     carrier.set_hz(440.0);
     carrier.prepare(sr);
     bench("SingleSideband", &input, |x| ssb.modulate(x, carrier.tick(0.0)));
+
+    // H1: bucket-brigade delay (the cost rises with the clock).
+    for clock in [40_000.0, 100_000.0] {
+        let mut line = HoltersParker::new(Chip::MN3007, Filter::JUNO_60_INPUT, Filter::JUNO_60_OUTPUT);
+        line.prepare(sr);
+        line.set_clock(units::hz(clock));
+        let name = format!("HoltersParker (MN3007, Juno-60 filters, {} kHz clock)", clock / 1_000.0);
+        bench(&name, &input, |x| line.tick(x));
+    }
+    let mut bbd = BucketBrigade::new(Chip::MN3007);
+    bbd.prepare(sr);
+    bbd.set_clock(units::hz(40_000.0));
+    bench("BucketBrigade (MN3007, NE570, 40 kHz clock)", &input, |x| bbd.tick(x));
+    let mut compressor = Compander::new(compander::Chip::NE570, Mode::Compress);
+    compressor.prepare(sr);
+    bench("Compander (NE570)", &input, |x| compressor.tick(x));
+
+    // H2: spring reverb.
+    let mut chirp = Chirp::new(100, 6, 0.6);
+    chirp.prepare(sr);
+    bench("Chirp (100 sections, k = 6)", &input, |x| chirp.tick(x));
+    let mut spring = Spring::new(units::seconds(0.033), units::hz(4_000.0));
+    spring.prepare(sr);
+    bench("Spring (low and wide-band chirps)", &input, |x| spring.tick(x));
+    spring.set_high_chirps(units::db(-200.0));
+    bench("Spring (low chirps only)", &input, |x| spring.tick(x));
+    let mut tank = Tank::default();
+    tank.prepare(sr);
+    bench("Tank (3 springs)", &input, |x| tank.tick(x));
 
     // D1–D3: dynamics.
     let mut peak = Peak::new(5.0, 50.0);

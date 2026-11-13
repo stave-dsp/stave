@@ -651,6 +651,65 @@ let out: Vec<f32> = (0..200).map(|n| limiter.tick(if n == 0 { 0.5 } else { 0.0 }
 assert!((out[limiter.latency() as usize] - 0.5).abs() < 1e-5);
 ```
 
+## Hardware beyond circuits: bucket brigades and springs
+
+A bucket-brigade delay is a schematic part, so it lives in `circuit`
+though no netlist method solves it:
+[`HoltersParker`](stave_dsp::circuit::devices::bbd::HoltersParker) runs
+a [`Chip`](stave_dsp::circuit::devices::bbd::Chip) (MN3007, MN3008,
+MN3205) at its clock, `stages / (2·clock)` of delay, resampling between
+the host rate and the clock through the chip's own anti-alias and
+reconstruction filters, held as partial fractions of their circuits
+([`Filter`](stave_dsp::circuit::devices::bbd::Filter)). A modulated
+clock glides the pitch as the hardware does, and what the filters pass
+above half the clock aliases and images as on the chip.
+[`BucketBrigade`](stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade)
+is the application circuit around it: an NE570
+[`Compander`](stave_dsp::circuit::devices::compander::Compander) and the
+Sallen–Key filters whose decks ngspice checks.
+
+A spring is mechanics, so it lives in `physical`:
+[`Tank`](stave_dsp::physical::spring::Tank) drives one or more
+[`Spring`](stave_dsp::physical::spring::Spring)s, each a dispersive
+waveguide whose [`Chirp`](stave_dsp::physical::spring::Chirp) cascades
+make an impulse arrive as a chirp, again and again — the boing.
+
+```rust
+use stave_dsp::circuit::devices::bbd::Chip;
+use stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade;
+use stave_dsp::physical::spring::{Spring, Tank};
+use stave_dsp::units::{hz, seconds};
+use stave_dsp::Stage;
+
+// An MN3007 at 51.2 kHz is 10 ms of delay.
+let mut bbd = BucketBrigade::new(Chip::MN3007);
+bbd.prepare(48_000.0);
+bbd.set_delay(seconds(0.010));
+assert_eq!(bbd.line().clock(), hz(51_200.0));
+// Chorus: sweep the clock every sample; the pitch glides.
+for n in 0..4_800 {
+    let lfo = (n as f32 * 0.8 / 48_000.0 * core::f32::consts::TAU).sin();
+    bbd.set_clock(hz(51_200.0 * (1.0 + 0.2 * lfo)));
+    let x = (n as f32 * 440.0 / 48_000.0 * core::f32::consts::TAU).sin() * 0.5;
+    assert!(bbd.tick(x).is_finite());
+}
+
+// A spring's chirp rises toward its transition frequency: one transit
+// delays 3 kHz about five times longer than 300 Hz.
+let mut spring = Spring::new(seconds(0.035), hz(4_000.0));
+spring.prepare(48_000.0);
+let chirp = spring.low_chirp();
+assert!(chirp.group_delay(3_000.0 / 48_000.0) > 4.0 * chirp.group_delay(300.0 / 48_000.0));
+
+// A three-spring tank, 2 s to die away.
+let mut tank = Tank::default();
+tank.set_t60(seconds(2.0));
+tank.prepare(48_000.0);
+let ir: Vec<f32> = (0..4_800).map(|n| tank.tick(if n == 0 { 1.0 } else { 0.0 })).collect();
+// Silence until the shortest spring's first arrival (past 20 ms).
+assert!(ir[..900].iter().all(|y| y.abs() < 1e-3));
+```
+
 ## Conventions
 
 - **Units in names.** `sample_rate` is `f32` everywhere (state may be

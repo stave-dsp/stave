@@ -1,0 +1,24 @@
+* The reconstruction filter after the BBD of
+* stave_dsp::circuit::topologies::bucket_brigade (OUTPUT_FILTER): two
+* unity-gain Sallen-Key lowpass sections on E12 parts, each buffered by
+* an ideal follower (a unity VCVS). Output |Vo/Vi| over 20 Hz-100 kHz
+* (first column = frequency).
+VI i 0 DC 0 AC 1
+R1 i a 10k
+R2 a b 10k
+C1 a m 2.7n
+C2 b 0 2.2n
+E1 m 0 b 0 1
+R3 m c 10k
+R4 c d 10k
+C3 c o 6.8n
+C4 d 0 820p
+E2 o 0 d 0 1
+.ac dec 20 20 100k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(o)
+.endc
+.end

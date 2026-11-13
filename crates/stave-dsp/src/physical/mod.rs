@@ -9,5 +9,14 @@
 //! solutions of the same equations, and hardware captures, each with an
 //! error budget.
 //!
-//! Empty until its first model lands (DSP.md H1–H10). It may use
-//! `units`, `kernel`, `primitives`, `behavioral` and `circuit`.
+//! | Module | Models |
+//! |---|---|
+//! | [`spring`] | [`Tank`](spring::Tank), [`Spring`](spring::Spring) (Välimäki, Parker & Abel's dispersive chirps as waveguides), [`Chirp`](spring::Chirp) |
+//!
+//! It may use `units`, `kernel`, `primitives`, `behavioral` and
+//! `circuit`. A bucket-brigade delay is not here: the chip is a
+//! schematic part, so it lives in
+//! [`circuit::devices::bbd`](crate::circuit::devices::bbd) though its
+//! transfer is a sampling process.
+
+pub mod spring;
