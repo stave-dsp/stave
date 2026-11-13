@@ -4,12 +4,15 @@
 //! decay as a T60 and is wet only: mix the dry signal yourself. The
 //! `Fdn` and `VelvetNoise` also hold a [`T60`] per octave band, through
 //! graphic-EQ attenuation filters; the `Fdn` mixes through a fixed
-//! [`Mixing`] or a parametric [`Kronecker`] matrix.
+//! [`Mixing`] or a parametric [`Kronecker`] matrix. [`Room`] is the
+//! exception, a [`Shoebox`]'s direct sound, image-source reflections and
+//! an `Fdn` late field, dry included.
 
 mod attenuation;
 mod dattorro;
 mod fdn;
 mod kronecker;
+mod room;
 mod schroeder;
 mod t60;
 mod velvet_noise;
@@ -17,6 +20,7 @@ mod velvet_noise;
 pub use dattorro::Dattorro;
 pub use fdn::{Fdn, Mixing};
 pub use kronecker::{Kernel, Kronecker};
+pub use room::{Room, Shoebox};
 pub use schroeder::Schroeder;
 pub use t60::T60;
 pub use velvet_noise::VelvetNoise;

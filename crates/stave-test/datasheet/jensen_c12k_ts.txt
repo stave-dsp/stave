@@ -1,0 +1,75 @@
+# title: Jensen C12K Thiele-Small parameters, electrical characteristics and sensitivity as printed, every nominal-impedance version.
+# document: Jensen Loudspeakers, "Specification Sheet - C12K" (web specification sheet; dated only by page-generation stamp 11/13/2026 - 13:46; retrieved 2026-11-13)
+# url: https://www.jensentone.com/specification-sheet/15
+# figure: the "Thiele-Small Parameters" and "Electrical Characteristics" tables of the specification sheet
+# method: transcribed from the tables (the page text); each parameter is a curve keyed by its name, x the version's nominal impedance (ohm), y the printed value in the printed unit
+# x: nominal impedance (ohm)
+# y: the parameter in its printed unit: re ohm, fs Hz, qms/qes/qts 1, mms g, cms um/N, bl T*m (printed Wb/m), vas litres, xmax mm (printed as +/-), eta0 %, sd cm^2, res ohm, le mH at 1 kHz, sensitivity dB SPL at 1 W, 1 m
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 16
+# full-scale-y: 1
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: printed=1
+# notes: Rated power 100/100/100 W. The sheet states no measurement method, drive level or ambient conditions for the parameters, prints no Rms (Res = Bl^2/Rms instead) and gives Le only at 1 kHz; no LR-2 or large-signal data. Values verbatim; misprints are kept (see the impedance table's notes).
+# curve re=1
+4 3.25
+8 6.75
+16 12
+# curve fs=1
+4 102
+8 115
+16 113.3
+# curve qms=1
+4 19.8
+8 16.4
+16 17.41
+# curve qts=1
+4 0.52
+8 0.82
+16 0.86
+# curve mms=1
+4 34.9
+8 33.4
+16 35.6
+# curve cms=1
+4 70
+8 57
+16 55
+# curve bl=1
+4 11.65
+8 13.7
+16 18.3
+# curve vas=1
+4 23.6
+8 19.6
+16 19
+# curve xmax=1
+4 1
+8 1
+16 1
+# curve eta0=1
+4 4.47
+8 4.43
+16 3.89
+# curve sd=1
+4 490.9
+8 490.9
+16 490.9
+# curve res=1
+4 120
+8 210
+16 360
+# curve le=1
+4 0.61
+8 0.84
+16 1.36
+# curve qes=1
+4 0.53
+8 0.86
+16 0.9
+# curve sensitivity=1
+4 99.4
+8 99
+16 99

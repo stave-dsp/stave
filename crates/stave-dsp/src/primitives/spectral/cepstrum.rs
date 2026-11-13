@@ -36,6 +36,13 @@ const FLOOR: f64 = 1e-12;
 
 /// The minimum-phase response with the magnitude of `h`, the same length.
 pub(crate) fn minimum_phase(h: &[f64]) -> Vec<f64> {
+    minimum_phase_floored(h, FLOOR)
+}
+
+/// [`minimum_phase`] with `|H|` floored at `floor` of its peak: a
+/// higher floor (a capture's noise floor, say −80 dB) keeps the phase in
+/// the passband from depending on how deep an unmeasurable stopband is.
+pub(crate) fn minimum_phase_floored(h: &[f64], floor: f64) -> Vec<f64> {
     let n = h.len();
     if n == 0 {
         return Vec::new();
@@ -50,7 +57,7 @@ pub(crate) fn minimum_phase(h: &[f64]) -> Vec<f64> {
     if peak == 0.0 {
         return vec![0.0; n];
     }
-    let floor = peak * FLOOR;
+    let floor = peak * floor;
     for z in &mut x {
         *z = Complex::new(z.norm().max(floor).ln(), 0.0);
     }

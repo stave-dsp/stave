@@ -7,7 +7,7 @@
 //! `prepare`), and runs in place afterwards: no transform or convolution
 //! call allocates.
 
-mod cepstrum;
+pub(crate) mod cepstrum;
 pub mod convolve;
 pub mod fft;
 pub mod fir;
