@@ -1070,14 +1070,15 @@ use stave_dsp::physical::tube::{self, Bore, Shape, Valve};
 use stave_dsp::units::{hz, seconds};
 use stave_dsp::Stage;
 
-// A cello's G string, bowed a tenth of the way from the bridge.
-let mut cello: string::Waveguide = string::Waveguide::new(hz(60.0), hz(98.0));
-cello.set_position(0.1);
-cello.prepare(48_000.0);
-cello.set_bow(Some(Bow { force: 0.5, velocity: 0.2 }));
+// A violin's G string, bowed a tenth of the way from the bridge.
+let mut violin: string::Waveguide = string::Waveguide::new(hz(150.0), hz(196.0));
+violin.set_position(0.1);
+violin.set_decay(seconds(2.0), seconds(0.4));
+violin.prepare(48_000.0);
+violin.set_bow(Some(Bow { force: 0.5, velocity: 0.2 }));
 let slips = (0..48_000).filter(|_| {
-    cello.tick(0.0);
-    !cello.sticking()
+    violin.tick(0.0);
+    !violin.sticking()
 }).count();
 assert!((3_000..8_000).contains(&slips)); // slipping about a tenth of the time
 
