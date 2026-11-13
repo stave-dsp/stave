@@ -35,6 +35,10 @@ use super::table::Table;
 /// The silence a black box gets before each run.
 pub const REST_SECONDS: f64 = 0.1;
 
+/// The quietest level the knee search tries, dBFS
+/// ([`stage_knee`](super::model::stage_knee) starts at 10 µ of full scale).
+pub const KNEE_FLOOR_DB: f64 = -100.0;
+
 /// A shared instance as a [`Maker`](super::model::Maker): each fresh ticker plays
 /// [`REST_SECONDS`] of silence, then takes one sample at a time, processes
 /// whole blocks of `block` frames (mono in to every input, the first
@@ -308,7 +312,15 @@ pub fn side_by_side(contenders: &[(String, &BlackBox)]) -> String {
         Some(Inert::Identity) => "**identity (passes input unchanged)**".into(),
         Some(Inert::Silent) => "**silent**".into(),
     });
-    row("knee @ 1 kHz (dBFS peak)", &|b| format!("{:+.1} ({})", db(b.knee.amplitude), criterion(b.knee.criterion)));
+    row("knee @ 1 kHz (dBFS peak)", &|b| {
+        if db(b.knee.amplitude) <= KNEE_FLOOR_DB + 0.05 {
+            // The search's first, quietest step was already past the
+            // criterion: a gate, modelled noise or a latch, not a knee.
+            format!("≤ {KNEE_FLOOR_DB:+.0} (past {} at the quietest level: a gate, noise or a latch?)", criterion(b.knee.criterion))
+        } else {
+            format!("{:+.1} ({})", db(b.knee.amplitude), criterion(b.knee.criterion))
+        }
+    });
     row("latency (samples)", &|b| b.latency.to_string());
     row("tail", &|b| match b.tail {
         Tail::Samples(n) => format!("{n} samples"),
