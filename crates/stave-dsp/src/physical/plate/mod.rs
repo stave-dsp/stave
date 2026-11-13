@@ -89,9 +89,12 @@ impl Mode {
 /// `t = 0` they carry sums over modes to the drive point's delta, zero
 /// at a pickup elsewhere). The bank runs eight modes to a group in f32,
 /// block by block (`physical/lanes.rs`, shared with the membrane and the bar). Each pickup's output is scaled so its
-/// impulse response carries unit energy (the modes' energies
+/// impulse response carries unit energy at 48 kHz (the modes' energies
 /// `|w|²/2(1 − r²)` summed; [`scale`](Self::scale) is that factor, to
-/// recover SI units).
+/// recover SI units) and the same continuous energy at every rate —
+/// `Σh² = 48 kHz / fs` — so a tone comes out equally loud at any rate
+/// (unit energy at each rate put the gain on `√fs`: +6 dB at 192 kHz,
+/// DSP.md R6).
 ///
 /// # Verified
 /// `crates/stave-dsp/src/physical/plate/tests.rs::modes_are_leissas_without_tension`
@@ -383,7 +386,16 @@ impl Plate {
                 *e += (wr * wr + wi * wi) / (2.0 * (1.0 - r2));
             }
         }
-        let scale = energy.map(|e| if e > 0.0 && e.is_finite() { 1.0 / e.sqrt() } else { 0.0 });
+        // Unit energy at 48 kHz: a sampled response's energy goes as T.
+        let per_reference = f64::from(self.sample_rate) / CALIBRATION_RATE;
+        let scale = energy.map(|e| {
+            let e = e * per_reference;
+            if e > 0.0 && e.is_finite() {
+                1.0 / e.sqrt()
+            } else {
+                0.0
+            }
+        });
         for (i, mode) in self.modes.iter().enumerate() {
             let r = (-mode.sigma * t).exp();
             let (s, c) = (mode.damped() * t).sin_cos();
@@ -403,6 +415,9 @@ impl Plate {
         self.scale = scale;
     }
 }
+
+/// The rate a pickup's impulse response carries unit energy at.
+const CALIBRATION_RATE: f64 = 48_000.0;
 
 impl Stage for Plate {
     fn prepare(&mut self, sample_rate: f32) {

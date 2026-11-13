@@ -96,7 +96,8 @@ impl<I: Interpolator> Cabinet<I> {
         let [low, high] = self.crossover.split(x);
         let (hl, hr) = self.horn.tick_stereo(high);
         let (dl, dr) = self.drum.tick_stereo(low);
-        (hl + dl, hr + dr)
+        let normal = crate::kernel::denormal::normal;
+        (normal(hl + dl), normal(hr + dr))
     }
 }
 

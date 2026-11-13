@@ -36,6 +36,28 @@ pub fn finite_or_zero(x: f32) -> f32 {
     }
 }
 
+/// An output sample with f32's subnormal range (`|x| <
+/// f32::MIN_POSITIVE`, about −760 dBFS) read as zero; every other value,
+/// non-finite included, unchanged bit for bit. For a stage whose f64
+/// state decays through f32's subnormals on its way out (its own
+/// recursion, in f64, is not slowed; the next stage's would be), so no
+/// stage hands one on (DSP.md R6).
+#[inline]
+pub fn normal(x: f32) -> f32 {
+    if x.is_subnormal() {
+        0.0
+    } else {
+        x
+    }
+}
+
+/// [`normal`] of an f64 result rounded to f32: a stage's f64 output as
+/// its sample.
+#[inline]
+pub fn normal64(x: f64) -> f32 {
+    normal(x as f32)
+}
+
 /// In-place flush over a slice.
 #[inline]
 pub fn flush_slice(buf: &mut [f32]) {
@@ -98,6 +120,15 @@ mod tests {
         for x in [1.0e-30f64, 1.0, f64::MAX, f64::MIN] {
             assert_eq!(flush64(x).to_bits(), x.to_bits(), "{x}");
         }
+        for x in [1e-40f32, -1e-45, f32::MIN_POSITIVE / 2.0] {
+            assert_eq!(normal(x).to_bits(), 0.0f32.to_bits(), "{x}");
+        }
+        for x in [f32::MIN_POSITIVE, -1e-30, 0.0, 1.0, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_eq!(normal(x).to_bits(), x.to_bits(), "{x}");
+        }
+        assert!(normal(f32::NAN).is_nan());
+        assert_eq!(normal64(1e-40).to_bits(), 0.0f32.to_bits());
+        assert_eq!(normal64(0.25).to_bits(), 0.25f32.to_bits());
         assert_eq!(finite_or_zero(f32::NAN), 0.0);
         assert_eq!(finite_or_zero(1e-40).to_bits(), 1e-40f32.to_bits());
     }

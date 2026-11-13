@@ -311,3 +311,29 @@ fn interpolation_has_a_range() {
         assert_eq!(y > 0.0, sounds, "at {rate} Hz");
     }
 }
+
+/// A held state stays held: under +6 dB of DC the random networks'
+/// gates sit near one, so each step is mostly the delay line's read, and
+/// that read must not grow. The cubic's one-sided read (1 ≤ M < 2, as at
+/// 88.2 kHz) and its extrapolation (M < 1, as at 44.1 kHz) weigh the
+/// snapshots by more than one in magnitude (at 88.2 kHz the alternating
+/// sum is 1.16), so a recursion fed mostly by its read grew without
+/// bound (the GRU to 1.2e33 within 25 ms at 88.2 kHz, found by DSP.md
+/// R6's sweep). The read is held inside the snapshots it interpolates,
+/// so the GRU's state stays in [−1, 1] and its output within what the
+/// head makes of such a state: Σ|w| + |b| ≤ 17 · 0.5. The LSTM's
+/// hidden state is bounded the same way.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn interpolated_state_stays_bounded_under_a_held_gate() {
+    for name in ["GRU 1 x 16 (random)", "LSTM 1 x 16 (random)"] {
+        for rate in [24_000.0, 32_000.0, 44_100.0, 88_200.0, 96_000.0, 176_400.0, 352_800.0, 705_600.0] {
+            let mut net = network(name, RatePolicy::Interpolated);
+            net.prepare(rate);
+            let peak = (0..(rate as usize / 4))
+                .map(|_| net.tick(2.0))
+                .fold(0.0f32, |m, y| if y.is_finite() { m.max(y.abs()) } else { f32::INFINITY });
+            assert!(peak <= 8.5, "{name} at {rate} Hz: {peak:e}");
+        }
+    }
+}

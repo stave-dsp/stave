@@ -151,7 +151,7 @@ impl Stage for OpAmpClipper {
     }
 
     fn tick(&mut self, x: f32) -> f32 {
-        self.tick_f64(f64::from(x)) as f32
+        crate::kernel::denormal::normal64(self.tick_f64(f64::from(x)))
     }
 
     /// The slower of the two RC legs.

@@ -6,6 +6,7 @@
 #   sanitizers   AddressSanitizer and ThreadSanitizer (C4)
 #   fuzz         every cargo-fuzz target, 4 min each (C5)
 #   sim-sweep    the simulated host over thousands of seeds (V3)
+#   rate-range   T1 of the library's rate sweep, 8–768 kHz (DSP.md R6)
 #   advisories   the RustSec database (C9)
 #   semver       release branches against the release they patch (C9)
 name: deep
@@ -92,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [state_load, param_text, vst3_host, clap_events, raster]
+        target: [state_load, param_text, vst3_host, clap_events, raster, solvers]
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install $NIGHTLY --profile minimal
@@ -120,6 +121,21 @@ jobs:
       - run: cargo test -p stave-host --release --locked --test sim_host
         env:
           STAVE_SIM_SEEDS: "3000"
+
+  rate-range:
+    # T1 of DSP.md R6: every catalogued stage robust at fifteen rates from
+    # 8 to 768 kHz and rate-invariant at 44.1–192 kHz within its budget
+    # (T0, a few rates, runs in ci.yml's tests). Unoptimised, like the
+    # tests: about eleven minutes on three cores.
+    name: rate range (T1)
+    timeout-minutes: 30
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p stave-test --locked --test rate_range -- --ignored
 
   advisories:
     # The RustSec database changes without our commits.

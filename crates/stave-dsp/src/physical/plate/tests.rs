@@ -199,6 +199,18 @@ fn pickups_are_calibrated_to_unit_energy() {
             let e: f64 = y.iter().map(|&v| f64::from(v) * f64::from(v)).sum();
             assert!((10.0 * e.log10()).abs() < 0.5, "{output:?}: {:.2} dB", 10.0 * e.log10());
         }
+        // At twice the rate, the same continuous energy: half the sum,
+        // so a tone is as loud as at 48 kHz.
+        let mut fast = plate(small(150.0), quick_loss(), 3_000.0, 96_000.0);
+        fast.set_output(output);
+        let mut x2 = vec![0.0f32; 2 * n];
+        x2[0] = 1.0;
+        let (mut l2, mut r2) = (vec![0.0; 2 * n], vec![0.0; 2 * n]);
+        fast.process_stereo(&x2, &mut l2, &mut r2);
+        for y in [&l2, &r2] {
+            let e: f64 = y.iter().map(|&v| f64::from(v) * f64::from(v)).sum();
+            assert!((10.0 * (2.0 * e).log10()).abs() < 0.5, "{output:?} at 96 kHz: {:.2} dB", 10.0 * e.log10());
+        }
         // Two pickups hear different mixtures of the same modes (but a
         // displacement pickup is ruled by the lowest mode, which both hear).
         let cross: f64 = l.iter().zip(&r).map(|(&a, &b)| f64::from(a) * f64::from(b)).sum();

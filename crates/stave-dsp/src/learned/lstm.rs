@@ -3,7 +3,7 @@
 
 use super::activation::{sigmoid_in_place, tanh_in_place, tanh_into};
 use super::error::{LoadError, Weights};
-use super::rate::{RateGuard, RateMismatch, RatePolicy, StateDelay};
+use super::rate::{hold, RateGuard, RateMismatch, RatePolicy, StateDelay};
 use crate::kernel::node::{Stage, Tail};
 
 /// A stacked LSTM (Hochreiter & Schmidhuber 1997; for amplifier capture
@@ -217,11 +217,17 @@ impl Cell {
         }
     }
 
-    /// Take the delayed state (snapshot floats from `at`) as the last one.
+    /// Take the delayed state (snapshot floats from `at`) as the last one,
+    /// held to what it can be (see [`StateDelay::read`]): the output
+    /// `o·tanh(c)` to [−1, 1], the cell within one of its snapshots'
+    /// largest magnitude (it moves by `|i·g| < 1` a trained step).
     #[inline]
     fn recall(&mut self, delay: &StateDelay, at: usize) {
         delay.read(at, &mut self.h);
-        delay.read(at + self.hidden, &mut self.c);
+        for h in &mut self.h {
+            *h = hold(*h, 1.0);
+        }
+        delay.read_within(at + self.hidden, &mut self.c, 1.0);
     }
 
     /// Store the new state (snapshot floats from `at`).

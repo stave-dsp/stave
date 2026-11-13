@@ -30,10 +30,16 @@ fn capacity(max_ms: f32, sample_rate: f32) -> usize {
     (max_ms * 0.001 * sample_rate).ceil() as usize + 1
 }
 
+/// The rate [`Comb::set_damping`]'s pole is given at.
+const DAMPING_RATE: f32 = 48_000.0;
+
 /// Feedback comb: `y[n] = x[n−N] + g·lp(y)[n−N]`, the output being the
 /// delayed signal. `damping` puts a one-pole lowpass in the loop (0 =
 /// none, toward 1 = darker), so highs decay faster than lows as in a
-/// real room.
+/// real room. The damping is the lowpass's pole at 48 kHz; at another
+/// rate the pole is `damping^(48 kHz / fs)`, the same corner in hertz,
+/// so the room is as dark at 192 kHz as at 48 (DSP.md R6: the raw pole
+/// put Moorer's reverb 0.9 dB brighter at 192 kHz).
 #[derive(Clone, Debug)]
 pub struct Comb {
     line: DelayLine,
@@ -41,6 +47,8 @@ pub struct Comb {
     delay_ms: f32,
     feedback: f32,
     damping: f32,
+    /// `damping` at the prepared rate.
+    pole: f32,
     sample_rate: f32,
     delay: usize,
     lp: f32,
@@ -56,6 +64,7 @@ impl Comb {
             delay_ms,
             feedback,
             damping: 0.0,
+            pole: 0.0,
             sample_rate: 48_000.0,
             delay: 1,
             lp: 0.0,
@@ -81,10 +90,11 @@ impl Comb {
         self.feedback = feedback;
     }
 
-    /// In-loop lowpass, 0 (bright) … 1 (dark).
+    /// In-loop lowpass, 0 (bright) … 1 (dark): its pole at 48 kHz.
     pub fn set_damping(&mut self, damping: f32) {
         debug_assert!((0.0..1.0).contains(&damping), "damping {damping}");
         self.damping = damping;
+        self.pole = damping.powf(DAMPING_RATE / self.sample_rate);
     }
 }
 
@@ -93,6 +103,7 @@ impl Stage for Comb {
         self.sample_rate = sample_rate;
         self.line.allocate(capacity(self.max_ms, sample_rate));
         self.set_delay_ms(self.delay_ms);
+        self.set_damping(self.damping);
         self.reset();
     }
     fn reset(&mut self) {
@@ -102,7 +113,7 @@ impl Stage for Comb {
     #[inline]
     fn tick(&mut self, x: f32) -> f32 {
         let out = self.line.read_int(self.delay);
-        self.lp = denormal::flush(out + (self.lp - out) * self.damping);
+        self.lp = denormal::flush(out + (self.lp - out) * self.pole);
         self.line.write(x + self.feedback * self.lp);
         self.line.advance();
         out
