@@ -39,3 +39,18 @@ scripts/offload.sh macos -- scripts/gates.sh
 
 The host needs rustup and `cargo-nextest`; the pinned toolchain installs
 itself. Each checkout gets its own directory and build cache there.
+
+## Keeping local values out of the repo
+
+`scripts/check-local-leaks.sh` fails when any value from your local
+configuration — a host name, a library path — appears in tracked files
+(`--staged`: in what is about to be committed). Run it from a pre-commit
+hook so a slip never lands:
+
+```sh
+printf '#!/bin/sh\nexec scripts/check-local-leaks.sh --staged\n' > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+Pick host aliases that are distinctive (not a crate or project name), so
+the check has nothing to confuse them with.
