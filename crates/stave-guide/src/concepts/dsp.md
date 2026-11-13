@@ -1105,6 +1105,61 @@ let y = (0..480).map(|n| sp.tick((n as f32 * 0.3).sin())).last().unwrap();
 assert!(y.abs() <= 1.0);
 ```
 
+## Speakers, cabinets, microphones and rooms
+
+A loudspeaker driver is a motor on a mass and a spring, so it lives in
+`physical`: [`Driver`](stave_dsp::physical::speaker::Driver) solves the
+Thiele–Small equations from a driver's
+[`ThieleSmall`](stave_dsp::physical::speaker::ThieleSmall) parameters,
+voltage driven from an amplifier of any output resistance, with the
+voice coil's lossy inductance as an LR-2 network and, optionally,
+Klippel's large-signal curves
+([`LargeSignal`](stave_dsp::physical::speaker::LargeSignal): `Bl(x)`,
+`Kms(x)`, `Le(x)`) for excursion compression and the bass's harmonics.
+Its output is on-axis pressure normalised so the drive level buys
+excursion, not loudness; the coil current, cone velocity and excursion
+are read each sample. Jensen's C12N, P12N, C12K and P10R come as parts,
+as printed and fitted (`_LR2`) to their published impedance curves. The
+`ThieleSmall` type also answers the analytic questions — impedance,
+response, excursion, sensitivity — at any frequency.
+
+A cabinet comes two ways. With captured impulse responses (yours, read
+at run time), [`Captured`](stave_dsp::physical::cabinet::Captured)
+convolves each microphone at zero latency, places it *between* its
+captured positions — the arrival moves as a delay and the aligned
+shapes blend, so halfway between two captures is not their comb — and
+mixes the microphones as captured or time-aligned, with polarity and
+matched levels. Without a capture,
+[`CloseMic`](stave_dsp::physical::cabinet::CloseMic) puts a first-order
+microphone in front of a `Driver`'s cone: the exact on-axis field of a
+baffled piston, which is the proximity effect, plus an off-axis lowpass
+and a breakup voicing. [`Room`](stave_dsp::effects::reverb::Room)
+adds a rectangular room's first reflections and a late field at
+Sabine's T60.
+
+```rust
+use stave_dsp::effects::reverb::{Room, Shoebox};
+use stave_dsp::physical::cabinet::{Breakup, CloseMic, Pattern, Placement};
+use stave_dsp::physical::speaker::{Driver, LargeSignal, ThieleSmall};
+use stave_dsp::Stage;
+
+let c12n = ThieleSmall::JENSEN_C12N_LR2;
+assert!((c12n.resonance() - 107.4).abs() < 0.1);
+// A 12-inch cone that compresses past a millimetre, driven hard from a
+// valve amp's output resistance.
+let mut driver = Driver::new(c12n, LargeSignal::from_limits(1.0e-3, 1.2e-3, 6e-3));
+driver.set_volts(20.0);
+driver.set_source_ohms(15.0);
+// An SM57-style cardioid 2.5 cm off the cone, 2 cm off its axis.
+let placement = Placement { distance: 0.025, offset: 0.02, pattern: Pattern::CARDIOID };
+let mut mic = CloseMic::new(driver, placement, Breakup::PAPER_12);
+mic.prepare(48_000.0);
+let mut room = Room::new(Shoebox::LIVE_ROOM);
+room.prepare(48_000.0);
+let y = room.tick(mic.tick(0.5));
+assert!(y.is_finite());
+```
+
 ## Conventions
 
 - **Units in names.** `sample_rate` is `f32` everywhere (state may be

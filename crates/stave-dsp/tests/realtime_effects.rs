@@ -1,5 +1,6 @@
 //! Realtime safety of the delays, reverbs, dynamics, crossovers, formant
-//! filters, resonators, the plate and the rotary speaker: after `prepare`,
+//! filters, resonators, the plate, the rotary speaker, the loudspeaker
+//! driver and the cabinet stages: after `prepare`,
 //! `tick`, setters that are documented as cheap, and `reset` never
 //! allocate. A counting global allocator, armed per thread, watches.
 
@@ -301,4 +302,59 @@ fn plate_and_rotary_never_allocate_after_prepare() {
         cab.reset();
     });
     assert_eq!(n, 0, "plate and rotary setters allocated {n} times");
+}
+
+/// The loudspeaker driver and the cabinet stages (DSP.md E9, H7): `tick`,
+/// `reset` and every realtime setter never allocate after `prepare` —
+/// the drive and source resistance, a microphone's placement (its
+/// response re-blended and crossfaded), gains and polarity, timing, a
+/// close microphone's placement and breakup, the room's switches.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn speaker_and_cabinet_never_allocate_after_prepare() {
+    use stave_dsp::physical::cabinet::{Breakup, Captured, CloseMic, Pattern, Placement, Position, Timing};
+    use stave_dsp::effects::reverb::{Room, Shoebox};
+    use stave_dsp::physical::speaker::{Driver, LargeSignal, ThieleSmall};
+    use stave_dsp::ImpulseResponse;
+
+    let mut driver = Driver::new(ThieleSmall::JENSEN_P12N_LR2, LargeSignal::from_limits(1.0e-3, 1.2e-3, 6e-3));
+    driver.prepare(48_000.0);
+    let ir = |k: usize| {
+        let v: Vec<f32> = (0..2_048).map(|n| ((n * k) as f32 * 0.37).sin() * (-(n as f32) / 300.0).exp()).collect();
+        ImpulseResponse::mono(&v)
+    };
+    let mut cab = Captured::new(vec![
+        vec![Position::new(0.0, ir(1)), Position::new(1.0, ir(2)), Position::new(2.0, ir(3))],
+        vec![Position::new(0.0, ir(4))],
+    ]);
+    cab.prepare(48_000.0);
+    let mut mic = CloseMic::new(Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::LINEAR), Placement::CLOSE, Breakup::PAPER_12);
+    mic.prepare(48_000.0);
+    let mut room = Room::new(Shoebox::LIVE_ROOM);
+    room.prepare(48_000.0);
+    let n = allocations_in(|| {
+        for k in 0..20_000 {
+            let x = ((k as f32) * 0.05).sin() * 0.5;
+            if k % 1_000 == 0 {
+                driver.set_volts(5.0 + (k / 1_000) as f64);
+                driver.set_source_ohms((k / 1_000) as f64 * 0.5);
+                cab.set_placement(0, (k / 1_000) as f32 * 0.1);
+                cab.set_gain(1, 0.5, k % 2_000 == 0);
+                cab.set_timing(if k % 3_000 == 0 { Timing::Aligned } else { Timing::AsCaptured });
+                let distance = 0.03 + (k / 1_000) as f64 * 0.01;
+                mic.set_placement(Placement { distance, offset: 0.01, pattern: Pattern::SUPERCARDIOID });
+                mic.set_breakup(if k % 2_000 == 0 { Breakup::NONE } else { Breakup::PAPER_12 });
+                room.set_early(k % 2_000 == 0);
+            }
+            driver.tick(x);
+            cab.tick(x);
+            mic.tick(x);
+            room.tick(x);
+        }
+        driver.reset();
+        cab.reset();
+        mic.reset();
+        room.reset();
+    });
+    assert_eq!(n, 0, "the speaker and cabinet stages allocated {n} times");
 }

@@ -93,6 +93,13 @@
 //! streams the state through the cache each sample and costs 2.2× the
 //! block form. A rotor with its back-wall image at two microphones 487
 //! ns, a 122H cabinet (crossover, horn, drum) 980.
+//!
+//! E9, H7 (the reference machine, 2026-11-13, load 3.9): a loudspeaker
+//! driver's fixed linear step 12.6 ns/sample; with Klippel's curves,
+//! Newton on the 4-state trapezoid (two to three iterations) 287. Two
+//! microphones of 8192-tap captures at zero latency 100; a close
+//! microphone on the linear driver with its breakup 49; the live room's
+//! six reflections and its late network 293.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
@@ -125,8 +132,10 @@ use stave_dsp::units::{hz, seconds};
 use stave_dsp::circuit::devices::bbd::{Chip, Filter, HoltersParker};
 use stave_dsp::circuit::devices::compander::{self, Compander, Mode};
 use stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade;
-use stave_dsp::effects::reverb::{Dattorro, Fdn, Kronecker, Mixing, Schroeder, VelvetNoise, T60};
+use stave_dsp::effects::reverb::{Dattorro, Fdn, Kronecker, Mixing, Room, Schroeder, Shoebox, VelvetNoise, T60};
+use stave_dsp::physical::cabinet::{Breakup, Captured, CloseMic, Placement, Position};
 use stave_dsp::physical::plate::Plate;
+use stave_dsp::physical::speaker::{Driver, LargeSignal, ThieleSmall};
 use stave_dsp::physical::rotary::{Cabinet, Directivity, Radiator, Rotor, Speed, Wall};
 use stave_dsp::physical::spring::{Chirp, Spring, Tank};
 use stave_dsp::physical::tape::{Chowdhury, Flutter, Formulation, Machine, Phase, Playback, Transport};
@@ -437,6 +446,47 @@ fn primitive_datasheet() {
         let (l, r) = leslie.tick_stereo(x);
         l + r
     });
+
+    // E9: a loudspeaker driver (Jensen C12N, LR-2 coil) at 20 V a unit:
+    // the fixed linear step, and Newton on Klippel's curves.
+    let mut speaker = Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::LINEAR);
+    speaker.set_volts(20.0);
+    speaker.prepare(sr);
+    bench("Driver (Thiele–Small)", &input, |x| speaker.tick(x));
+    let mut speaker = Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::from_limits(1.0e-3, 1.2e-3, 6e-3));
+    speaker.set_volts(20.0);
+    speaker.prepare(sr);
+    bench("Driver (large signal)", &input, |x| speaker.tick(x));
+
+    // H7: two microphones of 8192-tap captures (synthetic decaying
+    // noise), zero latency; a close microphone on the driver; the room.
+    let capture = |seed: u32| {
+        let mut ir = vec![0.0f32; 8_192];
+        noise(&mut ir);
+        let mut lcg = seed;
+        for (n, v) in ir.iter_mut().enumerate() {
+            lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
+            *v *= (-(n as f32) / 600.0).exp() * if lcg & 1 == 0 { 1.0 } else { -1.0 };
+        }
+        ImpulseResponse::mono(&ir)
+    };
+    let mut cab = Captured::new(vec![
+        vec![Position::new(0.0, capture(1)), Position::new(1.0, capture(2))],
+        vec![Position::new(0.0, capture(3))],
+    ]);
+    cab.set_placement(0, 0.5);
+    cab.prepare(sr);
+    bench("Captured (2 mics, 8k taps)", &input, |x| cab.tick(x));
+    let mut mic = CloseMic::new(
+        Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::LINEAR),
+        Placement::CLOSE,
+        Breakup::PAPER_12,
+    );
+    mic.prepare(sr);
+    bench("CloseMic (C12N, cardioid, breakup)", &input, |x| mic.tick(x));
+    let mut room = Room::new(Shoebox::LIVE_ROOM);
+    room.prepare(sr);
+    bench("Room (live room, early + late)", &input, |x| room.tick(x));
 
     // E7: photocells. The cell's TR-BDF2 step under a held LED current,
     // and under a 5 Hz tremolo's sweep (the Newton iterations move).
