@@ -1,11 +1,13 @@
-//! Program material for a comparison: a built-in item, any WAV file, or
-//! a file from the sample library (`STAVE_SAMPLE_LIBRARY`), brought to
-//! the session's rate and named by checksum.
+//! Program material for a comparison: a built-in item, any WAV file, a
+//! file from the sample library (`STAVE_SAMPLE_LIBRARY`), or an item of a
+//! reference-corpus role (`role:NAME`, DSP.md R22), brought to the
+//! session's rate and named by checksum.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use stave_host::wav;
+use stave_test::corpus::Corpus;
 
 use super::builtin;
 use super::sha256;
@@ -16,6 +18,15 @@ use super::sha256;
 pub enum Source {
     Builtin { name: String },
     File { path: PathBuf, file_sha256: String },
+    /// Item `index` of a corpus role (`crates/stave-test/corpus.spec`),
+    /// its excerpt, every file named with its locked SHA-256 (`None`:
+    /// the lock does not pin the role).
+    Corpus {
+        role: String,
+        index: usize,
+        item: String,
+        files: Vec<(String, Option<String>)>,
+    },
 }
 
 /// Material at the session's rate, ready to run through candidates.
@@ -50,6 +61,8 @@ pub enum MaterialError {
     },
     #[error("{} is empty", .0.display())]
     Empty(PathBuf),
+    #[error("{0}")]
+    Corpus(String),
     #[error("{name} is {seconds:.2} s; loudness needs at least 0.4 s")]
     TooShort { name: String, seconds: f64 },
 }
@@ -123,84 +136,67 @@ impl Material {
         Ok(m)
     }
 
+    /// Item `index` of the corpus role `role` at `sample_rate`: through
+    /// the local lock when it pins the role (drift is an error), else
+    /// resolved against the library as it is.
+    pub fn corpus(role: &str, index: usize, sample_rate: f64) -> Result<Self, MaterialError> {
+        let err = MaterialError::Corpus;
+        let corpus = Corpus::open().map_err(|s| err(s.0))?;
+        if corpus.spec.role(role).is_none() {
+            let names: Vec<&str> = corpus.spec.roles.iter().map(|r| r.name.as_str()).collect();
+            return Err(err(format!("no corpus role {role} (roles: {})", names.join(", "))));
+        }
+        let items = corpus.role(role).map_err(|s| err(s.0))?;
+        let item = items
+            .get(index)
+            .ok_or_else(|| err(format!("role {role} has {} items; #{index} is past them", items.len())))?;
+        let m = corpus.load(item).map_err(err)?;
+        let original_rate = f64::from(m.rate);
+        let channels = m.at_rate(sample_rate);
+        let name = format!("{role}#{index} {}", m.name);
+        let out = Self {
+            name: name.clone(),
+            source: Source::Corpus {
+                role: role.into(),
+                index,
+                item: m.name.clone(),
+                files: m.files.clone(),
+            },
+            sample_rate,
+            original_rate,
+            pcm_sha256: sha256::of_audio(&channels),
+            channels,
+        };
+        if out.seconds() < 0.4 {
+            return Err(MaterialError::TooShort { name, seconds: out.seconds() });
+        }
+        Ok(out)
+    }
+
     /// Bring the material back from a log or bless record.
     pub fn from_source(source: &Source, sample_rate: f64) -> Result<Self, MaterialError> {
         match source {
             Source::Builtin { name } => Self::builtin(name, sample_rate),
             Source::File { path, .. } => Self::file(path, sample_rate),
+            Source::Corpus { role, index, .. } => Self::corpus(role, *index, sample_rate),
         }
     }
 }
 
-/// Windowed-sinc rate conversion (Blackman window, 32 zero crossings
-/// each side, cut-off at 0.95 of the lower Nyquist). Offline, for
-/// material only.
-pub fn convert_rate(x: &[f32], from: f64, to: f64) -> Vec<f32> {
-    const HALF: i64 = 32;
-    let ratio = to / from;
-    let cutoff = 0.95 * ratio.min(1.0);
-    let out_len = (x.len() as f64 * ratio).round() as usize;
-    let len = x.len() as i64;
-    (0..out_len)
-        .map(|n| {
-            let t = n as f64 / ratio;
-            let centre = t.floor() as i64;
-            let reach = (HALF as f64 / cutoff).ceil() as i64;
-            let mut acc = 0.0;
-            for i in (centre - reach + 1).max(0)..=(centre + reach).min(len - 1) {
-                let d = t - i as f64;
-                let u = d * cutoff;
-                if u.abs() >= HALF as f64 {
-                    continue;
-                }
-                let sinc = if u == 0.0 {
-                    1.0
-                } else {
-                    (std::f64::consts::PI * u).sin() / (std::f64::consts::PI * u)
-                };
-                let w = u / HALF as f64; // −1 … 1
-                let win = 0.42 + 0.5 * (std::f64::consts::PI * w).cos()
-                    + 0.08 * (2.0 * std::f64::consts::PI * w).cos();
-                acc += f64::from(x[i as usize]) * sinc * win * cutoff;
-            }
-            acc as f32
-        })
-        .collect()
-}
+pub use stave_test::corpus::rate::convert_rate;
 
-/// The sample library's root: `STAVE_SAMPLE_LIBRARY` from the
-/// environment, else from the local configuration files the scripts
-/// read (`.stave/local.env` in the checkout, `~/.config/stave/env`).
+/// The sample library's root (`stave_test::corpus::library_root`).
 pub fn library_root() -> Option<PathBuf> {
-    const KEY: &str = "STAVE_SAMPLE_LIBRARY";
-    if let Some(v) = std::env::var_os(KEY) {
-        return Some(PathBuf::from(v));
-    }
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let files = [
-        Some(PathBuf::from(".stave/local.env")),
-        home.map(|h| h.join(".config/stave/env")),
-    ];
-    files
-        .into_iter()
-        .flatten()
-        .filter_map(|f| std::fs::read_to_string(f).ok())
-        .find_map(|text| config_value(&text, KEY))
-        .map(PathBuf::from)
+    stave_test::corpus::library_root()
 }
 
-/// `KEY=value` or `KEY="value"` from a shell-style config file.
-fn config_value(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        let rest = line
-            .strip_prefix("export ")
-            .unwrap_or(line)
-            .strip_prefix(key)?
-            .strip_prefix('=')?;
-        let v = rest.trim().trim_matches('"').trim_matches('\'');
-        (!v.is_empty()).then(|| v.to_string())
-    })
+/// `role:NAME` or `role:NAME#N` (item N, from 0): the role and index.
+pub fn parse_role(spec: &str) -> Option<(String, usize)> {
+    let rest = spec.strip_prefix("role:")?;
+    match rest.split_once('#') {
+        Some((role, n)) => Some((role.to_string(), n.parse().ok()?)),
+        None => Some((rest.to_string(), 0)),
+    }
 }
 
 /// The library's program material: every WAV under its `Test Corpus/`
@@ -235,29 +231,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rate_conversion_keeps_a_tone() {
-        let (from, to) = (44_100.0, 48_000.0);
-        let x: Vec<f32> = (0..44_100)
-            .map(|i| (std::f64::consts::TAU * 1_000.0 * f64::from(i) / from).sin() as f32 * 0.5)
-            .collect();
-        let y = convert_rate(&x, from, to);
-        assert_eq!(y.len(), 48_000);
-        // Compare against the ideal tone at the new rate, away from the edges.
-        let err = (2_000..46_000)
-            .map(|i| {
-                let ideal = (std::f64::consts::TAU * 1_000.0 * i as f64 / to).sin() * 0.5;
-                (f64::from(y[i]) - ideal).abs()
-            })
-            .fold(0.0, f64::max);
-        assert!(err < 1e-3, "{err}");
+    fn roles_parse() {
+        assert_eq!(parse_role("role:mix_bus"), Some(("mix_bus".into(), 0)));
+        assert_eq!(parse_role("role:guitar_di#3"), Some(("guitar_di".into(), 3)));
+        assert_eq!(parse_role("role:x#y"), None);
+        assert_eq!(parse_role("drum loop"), None);
     }
 
     #[test]
-    fn config_values_parse_like_the_scripts() {
-        let text = "# c\nSTAVE_LINUX_HOST=x\nSTAVE_SAMPLE_LIBRARY=\"/a b/lib\"\n";
-        assert_eq!(config_value(text, "STAVE_SAMPLE_LIBRARY").as_deref(), Some("/a b/lib"));
-        assert_eq!(config_value("export K='v'", "K").as_deref(), Some("v"));
-        assert_eq!(config_value("KEY2=1", "KEY"), None);
+    fn an_absent_role_says_so() {
+        // With or without a library: never a panic, always a reason.
+        let e = Material::corpus("no_such_role", 0, 48_000.0).unwrap_err().to_string();
+        assert!(e.contains("library absent") || e.contains("no corpus role no_such_role"), "{e}");
     }
 
     #[test]

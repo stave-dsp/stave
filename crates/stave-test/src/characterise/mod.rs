@@ -360,18 +360,10 @@ impl Characterise {
     }
 }
 
-/// The reference program material for C13 (DSP.md R22): the library
-/// `STAVE_SAMPLE_LIBRARY` names, or why a test that needs it skips. The
-/// audio is never committed; a manifest in the repo names its files.
+/// The sample library for C13 (DSP.md R22), or why a test that needs it
+/// skips. Checks take their material by role from [`crate::corpus`].
 pub fn sample_library() -> Result<std::path::PathBuf, String> {
-    let root = std::env::var_os("STAVE_SAMPLE_LIBRARY")
-        .ok_or("skipped: library absent (STAVE_SAMPLE_LIBRARY is not set)")?;
-    let root = std::path::PathBuf::from(root);
-    if root.is_dir() {
-        Ok(root)
-    } else {
-        Err(format!("skipped: library absent ({} is not a directory)", root.display()))
-    }
+    crate::corpus::Corpus::open().map(|c| c.root).map_err(|s| s.0)
 }
 
 /// `spice/<name>.cir`, parsed.

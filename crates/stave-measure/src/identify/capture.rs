@@ -1,9 +1,10 @@
 //! The capture workflow (DSP.md M4): one stimulus to play through a
 //! device — random-phase multisines at several levels for the best
 //! linear approximation and the block fit, a synchronized sweep for the
-//! Hammerstein kernels, noise bursts held out for validation — and the
-//! measurements read back from a recording of it (aligned by
-//! cross-correlation) or from a system run on it directly.
+//! Hammerstein kernels, noise bursts held out for validation, and
+//! optionally an excerpt of real program material (DSP.md R22's corpus),
+//! held out too — and the measurements read back from a recording of it
+//! (aligned by cross-correlation) or from a system run on it directly.
 
 use std::fmt::Write as _;
 
@@ -40,6 +41,19 @@ pub struct Capture {
     /// Seconds of silence between segments, and after the sweep (its
     /// response's tail).
     pub gap: f64,
+    /// Program material played last (validation only).
+    pub program: Option<Program>,
+}
+
+/// Program material in the stimulus: a name that finds it again (a
+/// corpus role and item) and its samples at the capture's rate, already
+/// at the level they play at. A description read back
+/// ([`Capture::parse`]) holds zeros of the right length: the samples are
+/// the stimulus file's, which the reader takes them from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Program {
+    pub name: String,
+    pub samples: Vec<f64>,
 }
 
 /// Where one part of the stimulus sits.
@@ -51,6 +65,8 @@ pub enum Segment {
     Sweep { start: usize, len: usize },
     /// The bursts, `len` samples.
     Bursts { start: usize, len: usize },
+    /// The program material, `len` samples.
+    Program { start: usize, len: usize },
 }
 
 /// What a fit reads: periodic records, the sweep's input and output,
@@ -63,6 +79,9 @@ pub struct Measurements {
     pub sweep_output: Vec<f64>,
     pub bursts_input: Vec<f64>,
     pub bursts_output: Vec<f64>,
+    /// The program material's input and output (empty without one).
+    pub program_input: Vec<f64>,
+    pub program_output: Vec<f64>,
 }
 
 impl Capture {
@@ -88,6 +107,7 @@ impl Capture {
             sweep_seconds: 2.0,
             bursts_db: vec![-20.0, -10.0, -3.0, 0.0, 6.0, 12.0],
             gap: 0.25,
+            program: None,
         }
     }
 
@@ -178,6 +198,13 @@ impl Capture {
         at += len + gap;
         let len = self.bursts(self.rate).len();
         out.push(Segment::Bursts { start: at, len });
+        if let Some(p) = &self.program {
+            at += len + gap;
+            out.push(Segment::Program {
+                start: at,
+                len: p.samples.len(),
+            });
+        }
         out
     }
 
@@ -192,6 +219,7 @@ impl Capture {
                 }
                 Segment::Sweep { start, .. } => (start, self.sweep_samples(self.rate)),
                 Segment::Bursts { start, .. } => (start, self.bursts(self.rate)),
+                Segment::Program { start, .. } => (start, self.program.as_ref().map_or_else(Vec::new, |p| p.samples.clone())),
             };
             out.resize(start, 0.0);
             out.extend(data);
@@ -235,6 +263,7 @@ impl Capture {
         let mut records = Vec::new();
         let mut sweep = None;
         let mut bursts = None;
+        let mut program = (Vec::new(), Vec::new());
         for seg in self.layout() {
             match seg {
                 Segment::Multisine { rms, seed, start } => {
@@ -244,6 +273,10 @@ impl Capture {
                 }
                 Segment::Sweep { start, len } => sweep = Some((self.sweep_samples(self.rate), slice(start, len, "sweep")?)),
                 Segment::Bursts { start, len } => bursts = Some((self.bursts(self.rate), slice(start, len, "bursts")?)),
+                Segment::Program { start, len } => {
+                    let input = self.program.as_ref().map_or_else(Vec::new, |p| p.samples.clone());
+                    program = (input, slice(start, len, "program material")?);
+                }
             }
         }
         let (sweep_input, sweep_output) = sweep.expect("the layout has a sweep");
@@ -260,6 +293,8 @@ impl Capture {
             sweep_output,
             bursts_input,
             bursts_output,
+            program_input: program.0,
+            program_output: program.1,
         })
     }
 
@@ -290,6 +325,18 @@ impl Capture {
         };
         let (sweep_input, sweep_output) = once(&self.sweep_samples(self.rate));
         let (bursts_input, bursts_output) = once(&self.bursts(self.rate));
+        let (program_input, program_output) = match &self.program {
+            // Not a period: zero-padded to one so the band-limited
+            // interpolation does not wrap its end onto its start.
+            Some(p) => {
+                let n = p.samples.len();
+                let mut x = p.samples.clone();
+                x.resize((2 * n).next_power_of_two(), 0.0);
+                let (i, o) = once(&x);
+                (i[..n].to_vec(), o[..n].to_vec())
+            }
+            None => (Vec::new(), Vec::new()),
+        };
         Measurements {
             records: Records {
                 rate: self.rate,
@@ -302,6 +349,8 @@ impl Capture {
             sweep_output,
             bursts_input,
             bursts_output,
+            program_input,
+            program_output,
         }
     }
 
@@ -319,6 +368,9 @@ impl Capture {
         let _ = writeln!(s, "sweep {} {} {} {}", self.sweep_db, self.sweep_low_hz, self.sweep_high_hz, self.sweep_seconds);
         let _ = writeln!(s, "bursts {}", list(&self.bursts_db));
         let _ = writeln!(s, "gap {}", self.gap);
+        if let Some(p) = &self.program {
+            let _ = writeln!(s, "program {} {}", p.samples.len(), p.name);
+        }
         s
     }
 
@@ -327,6 +379,15 @@ impl Capture {
         let mut c = Self::standard(48_000.0, 0.1);
         let mut seen = 0;
         for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            if let Some(rest) = line.strip_prefix("program ") {
+                let (len, name) = rest.trim().split_once(' ').unwrap_or((rest.trim(), ""));
+                let len: usize = len.parse().map_err(|e| format!("program: {len}: {e}"))?;
+                c.program = Some(Program {
+                    name: name.trim().to_string(),
+                    samples: vec![0.0; len],
+                });
+                continue;
+            }
             let mut words = line.split_whitespace();
             let key = words.next().unwrap_or_default();
             let v: Vec<f64> = words
@@ -368,6 +429,14 @@ mod tests {
         c.sweep_seconds = 0.5;
         c.bursts_db = vec![0.0];
         assert_eq!(Capture::parse(&c.describe()).unwrap(), c);
+        c.program = Some(Program {
+            name: "drums_loop#0 a loop".into(),
+            samples: (0..3_000).map(|i| (f64::from(i) * 0.01).sin() * 0.2).collect(),
+        });
+        let mut back = Capture::parse(&c.describe()).unwrap();
+        assert_eq!(back.program.as_ref().map(|p| (p.name.as_str(), p.samples.len())), Some(("drums_loop#0 a loop", 3_000)));
+        back.program.clone_from(&c.program);
+        assert_eq!(back, c);
         let x = c.samples();
         // A device: 0.5·x − 0.1·x², 37 samples of latency, inverted.
         let mut rec = vec![0.0; 37];
@@ -378,6 +447,14 @@ mod tests {
         let r = &m.records.records[0];
         let worst = r.input.iter().zip(&r.output).fold(0.0f64, |w, (a, b)| w.max((-(0.5 * a - 0.1 * a * a) - b).abs()));
         assert!(worst < 1e-15, "{worst}");
+        let p = &c.program.as_ref().unwrap().samples;
+        assert_eq!(&m.program_input, p);
+        let worst = p.iter().zip(&m.program_output).fold(0.0f64, |w, (a, b)| w.max((-(0.5 * a - 0.1 * a * a) - b).abs()));
+        assert!(worst < 1e-15, "{worst}");
         assert!(c.read(&rec[..rec.len() / 2], lag).is_err());
+        // Run directly: the program comes back through the system too.
+        let direct = c.run(2, || Box::new(|x: f64| 0.5 * x));
+        let worst = direct.program_input.iter().zip(&direct.program_output).fold(0.0f64, |w, (a, b)| w.max((0.5 * a - b).abs()));
+        assert!(direct.program_output.len() == 3_000 && worst < 1e-9, "{worst}");
     }
 }

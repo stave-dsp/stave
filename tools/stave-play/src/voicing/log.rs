@@ -260,6 +260,10 @@ pub fn summary(log: &SessionLog) -> String {
     let src = match &log.material.source {
         super::material::Source::Builtin { .. } => "built-in".to_string(),
         super::material::Source::File { path, .. } => path.display().to_string(),
+        super::material::Source::Corpus { role, item, files, .. } => {
+            let sums: Vec<&str> = files.iter().map(|(_, s)| s.as_deref().map_or("unlocked", |s| &s[..12])).collect();
+            format!("corpus role {role}: {item}, sha256 {}", sums.join(" "))
+        }
     };
     line(format!(
         "material: {} ({src}), {:.1} s, sha256 {}…, trim {:+.1} dB, {} Hz",
