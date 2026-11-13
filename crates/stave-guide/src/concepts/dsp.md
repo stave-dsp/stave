@@ -30,6 +30,12 @@ The crate root re-exports the public vocabulary flat, so
 `stave_dsp::Biquad` and `stave::dsp::Biquad` are the same type, and the
 most common pieces are in [`stave::prelude`](stave::prelude).
 
+Writing a new model? [Where does my model go?](crate::howto::model_placement)
+walks from its claim to its layer, folder, name and test. Every model's
+rustdoc carries the same sections (*Models*, *Derivation*, *Verified*,
+*Cost*, *Aliasing*, *Valid ranges*), and the docs site's model
+catalogue is generated from them.
+
 ## The Stage contract
 
 Every unit of DSP, leaf or composite, implements one trait. This is its

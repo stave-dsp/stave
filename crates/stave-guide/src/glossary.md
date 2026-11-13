@@ -35,7 +35,7 @@ bridges from ideas you may already know.
 | [`Controller`](stave::Controller) | What a face reads and writes on its plugin (params, taps, presets, capture): the VST3 meaning | Host, EditorHost, Bridge |
 | Host | The DAW; [`stave_host`] hosts plugins | anything else |
 | render | Rasterise a Scene into pixels | running audio |
-| model | A stave-dsp type named for what it models: the device, the maths or its authors, never how it is built | Model, Impl, Processor, Engine, Helper, V2, New, Simple, Fast (as a prefix or suffix) |
+| model | A stave-dsp type named for what it models: the device, the maths or its authors, never how it is built ([where a model goes](crate::howto::model_placement)) | Model, Impl, Processor, Engine, Helper, V2, New, Simple, Fast (as a prefix or suffix) |
 
 `Scope` is a real type with another meaning: the plugin-side scratch
 ([`Scope`](stave_telemetry::Scope)) that fills a capture and smooths the

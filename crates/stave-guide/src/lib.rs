@@ -52,6 +52,8 @@ pub mod howto {
     pub mod project_layout {}
     #[doc = include_str!("howto/performance.md")]
     pub mod performance {}
+    #[doc = include_str!("howto/model-placement.md")]
+    pub mod model_placement {}
     #[doc = include_str!("howto/release.md")]
     pub mod release {}
 }
