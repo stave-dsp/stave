@@ -1,7 +1,8 @@
 # DSP roadmap
 
 The working ledger for stave-dsp: what the library models, how each
-model is proven, and how fast it runs. Like `OVERHAUL.md`, every line
+model is proven, how fast it runs, and the tools to design new
+hardware with it. Like `OVERHAUL.md`, every line
 is one piece of work with an id; tick it with the commit that lands it.
 
 ## Goals
@@ -208,6 +209,52 @@ is one piece of work with an id; tick it with the commit that lands it.
 - [ ] **D4** Promote multiband-comp's crossover and per-band machinery
   to the library where it generalises.
 
+### H — hardware beyond circuits
+
+- [ ] **H1** Bucket-brigade delay lines (MN3007/3205, MN3008): clocked
+  sample-and-hold stages at the BBD clock rate, clock feedthrough,
+  compander (NE570) and the anti-alias/reconstruction filters, for analog
+  chorus, flanger and delay.
+- [ ] **H2** Spring reverb: dispersive waveguides with chirp allpass
+  cascades (Välimäki, Parker, Abel 2010), drive transducer and pickup,
+  boing on transients; multi-spring tanks.
+- [ ] **H3** Plate reverb: modal synthesis of a thin plate, damping by
+  frequency, pickup positions; checked against published plate modes.
+- [ ] **H4** Rotary speaker: horn and drum rotors with Doppler, amplitude
+  and directivity modulation, crossover, cabinet, acceleration and braking.
+- [ ] **H5** Tape transport: wow and flutter as measured spectra, speed
+  drift, splice and dropout events (with E8's head and hysteresis).
+- [ ] **H6** Controls as hardware: potentiometer tapers (linear, audio,
+  anti-log, dual-gang mismatch), scratch, switch pops and click suppression.
+- [ ] **H7** Cabinet, microphone and room: IR-based (F2–F4) with mic
+  placement blending, plus a parametric close-mic model over E9.
+- [ ] **H8** Vintage digital: converter quantisation and dither, low and
+  odd sample rates with their (lack of) anti-alias filters, fixed-point
+  arithmetic with its overflow and truncation (12-bit samplers, early
+  digital delays and reverbs).
+- [ ] **H9** Noise and drift: thermal and shot noise sources tied to
+  circuit values, hum and ripple from the power supply model, VCO and
+  bias temperature drift, slow ageing.
+- [ ] **H10** (instruments) Physical models: waveguide strings and tubes,
+  modal membranes and bars, bowing and plucking excitations; resonators
+  already in plugins (aeolian, smear) are the starting point.
+
+### G — design tools
+
+- [ ] **G1** Schematic input: import a KiCad netlist (and the SPICE subset
+  of N1) so a circuit designed in a schematic editor runs in stave.
+- [ ] **G2** Sweeps and sensitivity: run any model over a parameter or
+  component grid and report the response change per part (which resistor
+  moves the tone most), as data and docs-site plots.
+- [ ] **G3** Monte Carlo over tolerances (E10): the spread of response
+  across built units, to choose part grades.
+- [ ] **G4** Fitting: optimise component values or behavioural parameters
+  to a target (a frequency response, a capture, a curve), with the fit
+  error reported against the R1 budget format.
+- [ ] **G5** Audition: design-time A/B and null tests against a reference
+  (capture or another model), level-matched, with a blind ABX mode in
+  stave-play.
+
 ### R — verification loops
 
 - [ ] **R1** One harness for "model vs reference": a netlist (N1) or
@@ -272,4 +319,6 @@ is one piece of work with an id; tick it with the commit that lands it.
 5. **A1–A4** and **R5** (anti-aliasing for circuits, with budgets).
 6. **P1–P3, P5** (datasheet as data, deterministic perf CI, flamegraphs).
 7. **M1–M4** (neural inference, grey-box, capture).
-8. **S1–S7**, **D1–D4**, then the exploratory items (**N7**, **M5**, **M6**, **E10**).
+8. **S1–S7**, **D1–D4**.
+9. **H1–H9** (hardware beyond circuits) and **G1–G5** (design tools).
+10. The exploratory items: **N7**, **M5**, **M6**, **E10**, **H10**.
