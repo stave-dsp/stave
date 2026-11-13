@@ -45,6 +45,7 @@ fn values() -> Vec<f64> {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "safe code: the native run covers it")]
 fn hz_reads_as_unit_hz() {
     for v in values() {
         let f = v as f32;
@@ -56,6 +57,7 @@ fn hz_reads_as_unit_hz() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "safe code: the native run covers it")]
 fn db_reads_as_unit_db() {
     for v in values() {
         let d = v as f32;
@@ -64,6 +66,7 @@ fn db_reads_as_unit_db() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "safe code: the native run covers it")]
 fn seconds_read_as_unit_ms() {
     for v in values() {
         let t = seconds(v);
@@ -72,6 +75,7 @@ fn seconds_read_as_unit_ms() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "safe code: the native run covers it")]
 fn ratio_reads_as_unit_ratio() {
     for v in values() {
         let r = v.abs() as f32;
