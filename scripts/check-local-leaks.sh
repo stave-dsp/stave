@@ -16,7 +16,10 @@ values=()
 for key in STAVE_LINUX_HOST STAVE_MACOS_HOST STAVE_REFERENCE_HOST STAVE_SAMPLE_LIBRARY STAVE_CAPTURES; do
   [[ -n "${!key:-}" ]] && values+=("${!key}")
 done
-for host in ${STAVE_TAR_HOSTS:-}; do values+=("$host"); done
+for host in ${STAVE_TAR_HOSTS:-} ${STAVE_AUTO_HOSTS:-}; do
+  host="${host%%:*}"
+  [[ "$host" == local ]] || values+=("$host")
+done
 ((${#values[@]})) || exit 0
 unique=()
 while IFS= read -r value; do unique+=("$value"); done < <(printf '%s\n' "${values[@]}" | sort -u)

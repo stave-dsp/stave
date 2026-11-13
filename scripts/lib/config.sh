@@ -15,7 +15,8 @@ stave_config_load() {
   local root="$1" key saved
   local keys="STAVE_LINUX_HOST STAVE_MACOS_HOST STAVE_TAR_HOSTS STAVE_REFERENCE_HOST
     STAVE_REFERENCE_NAME STAVE_SAMPLE_LIBRARY STAVE_CAPTURES STAVE_AUTO_HOSTS
-    STAVE_AUTO_MAX_LOAD STAVE_AUTO_MIN_FREE_GB"
+    STAVE_AUTO_MIN_FREE_GB STAVE_LINUX_SLOTS STAVE_MACOS_SLOTS STAVE_LOCAL_SLOTS
+    STAVE_OFFLOAD_LONG_SLOT STAVE_OFFLOAD_TIMEOUT"
   # The environment wins: remember what the caller set.
   for key in $keys; do
     if [[ -n "${!key+x}" ]]; then saved+="$key=$(printf '%q' "${!key}") "; fi
