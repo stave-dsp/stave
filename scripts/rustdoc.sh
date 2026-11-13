@@ -78,9 +78,15 @@ document() { # extra cargo args first
   fi
 }
 # Every intra-doc link left as text (an `href` naming a path), as
-# `page:href="…"`.
+# `page:href="…"`. A page's "Blanket Implementations" section is left out:
+# it repeats other crates' trait docs (e.g. tracing's `Instrument`, whose
+# links are relative to tracing and never resolve in our --no-deps docs),
+# so it isn't ours to resolve.
 unresolved() {
-  grep -roE --include='*.html' 'href="[^"]*"' "$DOC" | grep '::' | grep -v '://' || true
+  find "$DOC" -name '*.html' -exec perl -0ne '
+    s/id="blanket-implementations".*//s;
+    while (/href="([^"]*::[^"]*)"/g) { print "$ARGV:href=\"$1\"\n" unless $1 =~ m{://} }
+  ' {} + || true
 }
 
 document "$@"
