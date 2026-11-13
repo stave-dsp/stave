@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use stave_dsp::circuit::methods::dk::{Dk, Health};
-use stave_dsp::circuit::netlist::Netlist;
+use stave_dsp::circuit::netlist::{ElementKind, Netlist, Node};
 use stave_dsp::circuit::Circuit;
 use stave_test::reference::{assert_converges, Case, Metric, Outcome, Reference};
 
@@ -27,9 +27,15 @@ fn deck(name: &str) -> Netlist {
 /// reference's instants (sample n is time n/rate; sample 0 is the
 /// operating point, or the initial conditions under `UIC`).
 fn transient(name: &str, oversample: u32) -> (Vec<f64>, Health) {
+    transient_of(name, &deck(name), oversample)
+}
+
+/// [`transient`] of a netlist built from the deck `name` (its stimulus
+/// and probe), held to that deck's reference.
+fn transient_of(name: &str, netlist: &Netlist, oversample: u32) -> (Vec<f64>, Health) {
     let reference = Reference::ngspice(name);
     let rate = 48_000.0 * f64::from(oversample);
-    let mut circuit = Circuit::<Dk>::new(&deck(name)).unwrap();
+    let mut circuit = Circuit::<Dk>::new(netlist).unwrap();
     circuit.prepare(rate as f32);
     let (mut n, mut out) = (0u64, circuit.output());
     let run = reference
@@ -44,6 +50,46 @@ fn transient(name: &str, oversample: u32) -> (Vec<f64>, Health) {
         })
         .collect();
     (run, circuit.health())
+}
+
+/// The deck `name` with each element in `replace` taken out and stave's
+/// devices put in: the device held to ngspice running the deck's
+/// behavioural form of the same law.
+fn with_devices(
+    name: &str,
+    replace: &[&str],
+    devices: impl FnOnce(&Netlist) -> Vec<(&'static str, ElementKind)>,
+) -> Netlist {
+    let mut netlist = deck(name);
+    for element in replace {
+        netlist
+            .remove(element)
+            .unwrap_or_else(|| panic!("{name}: no {element}"));
+    }
+    for (element, kind) in devices(&netlist) {
+        netlist.add(element, kind).unwrap();
+    }
+    netlist
+}
+
+/// Run the deck as ngspice does, then the netlist with stave's devices
+/// in, both at `budget`.
+fn deck_and_devices(name: &str, oversample: u32, budget: f64, devices: &Netlist) {
+    let case = || Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+    transient_case(name, oversample, case()).assert();
+    let (run, health) = transient_of(name, devices, oversample);
+    case()
+        .named(format!("{name}/dk {oversample}x, stave devices"))
+        .compare(&run)
+        .assert();
+    healthy(name, &health);
+}
+
+/// The node called `name` in `netlist`.
+fn at(netlist: &Netlist, name: &str) -> Node {
+    netlist
+        .node(name)
+        .unwrap_or_else(|| panic!("no node {name}"))
 }
 
 fn healthy(name: &str, health: &Health) {
@@ -190,6 +236,51 @@ fn push_pull_static_transfer_matches_ngspice() {
     transient_case("push_pull", 1, case).assert();
 }
 
+/// E3: an EL34's plate curves (plate 0–500 V at grid 0 to −40 V, screen
+/// through 1 kΩ): the deck's Koren law through `Circuit<Dk>`, then
+/// stave's `pentode::Koren::EL34` in its place, against ngspice.
+/// Measured 2.2e-7 both ways (ngspice 47 fixture).
+#[test]
+fn pentode_plate_curves_match_ngspice() {
+    use stave_dsp::circuit::devices::pentode::koren::Koren;
+    let name = "pentode_plate_curves";
+    let devices = with_devices(name, &["bp", "bs"], |n| {
+        vec![(
+            "x1",
+            ElementKind::Pentode {
+                plate: at(n, "p"),
+                screen: at(n, "g2"),
+                grid: at(n, "g1"),
+                cathode: Node::GROUND,
+                tube: Koren::EL34,
+            },
+        )]
+    });
+    deck_and_devices(name, 1, 5e-7, &devices);
+}
+
+/// E3: an EL34 class-AB pair (the 1969 sheet's fixed-bias conditions,
+/// screens through 1 kΩ, grids through the phase inverter's 40 kΩ with
+/// grid current): the deck, then stave's pentodes in place of its
+/// behavioural ones, against ngspice — a pentode output stage through
+/// `Circuit<Dk>`. Measured 8.6e-9 both ways.
+#[test]
+fn push_pull_pentode_matches_ngspice() {
+    use stave_dsp::circuit::devices::pentode::koren::Koren;
+    let name = "push_pull_pentode";
+    let devices = with_devices(name, &["bp1", "bs1", "bp2", "bs2"], |n| {
+        let tube = |p, s, g| ElementKind::Pentode {
+            plate: at(n, p),
+            screen: at(n, s),
+            grid: at(n, g),
+            cathode: Node::GROUND,
+            tube: Koren::EL34,
+        };
+        vec![("x1", tube("p1", "s1", "g1")), ("x2", tube("p2", "s2", "g2"))]
+    });
+    deck_and_devices(name, 1, 3e-8, &devices);
+}
+
 /// E6: every diode part's I–V curve — a ramp through 1 kΩ, forward
 /// conduction and, where the card has `BV`, reverse breakdown — through
 /// `Circuit<Dk>` against ngspice on the same card; and each part constant
@@ -198,7 +289,6 @@ fn push_pull_static_transfer_matches_ngspice() {
 /// 1.1e-8 BZX84C6V2L, 2.4e-8 1N750; ngspice 47 fixtures).
 #[test]
 fn diode_iv_curves_match_ngspice() {
-    use stave_dsp::circuit::netlist::ElementKind;
     use stave_dsp::Shockley;
     for (name, part, budget) in [
         ("diode_iv_1n4148", Shockley::N4148, 2e-7),

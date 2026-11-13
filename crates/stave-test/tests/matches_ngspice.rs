@@ -242,6 +242,25 @@ fn push_pull_static_transfer_matches_ngspice() {
         .assert();
 }
 
+/// E3: the push-pull pair with real pentodes (`PushPull::set_pentode`,
+/// the EL34 at its sheet's fixed-bias conditions) against ngspice's
+/// EL34 pair, up to the pair's level calibration. Measured 2.6e-7 (the
+/// tables' interpolation over 116 grid volts).
+#[test]
+fn push_pull_pentode_static_transfer_matches_ngspice() {
+    use stave_dsp::circuit::topologies::push_pull::PentodePair;
+    use stave_dsp::{PushPull, Stage};
+    let mut pair = PushPull::new();
+    pair.set_pentode(PentodePair::EL34);
+    pair.prepare(48_000.0);
+    Case::ngspice("push_pull_pentode")
+        .stimulus(Stimulus::ramp(-54.0, 5_400.0))
+        .budget(Metric::NormalizedRms, 1e-6)
+        .up_to_scale()
+        .pointwise(|swing| pair.static_transfer(swing))
+        .assert();
+}
+
 /// The op-amp diode clipper (TS808 values, ideal op-amp). Its feedback
 /// pole (51 kΩ · 51 pF = 2.6 µs) is faster than a 4× step, so the limit
 /// is set at 16× and the error must fall as the trapezoidal rule's h² —

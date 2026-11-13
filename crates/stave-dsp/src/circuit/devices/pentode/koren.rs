@@ -32,19 +32,23 @@ use crate::circuit::devices::triode::softplus;
 ///
 /// # Verified
 ///
-/// `stave-test/tests/dk_matches_ngspice.rs`: `pentode_plate_curves_match_ngspice`
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::pentode_plate_curves_match_ngspice`
 /// (EL34 plate current over 0–500 V at grid voltages 0 to −40 V, screen
-/// through 1 kΩ, normalized RMS 1e-6) and
-/// `push_pull_pentode_matches_ngspice` (an EL34 class-AB pair, normalized
-/// RMS 1e-6), the element against ngspice running Koren's equations.
-/// Unit tests beside this file check the partials against finite
-/// differences.
+/// through 1 kΩ: normalized RMS 2.2e-7, budget 5e-7) and
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::push_pull_pentode_matches_ngspice`
+/// (an EL34 class-AB pair: 8.6e-9, budget 3e-8), the element against
+/// ngspice running Koren's equations;
+/// `crates/stave-dsp/src/circuit/devices/pentode/koren.rs::the_partials_are_the_derivatives`
+/// and
+/// `crates/stave-dsp/src/circuit/devices/pentode/koren.rs::the_fits_land_near_the_datasheet_class_a_points`
+/// (within 20% of each sheet's class-A plate current; measured 3–16%).
 ///
 /// # Cost
 ///
-/// `stave-dsp/tests/datasheet.rs`, "`Circuit<Dk>` EL34 push-pull": three
-/// controls and two outputs per tube in the DK solve; the hand-derived
-/// [`PushPull`](crate::PushPull) tabulates it once.
+/// The datasheet's `"Circuit<Dk> EL34 push-pull x100 (Koren)"` (two
+/// tubes: three controls and two outputs each in the DK solve); the
+/// hand-derived [`PushPull`](crate::PushPull) tabulates the same law
+/// once, `"PushPull (EL34) x100"`.
 ///
 /// # Aliasing
 ///

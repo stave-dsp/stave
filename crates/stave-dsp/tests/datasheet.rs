@@ -578,6 +578,18 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut jfet = deck(include_str!("../../stave-test/spice/jfet_booster.cir"), sr);
     bench("Circuit<Dk> JFET booster", input, |x| jfet.tick(x));
     solve_health(&jfet);
+
+    // E3: an EL34 class-AB pair, tabulated by hand and solved by DK.
+    let mut pair = stave_dsp::PushPull::new();
+    pair.set_pentode(stave_dsp::circuit::topologies::push_pull::PentodePair::EL34);
+    pair.prepare(sr);
+    bench("PushPull (EL34) x100", input, |x| pair.tick(100.0 * x));
+    let mut pair_dk = dk(EL34_PUSH_PULL, sr);
+    bench("Circuit<Dk> EL34 push-pull x100", input, |x| pair_dk.tick(100.0 * x));
+    solve_health(&pair_dk);
+    let mut pair_koren = circuit_from(el34_pair_netlist(), sr);
+    bench("Circuit<Dk> EL34 push-pull x100 (Koren)", input, |x| pair_koren.tick(100.0 * x));
+    solve_health(&pair_koren);
 }
 
 /// An ngspice deck as `Circuit<Dk>`, its `VIN` driven by the input.
@@ -587,6 +599,52 @@ fn deck(text: &str, sr: f32) -> Circuit<Dk> {
     c.prepare(sr);
     c
 }
+
+/// [`EL34_PUSH_PULL`] with stave's `pentode::Koren` in place of the
+/// behavioural plate and screen sources.
+fn el34_pair_netlist() -> Netlist {
+    use stave_dsp::circuit::devices::pentode::koren::Koren as Pentode;
+    let mut n = Netlist::parse_spice(EL34_PUSH_PULL).unwrap();
+    for b in ["bp1", "bs1", "bp2", "bs2"] {
+        n.remove(b).unwrap();
+    }
+    for (name, p, s, g) in [("x1", "p1", "s1", "g1"), ("x2", "p2", "s2", "g2")] {
+        let kind = ElementKind::Pentode {
+            plate: n.node(p).unwrap(),
+            screen: n.node(s).unwrap(),
+            grid: n.node(g).unwrap(),
+            cathode: stave_dsp::circuit::netlist::Node::GROUND,
+            tube: Pentode::EL34,
+        };
+        n.add(name, kind).unwrap();
+    }
+    n
+}
+
+/// `stave-test/spice/push_pull_pentode.cir`, its ramp the driven input.
+const EL34_PUSH_PULL: &str = "EL34 push-pull pair
+.param mu=11 ex=1.35 kg1=650 kg2=4200 kp=60 kvb=24
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+V1 x 0 0
+B1 in1 0 V = {-40 + V(x)}
+B2 in2 0 V = {-40 - V(x)}
+RS1 in1 g1 40k
+RS2 in2 g2 40k
+BG1 g1 0 I = {gg*pow(ln(1+exp(cg*V(g1)))/cg, xi) + ig0}
+BG2 g2 0 I = {gg*pow(ln(1+exp(cg*V(g2)))/cg, xi) + ig0}
+VB b 0 400
+RA1 b p1 850
+RA2 b p2 850
+VS sup 0 400
+RG1 sup s1 1k
+RG2 sup s2 1k
+BP1 p1 0 I = {V(p1) > 0 ? 2*pow(V(s1)/kp*ln(1+exp(kp*(1/mu+V(g1)/V(s1)))), ex)/kg1*atan(V(p1)/kvb) : 0}
+BP2 p2 0 I = {V(p2) > 0 ? 2*pow(V(s2)/kp*ln(1+exp(kp*(1/mu+V(g2)/V(s2)))), ex)/kg1*atan(V(p2)/kvb) : 0}
+BS1 s1 0 I = {V(g1)+V(s1)/mu > 0 ? pow(V(g1)+V(s1)/mu, ex)/kg2 : 0}
+BS2 s2 0 I = {V(g2)+V(s2)/mu > 0 ? pow(V(g2)+V(s2)/mu, ex)/kg2 : 0}
+.control
+wrdata out v(p2,p1)
+.endc";
 
 /// The solve behind a `Circuit<Dk>` line: iterations per sample, cap
 /// hits and continuation fallbacks over its timed passes.

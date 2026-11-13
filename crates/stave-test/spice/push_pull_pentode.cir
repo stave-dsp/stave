@@ -1,0 +1,39 @@
+* An EL34 push-pull pair's static transfer: Koren's pentode law (EL34_OLD,
+* his original fit), each grid fed through the phase inverter's 40k with
+* the 12AX7 grid-current law the triode pair uses (Dempwolf RSD-1), at the
+* class point -40 V +/- x (the datasheet's fixed bias -38 V, 2 V colder).
+* The 1969 EL34 sheet's fixed-bias pair: B+ 400 V, Raa 3.4k (each plate's
+* load Raa/4 = 850 ohm from B+, the class-B load line; the transformer is
+* not modelled), screens from 400 V through Rg2 = 1k each. The x ramp
+* -54 V -> +54 V is quasi-static. Output: the plate difference v(p2) - v(p1).
+.param mu=11 ex=1.35 kg1=650 kg2=4200 kp=60 kvb=24
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+VX x 0 PWL(0 -54 20m 54)
+B1 in1 0 V = {-40 + V(x)}
+B2 in2 0 V = {-40 - V(x)}
+RS1 in1 g1 40k
+RS2 in2 g2 40k
+BG1 g1 0 I = {gg*pow(ln(1+exp(cg*V(g1)))/cg, xi) + ig0}
+BG2 g2 0 I = {gg*pow(ln(1+exp(cg*V(g2)))/cg, xi) + ig0}
+VB b 0 400
+RA1 b p1 850
+RA2 b p2 850
+VS sup 0 400
+RG1 sup s1 1k
+RG2 sup s2 1k
+BP1 p1 0 I = {V(p1) > 0 ? 2*pow(V(s1)/kp*ln(1+exp(kp*(1/mu+V(g1)/V(s1)))), ex)/kg1*atan(V(p1)/kvb) : 0}
+BP2 p2 0 I = {V(p2) > 0 ? 2*pow(V(s2)/kp*ln(1+exp(kp*(1/mu+V(g2)/V(s2)))), ex)/kg1*atan(V(p2)/kvb) : 0}
+BS1 s1 0 I = {V(g1)+V(s1)/mu > 0 ? pow(V(g1)+V(s1)/mu, ex)/kg2 : 0}
+BS2 s2 0 I = {V(g2)+V(s2)/mu > 0 ? pow(V(g2)+V(s2)/mu, ex)/kg2 : 0}
+* A starting guess for ngspice's operating point (x = -54 V: tube 1 cut
+* off, tube 2's grid conducting); stave ignores it.
+.nodeset v(g1)=-94 v(p1)=400 v(s1)=400 v(g2)=0.5 v(p2)=120 v(s2)=370
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p2,p1)
+.endc
+.end

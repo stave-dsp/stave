@@ -74,6 +74,21 @@ fn common_cathode_converges_at_the_host_rate() {
     report("common cathode", st.solves, st.iterations, st.capped);
 }
 
+/// E3: the hand-derived pair with EL34s, under 12 dB of feedback.
+#[test]
+fn push_pull_pentode_feedback_converges_at_the_host_rate() {
+    let mut s = stave_dsp::PushPull::new();
+    s.set_pentode(stave_dsp::circuit::topologies::push_pull::PentodePair::EL34);
+    s.prepare(RATE as f32);
+    s.set_drive_db(36.0);
+    s.set_feedback_db(12.0);
+    for n in 0..RATE as usize {
+        s.tick(hot(n, 1.0) as f32);
+    }
+    let st = s.stats();
+    report("EL34 push-pull feedback", st.solves, st.iterations, st.capped);
+}
+
 #[test]
 fn power_supply_converges_under_a_swinging_load() {
     let mut s = PowerSupply::new(PowerSupplyConfig::SILICON_CHOKE);
@@ -148,6 +163,13 @@ mod dk {
     fn common_cathode_converges_at_the_host_rate() {
         let text = deck("common_cathode_grid_current").replace("V1 in 0 SIN(0 3 1k)", "V1 in 0 0");
         run("common cathode", &text, "v1", |n| hot(n, 8.0));
+    }
+
+    /// E3: the EL34 pair, grids swung ±54 V about the class point —
+    /// cutoff, crossover and grid conduction every cycle.
+    #[test]
+    fn push_pull_pentode_converges_at_the_host_rate() {
+        run("EL34 push-pull", &deck("push_pull_pentode"), "vx", |n| hot(n, 36.0));
     }
 
     #[test]

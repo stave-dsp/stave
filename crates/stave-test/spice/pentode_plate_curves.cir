@@ -1,0 +1,25 @@
+* EL34 plate curves: Koren's pentode law (normankoren.com: the E1, G1 and
+* G2 lines of his subcircuits; EL34 parameters from his original fit,
+* EL34_OLD in the Koren tube library), no grid current or capacitance.
+* The plate sweeps 0 -> 500 V every 4 ms (returning between output
+* points) while the grid steps 0, -10, -20, -30, -40 V (quasi-static: no
+* reactive parts). The screen is fed from 250 V through 1k, so its
+* current moves it. The plate current is
+* read across a 10 ohm sense resistor. Output: 10 * Ip.
+.param mu=11 ex=1.35 kg1=650 kg2=4200 kp=60 kvb=24
+VP vp 0 PWL(0 0 3.98m 500 3.99m 0 4m 0 7.98m 500 7.99m 0 8m 0 11.98m 500 11.99m 0 12m 0 15.98m 500 15.99m 0 16m 0 19.98m 500 19.99m 0)
+VG g1 0 PWL(0 0 3.98m 0 3.99m -10 7.98m -10 7.99m -20 11.98m -20 11.99m -30 15.98m -30 15.99m -40 20m -40)
+VS s 0 250
+RS s g2 1k
+RI vp p 10
+BP p 0 I = {V(p) > 0 ? 2*pow(V(g2)/kp*ln(1+exp(kp*(1/mu+V(g1)/V(g2)))), ex)/kg1*atan(V(p)/kvb) : 0}
+BS g2 0 I = {V(g1)+V(g2)/mu > 0 ? pow(V(g1)+V(g2)/mu, ex)/kg2 : 0}
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(vp,p)
+.endc
+.end

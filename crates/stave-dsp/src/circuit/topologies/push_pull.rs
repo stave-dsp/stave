@@ -24,55 +24,246 @@
 //! Level policy: Physical from birth — drive scales grid volts
 //! honestly into a FIXED ceiling; small-signal gain and ceiling
 //! are REPORTED (`small_signal_gain_db`, `ceiling_db`).
+//!
+//! **The halves.** By default each half is a 12AX7 triode (Koren's plate
+//! law, `set_tube` for another) at 300 V through 100 kΩ: a preamp tube
+//! standing in for a power pair. [`set_pentode`](PushPull::set_pentode)
+//! makes them a real output pair — a pentode or beam tetrode
+//! ([`PentodePair`]: EL34, 6L6GC, KT88, EL84 at their datasheets'
+//! fixed-bias push-pull conditions), Koren's pentode law with screen
+//! current, each plate loaded by `Raa/4` from B+ (the class-B load line
+//! of a centre-tapped primary; the transformer itself is not modelled).
+//! Either way the grids are driven through the phase inverter's 40 kΩ
+//! with the 12AX7 grid-current law (Dempwolf RSD-1), which conducts
+//! when a grid is driven past the cathode.
 
 use crate::behavioral::adaa::{Adaa, AdaaOrder};
 use crate::behavioral::curve::Curve;
+use crate::circuit::devices::pentode::koren::Koren as PentodeKoren;
+use crate::circuit::devices::pentode::Pentode;
 use crate::circuit::devices::triode::koren::Koren;
+use crate::circuit::methods::load_line::LoadLine;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats, Solved};
 use crate::circuit::topologies::triode_stage::{
-    core_transfer_at, grid_amps_at, grid_volts_at, solve_load_line, Bias, TriodeParams,
+    grid_amps_at, grid_volts_at, solve_load_line, Bias, TriodeParams,
 };
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff64;
 
-/// Grid-volt domain of the tabulated halves (absolute): deep cutoff to
-/// well into grid conduction, for any class point and drive.
+/// Grid-volt domain of the tabulated triode halves (absolute): deep
+/// cutoff to well into grid conduction, for any class point and drive.
 const VG_MIN: f64 = -40.0;
 const VG_MAX: f64 = 16.0;
 /// Input span (grid volts either side of the class point) over which
-/// the composed transfer is normalized and its flank gain read.
+/// the composed transfer is normalized and its flank gain read; a
+/// pentode pair's is its bias depth plus the same 16 V.
 const X_SPAN: f64 = 16.0;
+
+/// A push-pull pentode (or beam-tetrode) output pair's operating
+/// conditions, from the tube's datasheet: what
+/// [`PushPull::set_pentode`] takes.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct PentodePair {
+    pub tube: PentodeKoren,
+    /// B+ at the output transformer's centre tap, volts.
+    pub supply_volts: f64,
+    /// The screens' supply, volts.
+    pub screen_volts: f64,
+    /// Each screen's series resistor (0: the screens are held at
+    /// `screen_volts`).
+    pub screen_ohms: f64,
+    /// The output transformer's plate-to-plate load, Raa.
+    pub plate_to_plate_ohms: f64,
+    /// The datasheet's fixed grid bias, volts.
+    pub grid_bias: f64,
+}
+
+impl PentodePair {
+    /// EL34, the 1969 sheet's fixed-bias pair (labelled class B there):
+    /// Va = Vg2 = 400 V, Vg1 = −38 V, Rg2 = 1 kΩ, Raa = 3.4 kΩ (55 W).
+    pub const EL34: Self = Self {
+        tube: PentodeKoren::EL34,
+        supply_volts: 400.0,
+        screen_volts: 400.0,
+        screen_ohms: 1e3,
+        plate_to_plate_ohms: 3.4e3,
+        grid_bias: -38.0,
+    };
+
+    /// 6L6GC, RCA (1960), class AB1 fixed bias: Va 450 V, Vg2 350 V,
+    /// Vg1 −30 V, Raa 6.0 kΩ (50 W).
+    pub const T6L6GC: Self = Self {
+        tube: PentodeKoren::T6L6GC,
+        supply_volts: 450.0,
+        screen_volts: 350.0,
+        screen_ohms: 0.0,
+        plate_to_plate_ohms: 6.0e3,
+        grid_bias: -30.0,
+    };
+
+    /// KT88, GEC (1961), class AB1 fixed bias, tetrode connection: Va
+    /// 560 V, Vg2 300 V, Vg1 ≈ −34 V, Raa 4.5 kΩ (100 W).
+    pub const KT88: Self = Self {
+        tube: PentodeKoren::KT88,
+        supply_volts: 560.0,
+        screen_volts: 300.0,
+        screen_ohms: 0.0,
+        plate_to_plate_ohms: 4.5e3,
+        grid_bias: -34.0,
+    };
+
+    /// EL84, the 1969 sheet's fixed-bias pair (labelled class B there):
+    /// Va = Vg2 = 300 V, Vg1 = −14.7 V, Raa = 8 kΩ.
+    pub const EL84: Self = Self {
+        tube: PentodeKoren::EL84,
+        supply_volts: 300.0,
+        screen_volts: 300.0,
+        screen_ohms: 0.0,
+        plate_to_plate_ohms: 8e3,
+        grid_bias: -14.7,
+    };
+
+    pub const ALL: [Self; 4] = [Self::EL34, Self::T6L6GC, Self::KT88, Self::EL84];
+
+    /// Each plate's load: `Raa/4`, the class-B load line.
+    pub fn plate_load_ohms(&self) -> f64 {
+        self.plate_to_plate_ohms / 4.0
+    }
+
+    /// The screen's voltage at control-grid volts `vg1`: its supply less
+    /// the drop its own current makes across `screen_ohms`.
+    pub fn screen_at(&self, vg1: f64) -> f64 {
+        if self.screen_ohms <= 0.0 {
+            return self.screen_volts;
+        }
+        let line = LoadLine {
+            supply_volts: self.screen_volts,
+            load_ohms: self.screen_ohms,
+        };
+        let tube = self.tube;
+        line.solve(
+            |vs| {
+                let c = tube.currents(vg1, vs, 1.0);
+                (c.screen, c.screen_per_screen_volt)
+            },
+            self.screen_volts,
+            &NewtonSettings::default(),
+        )
+        .value
+    }
+}
+
+/// One half of the pair, as the tables are built from it: the grid
+/// network (phase inverter and grid current, in `grid`) and the plate
+/// law — the triode in `grid`, or a pentode.
+#[derive(Copy, Clone)]
+struct Half {
+    grid: TriodeParams,
+    pentode: Option<PentodePair>,
+}
+
+impl Half {
+    fn supply(&self) -> f64 {
+        self.pentode.map_or(self.grid.supply_v, |t| t.supply_volts)
+    }
+
+    fn load(&self) -> f64 {
+        self.pentode
+            .map_or(self.grid.r_plate, |t| t.plate_load_ohms())
+    }
+
+    fn bias(&self) -> f64 {
+        self.pentode.map_or(self.grid.grid_bias, |t| t.grid_bias)
+    }
+
+    /// The plate's voltage for a source-side grid voltage `input`.
+    fn plate_volts(&self, input: f64, seed: f64) -> f64 {
+        let vg = grid_volts_at(&self.grid, input);
+        match self.pentode {
+            None => solve_load_line(&self.grid, vg, seed),
+            Some(t) => {
+                let vs = t.screen_at(vg);
+                let line = LoadLine {
+                    supply_volts: t.supply_volts,
+                    load_ohms: t.plate_load_ohms(),
+                };
+                line.solve(
+                    |vp| {
+                        let c = t.tube.currents(vg, vs, vp);
+                        (c.plate, c.plate_per_plate_volt)
+                    },
+                    seed,
+                    &NewtonSettings::default(),
+                )
+                .value
+            }
+        }
+    }
+
+    /// The screen's current (0 for a triode).
+    fn screen_amps(&self, input: f64) -> f64 {
+        self.pentode.map_or(0.0, |t| {
+            let vg = grid_volts_at(&self.grid, input);
+            t.tube.currents(vg, t.screen_at(vg), 1.0).screen
+        })
+    }
+
+    /// `(grid min, grid max, input span)` of the tables around class point `vq`.
+    fn domain(&self, vq: f64) -> (f64, f64, f64) {
+        match self.pentode {
+            None => (VG_MIN, VG_MAX, X_SPAN),
+            Some(t) => {
+                let span = t.grid_bias.abs() + X_SPAN;
+                (vq - span - 4.0, vq + span + 4.0, span)
+            }
+        }
+    }
+}
 
 /// The class-AB push-pull power pair (see the module docs).
 ///
 /// # Models
-/// A class-AB push-pull power pair: two Koren triode halves driven in
-/// antiphase through the phase inverter, sharing a cathode.
+/// A class-AB push-pull power pair: two halves driven in antiphase
+/// through the phase inverter, sharing a cathode — Koren triodes (a
+/// 12AX7 by default), or with [`set_pentode`](Self::set_pentode) a real
+/// output pair of Koren pentodes or beam tetrodes with screen current
+/// ([`PentodePair`]).
 ///
 /// # Derivation
-/// Each half's load-line transfer solved and tabulated once over grid
-/// volts, evaluated as f(b + x) − f(b − x) at the live bias; under
-/// `Bias::Cathode` the shared cathode is the circuit's RC.
+/// Each half's load-line transfer (the screen's own load line first, for
+/// a pentode) solved and tabulated once over grid volts, evaluated as
+/// f(b + x) − f(b − x) at the live bias; under `Bias::Cathode` the
+/// shared cathode is the circuit's RC.
 ///
 /// # Verified
 /// `crates/stave-test/tests/matches_ngspice.rs::push_pull_static_transfer_matches_ngspice`:
 /// the static transfer against the ngspice plate difference, 2e-6
 /// normalized RMS up to the pair's level scale;
-/// `crates/stave-test/tests/solver_conformance.rs::push_pull_feedback_converges_at_the_host_rate`.
+/// `crates/stave-test/tests/matches_ngspice.rs::push_pull_pentode_static_transfer_matches_ngspice`:
+/// the EL34 pair against ngspice's, 2.6e-7 (budget 1e-6) up to its level
+/// scale;
+/// `crates/stave-test/tests/solver_conformance.rs::push_pull_feedback_converges_at_the_host_rate`,
+/// `crates/stave-test/tests/solver_conformance.rs::push_pull_pentode_feedback_converges_at_the_host_rate`.
 ///
 /// # Cost
-/// No datasheet line yet (DSP.md P1).
+/// The datasheet's `"PushPull (EL34) x100"` (the triode pair costs the
+/// same: the tables are built once, off the audio path).
 ///
 /// # Aliasing
 /// ADAA on each tabulated half at the live bias; oversample when it is
 /// driven hard.
 ///
 /// # Valid ranges
-/// Grid volts within the table (−40 V to +16 V absolute); B+ scale
-/// positive (debug-asserted); any positive rate.
+/// Grid volts within the table (−40 V to +16 V absolute for triodes; the
+/// pentode's bias depth plus 20 V either side of its class point); B+
+/// scale positive (debug-asserted); any positive rate.
 #[derive(Clone)]
 pub struct PushPull {
     p: TriodeParams,
+    /// The halves' plate law when it is a pentode's (the triode in `p`
+    /// otherwise).
+    pentode: Option<PentodePair>,
+
     /// Plate swing (quiescent minus plate) of one half vs grid volts.
     half: Curve,
     /// Plate current of one half vs grid volts (the supply's draw).
@@ -136,6 +327,7 @@ impl PushPull {
     pub fn new() -> Self {
         let mut pp = Self {
             p: driven_pair(Koren::T12AX7),
+            pentode: None,
             half: Curve::flat(),
             plate_amps: Curve::flat(),
             cathode_amps: Curve::flat(),
@@ -167,12 +359,29 @@ impl PushPull {
         pp
     }
 
+    /// Triode halves of tube `t` (the default: a 12AX7).
     pub fn set_tube(&mut self, t: Koren) {
         let p = driven_pair(t);
-        if p.tube.mu != self.p.tube.mu || p.r_plate != self.p.r_plate {
+        if self.pentode.is_some() || p.tube.mu != self.p.tube.mu || p.r_plate != self.p.r_plate {
             self.p = p;
+            self.pentode = None;
             self.rebuild();
         }
+    }
+
+    /// A pentode (or beam-tetrode) output pair at `pair`'s operating
+    /// conditions: [`set_class_ab`](Self::set_class_ab) is then volts
+    /// colder than `pair.grid_bias`.
+    pub fn set_pentode(&mut self, pair: PentodePair) {
+        if self.pentode != Some(pair) {
+            self.pentode = Some(pair);
+            self.rebuild();
+        }
+    }
+
+    /// The pentode pair, if the halves are pentodes.
+    pub fn pentode(&self) -> Option<PentodePair> {
+        self.pentode
     }
 
     /// Class setting, volts colder than the tube's own bias (negative =
@@ -360,18 +569,24 @@ impl PushPull {
 
     fn rebuild(&mut self) {
         let p = self.p;
-        let vq = p.grid_bias - self.bias_cold;
+        let half = Half {
+            grid: p,
+            pentode: self.pentode,
+        };
+        let vq = half.bias() - self.bias_cold;
         self.class_point = vq;
-        let vpk0 = solve_load_line(&p, grid_volts_at(&p, vq), p.supply_v * 0.7);
+        let (vg_min, vg_max, x_span) = half.domain(vq);
+        let (supply, load) = (half.supply(), half.load());
+        let vpk0 = half.plate_volts(vq, supply * 0.7);
         self.half
-            .rebuild(VG_MIN, VG_MAX, vq, |vg| core_transfer_at(&p, vpk0, vg));
-        let plate =
-            |vg: f64| (p.supply_v - solve_load_line(&p, grid_volts_at(&p, vg), vpk0)) / p.r_plate;
-        self.plate_amps.rebuild(VG_MIN, VG_MAX, vq, plate);
-        self.cathode_amps
-            .rebuild(VG_MIN, VG_MAX, vq, |vg| plate(vg) + grid_amps_at(&p, vg));
+            .rebuild(vg_min, vg_max, vq, |vg| vpk0 - half.plate_volts(vg, vpk0));
+        let plate = |vg: f64| (supply - half.plate_volts(vg, vpk0)) / load;
+        self.plate_amps.rebuild(vg_min, vg_max, vq, plate);
+        self.cathode_amps.rebuild(vg_min, vg_max, vq, |vg| {
+            plate(vg) + half.screen_amps(vg) + grid_amps_at(&p, vg)
+        });
         // Normalize the ceiling to 0 dBFS at stiff supply.
-        let span = |i: usize| -X_SPAN + 2.0 * X_SPAN * i as f64 / 256.0;
+        let span = |i: usize| -x_span + 2.0 * x_span * i as f64 / 256.0;
         let m = (0..=256)
             .map(|i| self.pair_at(vq, span(i)).abs())
             .fold(0.0, f64::max);
@@ -381,7 +596,7 @@ impl PushPull {
         // is meaningless for staging (a pair driven by that number
         // under-drives into a clean wall). The report is the max
         // slope the signal actually rides.
-        let d = X_SPAN / 256.0;
+        let d = x_span / 256.0;
         self.gain_q = (1..256)
             .map(|i| {
                 let x = span(i);
@@ -719,6 +934,72 @@ mod tests {
             cathode.1 < 0.6 * fixed.1,
             "warm did not soften: {fixed:?} {cathode:?}"
         );
+    }
+
+    /// A PENTODE PAIR IS A REAL OUTPUT STAGE — every datasheet pair idles
+    /// at a plausible current at its sheet's bias (measured: EL34 28.6 mA
+    /// a tube against the sheet's 30, 6L6GC 59 against 47.5, KT88 53
+    /// against 60, EL84 13 against 7.5), its matched transfer is
+    /// odd (evens cancel) and flattens past grid 0 V, and its class-AB
+    /// draw rises with drive.
+    #[test]
+    fn a_pentode_pair_is_a_real_output_stage() {
+        for pair in PentodePair::ALL {
+            let mut pp = PushPull::new();
+            pp.set_pentode(pair);
+            pp.set_class_ab(0.0);
+            pp.prepare(48_000.0);
+            assert_eq!(pp.pentode(), Some(pair));
+            let idle = pp.idle_plate_amps / 2.0 * 1e3;
+            println!("{}: idles at {idle:.1} mA a tube", pair.tube.name);
+            assert!(
+                (5.0..120.0).contains(&idle),
+                "{}: idles at {idle:.1} mA",
+                pair.tube.name
+            );
+            // Matched halves in antiphase: the transfer is odd, so evens
+            // cancel; and it flattens once the grids are driven past 0 V
+            // (grid current into the phase inverter's 40 kΩ).
+            let span = pair.grid_bias.abs();
+            for k in 1..=8 {
+                let u = span * f64::from(k) / 8.0;
+                let (up, down) = (pp.static_transfer(u), pp.static_transfer(-u));
+                assert!(
+                    (up + down).abs() <= 1e-9 * up.abs().max(1e-9),
+                    "{}: {u}",
+                    pair.tube.name
+                );
+            }
+            let slope = |a: f64, b: f64| (pp.static_transfer(b) - pp.static_transfer(a)) / (b - a);
+            let (middle, past) = (slope(0.4 * span, 0.6 * span), slope(span, 1.2 * span));
+            assert!(
+                past < 0.7 * middle,
+                "{}: {past} vs {middle}",
+                pair.tube.name
+            );
+        }
+        let draw = |amp: f64| {
+            let mut pp = PushPull::new();
+            pp.set_pentode(PentodePair::EL34);
+            pp.prepare(48_000.0);
+            pp.set_drive_db(30.0);
+            let mut acc = 0.0;
+            for i in 0..4_800 {
+                let x = amp * (2.0 * core::f64::consts::PI * 220.0 * i as f64 / 48_000.0).sin();
+                pp.tick(x as f32);
+                acc += f64::from(pp.draw());
+            }
+            acc / 4_800.0
+        };
+        let rise = draw(1.0) / draw(0.001);
+        assert!(
+            rise > 2.0,
+            "the EL34 pair's draw rose only {rise:.2}x with drive"
+        );
+        let mut back = PushPull::new();
+        back.set_pentode(PentodePair::EL34);
+        back.set_tube(Koren::T12AX7);
+        assert_eq!(back.pentode(), None);
     }
 
     /// THE REPORT IS THE TRUTH — small-signal gain and ceiling.
