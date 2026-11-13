@@ -14,7 +14,7 @@
 //! |---|---|---|
 //! | [`units`] | quantities as types | unit tests, Kani |
 //! | [`kernel`] | the [`Stage`] contract and the graph forms: [`Serial`], [`Par2`], [`Loop`], [`Oversampled2x`], [`PerChannel`], [`Router`], [`VoiceRack`] | property tests, loom, Kani |
-//! | [`primitives`] | textbook linear DSP: filters, delays, oscillators, control, spectral ([`Fft`]) | naive references (direct DFT) and analytic responses |
+//! | [`primitives`] | textbook linear DSP: filters, delays, oscillators, control, spectral ([`Fft`], [`Convolver`]) | naive references (direct DFT, direct convolution) and analytic responses |
 //! | [`behavioral`] | a shape chosen or fitted, with no hardware claim: curves with ADAA, saturators, slew, hysteresis | analytic antiderivatives, aliasing budgets |
 //! | [`circuit`] | derived from a schematic: devices, methods, netlists, topologies | ngspice on the same netlist |
 //! | [`physical`] | derived from mechanics or acoustics | published modes, high-precision solutions, captures |
@@ -71,7 +71,7 @@ pub use primitives::gain::{amp_to_db, db_to_amp, t60_gain};
 pub use primitives::osc::{Osc, Waveform};
 pub use primitives::pitch::hz_of_key;
 pub use primitives::random::Xorshift32;
-pub use primitives::spectral::Fft;
+pub use primitives::spectral::{Convolver, Fft, ImpulseResponse};
 pub use primitives::time::comb::{Comb, DelayAllpass};
 pub use primitives::time::delay::DelayLine;
 

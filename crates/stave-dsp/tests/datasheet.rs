@@ -23,11 +23,11 @@ use stave_dsp::{AdaaOrder, AdsrConfig};
 use std::hint::black_box;
 use std::time::Instant;
 
-use stave_dsp::primitives::spectral::Complex;
+use stave_dsp::primitives::spectral::{Complex, Head};
 use stave_dsp::{
-    Adaa, Adsr, Allpass1, Biquad, Curve, DelayLine, DiodeClipper, DiodeClipperConfig, Fft,
-    Hysteresis, Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley, Slew, Stage,
-    Waveform,
+    Adaa, Adsr, Allpass1, Biquad, Convolver, Curve, DelayLine, DiodeClipper, DiodeClipperConfig,
+    Fft, Hysteresis, ImpulseResponse, Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley,
+    Slew, Stage, Waveform,
 };
 
 const N: usize = 1 << 17;
@@ -200,5 +200,24 @@ fn primitive_datasheet() {
         bench_points(&format!("Fft f32 real {n}"), n, || {
             fft.forward_real(black_box(&input[..n]), &mut bins)
         });
+    }
+
+    // Per sample of mono audio; IR lengths of a cabinet, a room and a
+    // two-second hall at 48 kHz.
+    for (taps, block, head) in [
+        (1_024, 256, Head::Partitioned),
+        (16_384, 256, Head::Partitioned),
+        (96_000, 256, Head::Partitioned),
+        (1_024, 64, Head::Direct),
+        (16_384, 64, Head::Direct),
+    ] {
+        let ir = ImpulseResponse::mono(&input[..taps]);
+        let mut conv = Convolver::uniform(&ir, block, head);
+        conv.prepare(sr);
+        let name = format!(
+            "Convolver {taps} taps B={block}{}",
+            if head == Head::Direct { " direct" } else { "" }
+        );
+        bench(&name, &input, |x| conv.tick(x));
     }
 }

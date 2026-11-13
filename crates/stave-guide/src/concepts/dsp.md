@@ -18,7 +18,7 @@ than silently checking nothing).
 |---|---|---|
 | 0 [`units`](stave_dsp::units) | quantities as types (empty until the first lands) | nothing |
 | 1 [`kernel`](stave_dsp::kernel) | the [`Stage`](stave_dsp::Stage) contract and [`Tail`](stave_dsp::Tail); the composition forms; the denormal and non-finite guards | units |
-| 2 [`primitives`](stave_dsp::primitives) | filters ([`Biquad`](stave_dsp::Biquad), [`Svf`](stave_dsp::Svf), [`OnePole`](stave_dsp::OnePole), [`DcBlocker`](stave_dsp::DcBlocker), [`Allpass1`](stave_dsp::Allpass1), [`LinkwitzRiley4`](stave_dsp::LinkwitzRiley4), [`Crossover3`](stave_dsp::Crossover3)); time ([`DelayLine`](stave_dsp::DelayLine), [`Comb`](stave_dsp::Comb), [`DelayAllpass`](stave_dsp::DelayAllpass)); control (LFOs, envelopes, followers, smoothers, [`RandomWalk`](stave_dsp::RandomWalk)); [`Osc`](stave_dsp::Osc) and [`Waveform`](stave_dsp::Waveform); gain and pitch helpers; seeded randomness | units, kernel |
+| 2 [`primitives`](stave_dsp::primitives) | filters ([`Biquad`](stave_dsp::Biquad), [`Svf`](stave_dsp::Svf), [`OnePole`](stave_dsp::OnePole), [`DcBlocker`](stave_dsp::DcBlocker), [`Allpass1`](stave_dsp::Allpass1), [`LinkwitzRiley4`](stave_dsp::LinkwitzRiley4), [`Crossover3`](stave_dsp::Crossover3)); time ([`DelayLine`](stave_dsp::DelayLine), [`Comb`](stave_dsp::Comb), [`DelayAllpass`](stave_dsp::DelayAllpass)); control (LFOs, envelopes, followers, smoothers, [`RandomWalk`](stave_dsp::RandomWalk)); [`Osc`](stave_dsp::Osc) and [`Waveform`](stave_dsp::Waveform); spectral ([`Fft`](stave_dsp::Fft), [`Convolver`](stave_dsp::Convolver), [`ImpulseResponse`](stave_dsp::ImpulseResponse)); gain and pitch helpers; seeded randomness | units, kernel |
 | 3 [`behavioral`](stave_dsp::behavioral) | models fitted to measurement or chosen by ear: tabulated curves with ADAA, [`soft_clip`](stave_dsp::soft_clip) and the [`shapes`](stave_dsp::shapes) library, [`SmoothSat`](stave_dsp::SmoothSat), [`Slew`](stave_dsp::Slew), [`Hysteresis`](stave_dsp::Hysteresis), [`NonlinearRc`](stave_dsp::NonlinearRc) | units, kernel, primitives |
 | 4 [`circuit`](stave_dsp::circuit) | devices, solver methods, netlists and topologies derived from schematics | units, kernel, primitives, behavioral |
 | 5 [`physical`](stave_dsp::physical) | models derived from mechanics or acoustics (empty until the first lands) | the layers above |
@@ -194,6 +194,57 @@ assert_eq!(v.as_chain().sense(v.shelf), y);
 signals are read from, for control wiring and observation alike.
 [`SwapPoint`](stave_dsp::SwapPoint) parks a slot's alternate stage and
 swaps it in by move, so a structural switch never allocates.
+
+## Spectral: the FFT and convolution
+
+[`primitives::spectral`](stave_dsp::primitives::spectral) holds the
+workspace's one [`Fft`](stave_dsp::Fft) and the
+[`Convolver`](stave_dsp::Convolver) built on it. Both plan where
+allocation is allowed (a constructor or `prepare`) and never allocate
+afterwards.
+
+- [`Fft`](stave_dsp::Fft) is planned for one power-of-two length, in
+  `f32` or `f64`, and serves the complex transform of that length and the
+  real one (`n` samples to `n/2 + 1` bins). The inverse is unnormalised,
+  as in FFTW: a round trip returns the input times `n`.
+- [`Convolver::uniform`](stave_dsp::Convolver::uniform) convolves with an
+  [`ImpulseResponse`](stave_dsp::ImpulseResponse) of any length in
+  partitions of one power-of-two block (overlap-save with a
+  frequency-domain delay line). Its latency is one block, reported
+  exactly, or zero with
+  [`Head::Direct`](stave_dsp::primitives::spectral::Head::Direct), which
+  runs the first block in direct form. A mono response is a
+  [`Stage`](stave_dsp::Stage), so it nests in any form; stereo and
+  true-stereo responses run through
+  [`tick_stereo`](stave_dsp::Convolver::tick_stereo).
+
+Convolving with a short response, checked against the direct sum:
+
+```rust
+use stave_dsp::primitives::spectral::Head;
+use stave_dsp::{Convolver, ImpulseResponse, Stage};
+
+// A short decaying response, longer than one partition.
+let h: Vec<f32> = (0..100).map(|j| 0.97_f32.powi(j) * if j % 2 == 0 { 1.0 } else { -0.5 }).collect();
+let mut conv = Convolver::uniform(&ImpulseResponse::mono(&h), 32, Head::Partitioned);
+conv.prepare(48_000.0);
+assert_eq!(conv.latency(), 32); // one partition
+
+let x: Vec<f32> = (0..400).map(|n| ((n * 37) % 101) as f32 / 50.0 - 1.0).collect();
+let mut y = x.clone();
+conv.process(&mut y);
+
+// y is the direct-form convolution, one partition late.
+for t in 32..y.len() {
+    let want: f32 = (0..h.len().min(t - 31)).map(|j| h[j] * x[t - 32 - j]).sum();
+    assert!((y[t] - want).abs() < 1e-4, "sample {t}");
+}
+```
+
+The tests hold both to naive references: `tests/fft_properties.rs`
+compares the transform with a direct DFT at every length from 2 to
+2^16, and `tests/convolver_properties.rs` compares the convolver with
+direct-form convolution over random responses and ragged blocks.
 
 ## The circuit layer
 

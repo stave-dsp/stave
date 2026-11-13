@@ -95,3 +95,41 @@ fn every_response_is_stable_and_right_at_every_rate() {
         }
     }
 }
+
+/// The convolver at every rate (DSP.md F2): its plan does not depend on
+/// the rate, so an impulse returns the response exactly as given (to
+/// f32 FFT rounding), delayed by the reported latency, and the output
+/// is silent once the reported tail has passed.
+#[test]
+fn the_convolver_returns_its_response_at_every_rate() {
+    use stave_dsp::primitives::spectral::Head;
+    use stave_dsp::{Convolver, ImpulseResponse, Tail};
+
+    let h: Vec<f32> = (0..500)
+        .map(|i| (i as f32 * 0.37).sin() * (-(i as f32) / 120.0).exp())
+        .collect();
+    let ir = ImpulseResponse::mono(&h);
+    for rate in RATES {
+        for head in [Head::Partitioned, Head::Direct] {
+            let mut conv = Convolver::uniform(&ir, 64, head);
+            conv.prepare(rate);
+            let latency = conv.latency() as usize;
+            let Tail::Samples(tail) = conv.tail() else {
+                panic!("a finite response has a finite tail")
+            };
+            for i in 0..tail as usize + 256 {
+                let y = conv.tick(if i == 0 { 1.0 } else { 0.0 });
+                assert!(y.is_finite(), "{head:?} at {rate} Hz: sample {i} is {y}");
+                let want = i
+                    .checked_sub(latency)
+                    .and_then(|j| h.get(j))
+                    .copied()
+                    .unwrap_or(0.0);
+                assert!(
+                    (y - want).abs() < 1e-5,
+                    "{head:?} at {rate} Hz: sample {i} is {y}, want {want}"
+                );
+            }
+        }
+    }
+}

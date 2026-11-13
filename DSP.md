@@ -191,7 +191,7 @@ circuit/
 
 ### F — FFT, convolution, spectral
 
-- [ ] **F1** One real FFT for the workspace, either our own (radix-2/4 split, power-of-two,
+- [x] **F1** (e2fc31d: our own, `stave_dsp::Fft` — rustfft measured 1.6–3.3× faster, short of 10×; resample, the triode tests, stave-measure, stave-face and stave-play use it; the plugin copies migrate after the next release) One real FFT for the workspace, either our own (radix-2/4 split, power-of-two,
   f32 and f64) or a vetted dependency, behind one `Fft` type. It replaces the eleven
   plugin copies and `primitives/resample.rs`'s local radix-2.
 - [ ] **F2** Uniform partitioned convolution (overlap-save, frequency-domain
