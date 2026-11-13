@@ -1,0 +1,28 @@
+* Op-amp slew and rail clipping: a JRC4558 macromodel (stave's
+* opamp::Macromodel, written out as behavioural sources) in a
+* non-inverting gain-of-11 stage (100k / 10k) on +/-15 V, driven by
+* 1.5 V at 20 kHz. It asks for 16.5 V peak at 2.1 V/us; the part
+* gives 14 V (1 V headroom) at 1 V/us: a clipped triangle.
+* Datasheet: NJM4558, GB 3 MHz, SR 1 V/us, Av 100 dB, VIO 0.5 mV.
+* The gain node n carries the compensation capacitor cc and the
+* conductance g0 = gm/a0; the input stage's current isl*tanh(...) charges
+* it (gm = 2 pi GBW cc, isl = SR cc), a clamp of kc slew currents per
+* knee vk holds it inside the rails, and EO buffers it to the output.
+.param cc=1e-9 vos=0.5e-3 vhi=14 vlo=-14 vmid=0 vk=0.02 kc=10
+.param gm={6.283185307179586*3e6*1e-9} isl={1e6*1e-9} g0={gm/100e3}
+V1 in 0 SIN(0 1.5 20k)
+BG 0 n I = {isl*tanh(gm*(V(in,fb)+vos)/isl) + g0*vmid - kc*isl*(max((V(n)-vhi)/vk,0) + ln(1+exp(-abs((V(n)-vhi)/vk))) - max((vlo-V(n))/vk,0) - ln(1+exp(-abs((vlo-V(n))/vk))))}
+RG n 0 {1/g0}
+CC n 0 {cc}
+EO out 0 n 0 1
+RF out fb 100k
+RI fb 0 10k
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 1.30208333u 0.5m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

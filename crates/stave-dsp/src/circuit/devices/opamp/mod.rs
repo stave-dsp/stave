@@ -61,11 +61,11 @@ pub trait OpAmp: Copy {
 ///
 /// # Verified
 ///
-/// `stave-test/tests/dk_matches_ngspice.rs`
-/// `opamp_clipper_with_an_ideal_op_amp_element_matches_ngspice`: the
-/// TS808 clipper built with this element against ngspice's
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::opamp_clipper_with_an_ideal_op_amp_element_matches_ngspice`:
+/// the TS808 clipper built with this element against ngspice's
 /// `opamp_clipper` deck (which writes the ideal op-amp as controlled
-/// sources), normalized RMS 5e-5 at 16×.
+/// sources): normalized RMS 2.1e-5 at 16× (budget 5e-5), as the deck's
+/// own controlled sources give.
 ///
 /// # Cost
 ///

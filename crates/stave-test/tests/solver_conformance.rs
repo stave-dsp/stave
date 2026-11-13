@@ -165,6 +165,21 @@ mod dk {
         run("common cathode", &text, "v1", |n| hot(n, 8.0));
     }
 
+    /// E4: the Tube Screamer on its JRC4558 macromodel, input hot about
+    /// the 4.5 V reference (the diodes and the rails both reached).
+    #[test]
+    fn tube_screamer_converges_at_the_host_rate() {
+        run("Tube Screamer (JRC4558)", &deck("tube_screamer"), "v1", |n| {
+            4.5 + hot(n, 1.0)
+        });
+    }
+
+    /// E4: the gain-of-11 stage slewing and clipping on its rails.
+    #[test]
+    fn opamp_slew_converges_at_the_host_rate() {
+        run("op-amp slew (JRC4558)", &deck("opamp_slew"), "v1", |n| hot(n, 3.0));
+    }
+
     /// E3: the EL34 pair, grids swung ±54 V about the class point —
     /// cutoff, crossover and grid conduction every cycle.
     #[test]

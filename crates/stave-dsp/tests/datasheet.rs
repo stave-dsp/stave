@@ -590,6 +590,12 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut pair_koren = circuit_from(el34_pair_netlist(), sr);
     bench("Circuit<Dk> EL34 push-pull x100 (Koren)", input, |x| pair_koren.tick(100.0 * x));
     solve_health(&pair_koren);
+
+    // E4: the Tube Screamer's clipping stage on the JRC4558 macromodel.
+    let mut screamer = circuit_from(tube_screamer_netlist(), sr);
+    bench("Circuit<Dk> Tube Screamer (JRC4558)", input, |x| screamer.tick(4.5 + x));
+    solve_health(&screamer);
+
 }
 
 /// An ngspice deck as `Circuit<Dk>`, its `VIN` driven by the input.
@@ -598,6 +604,37 @@ fn deck(text: &str, sr: f32) -> Circuit<Dk> {
     c.drive("vin").unwrap();
     c.prepare(sr);
     c
+}
+
+/// `stave-test/spice/tube_screamer.cir` with stave's op-amp element in
+/// place of the behavioural one, its input driven.
+fn tube_screamer_netlist() -> Netlist {
+    use stave_dsp::circuit::devices::opamp::{Amp, Macromodel};
+    let mut n = Netlist::parse_spice(
+        "TS808 clipping stage, JRC4558
+V1 in 0 4.5
+RG n 0 1meg
+R1 fb s 4.7k
+C1 s 0 47n
+RF out fb 551k
+CF out fb 51p
+D1 out fb D1N914
+D2 fb out D1N914
+.model D1N914 D(Is=2.52n Rs=.568 N=1.752)
+.control
+wrdata out v(out)
+.endc",
+    )
+    .unwrap();
+    let kind = ElementKind::OpAmp {
+        plus: n.node("in").unwrap(),
+        minus: n.node("fb").unwrap(),
+        output: n.node("out").unwrap(),
+        amp: Amp::Macromodel(Macromodel::JRC4558),
+        supply: (0.0, 9.0),
+    };
+    n.add("u1", kind).unwrap();
+    n
 }
 
 /// [`EL34_PUSH_PULL`] with stave's `pentode::Koren` in place of the

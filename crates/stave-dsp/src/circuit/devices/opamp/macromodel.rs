@@ -44,19 +44,22 @@ use crate::units::{Hz, Volts};
 ///
 /// # Verified
 ///
-/// `stave-test/tests/dk_matches_ngspice.rs`: `opamp_slew_and_clip_matches_ngspice`
-/// (the JRC4558 macromodel slewing and clipping in a gain-of-11 stage at
-/// 20 kHz, normalized RMS 1e-4 at 16×) and
-/// `tube_screamer_with_a_jrc4558_matches_ngspice` (the TS808 clipping
-/// stage on a 9 V supply, normalized RMS 1e-4 at 16×), each the element
-/// against ngspice's behavioural form of the same equations. Unit tests
-/// beside this file hold the small-signal gain at DC and the unity-gain
-/// frequency to the datasheet figures through `Circuit<Dk>`.
+/// `crates/stave-test/tests/dk_matches_ngspice.rs::opamp_slew_and_clip_matches_ngspice`
+/// (the JRC4558 slewing and clipping in a gain-of-11 stage at 20 kHz:
+/// normalized RMS 2.6e-4 at 128×, budget 5e-4, converging as h² from 64×)
+/// and `crates/stave-test/tests/dk_matches_ngspice.rs::tube_screamer_with_a_jrc4558_matches_ngspice`
+/// (the TS808 clipping stage on a 9 V supply: 3.1e-5 at 16×, budget 6e-5),
+/// each the element against ngspice's behavioural form of the same
+/// equations;
+/// `crates/stave-dsp/src/circuit/devices/opamp/tests.rs::a_follower_reads_back_the_datasheet_gain_and_bandwidth`
+/// (every part's DC gain within 1% and its −3 dB point within 0.01 of
+/// 1/√2 at the datasheet's GBW, through `Circuit<Dk>`).
 ///
 /// # Cost
 ///
-/// `stave-dsp/tests/datasheet.rs`, "`Circuit<Dk>` Tube Screamer (JRC4558)":
-/// a two-control nonlinearity in the DK solve.
+/// The datasheet's `"Circuit<Dk> Tube Screamer (JRC4558)"`: a
+/// two-control nonlinearity in the DK solve (the gain stage's input and
+/// its node), beside the circuit's diodes.
 ///
 /// # Aliasing
 ///

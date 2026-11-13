@@ -281,6 +281,98 @@ fn push_pull_pentode_matches_ngspice() {
     deck_and_devices(name, 1, 3e-8, &devices);
 }
 
+/// E4: the ideal op-amp element (a nullor) in the TS808 clipper, against
+/// the `opamp_clipper` deck, which writes the ideal op-amp as controlled
+/// sources: the same budget as the deck itself at 16×.
+#[test]
+fn opamp_clipper_with_an_ideal_op_amp_element_matches_ngspice() {
+    use stave_dsp::circuit::devices::opamp::{Amp, Ideal};
+    let mut netlist = Netlist::parse_spice(
+        "TS808 clipper, an ideal op-amp element
+         V1 in 0 DC 0 SIN(0 0.5 1k)
+         R1 fb g 4.7k
+         C1 g 0 47n
+         RF out fb 51k
+         CF out fb 51p
+         D1 out fb DI
+         D2 fb out DI
+         .model DI D(Is=2.52n N=1.752)
+         .control
+         wrdata out v(out)
+         .endc",
+    )
+    .unwrap();
+    let kind = ElementKind::OpAmp {
+        plus: at(&netlist, "in"),
+        minus: at(&netlist, "fb"),
+        output: at(&netlist, "out"),
+        amp: Amp::Ideal(Ideal),
+        supply: (-15.0, 15.0),
+    };
+    netlist.add("u1", kind).unwrap();
+    let (run, health) = transient_of("opamp_clipper", &netlist, 16);
+    Case::ngspice("opamp_clipper")
+        .named("opamp_clipper/dk 16x, ideal op-amp element")
+        .budget(Metric::NormalizedRms, 5e-5)
+        .compare(&run)
+        .assert();
+    healthy("opamp_clipper", &health);
+}
+
+/// The macromodel element in place of a deck's behavioural op-amp
+/// (`BG`, `CC`, `EO`; `RG` stays, a resistor on the orphaned gain node).
+fn with_macromodel(
+    name: &str,
+    part: stave_dsp::circuit::devices::opamp::Macromodel,
+    supply: (f64, f64),
+) -> Netlist {
+    use stave_dsp::circuit::devices::opamp::Amp;
+    with_devices(name, &["bg", "cc", "eo"], |n| {
+        vec![(
+            "u1",
+            ElementKind::OpAmp {
+                plus: at(n, "in"),
+                minus: at(n, "fb"),
+                output: at(n, "out"),
+                amp: Amp::Macromodel(part),
+                supply,
+            },
+        )]
+    })
+}
+
+/// E4: the JRC4558 macromodel slewing (1 V/µs) and clipping (±14 V) in a
+/// gain-of-11 stage driven at 20 kHz: the deck's behavioural form through
+/// `Circuit<Dk>`, then the `OpAmp` element, against ngspice. A slewing
+/// integrator moves a volt a microsecond, so this runs at 128× (6.1 MHz)
+/// and the error must fall as h² from 64×. Measured 2.6e-4 both ways.
+#[test]
+fn opamp_slew_and_clip_matches_ngspice() {
+    use stave_dsp::circuit::devices::opamp::Macromodel;
+    let devices = with_macromodel("opamp_slew", Macromodel::JRC4558, (-15.0, 15.0));
+    let case = || Case::ngspice("opamp_slew").budget(Metric::NormalizedRms, OPAMP_SLEW_BUDGET);
+    let (coarse, _) = transient_of("opamp_slew", &devices, 64);
+    let coarse = case().named("opamp_slew/dk 64x, stave devices").compare(&coarse);
+    let (fine, health) = transient_of("opamp_slew", &devices, 128);
+    let fine = case().named("opamp_slew/dk 128x, stave devices").compare(&fine);
+    assert_converges(&coarse, &fine, 3.0);
+    fine.assert();
+    healthy("opamp_slew", &health);
+    transient_case("opamp_slew", 128, case()).assert();
+}
+const OPAMP_SLEW_BUDGET: f64 = 5e-4;
+
+/// E4: the Tube Screamer's clipping stage on its JRC4558 at 9 V: the
+/// deck, then the `OpAmp` element with the macromodel, against ngspice at
+/// 16× — a real circuit through `Circuit<Dk>` with the macromodel.
+/// Measured 3.1e-5 both ways.
+#[test]
+fn tube_screamer_with_a_jrc4558_matches_ngspice() {
+    use stave_dsp::circuit::devices::opamp::Macromodel;
+    let devices = with_macromodel("tube_screamer", Macromodel::JRC4558, (0.0, 9.0));
+    deck_and_devices("tube_screamer", 16, 6e-5, &devices);
+}
+
 /// E6: every diode part's I–V curve — a ramp through 1 kΩ, forward
 /// conduction and, where the card has `BV`, reverse breakdown — through
 /// `Circuit<Dk>` against ngspice on the same card; and each part constant
