@@ -94,7 +94,7 @@ commit hashes never reach main: cite the PR, never a branch commit.
   page (P1); instruction counts gate CI (P2); `scripts/profile.sh` (P3);
   per-stage cost taps (P5); `stave-bench` measures a built plugin, and
   another vendor's VST3 or AU as a benchmark (R26).
-- **Ledger** (audit 2026-11-13, H10 since): 80 of 107 items done; 19 of the rest
+- **Ledger** (audit 2026-11-13, E9, H7, M6 and H10 since): 84 of 107 items done; 15 of the rest
   partial, each with a `Status:` line (E10 a note) saying what exists and
   what is missing.
 

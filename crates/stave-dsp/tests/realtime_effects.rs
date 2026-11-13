@@ -357,6 +357,7 @@ fn speaker_and_cabinet_never_allocate_after_prepare() {
         room.reset();
     });
     assert_eq!(n, 0, "the speaker and cabinet stages allocated {n} times");
+}
 
 /// The instruments (DSP.md H10): strings plucked, struck and bowed, a
 /// blown tube, a drumhead and a bar — `tick`, `reset` and every setter
