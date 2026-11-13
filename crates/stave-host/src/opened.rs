@@ -63,7 +63,7 @@ impl Opened {
         };
         let stage = stages::find(name).ok_or_else(|| OpenError::UnknownModule {
             name: name.to_string(),
-            catalog: stages::CATALOG.iter().map(|m| m.name).collect(),
+            catalog: stages::CATALOG.iter().chain(stages::REFERENCES).map(|m| m.name).collect(),
         })?;
         Ok(Self::Stage(CatalogInstance::new(stage, &config)))
     }

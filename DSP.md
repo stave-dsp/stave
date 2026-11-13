@@ -783,8 +783,8 @@ other references; a model with a capture is held to it within budget.
   `stave-play --characterise` sets candidates side by side in one
   markdown table (knee, latency, tail, CPU per sample, response,
   compression, H2/H3/H5, THD and even/odd per level re knee, alias floor
-  and ANMR, Rnonlin); the classic netlists as catalog stages
-  (`circuit/ts808`, `circuit/jcm800_2203`, `circuit/moog_904a`,
+  and ANMR, Rnonlin); the classic netlists as reference stages (`stages::REFERENCES`,
+  offline, beside the realtime catalog: `circuit/ts808`, `circuit/jcm800_2203`, `circuit/moog_904a`,
   `filter/ladder`, each at 1/2/4/8×). Another vendor's plugin is a
   benchmark and a listening contender, never a reference: its output
   and tables stay out of the repository and no model is fitted to it.
@@ -793,7 +793,12 @@ other references; a model with a capture is held to it within budget.
   preamp 9.1 and 33 µs; at +20 dB re knee their worst ANMR (8 kHz tone,
   44.1 kHz) is +70/+42/−2 dB (TS-808 1/2/4×) and +60/+37 dB (JCM800
   1/4×) — audible aliasing until 8× or ADAA; at 1× the TS-808 is 11 dB
-  down at 16 kHz against 4× (bilinear warping, R17).
+  down at 16 kHz against 4× (bilinear warping, R17). The 904-A core's
+  output V(l4,r4) is inverting (a step settles at −1.02), so its
+  `v(sig) − k·v(out)` regeneration is positive feedback: at k = 3 the
+  ladder latches (+0.32 V at rest, the same at any input) — a sign the
+  ngspice deck shares, so R24's match could not see it; open. At k = 0
+  it matches the Huovilainen ladder at 2 kHz within 0.3 dB to 10 kHz.
 
 ### P — profiling and performance
 

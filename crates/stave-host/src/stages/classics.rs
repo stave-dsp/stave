@@ -4,7 +4,8 @@
 //! unit's netlist, in volts, inside an oversampled region of the chosen
 //! factor.
 //!
-//! These are the reference models, not shipping plugins: whole netlists
+//! These are the reference models ([`REFERENCES`](super::REFERENCES)),
+//! not shipping plugins and not in the realtime catalog: whole netlists
 //! cost microseconds a sample (the datasheet's "`Circuit<Dk>` …" lines).
 //! Every variant a setting can select (oversampling factor, the 904-A's
 //! regeneration) is built with the stage, so a param change only picks

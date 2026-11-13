@@ -4,14 +4,14 @@
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 use stave_host::config::HostConfig;
 use stave_host::instance::Instance;
-use stave_host::stages::{CatalogInstance, CATALOG};
+use stave_host::stages::{CatalogInstance, CATALOG, REFERENCES};
 
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
 
 #[test]
 fn a_param_change_is_applied_without_allocating() {
-    for stage in CATALOG {
+    for stage in CATALOG.iter().chain(REFERENCES) {
         let config = HostConfig {
             max_block: std::num::NonZeroUsize::new(64).unwrap(),
             ..HostConfig::default()

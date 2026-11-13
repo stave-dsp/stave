@@ -188,9 +188,11 @@ at each rate, and prints one markdown table: the knee, latency, tail,
 CPU per sample, the small-signal response, compression and H2/H3/H5,
 THD and the even/odd balance at each level re knee, the aliasing floor
 and ANMR, and Rnonlin. A candidate is the Voicing tab's spec; the
-classic circuits are catalog stages (`circuit/ts808`,
+classic circuits open the same way as reference models
+([`REFERENCES`](stave_host::stages::REFERENCES): `circuit/ts808`,
 `circuit/jcm800_2203`, `circuit/moog_904a`, `filter/ladder`, each with
-an `oversample` choice: 0 = 1×, 1 = 2×, 2 = 4×, 3 = 8×).
+an `oversample` choice: 0 = 1×, 1 = 2×, 2 = 4×, 3 = 8×), whole
+netlists run offline and not held to the realtime catalog's validation.
 
 ```sh
 stave-play \

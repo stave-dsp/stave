@@ -340,6 +340,15 @@ pub const CATALOG: &[StageSpec] = &[
             })
         },
     },
+];
+
+/// The reference models a host tool can open by name beside the
+/// catalog: whole verified netlists and the ladder filters, offline (a
+/// netlist costs microseconds a sample, so they are not held to the
+/// realtime validation suite the catalog passes). For measuring and
+/// auditioning against a plugin (`stave-play --characterise`, the Voicing
+/// tab).
+pub const REFERENCES: &[StageSpec] = &[
     StageSpec {
         name: "circuit/ts808",
         params: super::classics::ts808_params,
@@ -361,4 +370,3 @@ pub const CATALOG: &[StageSpec] = &[
         build: super::classics::ladder,
     },
 ];
-

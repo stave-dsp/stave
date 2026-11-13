@@ -6,7 +6,7 @@
 //! ```text
 //! mod.rs       the stage model: StageSpec, StageParams
 //! catalog.rs   the static catalog: every stage, its params and builder
-//! classics.rs  the classic circuits' netlists and the ladders as stages
+//! classics.rs  REFERENCES: the classic netlists and the ladders, offline
 //! instance.rs  CatalogInstance / CatalogHandle: a catalog stage running
 //! ```
 
@@ -38,7 +38,7 @@ mod instance;
 #[cfg(test)]
 mod tests;
 
-pub use catalog::CATALOG;
+pub use catalog::{CATALOG, REFERENCES};
 pub use instance::{CatalogHandle, CatalogInstance};
 
 use stave_core::params::{AnyParam, Params};
@@ -105,6 +105,7 @@ impl Params for StageParams {
     }
 }
 
+/// The catalog stage, or reference model, named `name`.
 pub fn find(name: &str) -> Option<&'static StageSpec> {
-    CATALOG.iter().find(|m| m.name == name)
+    CATALOG.iter().chain(REFERENCES).find(|m| m.name == name)
 }
