@@ -17,15 +17,16 @@
 //! and the per-param checks in parts, so they run side by side — see
 //! [`crate::validation`]); no allocation in `process` while every
 //! parameter moves (debug builds; the file's global allocator is the
-//! guard's, so give the macro a test file of its own); the perf report
-//! (release builds); the face's bindings, grabs and interaction laws (if
+//! guard's, so give the macro a test file of its own); the perf check
+//! against the plugin's `CPU_BUDGET` (release builds); the face's bindings, grabs and interaction laws (if
 //! it has a face); and the host-behaviour checks of [`crate::checks`].
 
 use crate::perf::PerfCase;
 
 /// What a plugin tells its checks. Every field has a default.
 pub struct Config {
-    /// The perf report's cases (default: the default values).
+    /// The perf check's cases (default: the default values); the
+    /// searched worst parameter state is always added.
     pub perf: Vec<PerfCase>,
     /// Parameters no grab on the face moves (host-only settings).
     pub off_face: &'static [&'static str],
@@ -49,6 +50,10 @@ macro_rules! plugin_checks {
         #[allow(unused_imports)]
         use $crate::perf::PerfCase;
 
+        // The no-allocation guard, for the debug-only check: assert_no_alloc
+        // compiles the guard out of release builds, where the perf check
+        // runs on the system allocator.
+        #[cfg(debug_assertions)]
         #[global_allocator]
         static STAVE_CHECKS_ALLOCATOR: $crate::__alloc::AllocDisabler = $crate::__alloc::AllocDisabler;
 
@@ -94,10 +99,10 @@ macro_rules! plugin_checks {
             $crate::no_alloc::check_no_alloc::<$krate::$plugin>(stave_checks_name(), &$crate::no_alloc::NoAllocConfig::default());
         }
 
-        /// The perf report ([`crate::perf`]): measures and prints the configured cases; never fails. Skips in debug builds.
+        /// The perf check ([`crate::perf`]): the configured cases and the searched worst parameter state, CPU ns a sample a channel at 48 kHz; fails over `Plugin::CPU_BUDGET`, naming the hotspot stage; reports only when no budget is declared. Skips in debug builds.
         #[test]
-        fn perf_report_for_the_record() {
-            $crate::perf::perf_report::<$krate::$plugin>(stave_checks_name(), &stave_checks_config().perf, &$crate::perf::PerfConfig::default());
+        fn perf_within_budget() {
+            $crate::perf::perf_check::<$krate::$plugin>(stave_checks_name(), &stave_checks_config().perf, &$crate::perf::PerfConfig::default());
         }
 
         /// Every part on the face binds a parameter the plugin declares ([`crate::face::binds_resolve`]). Only with a face.

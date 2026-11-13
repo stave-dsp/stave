@@ -10,6 +10,7 @@
 //! param      one parameter model (Param, core's words), lookup by name
 //! stages     stave-dsp stages by name, loadable like plugins
 //! note       note schedules (of core's events)
+//! counters   this thread's CPU time and instruction count
 //! drive      Driver: run an Instance from a Signal + notes
 //! opened     what a tool opens: a bundle, au:<name> or stage:<name>
 //! response   frequency response by log sweep (H1)
@@ -23,6 +24,7 @@ pub mod adapt;
 pub mod au;
 pub mod bench;
 pub mod config;
+pub mod counters;
 pub mod instance;
 pub mod opened;
 pub mod param;

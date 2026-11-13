@@ -48,6 +48,9 @@ pub struct Tilt {
     shelves: [Shelves; 2],
     /// The tilt the shelves are voiced for (NaN: not yet).
     voiced: f32,
+    /// What the shelves cost a block: `shelves_ns_per_sample` and
+    /// `shelves_load`, the stage the perf check names when over budget.
+    cost: CostTaps,
 }
 
 impl Plugin for Tilt {
@@ -59,15 +62,21 @@ impl Plugin for Tilt {
         features: &[Feature::AudioEffect, Feature::Eq, Feature::Stereo],
         ..Info::EFFECT
     };
+    /// Two biquads a lane: at the worst knobs ~6 ns a sample a channel
+    /// on Apple Silicon, ~14 on an x86_64 Linux build host. The budget
+    /// leaves the slower machine room and fails the day a lane costs
+    /// a few filters more.
+    const CPU_BUDGET: Budget = Budget::per_channel(40.0);
     type Params = TiltParams;
 
-    fn new(params: &Arc<TiltParams>, _telemetry: &Telemetry) -> Self {
+    fn new(params: &Arc<TiltParams>, telemetry: &Telemetry) -> Self {
         Tilt {
             params: params.clone(),
             tilt: Smoother::new(&params.tilt),
             output: Smoother::new(&params.output),
             shelves: Default::default(),
             voiced: f32::NAN,
+            cost: CostTaps::new(telemetry, cost_tap_ids!("shelves")),
         }
     }
 
@@ -79,13 +88,15 @@ impl Plugin for Tilt {
             lane.high.prepare(env.sample_rate);
         }
         self.voiced = f32::NAN;
+        self.cost.prepare(env.sample_rate);
     }
 
     fn process(&mut self, block: &mut Block<'_>) {
         let mut tilt = self.tilt.ramp(block, &self.params.tilt);
         let mut output = self.output.ramp(block, &self.params.output);
         let (shelves, voiced) = (&mut self.shelves, &mut self.voiced);
-        block.lanes::<2>().run(|frame| {
+        let frames = block.frames();
+        self.cost.measure(frames, || block.lanes::<2>().run(|frame| {
             let t = tilt.next();
             if t != *voiced {
                 *voiced = t;
@@ -101,7 +112,7 @@ impl Plugin for Tilt {
                 let y = if t == 0.0 { x } else { s.high.tick(s.low.tick(x)) };
                 frame.write(lane, y * gain);
             }
-        });
+        }));
     }
 
     fn face(p: &TiltParams) -> Option<Face> {

@@ -16,8 +16,8 @@ Each assumes you know the [concepts](crate::concepts).
   sample libraries and captures, and building on another machine.
 - [Gate what a change affects](crate::howto::affected): only the
   packages and gates a change can reach, and a tree never gated twice.
-- [Measure performance](crate::howto::performance): the perf report,
-  honest timings, the CPU tap, profiling.
+- [Measure performance](crate::howto::performance): the CPU budget
+  and the perf check, honest timings, the CPU and cost taps, profiling.
 - [Voicing and listening tests](crate::howto::voicing): loudness-matched
   A/B, blind ABX and rating trials in `stave-play`, session logs, and
   blessing a sound.

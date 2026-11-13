@@ -11,6 +11,7 @@
 extern crate self as stave_core;
 
 pub mod block;
+pub mod budget;
 pub mod buffer;
 pub mod controller;
 pub mod cost_taps;
@@ -30,6 +31,7 @@ pub mod units;
 pub mod workers;
 
 pub use block::{LaneFrame, Lanes, Peaks};
+pub use budget::Budget;
 pub use buffer::{InputBuffer, OutputBuffer};
 pub use controller::{Controller, GestureSink, PluginController};
 pub use cost_taps::{CostTapIds, CostTaps};

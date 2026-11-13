@@ -158,7 +158,7 @@ stave_test::plugin_checks!(stave_tilt_vst3::Tilt, {
 ```
 
 The plugin's path is `crate_name::Type`. Every field of the optional
-configuration has a default: `perf` (the perf report's cases; default,
+configuration has a default: `perf` (the perf check's cases; default,
 the default values), `off_face` (names of params no part of the face
 moves, so the face's laws do not expect a grab for them) and `seeds`
 (for random automation and face sessions; default `0..4`).
@@ -170,8 +170,11 @@ It mounts:
 - **`process_never_allocates`** (debug builds): `process` under an
   allocator that aborts, while every parameter moves; no list of params
   to keep up to date.
-- **`perf_report_for_the_record`**: the perf report for each case
-  (it measures in release builds and documents; it never fails a run).
+- **`perf_within_budget`**: each case's cost, and the worst parameter
+  state's, in CPU ns a sample a channel at 48 kHz (release builds),
+  failing over the plugin's
+  [`CPU_BUDGET`](stave::Plugin::CPU_BUDGET) with the stage that took the
+  time; with no budget declared it reports and never fails.
 - **`face_binds_resolve`**, **`face_grabs_land`** and
   **`face_keeps_the_interaction_laws`** (when the plugin has a face):
   every bind names a real param of the right kind, a press at each
@@ -197,7 +200,7 @@ stave_test::checks::state_round_trip::<Tilt>();
 stave_test::checks::deterministic::<Tilt>();
 ```
 
-Run everything with `cargo test -p <crate>`; the perf report measures
+Run everything with `cargo test -p <crate>`; the perf check measures
 under `cargo test --release -p <crate> --test checks perf -- --nocapture`.
 For a gain plugin in the workspace that is:
 
