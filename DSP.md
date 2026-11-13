@@ -373,11 +373,11 @@ circuit/
 
 ### R — verification loops
 
-- [ ] **R1** One harness for "model vs reference": a netlist (N1) or
+- [x] **R1** (2b9569b: `stave_test::reference` — `Case`, `Stimulus`, `Metric`, budget, worst point and dump; every budget the same or tighter) One harness for "model vs reference": a netlist (N1) or
   reference file, a stimulus, a comparison metric (sample error, spectral
   error, THD delta), and a budget. `matches_ngspice.rs` and
   `matches_reference.rs` move onto it.
-- [ ] **R2** ngspice pinned by version in CI, run in its own job:
+- [x] **R2** (41bac7a: `references.yml`, ngspice 42+ds-3build1 from apt, a 1% perturbation proven to fail each run; not required, path-filtered) ngspice pinned by version in CI, run in its own job:
   regenerate every `.ngspice.txt` and fail on a difference, so a stale
   fixture can't pass. `scripts/ngspice-simulate.py` checks ngspice on exact
   circuits first (it already does locally).
