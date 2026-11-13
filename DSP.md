@@ -766,7 +766,7 @@ other references; a model with a capture is held to it within budget.
   and published responses as reference tables, sources cited, in the ngspice
   table format, so a model can be held to a target where no capture exists.
 
-- [x] **R24** (0e436d5: Big Muff 6.7e-5 at 16×, its tone stack 3e-12 dB; TS-808 1.4e-5 at 16×; RAT 8.2e-6 at 64×; 5F6-A / AB763 / 2203 stacks 6e-12 dB, closed form too; JCM800 1.0e-4 at 16×; Moog 904-A 1.9e-5 dB AC, 7.2e-6 at 4× with k = 3; every one h²-converging, no cap hits at 48 kHz; parts `GummelPoon::N2N3392`, `ShichmanHodges::N2N5458`; `ngspice-simulate.py` fails a deck whose operating point fell back to ngspice's transient op) Classic circuits as verified decks and topologies: each unit's
+- [x] **R24** (0e436d5: Big Muff 6.7e-5 at 16×, its tone stack 3e-12 dB; TS-808 1.4e-5 at 16×; RAT 8.2e-6 at 64×; 5F6-A / AB763 / 2203 stacks 6e-12 dB, closed form too; JCM800 1.0e-4 at 16×; Moog 904-A 1.9e-5 dB AC, 1.3e-5 at 16× with k = 3 (was 7.2e-6 at 4× on a latched loop: R26); every one h²-converging, no cap hits at 48 kHz; parts `GummelPoon::N2N3392`, `ShichmanHodges::N2N5458`; `ngspice-simulate.py` fails a deck whose operating point fell back to ngspice's transient op) Classic circuits as verified decks and topologies: each unit's
   ngspice deck with its sources cited in the header, and a named netlist in
   `circuit::topologies` (stave's op-amp and triode elements where the deck
   writes behavioural sources) held to the same reference
@@ -777,7 +777,9 @@ other references; a model with a capture is held to it within budget.
   the old `tone_stack_*` decks renamed `tone_stack_duncan_fender_*` (Duncan's
   calculator preset, no real amp); the JCM800 2203 preamp (four Dempwolf
   12AX7s, the cold clipper hot); the Moog 904-A ladder core (2N3392), AC and
-  with ideal regeneration. Left for later: the TB-303 (no published 2SC1583
+  with ideal regeneration (its output taken in phase, `v(r4, l4)`, so the
+  regeneration is negative feedback — fixed in R26, where it was found
+  latched). Left for later: the TB-303 (no published 2SC1583
   card), the 904-A's own regeneration path (no 2N4058 card), Pultec, Phase
   90, CE-2 and Klon.
 - [x] **R25** (9b258046: CE-2 BBD filters 3.3e-6 dB AC, in R17's T0/T1 matrix with its R18 fingerprint (operating point 7.9e-7 V, response 4.4e-5 dB at 4×; FINDING at the host rate: the sixth-order stopband 28 dB off at 16 kHz, bilinear without prewarp, and −21 dBc aliasing at +20 dB re knee); `Macromodel::LM741` (the LM741C table: 200 V/mV, 0.5 V/µs, ±14 V, 2 mV, 1.17 MHz from its 0.3 µs rise time by the sheet's own 0.35/tr) and `Macromodel::NJM2904` (100 dB, 0.6 MHz, 0.5 V/µs, 2 mV, 14 Vpp on 15 V: the output reaches its negative rail, so `Macromodel` gains `negative_headroom`), both read back from their tables within 10% (`stave-test/datasheet/{lm741,njm2904}_figures.txt`); Phase 90 at 3.4 V gates 9.7e-6 dB AC, 3.0e-5 at 16×; DS-1 1.4e-4 at 32×; Klon clean blend 2.3e-9 dB at gain 0, 2.2e-6 dB at gain 1, 4.2e-5 at 8× at noon; every transient h²-converging, no cap hits at 48 kHz; parts `ShichmanHodges::N2N5952`, `GummelPoon::N2N4125`; cost at 1× 48 kHz: CE-2 1.4 µs/sample, Klon 7.3, DS-1 33, Phase 90 38 — the op-amp pedals are not realtime as whole netlists; Phase 90 and Klon left out of R17 for their 16× op-amp grids; the NJM2904's swing plot implies 0.22 V/µs against its table's 0.5, the model follows the table) The R24 follow-ups,
@@ -821,7 +823,17 @@ other references; a model with a capture is held to it within budget.
   output V(l4,r4) is inverting (a step settles at −1.02), so its
   `v(sig) − k·v(out)` regeneration is positive feedback: at k = 3 the
   ladder latches (+0.32 V at rest, the same at any input) — a sign the
-  ngspice deck shares, so R24's match could not see it; open. At k = 0
+  ngspice deck shares, so R24's match could not see it. FIXED: the
+  drawing closes the loop with the sense that resonates, so topology and
+  both decks now take `out = v(r4, l4)`, in phase (a step settles at
+  +1.014), and the references are regenerated under ngspice 42; the test
+  now also holds the loop's sense, which a deck-vs-topology match can't
+  see: DC gain +1.014 open, G/(1 + 3G) at k = 3, self-oscillation at
+  k = 3.951, 1980 Hz (a ladder's 4 less the 2N3392's base current; ideal
+  corner 2052 Hz). With a real resonance the k = 3 transient is a harder
+  case: 1.3e-5 at 16×, h² from 8.0e-4 at 2× (it read 7.2e-6 at 4× only
+  because the latched output was nearly DC). No R18 fingerprint covered
+  the 904-A, so none moved. At k = 0
   it matches the Huovilainen ladder at 2 kHz within 0.3 dB to 10 kHz.
 
 ### P — profiling and performance
