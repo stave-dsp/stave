@@ -1,6 +1,6 @@
 //! Realtime safety of the delays, reverbs, dynamics, crossovers, formant
 //! filters, resonators, the plate, the rotary speaker, the loudspeaker
-//! driver and the cabinet stages: after `prepare`,
+//! driver, the cabinet stages and the instruments: after `prepare`,
 //! `tick`, setters that are documented as cheap, and `reset` never
 //! allocate. A counting global allocator, armed per thread, watches.
 
@@ -357,4 +357,74 @@ fn speaker_and_cabinet_never_allocate_after_prepare() {
         room.reset();
     });
     assert_eq!(n, 0, "the speaker and cabinet stages allocated {n} times");
+
+/// The instruments (DSP.md H10): strings plucked, struck and bowed, a
+/// blown tube, a drumhead and a bar — `tick`, `reset` and every setter
+/// (excitations, the bow, retuning, the valve, the strike and pickup
+/// points, the loss) never allocate after `prepare`.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn instruments_never_allocate_after_prepare() {
+    use stave_dsp::physical::bar::{Bar, Beam, Boundary, Material};
+    use stave_dsp::physical::membrane::{Drumhead, Loss, Membrane, Output, Polar};
+    use stave_dsp::physical::string::{Bow, Friction, Waveguide as StringGuide};
+    use stave_dsp::physical::tube::{Bore, Shape, Valve, Waveguide as TubeGuide};
+
+    let loss = Loss::two_point(hz(100.0), seconds(2.0), hz(2_000.0), seconds(0.5)).unwrap();
+    let clarinet = Bore { length: 0.6, radius: 0.0075, shape: Shape::Cylinder };
+    let mut drum = Membrane::new(Drumhead::tuned(0.15, 0.26, hz(100.0)), loss);
+    drum.set_bandwidth(hz(2_000.0));
+    let key = Beam::tuned(Material::ALUMINIUM, 0.008, Boundary::Free, hz(880.0));
+    no_allocation("String", &mut StringGuide::<Lagrange3>::new(hz(40.0), hz(110.0)));
+    no_allocation("Tube", &mut TubeGuide::<Lagrange3>::new(clarinet, Valve::Reed));
+    no_allocation("Membrane", &mut drum.clone());
+    no_allocation("Bar", &mut Bar::new(key, Boundary::Free, loss));
+
+    let mut string = StringGuide::<Thiran>::new(hz(40.0), hz(110.0));
+    string.prepare(48_000.0);
+    let mut tube = TubeGuide::<Lagrange3>::new(clarinet, Valve::Reed);
+    tube.prepare(48_000.0);
+    drum.prepare(48_000.0);
+    let mut bar = Bar::new(key, Boundary::Clamped, loss);
+    bar.prepare(48_000.0);
+    let n = allocations_in(|| {
+        for i in 0..400 {
+            let t = i as f64 / 400.0;
+            if i % 50 == 0 {
+                string.set_pitch(hz(110.0 + 40.0 * t as f32));
+                string.set_inharmonicity(4e-4 * t);
+                string.set_dispersion_sections(4 + i % 12);
+                string.set_decay(seconds(3.0), seconds(0.3 + t));
+                string.set_position(0.05 + 0.4 * t);
+                string.pluck(0.5, seconds(0.002));
+                drum.set_drive(Polar::new(0.6 * t, t));
+                drum.set_pickup(Polar::new(0.3, 2.0 * t));
+                drum.set_loss(loss);
+                drum.set_output(if i % 100 == 0 { Output::Acceleration } else { Output::Velocity });
+                bar.set_drive(t);
+                bar.set_pickup(1.0 - t);
+                bar.set_loss(loss);
+                tube.set_bore(Bore { length: 0.6 - 0.2 * t, ..clarinet });
+                tube.set_valve(if i % 100 == 0 { Valve::Lip { frequency: hz(300.0), q: 10.0 } } else { Valve::Reed });
+            }
+            string.set_bow(if i % 3 == 0 { Some(Bow { force: 0.4, velocity: 0.2 }) } else { None });
+            string.set_friction(Friction::ROSIN);
+            if i % 25 == 0 {
+                string.strike(0.3, seconds(0.001));
+            }
+            tube.set_blow(0.6 * t);
+            tube.set_embouchure(0.3);
+            for _ in 0..32 {
+                string.tick(0.0);
+                tube.tick(0.0);
+                drum.tick(0.1);
+                bar.tick(0.1);
+            }
+        }
+        string.reset();
+        tube.reset();
+        drum.reset();
+        bar.reset();
+    });
+    assert_eq!(n, 0, "instrument setters allocated {n} times");
 }

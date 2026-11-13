@@ -1034,6 +1034,71 @@ let drum = leslie.drum().rate() * 60.0;
 assert!(horn > 380.0 && drum < 300.0, "{horn} {drum} rpm");
 ```
 
+## Instruments: strings, tubes, drums and bars
+
+The instruments are mechanics and acoustics, so they live in `physical`
+too, in two forms. A string and a wind instrument are travelling waves:
+[`string::Waveguide`](stave_dsp::physical::string::Waveguide) and
+[`tube::Waveguide`](stave_dsp::physical::tube::Waveguide) are Smith's
+digital waveguides, delay lines for the round trips with the losses
+lumped into filters. A drumhead and a bar are modes:
+[`Membrane`](stave_dsp::physical::membrane::Membrane) (the Bessel zeros
+of a clamped disc) and [`Bar`](stave_dsp::physical::bar::Bar) (the
+Euler–Bernoulli roots of a free or clamped beam) run the plate's SIMD
+phasor lanes with their own mode sets, and share its two-T60
+[`Loss`](stave_dsp::physical::plate::Loss).
+
+A string is tuned by the fundamental you hear, its stiffness by Fletcher's
+inharmonicity `B` (partial `k` at `k f₀ √(1 + B k²)`, fitted on the
+partials to the 16th by a cascade of first-order allpasses), its loss by
+two T60s. The contact point splits it: a
+[`strike`](stave_dsp::physical::string::Waveguide::strike) or a
+[`pluck`](stave_dsp::physical::string::Waveguide::pluck) there combs out
+the partials its position is a node of, and a
+[`Bow`](stave_dsp::physical::string::Bow) there solves a friction curve
+against the waves each sample, which settles into Helmholtz motion. A
+tube is a [`Bore`](stave_dsp::physical::tube::Bore) — a cylinder, or a
+cone truncated at the mouthpiece — open at the far end with its end
+correction, blown through a [`Valve`](stave_dsp::physical::tube::Valve):
+a reed (clarinet, saxophone) or the lips (brass), in Kergomard's
+dimensionless pressures.
+
+```rust
+use stave_dsp::physical::bar::{Bar, Beam, Boundary, Loss, Material};
+use stave_dsp::physical::string::{self, Bow};
+use stave_dsp::physical::tube::{self, Bore, Shape, Valve};
+use stave_dsp::units::{hz, seconds};
+use stave_dsp::Stage;
+
+// A cello's G string, bowed a tenth of the way from the bridge.
+let mut cello: string::Waveguide = string::Waveguide::new(hz(60.0), hz(98.0));
+cello.set_position(0.1);
+cello.prepare(48_000.0);
+cello.set_bow(Some(Bow { force: 0.5, velocity: 0.2 }));
+let slips = (0..48_000).filter(|_| {
+    cello.tick(0.0);
+    !cello.sticking()
+}).count();
+assert!((3_000..8_000).contains(&slips)); // slipping about a tenth of the time
+
+// A clarinet blown past its threshold sounds its first resonance.
+let bore = Bore { length: 0.6, radius: 0.0075, shape: Shape::Cylinder };
+let mut clarinet: tube::Waveguide = tube::Waveguide::new(bore, Valve::Reed);
+clarinet.set_blow(0.5);
+clarinet.prepare(48_000.0);
+let loud = (0..48_000).map(|_| clarinet.tick(0.0).abs()).fold(0.0f32, f32::max);
+assert!(loud > 0.1);
+assert!((bore.resonance(1) / std::f64::consts::TAU - 142.0).abs() < 1.0);
+
+// A glockenspiel key: its overtones at 2.76 and 5.40 of the fundamental.
+let key = Beam::tuned(Material::ALUMINIUM, 0.008, Boundary::Free, hz(880.0));
+let loss = Loss::two_point(hz(880.0), seconds(2.0), hz(8_000.0), seconds(0.4)).unwrap();
+let mut glock = Bar::new(key, Boundary::Free, loss);
+glock.prepare(48_000.0);
+let ratio = glock.modes()[1].hz() / glock.modes()[0].hz();
+assert!((ratio - 2.7565).abs() < 1e-3);
+```
+
 ## Knobs, converters and noise: the hardware around the circuit
 
 A pot names its manufacturer's law: [`Taper::Curve`](stave_dsp::circuit::netlist::Taper::Curve)
