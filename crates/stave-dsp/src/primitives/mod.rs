@@ -1,4 +1,4 @@
-//! **Layer 1 — primitives.** Linear, stateful building blocks grouped by
+//! **Layer 2 — primitives.** Linear, stateful building blocks grouped by
 //! family: filters, time (delay lines and recirculating delays),
 //! control (generators, followers, smoothers), oscillators, gain and
 //! pitch helpers, randomness, and the spectral family (FFT and

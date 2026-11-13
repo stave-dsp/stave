@@ -4,6 +4,10 @@
 //! into one adapted port that reflects without waiting on its parent, so
 //! a tree computes in one pass up and one pass down per sample.
 
+pub mod pair;
+
+pub use pair::PairMethod;
+
 /// One port of a tree, seen from its parent.
 pub trait OnePort {
     fn resistance(&self) -> f64;

@@ -9,7 +9,7 @@
 //!
 //! Voltages are grid and anode (plate) to cathode; currents in amps.
 
-use super::{TriodeCurrents, TriodeModel};
+use super::{TriodeCurrents, Triode};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Dempwolf {
@@ -82,7 +82,7 @@ impl Dempwolf {
     }
 }
 
-impl TriodeModel for Dempwolf {
+impl Triode for Dempwolf {
     #[inline]
     fn currents(&self, vgk: f64, vpk: f64) -> TriodeCurrents {
         let (ik, dik) = smoothed_power(self.g, self.c, self.gamma, vpk / self.mu + vgk);

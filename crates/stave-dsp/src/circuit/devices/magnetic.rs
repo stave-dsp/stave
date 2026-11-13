@@ -1,3 +1,6 @@
+//! The magnetic family: the [`Magnetic`] trait and its one model so far,
+//! Jiles–Atherton.
+//!
 //! The Jiles–Atherton model of ferromagnetic hysteresis (Jiles &
 //! Atherton 1986): magnetization M follows the anhysteretic curve
 //! Man = Ms·L(He/a) of the effective field He = H + α·M, lagging it by
@@ -41,6 +44,20 @@ impl JilesAtherton {
         };
         (irreversible + self.reversibility * anhysteretic_slope)
             / (1.0 - self.coupling * self.reversibility * anhysteretic_slope)
+    }
+}
+
+/// The magnetic family: a hysteretic material's differential
+/// susceptibility dM/dH on a rising or falling branch, at magnetization
+/// `m` and field `h` (A/m). Every core model implements it.
+pub trait Magnetic: Copy {
+    fn susceptibility(&self, m: f64, h: f64, rising: bool) -> f64;
+}
+
+impl Magnetic for JilesAtherton {
+    #[inline]
+    fn susceptibility(&self, m: f64, h: f64, rising: bool) -> f64 {
+        JilesAtherton::susceptibility(self, m, h, rising)
     }
 }
 

@@ -1,6 +1,8 @@
 //! The Wright omega function: the w with w + ln(w) = x. It closes the
 //! Shockley diode's implicit equation in the wave domain.
 
+use crate::circuit::devices::diode::Shockley;
+
 /// Accurate to f64 rounding: an asymptotic starting guess, then Newton on
 /// w + ln w − x until the step is below rounding (quadratic, so a few
 /// steps; capped in case of a pathological input).
@@ -24,6 +26,26 @@ pub fn wright_omega(x: f64) -> f64 {
         }
     }
     w
+}
+
+/// The closed-form method for a diode pair at a wave-digital root
+/// (Werner, Nangia, Smith, Abel 2015): whichever diode conducts, alone,
+/// through [`wright_omega`]. No iterations; the off diode's leakage is
+/// ignored.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct WrightOmega;
+
+impl WrightOmega {
+    /// The wave an antiparallel `diode` pair reflects for an arriving
+    /// `wave` through port resistance `ohms`.
+    #[inline]
+    pub fn reflect_pair(diode: &Shockley, wave: f64, ohms: f64) -> f64 {
+        let (is, knee) = (diode.saturation_amps, diode.knee_volts());
+        let r_is = ohms * is;
+        let magnitude = wave.abs();
+        let w = wright_omega((r_is / knee).ln() + (magnitude + r_is) / knee);
+        wave.signum() * (magnitude + 2.0 * r_is - 2.0 * knee * w)
+    }
 }
 
 #[cfg(test)]

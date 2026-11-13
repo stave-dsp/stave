@@ -39,7 +39,7 @@ pub mod units;
 
 pub use behavioral::shapes;
 
-// Layer 0 — kernel.
+// Layer 1 — kernel.
 pub use kernel::control::{Full, Route, Router, Source, StageSource};
 pub use kernel::feedback::Loop;
 pub use kernel::lanes::{downmix_51, ms_decode, ms_encode, ChannelLayout, PerChannel};
@@ -49,7 +49,7 @@ pub use kernel::parallel::{Compensator, Par2};
 pub use kernel::sequence::Serial;
 pub use kernel::voices::{Steal, Voice, VoiceEvent, VoiceRack};
 
-// Layer 1 — primitives.
+// Layer 2 — primitives.
 pub use primitives::control::adsr::{Adsr, AdsrConfig};
 pub use primitives::control::envelope::{EnvelopeFollower, EnvelopeTimes};
 pub use primitives::control::lag::Lag;
@@ -75,7 +75,7 @@ pub use primitives::spectral::{Convolver, Fft, ImpulseResponse};
 pub use primitives::time::comb::{Comb, DelayAllpass};
 pub use primitives::time::delay::DelayLine;
 
-// Layer 2 — behavioral.
+// Layer 3 — behavioral.
 pub use behavioral::adaa::{Adaa, AdaaOrder};
 pub use behavioral::curve::{AdaaShape, Curve, CurveStage, Frame, Framed};
 pub use behavioral::hysteresis::Hysteresis;
@@ -84,13 +84,16 @@ pub use behavioral::shapes::soft_clip;
 pub use behavioral::slew::Slew;
 pub use behavioral::smooth_sat::SmoothSat;
 
-// Layer 3 — circuit.
-pub use circuit::audio::{AudioAdapter, AudioAdapterConfig, Circuit};
+// Layer 4 — circuit.
+// The flat names below keep plugin paths working until K3 prunes the
+// root to the author-level vocabulary: `Circuit` is the `Quiescent`
+// trait, `TriodeModel` the triode family's `Triode` trait.
+pub use circuit::audio::{AudioAdapter, AudioAdapterConfig, Quiescent as Circuit};
 pub use circuit::devices::diode::Shockley;
 pub use circuit::devices::magnetic::{JilesAtherton, JilesAthertonCore};
 pub use circuit::devices::triode::dempwolf::Dempwolf;
 pub use circuit::devices::triode::koren::Koren;
-pub use circuit::devices::triode::{TriodeCurrents, TriodeModel, Tube};
+pub use circuit::devices::triode::{Triode as TriodeModel, TriodeCurrents, Tube};
 pub use circuit::methods::newton::{NewtonSettings, NewtonStats, Solved};
 pub use circuit::topologies::common_cathode::{CommonCathode, CommonCathodeConfig};
 pub use circuit::topologies::coupler::Coupler;
@@ -104,6 +107,6 @@ pub use circuit::topologies::tone_stack::{
 pub use circuit::topologies::transformer::{Transformer, TransformerConfig};
 pub use circuit::topologies::triode_stage::{Bias, LevelPolicy, Triode, TriodeParams};
 
-// Layer 4 — structures.
+// Layer 8 — structures.
 pub use structures::chain::{Chain, StageId, StageKind, SwapPoint};
 pub use structures::modmatrix::{Driver, ModMatrix, StageTarget, Target};

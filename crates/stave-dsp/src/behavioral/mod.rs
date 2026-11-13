@@ -1,4 +1,4 @@
-//! **Layer 2 — behavioral.** Models fitted to measurements or chosen by
+//! **Layer 3 — behavioral.** Models fitted to measurements or chosen by
 //! ear, not derived from a schematic: tabulated transfer curves and their anti-aliasing, shape
 //! functions, and grey-box models. A part here makes no circuit claim;
 //! circuit-derived parts live in [`crate::circuit`].

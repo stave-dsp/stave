@@ -149,7 +149,7 @@ circuit/
 
 ### K — architecture
 
-- [ ] **K1** The layer table above in code: add `units`, `physical`,
+- [x] **K1** (418b140) The layer table above in code: add `units`, `physical`,
   `learned`, `effects` modules (empty until their first model), update
   `lib.rs`'s layer docs and `check-view-bindings.sh`'s dependency rules.
 - [ ] **K2** Restructure `circuit/` into devices (a module per family, a

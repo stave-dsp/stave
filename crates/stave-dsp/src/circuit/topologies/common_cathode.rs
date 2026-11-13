@@ -7,8 +7,8 @@
 //! capacitor is SPICE's trapezoidal companion model; the stage starts at
 //! its DC operating point, as a SPICE transient does.
 
-use crate::circuit::audio::Circuit;
-use crate::circuit::devices::triode::TriodeModel;
+use crate::circuit::audio::Quiescent;
+use crate::circuit::devices::triode::Triode;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 use crate::kernel::node::{Stage, Tail};
 
@@ -54,7 +54,7 @@ impl NodeVoltages {
     }
 }
 
-impl<T: TriodeModel> CommonCathode<T> {
+impl<T: Triode> CommonCathode<T> {
     pub fn new(config: CommonCathodeConfig<T>) -> Self {
         let mut stage = Self {
             config,
@@ -143,7 +143,7 @@ struct Residual {
     jacobian: [[f64; 3]; 3],
 }
 
-fn residual<T: TriodeModel>(
+fn residual<T: Triode>(
     c: &CommonCathodeConfig<T>,
     cap: &Companion,
     v: &NodeVoltages,
@@ -203,7 +203,7 @@ impl Residual {
 /// (backtracking), so a grid driven far past cutoff or into heavy
 /// conduction cannot overshoot. Iterates are never clamped: the answer
 /// is wherever the circuit's equations put it.
-fn solve<T: TriodeModel>(
+fn solve<T: Triode>(
     c: &CommonCathodeConfig<T>,
     cap: &Companion,
     guess: NodeVoltages,
@@ -242,13 +242,13 @@ fn solve<T: TriodeModel>(
     }
 }
 
-impl<T: TriodeModel> Circuit for CommonCathode<T> {
+impl<T: Triode> Quiescent for CommonCathode<T> {
     fn quiescent_output_volts(&self) -> f64 {
         self.quiescent_plate_volts()
     }
 }
 
-impl<T: TriodeModel> Stage for CommonCathode<T> {
+impl<T: Triode> Stage for CommonCathode<T> {
     fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.companion_siemens = 2.0 * self.config.bypass_farads * f64::from(sample_rate);
@@ -387,7 +387,7 @@ mod tests {
 
     /// Highest grid voltage over two cycles of a 3 V, 1 kHz input
     /// through 33 kΩ.
-    fn grid_peak<T: TriodeModel>(tube: T) -> f64 {
+    fn grid_peak<T: Triode>(tube: T) -> f64 {
         let mut s = CommonCathode::new(CommonCathodeConfig {
             tube,
             source_ohms: 33e3,

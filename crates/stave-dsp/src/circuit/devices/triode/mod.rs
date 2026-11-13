@@ -1,3 +1,7 @@
+//! The triode family: the [`Triode`] trait and its published models,
+//! [`koren::Koren`] (plate current only) and [`dempwolf::Dempwolf`]
+//! (with grid current).
+
 pub mod dempwolf;
 pub mod koren;
 
@@ -46,13 +50,16 @@ pub struct TriodeCurrents {
     pub grid_per_grid_volt: f64,
 }
 
-/// A triode model; a topology takes any, as a SPICE element takes any
-/// model level.
-pub trait TriodeModel: Copy {
+/// The triode family: every published triode model implements it, so a
+/// topology takes any ([`koren::Koren`], [`dempwolf::Dempwolf`], or the
+/// run-time choice [`Tube`]), as a SPICE element takes any model level.
+pub trait Triode: Copy {
+    /// Plate and grid currents, and their partials, at grid-to-cathode
+    /// and plate-to-cathode volts.
     fn currents(&self, vgk: f64, vpk: f64) -> TriodeCurrents;
 }
 
-impl TriodeModel for koren::Koren {
+impl Triode for koren::Koren {
     #[inline]
     fn currents(&self, vgk: f64, vpk: f64) -> TriodeCurrents {
         let p = self.plate(vgk, vpk);
@@ -104,7 +111,7 @@ impl Tube {
     }
 }
 
-impl TriodeModel for Tube {
+impl Triode for Tube {
     #[inline]
     fn currents(&self, vgk: f64, vpk: f64) -> TriodeCurrents {
         match self {

@@ -1,9 +1,19 @@
-//! **Layer 3 — circuit.** Models derived from schematics: devices
-//! (diodes, triodes, magnetic cores), solution methods (Newton with
-//! SPICE junction limiting, wave digital filters, load lines, Wright
-//! omega) and topologies built from them, verified against ngspice in
-//! stave-test. Circuits speak volts; [`AudioAdapter`](crate::AudioAdapter)
-//! maps them to full scale.
+//! **Layer 4 — circuit.** Models derived from schematics, in separate
+//! concerns so any circuit can be solved any supported way:
+//!
+//! - [`devices`] — one module per device family (diode, triode,
+//!   magnetic), one trait per family that every published model of it
+//!   implements, parts as constants;
+//! - [`methods`] — how a circuit is solved (Newton with SPICE junction
+//!   limiting, wave digital filters, load lines, Wright omega);
+//! - [`topologies`] — named circuits, each a hand-derived solution of
+//!   its schematic with its ngspice case in stave-test.
+//!
+//! *Claim:* a model solves the schematic it names. *Verified by:*
+//! ngspice on the same netlist (`stave-test/tests/matches_ngspice.rs`,
+//! netlists in `stave-test/spice/`), and high-precision solutions where
+//! SPICE has no model (`matches_reference.rs`). Circuits speak volts;
+//! [`AudioAdapter`](crate::AudioAdapter) maps them to full scale.
 
 pub mod audio;
 pub mod devices;

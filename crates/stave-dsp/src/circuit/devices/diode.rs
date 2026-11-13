@@ -1,5 +1,33 @@
-//! The Shockley junction: i = Is·(exp(v / (n·Vt)) − 1).
+//! The diode family: the [`Diode`] trait and its models. The one model
+//! today is the Shockley junction, i = Is·(exp(v / (n·Vt)) − 1).
 
+/// The diode family: a junction's current and conductance at a voltage,
+/// and how a Newton step on that voltage is bounded. Every diode model
+/// implements it, so a circuit solver takes any.
+pub trait Diode: Copy {
+    /// `(current, conductance)` at `volts` (anode to cathode).
+    fn current_and_conductance(&self, volts: f64) -> (f64, f64);
+
+    /// Bound a Newton step from `old` to `new` without moving the
+    /// solution (SPICE's `pnjlim` for a junction).
+    fn limit_step(&self, new: f64, old: f64) -> f64;
+}
+
+impl Diode for Shockley {
+    #[inline]
+    fn current_and_conductance(&self, volts: f64) -> (f64, f64) {
+        Shockley::current_and_conductance(self, volts)
+    }
+
+    #[inline]
+    fn limit_step(&self, new: f64, old: f64) -> f64 {
+        Shockley::limit_step(self, new, old)
+    }
+}
+
+/// The Shockley junction: i = Is·(exp(v / (n·Vt)) − 1), with SPICE's
+/// junction limiting. Series resistance belongs to the circuit (a
+/// netlist's diode `Rs` becomes a resistor).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Shockley {
     pub saturation_amps: f64,

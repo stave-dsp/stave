@@ -5,8 +5,10 @@
 //! the circuit's DC without filtering its lows.
 use crate::kernel::node::{Stage, Tail};
 
-/// A circuit that knows where its output quiescents with no input.
-pub trait Circuit: Stage {
+/// A circuit stage that knows where its output quiescents with no input
+/// (re-exported at the crate root as `Circuit` until K3 prunes the root:
+/// in the circuit layer that name is the netlist runtime's).
+pub trait Quiescent: Stage {
     fn quiescent_output_volts(&self) -> f64;
 }
 
@@ -23,7 +25,7 @@ pub struct AudioAdapter<C> {
     quiescent: f64,
 }
 
-impl<C: Circuit> AudioAdapter<C> {
+impl<C: Quiescent> AudioAdapter<C> {
     pub fn new(circuit: C, config: AudioAdapterConfig) -> Self {
         let quiescent = circuit.quiescent_output_volts();
         Self {
@@ -40,7 +42,7 @@ impl<C: Circuit> AudioAdapter<C> {
     }
 }
 
-impl<C: Circuit> Stage for AudioAdapter<C> {
+impl<C: Quiescent> Stage for AudioAdapter<C> {
     fn prepare(&mut self, sample_rate: f32) {
         self.circuit.prepare(sample_rate);
         self.quiescent = self.circuit.quiescent_output_volts();

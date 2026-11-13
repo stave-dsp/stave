@@ -1,4 +1,4 @@
-//! **Layer 0 — the kernel.** The processing contract ([`Stage`],
+//! **Layer 1 — the kernel.** The processing contract ([`Stage`],
 //! [`Tail`]) and the forms every DSP graph is built from: [`Serial`]
 //! composition, parallel [`Par2`] with its latency [`Compensator`],
 //! feedback through an explicit delay ([`Loop`]), a 2× clock domain

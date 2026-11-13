@@ -1,21 +1,26 @@
 //! Input resistor into a capacitor to ground, shunted by an antiparallel
 //! diode pair; output across the capacitor. A wave-digital tree with
-//! the pair at the root, solved per sample by Newton.
+//! the pair at the root, solved per sample by the method `M`.
 
 use crate::circuit::devices::diode::Shockley;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
-use crate::circuit::methods::wdf::{Capacitor, OnePort, Parallel, ResistiveSource};
-use crate::circuit::methods::wright_omega::wright_omega;
+use crate::circuit::methods::wdf::{Capacitor, OnePort, PairMethod, Parallel, ResistiveSource};
+use crate::circuit::methods::wright_omega::WrightOmega;
 use crate::kernel::node::{Stage, Tail};
 
+/// The clipper's parts and its method: `M` is the pair's
+/// [`PairMethod`] — [`NewtonSettings`] (Newton on the exact pair),
+/// [`WrightOmega`] (the closed form), or the run-time choice
+/// [`PairSolver`] (the default).
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct DiodeClipperConfig {
+pub struct DiodeClipperConfig<M = PairSolver> {
     pub input_ohms: f64,
     pub capacitor_farads: f64,
     pub diode: Shockley,
-    pub solver: PairSolver,
+    pub solver: M,
 }
 
+/// The pair's method, chosen at run time (a catalog setting).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum PairSolver {
     /// Newton on the exact pair, with SPICE's junction limiting.
@@ -25,12 +30,17 @@ pub enum PairSolver {
     WrightOmega,
 }
 
+/// **Models** the R–C–diode-pair clipper (`stave-test/spice/diode_clipper.cir`).
+/// **Derivation:** a wave-digital tree (bilinear capacitor) with the
+/// pair at the root, solved by `M`. **Verified:** `matches_ngspice.rs`
+/// (`the_wdf_diode_clipper_matches_spice_with_either_solver`, 0.2 %
+/// normalized RMS at 4×).
 #[derive(Clone)]
-pub struct DiodeClipper {
+pub struct DiodeClipper<M = PairSolver> {
     tree: Parallel<ResistiveSource, Capacitor>,
     sample_rate: f32,
     diode: Shockley,
-    solver: PairSolver,
+    solver: M,
     volts: f64,
     stats: NewtonStats,
 }
@@ -53,8 +63,25 @@ impl PairSolver {
     }
 }
 
-impl DiodeClipper {
-    pub fn new(config: DiodeClipperConfig) -> Self {
+impl PairMethod for PairSolver {
+    #[inline]
+    fn reflect(
+        &self,
+        diode: &Shockley,
+        wave: f64,
+        ohms: f64,
+        volts: &mut f64,
+        stats: &mut NewtonStats,
+    ) -> f64 {
+        match self {
+            Self::Newton(settings) => settings.reflect(diode, wave, ohms, volts, stats),
+            Self::WrightOmega => WrightOmega.reflect(diode, wave, ohms, volts, stats),
+        }
+    }
+}
+
+impl<M: PairMethod> DiodeClipper<M> {
+    pub fn new(config: DiodeClipperConfig<M>) -> Self {
         Self {
             tree: Parallel::new(
                 ResistiveSource {
@@ -76,40 +103,15 @@ impl DiodeClipper {
     }
 
     /// Component values change in place, state kept.
-    pub fn configure(&mut self, config: &DiodeClipperConfig) {
+    pub fn configure(&mut self, config: &DiodeClipperConfig<M>) {
         self.tree.left.ohms = config.input_ohms;
         self.tree.right.set_farads(config.capacitor_farads);
         self.diode = config.diode;
         self.solver = config.solver;
     }
-
-    /// The wave the pair reflects for an arriving wave a through port
-    /// resistance R, in closed form (Werner, Nangia, Smith, Abel 2015).
-    fn reflect_closed_form(&self, wave: f64, ohms: f64) -> f64 {
-        let (is, knee) = (self.diode.saturation_amps, self.diode.knee_volts());
-        let r_is = ohms * is;
-        let magnitude = wave.abs();
-        let w = wright_omega((r_is / knee).ln() + (magnitude + r_is) / knee);
-        wave.signum() * (magnitude + 2.0 * r_is - 2.0 * knee * w)
-    }
-
-    /// The root's voltage v for an arriving wave a through port
-    /// resistance R: v + R·i(v) = a, with SPICE's junction limiting.
-    fn solve(&mut self, wave: f64, ohms: f64, settings: &NewtonSettings) -> f64 {
-        let diode = self.diode;
-        let residual = |v: f64| {
-            let (i, g) = diode.pair_current_and_conductance(v);
-            (v + ohms * i - wave, 1.0 + ohms * g)
-        };
-        let solved = settings.solve_scalar(self.volts, residual, |new, old| {
-            diode.limit_pair_step(new, old)
-        });
-        self.stats.record_solve(&solved);
-        solved.value
-    }
 }
 
-impl Stage for DiodeClipper {
+impl<M: PairMethod> Stage for DiodeClipper<M> {
     fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.tree.right.prepare(sample_rate);
@@ -126,17 +128,9 @@ impl Stage for DiodeClipper {
         self.tree.left.volts = f64::from(x);
         let wave = self.tree.reflected();
         let ohms = self.tree.resistance();
-        let reflected = match self.solver {
-            PairSolver::Newton(settings) => {
-                self.volts = self.solve(wave, ohms, &settings);
-                2.0 * self.volts - wave
-            }
-            PairSolver::WrightOmega => {
-                let b = self.reflect_closed_form(wave, ohms);
-                self.volts = 0.5 * (wave + b);
-                b
-            }
-        };
+        let reflected =
+            self.solver
+                .reflect(&self.diode, wave, ohms, &mut self.volts, &mut self.stats);
         self.tree.incident(reflected);
         self.volts as f32
     }
@@ -146,5 +140,33 @@ impl Stage for DiodeClipper {
     fn tail(&self) -> Tail {
         let tau = self.tree.left.ohms * self.tree.right.farads();
         Tail::from_time_constant(tau, self.sample_rate)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run<M: PairMethod>(solver: M) -> Vec<f32> {
+        let mut c = DiodeClipper::new(DiodeClipperConfig {
+            input_ohms: 2.2e3,
+            capacitor_farads: 10e-9,
+            diode: Shockley::D1N4148,
+            solver,
+        });
+        c.prepare(48_000.0);
+        (0..480)
+            .map(|n| c.tick(3.0 * (n as f32 * 0.05).sin()))
+            .collect()
+    }
+
+    /// The static methods are exactly the run-time choices they replace.
+    #[test]
+    fn a_static_method_is_bit_identical_to_its_run_time_choice() {
+        assert_eq!(
+            run(NewtonSettings::DEFAULT),
+            run(PairSolver::Newton(NewtonSettings::DEFAULT))
+        );
+        assert_eq!(run(WrightOmega), run(PairSolver::WrightOmega));
     }
 }
