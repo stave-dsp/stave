@@ -4,7 +4,7 @@
 use crate::kernel::node::{Stage, Tail};
 use crate::kernel::resample::allpass::Allpass;
 use crate::kernel::resample::polyphase::{edges, kaiser_length, Polyphase, ATTENUATION_DB};
-use crate::kernel::resample::{HalfbandFir, HalfbandUp, HB_TAPS, HB_TAPS_INNER};
+use crate::kernel::resample::{HalfbandDown, HalfbandUp, HB_TAPS, HB_TAPS_INNER};
 
 /// Block chunk at the outer rate for [`Stage::process`].
 const CHUNK: usize = 64;
@@ -18,7 +18,7 @@ const CHUNK: usize = 64;
 enum Resampler {
     Halfband {
         up: HalfbandUp,
-        down: HalfbandFir,
+        down: HalfbandDown,
         taps: usize,
     },
     Allpass(Allpass),
@@ -54,9 +54,9 @@ impl Resampler {
             _ => deep_halfband_taps(r),
         };
         let (up, down) = match r {
-            1 => (HalfbandUp::new(), HalfbandFir::new()),
-            2 => (HalfbandUp::inner(), HalfbandFir::inner()),
-            _ => (HalfbandUp::with_taps(taps), HalfbandFir::with_taps(taps)),
+            1 => (HalfbandUp::new(), HalfbandDown::new()),
+            2 => (HalfbandUp::inner(), HalfbandDown::inner()),
+            _ => (HalfbandUp::with_taps(taps), HalfbandDown::with_taps(taps)),
         };
         Self::Halfband { up, down, taps }
     }
@@ -115,7 +115,7 @@ impl Resampler {
 
     fn down(&mut self, input: &[f32], out: &mut [f32]) {
         match self {
-            Self::Halfband { down, .. } => down.process_block_decim(input, out),
+            Self::Halfband { down, .. } => down.process_block(input, out),
             Self::Allpass(a) => a.down(input, out),
             Self::Polyphase(p) => p.down(input, out),
         }
@@ -200,9 +200,13 @@ fn primes(mut n: u32) -> Vec<usize> {
 ///
 /// Datasheet `"Oversampled linear 2x (wire)"`, `"Oversampled linear 3x (wire)"`,
 /// `"Oversampled linear 4x (wire)"`, `"Oversampled linear 6x (wire)"`,
-/// `"Oversampled linear 8x (wire)"`, `"Oversampled minimum 2x (wire)"`,
-/// `"Oversampled minimum 4x (wire)"` and `"Oversampled minimum 8x (wire)"`:
-/// the filters alone, around an interior that does nothing.
+/// `"Oversampled linear 8x (wire)"`, `"Oversampled linear 16x (wire)"`,
+/// `"Oversampled minimum 2x (wire)"`, `"Oversampled minimum 4x (wire)"`
+/// and `"Oversampled minimum 8x (wire)"`: the filters alone, around an
+/// interior that does nothing. The linear half-bands compute eight
+/// outputs at a time in a block, each in its own `f64` lane (DSP.md P4),
+/// so a block costs well under the tick loop and returns its samples bit
+/// for bit.
 /// Minimum phase buys latency, not cycles: its allpass cascades run
 /// every phase in f64, so at 4x and 8x it costs more than linear.
 ///

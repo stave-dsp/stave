@@ -156,3 +156,54 @@ fn shapes_that_do_not_chain_are_refused() {
         Err(LoadError::Config(_))
     ));
 }
+
+/// DSP.md P4: `process` runs four frames at a time through each layer;
+/// for blocks of every length (whole frame groups and remainders) it is
+/// the tick loop bit for bit — gated and blended layers, a bottleneck
+/// with head 1×1s, more channels than a lane group, a dilated head.
+#[test]
+fn process_is_the_tick_loop_bit_for_bit() {
+    let layer = |kernel, dilation, gating| LayerSpec {
+        kernel,
+        dilation,
+        activation: Activation::Tanh,
+        gating,
+    };
+    let specs = vec![
+        ArraySpec {
+            bottleneck: 6,
+            head1x1: Some(5),
+            ..array(
+                1,
+                12,
+                5,
+                vec![
+                    layer(3, 1, Gating::Gated(Activation::Sigmoid)),
+                    layer(2, 4, Gating::Blended(Activation::Sigmoid)),
+                    layer(3, 16, Gating::None),
+                ],
+            )
+        },
+        ArraySpec {
+            head1x1: Some(5),
+            head_kernel: 3,
+            head_dilation: 2,
+            ..array(12, 9, 1, vec![plain(3, 2), plain(2, 1)])
+        },
+    ];
+    let mut ticked = WaveNet::build(&specs, &weights(count(&specs)), 48_000.0).unwrap();
+    let mut blocked = ticked.clone();
+    let input: Vec<f32> = weights(3_000).iter().map(|w| 0.8 * w).collect();
+    let want: Vec<f32> = input.iter().map(|&x| ticked.tick(x)).collect();
+    let (mut at, mut len) = (0, 1);
+    while at < input.len() {
+        let end = (at + len).min(input.len());
+        let mut block = input[at..end].to_vec();
+        blocked.process(&mut block);
+        for (i, (y, w)) in block.iter().zip(&want[at..end]).enumerate() {
+            assert_eq!(y.to_bits(), w.to_bits(), "sample {}", at + i);
+        }
+        at = end;
+        len = len % 13 + 1;
+    }
+}

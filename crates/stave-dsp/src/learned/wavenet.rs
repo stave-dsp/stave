@@ -3,14 +3,18 @@
 //! a summed skip ("head") path.
 
 use super::activation::Activation;
-use super::conv::{padded, Conv, History};
+use super::conv::{padded, Conv, History, FRAMES};
 use super::error::{LoadError, Weights};
 use super::rate::{RateGuard, RateMismatch, RatePolicy};
 use crate::kernel::node::{Stage, Tail};
 
 /// A WaveNet (van den Oord et al. 2016, as adapted to amplifier capture
 /// by Wright, Damskägg & Välimäki 2019 and Neural Amp Modeler), run one
-/// sample at a time.
+/// sample at a time — or, in [`process`](Stage::process), four at a
+/// time through each layer (DSP.md P4): each weight is read once for
+/// the four frames and their sums run side by side, each frame's
+/// arithmetic exactly the tick's, so a block is the tick loop bit for
+/// bit.
 ///
 /// # Models
 ///
@@ -161,7 +165,8 @@ struct LayerArray {
     layers: Vec<Layer>,
     head_rechannel: Conv,
     head_history: History,
-    /// The residual path (`channels`), the array's output.
+    /// The residual path (`channels`), the array's output, a frame
+    /// every `strides.residual`.
     residual: Vec<f32>,
     /// The summed head path.
     head: Vec<f32>,
@@ -172,6 +177,20 @@ struct LayerArray {
     act: Vec<f32>,
     gate: Vec<f32>,
     tmp: Vec<f32>,
+    strides: Strides,
+}
+
+/// Where frame `f` of each of a [`LayerArray`]'s buffers starts, over
+/// `f`: whole lane groups for the buffers a convolution writes.
+#[derive(Clone, Copy, Debug)]
+struct Strides {
+    residual: usize,
+    head: usize,
+    head_out: usize,
+    z: usize,
+    /// `act` and `gate`: the bottleneck.
+    act: usize,
+    tmp: usize,
 }
 
 impl WaveNet {
@@ -208,7 +227,7 @@ impl WaveNet {
                     .map(|h| Conv::read(&mut w, spec.bottleneck, h, 1, 1, true));
                 receptive_field += conv.span() - 1;
                 layers.push(Layer {
-                    history: History::new(spec.channels, conv.span()),
+                    history: History::new(spec.channels, conv.span() + FRAMES - 1),
                     conv,
                     mixer,
                     layer1x1,
@@ -227,19 +246,28 @@ impl WaveNet {
                 spec.head_bias,
             );
             receptive_field += head_rechannel.span() - 1;
+            // Buffers a convolution writes are whole lane groups.
+            let strides = Strides {
+                residual: padded(spec.channels),
+                head: padded(spec.head_width()),
+                head_out: padded(spec.head_size),
+                z: padded(widest_z),
+                act: spec.bottleneck,
+                tmp: padded(spec.channels.max(spec.head_width())),
+            };
             arrays.push(LayerArray {
-                head_history: History::new(spec.head_width(), head_rechannel.span()),
+                head_history: History::new(spec.head_width(), head_rechannel.span() + FRAMES - 1),
                 rechannel,
                 layers,
                 head_rechannel,
-                // Buffers a convolution writes are whole lane groups.
-                residual: vec![0.0; padded(spec.channels)],
-                head: vec![0.0; padded(spec.head_width())],
-                head_out: vec![0.0; padded(spec.head_size)],
-                z: vec![0.0; padded(widest_z)],
-                act: vec![0.0; spec.bottleneck],
-                gate: vec![0.0; spec.bottleneck],
-                tmp: vec![0.0; padded(spec.channels.max(spec.head_width()))],
+                residual: vec![0.0; FRAMES * strides.residual],
+                head: vec![0.0; FRAMES * strides.head],
+                head_out: vec![0.0; FRAMES * strides.head_out],
+                z: vec![0.0; FRAMES * strides.z],
+                act: vec![0.0; FRAMES * strides.act],
+                gate: vec![0.0; FRAMES * strides.act],
+                tmp: vec![0.0; FRAMES * strides.tmp],
+                strides,
             });
         }
         let head_scale = w.one();
@@ -298,33 +326,57 @@ impl WaveNet {
             .sum()
     }
 
-    /// One step of the network; `settle` first fills every history with
-    /// its current input, the state that input held forever leaves.
-    fn step(&mut self, x: f32, settle: bool) -> f32 {
-        let condition = [x];
+    /// `F` consecutive samples through the network, each array and
+    /// each layer taking all `F` frames before the next (a layer at time
+    /// `t` reads only its own inputs up to `t`, so the order is free);
+    /// `settle` (with `F = 1`) first fills every history with its
+    /// current input, the state that input held forever leaves.
+    fn run<const F: usize>(&mut self, x: [f32; F], settle: bool) -> [f32; F] {
+        debug_assert!(F <= FRAMES && (!settle || F == 1));
         for i in 0..self.arrays.len() {
             let (done, rest) = self.arrays.split_at_mut(i);
             let (input, head_in) = match done.last() {
-                None => (&condition[..], None),
-                Some(prev) => (&prev.residual[..], Some(&prev.head_out[..])),
+                None => ((&x[..], 1), None),
+                Some(prev) => (
+                    (&prev.residual[..], prev.strides.residual),
+                    Some((&prev.head_out[..], prev.strides.head_out)),
+                ),
             };
-            rest[0].step(input, head_in, &condition, settle);
+            rest[0].run::<F>(input, head_in, &x, settle);
         }
-        let last = self.arrays.last().map_or(0.0, |a| a.head_out[0]);
-        self.head_scale * last
+        let mut y = [0.0; F];
+        if let Some(a) = self.arrays.last() {
+            for (f, y) in y.iter_mut().enumerate() {
+                *y = self.head_scale * a.head_out[f * a.strides.head_out];
+            }
+        }
+        y
     }
 }
 
 impl LayerArray {
+    /// `input` and `head_in` are `(frames, stride)`.
     #[inline]
-    fn step(&mut self, input: &[f32], head_in: Option<&[f32]>, condition: &[f32], settle: bool) {
-        self.rechannel.apply_now(input, &mut self.residual);
-        match head_in {
-            Some(h) => self.head.copy_from_slice(h),
-            None => self.head.fill(0.0),
+    fn run<const F: usize>(
+        &mut self,
+        input: (&[f32], usize),
+        head_in: Option<(&[f32], usize)>,
+        condition: &[f32; F],
+        settle: bool,
+    ) {
+        let st = self.strides;
+        self.rechannel
+            .run_frames::<F>(|f, _| &input.0[f * input.1..], &mut self.residual, st.residual, true);
+        let width = self.head_history.width();
+        for f in 0..F {
+            let head = &mut self.head[f * st.head..(f + 1) * st.head];
+            match head_in {
+                Some((h, stride)) => head.copy_from_slice(&h[f * stride..f * stride + st.head]),
+                None => head.fill(0.0),
+            }
         }
         for layer in &mut self.layers {
-            layer.step(
+            layer.run::<F>(
                 &mut self.residual,
                 condition,
                 &mut self.head,
@@ -332,71 +384,98 @@ impl LayerArray {
                 &mut self.act,
                 &mut self.gate,
                 &mut self.tmp,
+                st,
                 settle,
             );
         }
-        if settle {
-            self.head_history.fill(&self.head);
-        } else {
-            self.head_history.push(&self.head);
+        for f in 0..F {
+            let head = &self.head[f * st.head..f * st.head + width];
+            if settle {
+                self.head_history.fill(head);
+            } else {
+                self.head_history.push(head);
+            }
         }
-        self.head_rechannel
-            .apply(&self.head_history, &mut self.head_out);
+        let (taps, d) = (self.head_rechannel.taps, self.head_rechannel.dilation);
+        let history = &self.head_history;
+        self.head_rechannel.run_frames::<F>(
+            |f, k| history.ago((taps - 1 - k) * d + (F - 1 - f)),
+            &mut self.head_out,
+            st.head_out,
+            true,
+        );
     }
 }
 
 impl Layer {
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    fn step(
+    fn run<const F: usize>(
         &mut self,
         residual: &mut [f32],
-        condition: &[f32],
+        condition: &[f32; F],
         head: &mut [f32],
         z: &mut [f32],
         act: &mut [f32],
         gate: &mut [f32],
         tmp: &mut [f32],
+        st: Strides,
         settle: bool,
     ) {
-        if settle {
-            self.history.fill(residual);
-        } else {
-            self.history.push(residual);
+        for f in 0..F {
+            let frame = &residual[f * st.residual..(f + 1) * st.residual];
+            if settle {
+                self.history.fill(frame);
+            } else {
+                self.history.push(frame);
+            }
         }
-        self.conv.apply(&self.history, z);
-        self.mixer.add_now(condition, z);
+        let (taps, d) = (self.conv.taps, self.conv.dilation);
+        let history = &self.history;
+        self.conv
+            .run_frames::<F>(|f, k| history.ago((taps - 1 - k) * d + (F - 1 - f)), z, st.z, true);
+        self.mixer.run_frames::<F>(|f, _| &condition[f..], z, st.z, false);
         let b = self.bottleneck;
-        let act = &mut act[..b];
-        self.activation.apply_into(&z[..b], act);
-        match &self.gating {
-            Gating::None => {}
-            Gating::Gated(g) => {
-                g.apply_into(&z[b..2 * b], gate);
-                for (a, &s) in act.iter_mut().zip(&*gate) {
-                    *a *= s;
+        for f in 0..F {
+            let z = &z[f * st.z..(f + 1) * st.z];
+            let act = &mut act[f * st.act..f * st.act + b];
+            let gate = &mut gate[f * st.act..(f + 1) * st.act];
+            self.activation.apply_into(&z[..b], act);
+            match &self.gating {
+                Gating::None => {}
+                Gating::Gated(g) => {
+                    g.apply_into(&z[b..2 * b], gate);
+                    for (a, &s) in act.iter_mut().zip(&*gate) {
+                        *a *= s;
+                    }
                 }
-            }
-            Gating::Blended(g) => {
-                g.apply_into(&z[b..2 * b], gate);
-                for ((a, &s), &z1) in act.iter_mut().zip(&*gate).zip(&z[..b]) {
-                    *a = s * *a + (1.0 - s) * z1;
+                Gating::Blended(g) => {
+                    g.apply_into(&z[b..2 * b], gate);
+                    for ((a, &s), &z1) in act.iter_mut().zip(&*gate).zip(&z[..b]) {
+                        *a = s * *a + (1.0 - s) * z1;
+                    }
                 }
             }
         }
-        match &self.head1x1 {
-            Some(conv) => {
-                conv.apply_now(act, tmp);
-                add(head, &tmp[..conv.outputs]);
+        let act = &*act;
+        for (conv, sum, stride) in [
+            (&self.head1x1, &mut *head, st.head),
+            (&self.layer1x1, &mut *residual, st.residual),
+        ] {
+            match conv {
+                Some(conv) => {
+                    conv.run_frames::<F>(|f, _| &act[f * st.act..], tmp, st.tmp, true);
+                    for f in 0..F {
+                        let out = &tmp[f * st.tmp..f * st.tmp + conv.outputs];
+                        add(&mut sum[f * stride..], out);
+                    }
+                }
+                None => {
+                    for f in 0..F {
+                        add(&mut sum[f * stride..], &act[f * st.act..f * st.act + b]);
+                    }
+                }
             }
-            None => add(head, &act[..b]),
-        }
-        match &self.layer1x1 {
-            Some(conv) => {
-                conv.apply_now(act, tmp);
-                add(residual, &tmp[..conv.outputs]);
-            }
-            None => add(residual, &act[..b]),
         }
     }
 }
@@ -495,7 +574,7 @@ impl Stage for WaveNet {
 
     /// Settle every layer to the state infinite silence leaves.
     fn reset(&mut self) {
-        self.step(0.0, true);
+        self.run([0.0], true);
     }
 
     #[inline]
@@ -503,7 +582,25 @@ impl Stage for WaveNet {
         if self.rate.muted() {
             return 0.0;
         }
-        self.step(x, false)
+        self.run([x], false)[0]
+    }
+
+    /// Four frames at a time through each layer, the rest one at a time:
+    /// the tick loop's samples, bit for bit.
+    fn process(&mut self, block: &mut [f32]) {
+        if self.rate.muted() {
+            block.fill(0.0);
+            return;
+        }
+        let mut frames = block.chunks_exact_mut(FRAMES);
+        for chunk in &mut frames {
+            let mut x = [0.0; FRAMES];
+            x.copy_from_slice(chunk);
+            chunk.copy_from_slice(&self.run(x, false));
+        }
+        for s in frames.into_remainder() {
+            *s = self.run([*s], false)[0];
+        }
     }
 
     /// Output settles `receptive_field − 1` samples after input stops
