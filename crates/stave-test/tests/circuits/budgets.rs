@@ -1113,6 +1113,50 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 0.1, NAN), // 0.0248
             (ThdN, Shipping, 500.0, NAN), // 99.4 — aliasing at the host rate
         ],
+        ("boss_ce2_filters", Tier::T0) => &[
+            (Aliasing, Oversampled, -75.0, NAN), // -84.2
+            (Aliasing, Shipping, -40.0, NAN), // -45.2 — aliasing at the host rate
+            (Bla, Oversampled, 5.0, 50.0), // 1.25 / 10.8 — at 16 kHz, 66 dB down in the stopband
+            (Bla, Shipping, 100.0, 200.0), // 28.1 / 48.2 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.005, 0.05), // 0.00158 / 0.0139
+            (Compression, Shipping, 0.1, 1.0), // 0.0328 / 0.205
+            (Detection, Oversampled, 0.1, NAN), // 0.0238
+            (Detection, Shipping, 1.0, NAN), // 0.314
+            (GroupDelay, Oversampled, 2e-4, NAN), // 6.31e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 3.92e-06
+            (Harmonics, Oversampled, 2.0, 20.0), // 0.54 / 5.41
+            (Harmonics, Shipping, 20.0, 500.0), // 4.54 / 120 — FINDING: bilinear warping at 1× (no prewarp)
+            (OperatingPoint, Oversampled, 5e-06, NAN), // 7.86e-07
+            (OperatingPoint, Shipping, 5e-06, NAN), // 7.86e-07
+            (Response, Oversampled, 0.0002, 0.001), // 4.41e-05 / 0.00032
+            (Response, Shipping, 100.0, 200.0), // 28.1 / 37.9 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.01, NAN), // 0.00265
+            (ThdN, Shipping, 0.2, NAN), // 0.0566 — aliasing at the host rate
+        ],
+        ("boss_ce2_filters", Tier::T1) => &[
+            (Aliasing, Oversampled, -30.0, NAN), // -39.7
+            (Aliasing, Shipping, -10.0, NAN), // -16.9 — aliasing at the host rate
+            (Bla, Oversampled, 5.0, 20.0), // 1.44 / 5.86 — at 16 kHz, 66 dB down in the stopband
+            (Bla, Shipping, 200.0, 500.0), // 36.9 / 93.3 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 1.0, 5.0), // 0.217 / 1.52
+            (Compression, Shipping, 20.0, 100.0), // 4.86 / 29.7 — FINDING: bilinear warping at 1× (no prewarp)
+            (Detection, Oversampled, 0.2, NAN), // 0.0557
+            (Detection, Shipping, 5.0, NAN), // 1.22
+            (Dynamics, Oversampled, 0.001, 0.05), // 0.00022 / 0.00817
+            (Dynamics, Shipping, 0.02, 0.5), // 0.00587 / 0.0716
+            (GroupDelay, Oversampled, 2e-4, NAN), // 6.31e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 4.67e-06
+            (Harmonics, Oversampled, 50.0, 100.0), // 16.2 / 16.9 — an 8 kHz tone's H-products near −105 dBc: aliasing at 4×
+            (Harmonics, Shipping, 100.0, 500.0), // 20 / 142 — FINDING: bilinear warping at 1× (no prewarp)
+            (Intermodulation, Oversampled, 100.0, 50.0), // 18.9 / 10.3 — CCIF products near −94 dBc: aliasing at 4×
+            (Intermodulation, Shipping, 500.0, 500.0), // 67.5 / 131 — aliasing at the host rate
+            (OperatingPoint, Oversampled, 5e-06, NAN), // 7.86e-07
+            (OperatingPoint, Shipping, 5e-06, NAN), // 7.86e-07
+            (Response, Oversampled, 0.0002, 0.001), // 4.41e-05 / 0.00032
+            (Response, Shipping, 200.0, 200.0), // 36.5 / 43.7 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 5.0, NAN), // 0.679
+            (ThdN, Shipping, 50.0, NAN), // 11.8 — aliasing at the host rate
+        ],
         (case, tier) => panic!("no budgets for `{case}` at {tier:?}"),
     }
 }

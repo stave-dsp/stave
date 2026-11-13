@@ -55,9 +55,11 @@ fn a_follower_reads_back_the_datasheet_gain_and_bandwidth() {
             "{}: {at}",
             part.name
         );
-        // The offset rides through to the output.
+        // The offset rides through to the output (with the gain stage's
+        // pull toward the middle of its swing, over the loop gain).
+        let middle = part.prepare(-15.0, 15.0).middle / (1.0 + part.gain);
         assert!(
-            (dk.output() - part.offset.get()).abs() < 1e-6,
+            (dk.output() - part.offset.get() - middle).abs() < 1e-6,
             "{}: {}",
             part.name,
             dk.output()

@@ -1,0 +1,53 @@
+* Boss CE-2 Chorus, the transistor stages around its BBD: the
+* anti-alias (pre) and reconstruction (post) filters, each a 2N5088
+* emitter follower closing a third-order low-pass, with the MN3007
+* replaced by an ideal unity copy (the BBD is its own model). |Vo/Vi|
+* from 10 Hz to 50 kHz (first column = frequency). Source: madbeanpedals,
+* "PorkBarrel24" build documentation (a CE-2 clone with no circuit
+* changes), schematic p. 13 and BOM, https://www.madbeanpedals.com.
+* Pre: from IC1A's output (an ideal source here), C8 33n onto the 4.5 V
+* reference through R14 100k; R15 10k, C9 3n3 to ground, R16 10k, C10
+* 8n2 bootstrapped to Q2's emitter, R17 10k, C11 470p to ground into
+* Q2's base; Q2 a 2N5088 follower (9 V collector, R18 10k emitter), then
+* R19 4k7 to the BBD's input (a gate: no current). Post: the BBD's output
+* through C13 33n onto the reference through R21 330k; the same ladder
+* (R22-C14-R23-C15-R24-C16) into Q3, a 2N5088 follower with R25 10k.
+* The BBD's 56k output pull-down, the wet path's C17/R27 and the blend
+* network are left out. Supplies ideal: VC 9 V (the 5817 drop left out),
+* VB 4.5 V. 2N5088: Fairchild's card, DC part (GummelPoon::N2N5088).
+* Output: Q3's emitter.
+VIN in 0 DC 0 AC 1
+VC vc 0 9
+VB vb 0 4.5
+C8 in a 33n
+R14 a vb 100k
+R15 a b 10k
+C9 b 0 3.3n
+R16 b c 10k
+C10 c q2e 8.2n
+R17 c d 10k
+C11 d 0 470p
+Q2 vc d q2e Q2N5088
+R18 q2e 0 10k
+R19 q2e bbd 4.7k
+EBBD bo 0 bbd 0 1
+C13 bo f 33n
+R21 f vb 330k
+R22 f g 10k
+C14 g 0 3.3n
+R23 g h 10k
+C15 h q3e 8.2n
+R24 h k 10k
+C16 k 0 470p
+Q3 vc k q3e Q2N5088
+R25 q3e 0 10k
+.model Q2N5088 NPN(Is=5.911f Bf=1122 Ne=1.394 Ise=5.911f Ikf=14.92m Br=1.271 Nc=2 Isc=0 Ikr=0 Rc=1.61 Rb=10 Vaf=62.37)
+.options reltol=1e-9 abstol=1e-15 vntol=1e-12
+.ac dec 20 10 50k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(q3e)
+.endc
+.end

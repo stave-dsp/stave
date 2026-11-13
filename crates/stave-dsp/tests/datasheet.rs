@@ -1015,6 +1015,18 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut moog = driven(topologies::moog_ladder_904a(3.0), sr);
     bench("Circuit<Dk> Moog ladder (k = 3)", input, |x| moog.tick(x));
     solve_health(&moog);
+    let mut ce2 = driven(topologies::boss_ce2_filters(), sr);
+    bench("Circuit<Dk> CE-2 BBD filters", input, |x| ce2.tick(x));
+    solve_health(&ce2);
+    let mut phase90 = driven(topologies::mxr_phase90(3.4), sr);
+    bench("Circuit<Dk> MXR Phase 90 (LM741)", input, |x| phase90.tick(x));
+    solve_health(&phase90);
+    let mut ds1 = driven(topologies::boss_ds1(), sr);
+    bench("Circuit<Dk> Boss DS-1 (NJM2904)", input, |x| ds1.tick(x));
+    solve_health(&ds1);
+    let mut klon = driven(topologies::klon_centaur(0.5, 0.5), sr);
+    bench("Circuit<Dk> Klon Centaur (TL072)", input, |x| klon.tick(x));
+    solve_health(&klon);
 }
 
 /// A topology's netlist as `Circuit<Dk>`, its `vin` driven by the input.

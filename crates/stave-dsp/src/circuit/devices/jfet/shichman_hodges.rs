@@ -163,6 +163,21 @@ impl ShichmanHodges {
         ..Self::DEFAULT_N
     };
 
+    /// 2N5952, N-channel (the MXR Phase 90's swept resistors): the
+    /// LTspice-standard card (`Beta=1.314m Lambda=4m Vto=-2.021 Rd=1 Rs=1
+    /// Is=33.57f N=1`, as aggregated in the KiCad-Spice-Library's
+    /// `JFET2.lib`), DC part; its `Isr`/`Nr`/`Alpha`/`Vk` gate terms,
+    /// capacitances and temperature coefficients are not modelled.
+    pub const N2N5952: Self = Self {
+        threshold_volts: -2.021,
+        beta: 1.314e-3,
+        channel_modulation: 4e-3,
+        saturation_amps: 33.57e-15,
+        drain_ohms: 1.0,
+        source_ohms: 1.0,
+        ..Self::DEFAULT_N
+    };
+
     /// 2N5460, P-channel: Motorola's card (05-06-1991: `VTO=-3.2
     /// BETA=1.7M LAMBDA=5.63M RD=4.94E+01 RS=4.45E+01 IS=1.95F PB=1 FC=.5
     /// CGS=9.0P CGD=4.0P`).

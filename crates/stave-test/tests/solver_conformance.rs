@@ -269,6 +269,35 @@ mod dk {
         run_netlist("Moog ladder (k = 3)", &moog_ladder_904a(3.0), "vin", CLASSIC_FRAMES, |n| hot(n, 0.3));
     }
 
+    #[test]
+    fn boss_ce2_filters_converge_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::boss_ce2_filters;
+        // Hot enough to cut the followers off on the negative swing.
+        run_netlist("CE-2 BBD filters", &boss_ce2_filters(), "vin", CLASSIC_FRAMES, |n| hot(n, 5.0));
+    }
+
+    #[test]
+    fn mxr_phase90_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::mxr_phase90;
+        for gate in [3.0, 3.4, 4.5] {
+            run_netlist("MXR Phase 90", &mxr_phase90(gate), "vin", CLASSIC_FRAMES, |n| hot(n, 1.5));
+        }
+    }
+
+    #[test]
+    fn boss_ds1_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::boss_ds1;
+        run_netlist("Boss DS-1", &boss_ds1(), "vin", CLASSIC_FRAMES, |n| hot(n, 1.5));
+    }
+
+    #[test]
+    fn klon_centaur_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::klon_centaur;
+        for gain in [0.0, 0.5, 1.0] {
+            run_netlist("Klon Centaur", &klon_centaur(gain, 1.0), "vin", CLASSIC_FRAMES, |n| hot(n, 1.5));
+        }
+    }
+
     /// DSP.md A1: the circuits with stateful ADAA at the host rate, under
     /// the hot signals above and four times hotter — finite, bounded by
     /// their rails, no solve at its cap (the quadrature's extra solves

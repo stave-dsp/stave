@@ -1,0 +1,19 @@
+# title: NJM2904 typical slew rate and unity-gain bandwidth from the electrical characteristics table, at +/-15 V and 25 °C.
+# document: Nisshinbo Micro Devices (formerly New Japan Radio), NJM2904 Single-Supply Dual Operational Amplifier, datasheet Ver.20260722
+# url: https://www.nisshinbo-microdevices.co.jp/en/pdf/datasheet/NJM2904_E.pdf
+# figure: Electrical Characteristics table, page 2
+# method: transcribed from the table
+# x: supply voltage per rail (V)
+# y: slew rate (V/s) on curve slew; unity-gain bandwidth (Hz) on curve gbw
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 15
+# full-scale-y: 6e5
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: vcc=15 t=25
+# notes: typical values only, both at V+/V- = +/-15 V (the rest of the table is at V+ = 5 V). The same sheet's "Maximum Output Voltage Swing vs. Frequency" plot (V+ = 15 V, page 3) holds 14 Vpp up to about 5 kHz, which for a sine implies about 0.22 V/us (SR = pi f Vpp) -- below the table's 0.5 V/us; its plateau, 14 Vpp on a 15 V supply, is the macromodel's swing (1 V short of the positive rail, none at the negative). Its open-loop plot shows about 115 dB at DC; the table gives 100 dB.
+# curve slew=1
+15 5e5
+# curve gbw=1
+15 6e5

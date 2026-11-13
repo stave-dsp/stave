@@ -241,3 +241,87 @@ fn moog_ladder_904a_matches_ngspice() {
     let topology = stimulated(topologies::moog_ladder_904a(3.0), name, "vin");
     run(name, "topology", &topology, 4, case()).assert();
 }
+
+/// `netlist`'s linearised response against the AC deck `name`'s
+/// ngspice analysis, within `budget` dB.
+fn response(name: &str, label: &str, netlist: &Netlist, budget: f64) {
+    let circuit = Circuit::<Dk>::new(netlist).unwrap();
+    Case::ngspice(name)
+        .named(format!("{name}/dk, {label}"))
+        .budget(Metric::MaxDb, budget)
+        .pointwise(|hz| circuit.analog_response(hz).unwrap().magnitude())
+        .assert();
+}
+
+/// The Boss CE-2's BBD filters, the two 2N5088 stages with the BBD a
+/// unity copy: the topology's and the deck's linearised response against
+/// ngspice's AC analysis, 10 Hz to 50 kHz (measured 3.3e-6 dB, at 50 kHz,
+/// 109 dB down; the passband's error is below 1e-9 dB).
+#[test]
+fn boss_ce2_filters_match_ngspice() {
+    let name = "boss_ce2_filters";
+    response(name, "topology", &topologies::boss_ce2_filters(), 1e-5);
+    response(name, "the deck", &deck(name), 1e-5);
+}
+
+/// The MXR Phase 90 with its gates frozen at 3.4 V: the linearised
+/// response of the topology and the AC deck against ngspice (measured
+/// 9.7e-6 dB); then 300 mV at 1 kHz, the deck's behavioural LM741s at 16×
+/// (measured 3.0e-5) and the topology's `OpAmp` elements at 8× and 16×
+/// against ngspice's transient, falling as h² (1.3e-4 to 3.0e-5; 7.3e-6
+/// at 32×, 1.6e-6 at 64×).
+#[test]
+fn mxr_phase90_matches_ngspice() {
+    let ac = "mxr_phase90_ac";
+    response(ac, "topology", &topologies::mxr_phase90(3.4), 3e-5);
+    response(ac, "the deck", &deck(ac), 3e-5);
+    let name = "mxr_phase90";
+    let case = |budget| Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+    run(name, "the deck", &deck(name), 16, case(6e-5)).assert();
+    let topology = stimulated(topologies::mxr_phase90(3.4), name, "vin");
+    let coarse = run(name, "topology", &topology, 8, case(3e-4));
+    let fine = run(name, "topology", &topology, 16, case(6e-5));
+    assert_converges(&coarse, &fine, 3.0);
+    fine.assert();
+}
+
+/// The Boss DS-1, 200 mV at 1 kHz: the booster saturates, the NJM2904
+/// rails and the 1N4148s clip — edges a coarse grid smears, so it needs
+/// a fine one: the deck's behavioural op-amps at 32× (measured 1.4e-4),
+/// then the topology's `OpAmp` elements at 16× and 32×, falling as h²
+/// (6.9e-4 to 1.4e-4; 3.1e-3 at 8×, 3.6e-5 at 64×).
+#[test]
+fn boss_ds1_matches_ngspice() {
+    let name = "boss_ds1";
+    let case = |budget| Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+    run(name, "the deck", &deck(name), 32, case(3e-4)).assert();
+    let topology = stimulated(topologies::boss_ds1(), name, "vin");
+    let coarse = run(name, "topology", &topology, 16, case(1.5e-3));
+    let fine = run(name, "topology", &topology, 32, case(3e-4));
+    assert_converges(&coarse, &fine, 3.0);
+    fine.assert();
+}
+
+/// The Klon Centaur's clean/dry blend: at gain 0 (the clean networks
+/// alone, gang A shorting the gain stage's input; measured 2.3e-9 dB) and
+/// gain 1 (the dirty path with network 1, gang B shorting network 2;
+/// 2.2e-6 dB, at 10 Hz), the topology's and the decks' linearised
+/// response against ngspice's AC analysis; then at noon, 300 mV at 1 kHz,
+/// the deck's behavioural TL072s at 8× (measured 4.2e-5) and the
+/// topology's `OpAmp` elements at 4× and 8× against ngspice's transient,
+/// falling as h² (1.7e-4 to 4.2e-5; 1.0e-5 at 16×, 5.0e-7 at 64×).
+#[test]
+fn klon_centaur_matches_ngspice() {
+    for (name, gain, budget) in [("klon_centaur_clean", 0.0, 1e-8), ("klon_centaur_ac_max", 1.0, 1e-5)] {
+        response(name, "topology", &topologies::klon_centaur(gain, 0.5), budget);
+        response(name, "the deck", &deck(name), budget);
+    }
+    let name = "klon_centaur";
+    let case = |budget| Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+    run(name, "the deck", &deck(name), 8, case(1e-4)).assert();
+    let topology = stimulated(topologies::klon_centaur(0.5, 0.5), name, "vin");
+    let coarse = run(name, "topology", &topology, 4, case(4e-4));
+    let fine = run(name, "topology", &topology, 8, case(1e-4));
+    assert_converges(&coarse, &fine, 3.0);
+    fine.assert();
+}

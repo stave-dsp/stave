@@ -1,0 +1,113 @@
+* Klon Centaur, the effect path, gain at noon, treble at noon, volume
+* at maximum. Guitar 300 mV at 1 kHz. Sources: Aion FX, "Refractor" build documentation (a
+* part-for-part replica of the Klon Centaur/KTR), schematic p. 8,
+* https://aionfx.com; ElectroSmash, "Klon Centaur Analysis",
+* https://www.electrosmash.com/klon-centaur-analysis (its gain-stage,
+* feed-forward-network, summing and tone-control figures, against which
+* every node of this deck was checked).
+* IC1A: unity input buffer (R1 10k, C1 100n, R2 2M to the 4.5 V
+* reference). Dirty path: C3 100n, R6 10k || C5 68n into IC1B's + input;
+* gang A of the 100kB dual gain pot from that input (top) to the
+* reference (wiper) to R10 2k, then R11 15k || C7 82n to IC1B's inverting
+* input; R12 422k || C8 390p feedback; C9 1u / R13 1k into the D2/D3 1N34A
+* pair to ground; C10 1u, then R16 47k to the summing node, and C11 2n2 +
+* R15 22k to gang B's wiper. Clean paths: feed-forward network 1, R7 1k5
+* from after C3, C16 1u to ground, R19 15k to the summing node; network 2,
+* from the buffer R5 5k1 || C4 68n to gang B's top, R8 1k5 and C6 390n + R9
+* 1k from there to the reference, gang B's bottom on the reference, its
+* wiper into the summing node through R17 27k || (C12 27n + R18 12k). Gain
+* g puts each gang's wiper g x 100k from its top: at 0 gang A shorts the
+* gain stage's input to the reference (the dirty path off) and gang B
+* passes network 2 whole; at 1 the reverse. IC2A: the inverting summer,
+* + on the reference, R20 392k || C13 820p feedback. IC2B: the treble
+* shelf (R22 100k in, R24 100k feedback, R21 1k8 into the 10kB treble pot,
+* its wiper through C14 3n9 to the inverting input, R23 4k7 from its other
+* end to the output). Out: C15 4u7, R25 560R into the 10kB volume at
+* maximum. Supplies ideal: IC1 on 0-9 V; IC2 on the charge pump's -9 and
+* 18 V (ripple left out). Op-amps: stave's opamp::Macromodel::TL072,
+* written as behavioural sources (see opamp_slew.cir), rails per IC; 1N34A:
+* the community-extended LTspice standard.dio card, static part
+* (diode::Shockley::N34A). Output: out.
+.param cc=1e-9 vk=0.02 kc=10 vos=3e-3
+.param gm={6.283185307179586*3e6*1e-9} isl={13e6*1e-9} g0={gm/200e3}
+.param vmid1=4.5 vhi1=7.5 vlo1=1.5
+.param vmid2=4.5 vhi2=16.5 vlo2=-7.5
+VIN in 0 SIN(0 0.3 1k)
+VA va 0 9
+VP vp 0 18
+VN vn 0 -9
+VR vr 0 4.5
+R1 in a 10k
+C1 a p1 100n
+R2 vr p1 2meg
+BG1 0 n1 I = {isl*tanh(gm*(V(p1,bf)+vos)/isl) + g0*vmid1 - kc*isl*(max((V(n1)-vhi1)/vk,0) + ln(1+exp(-abs((V(n1)-vhi1)/vk))) - max((vlo1-V(n1))/vk,0) - ln(1+exp(-abs((vlo1-V(n1))/vk))))}
+RG1 n1 0 {1/g0}
+CC1 n1 0 {cc}
+EO1 bf 0 n1 0 1
+C3 bf c 100n
+R6 c d 10k
+C5 c d 68n
+RGA1 d vr 50000
+RGA2 vr ga 50000
+R10 ga gb 2k
+R11 gb m2 15k
+C7 gb m2 82n
+BG2 0 n2 I = {isl*tanh(gm*(V(d,m2)+vos)/isl) + g0*vmid1 - kc*isl*(max((V(n2)-vhi1)/vk,0) + ln(1+exp(-abs((V(n2)-vhi1)/vk))) - max((vlo1-V(n2))/vk,0) - ln(1+exp(-abs((vlo1-V(n2))/vk))))}
+RG2 n2 0 {1/g0}
+CC2 n2 0 {cc}
+EO2 o2 0 n2 0 1
+R12 o2 m2 422k
+C8 o2 m2 390p
+C9 o2 v1 1u
+R13 v1 v 1k
+D2 v 0 D1N34A
+D3 0 v D1N34A
+C10 v u 1u
+R16 u s 47k
+C11 u u2 2.2n
+R15 u2 sb 22k
+R5 bf p 5.1k
+C4 bf p 68n
+R8 p vr 1.5k
+C6 p p9 390n
+R9 p9 vr 1k
+RGB1 p sb 50000
+RGB2 sb vr 50000
+R17 s sb 27k
+C12 s s18 27n
+R18 s18 sb 12k
+R7 c x 1.5k
+C16 x 0 1u
+R19 x s 15k
+BG3 0 n3 I = {isl*tanh(gm*(V(vr,s)+vos)/isl) + g0*vmid2 - kc*isl*(max((V(n3)-vhi2)/vk,0) + ln(1+exp(-abs((V(n3)-vhi2)/vk))) - max((vlo2-V(n3))/vk,0) - ln(1+exp(-abs((vlo2-V(n3))/vk))))}
+RG3 n3 0 {1/g0}
+CC3 n3 0 {cc}
+EO3 o3 0 n3 0 1
+R20 o3 s 392k
+C13 o3 s 820p
+R22 o3 t 100k
+R21 o3 k1 1.8k
+RTA k1 tw 5000
+RTB tw k3 5000
+C14 tw t 3.9n
+R23 k3 o4 4.7k
+R24 o4 t 100k
+BG4 0 n4 I = {isl*tanh(gm*(V(vr,t)+vos)/isl) + g0*vmid2 - kc*isl*(max((V(n4)-vhi2)/vk,0) + ln(1+exp(-abs((V(n4)-vhi2)/vk))) - max((vlo2-V(n4))/vk,0) - ln(1+exp(-abs((vlo2-V(n4))/vk))))}
+RG4 n4 0 {1/g0}
+CC4 n4 0 {cc}
+EO4 o4 0 n4 0 1
+C15 o4 y 4.7u
+R25 y out 560
+RV out 0 10k
+.model D1N34A D(IS=2.6u RS=6.5 N=1.6 BV=25 IBV=0.003)
+* ngspice's starting guess for the operating point; stave ignores it.
+.nodeset v(bf)=4.5 v(o2)=4.5 v(o3)=4.5 v(o4)=4.5 v(m2)=4.5 v(s)=4.5 v(t)=4.5 v(d)=4.5 v(p1)=4.5
+.options interp reltol=1e-8 abstol=1e-12 vntol=1e-9
+.tran 20.8333333u 20m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

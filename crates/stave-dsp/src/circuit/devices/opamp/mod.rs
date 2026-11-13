@@ -2,7 +2,8 @@
 //! nullor: infinite gain and bandwidth, no rails) and [`Macromodel`]
 //! (finite gain and gain-bandwidth, slew limit, input offset and rail
 //! clipping), with parts as constants of the macromodel
-//! ([`Macromodel::TL072`], [`Macromodel::JRC4558`], [`Macromodel::LM308`]).
+//! ([`Macromodel::TL072`], [`Macromodel::JRC4558`], [`Macromodel::LM308`],
+//! [`Macromodel::LM741`], [`Macromodel::NJM2904`]).
 //! [`Amp`] is the run-time choice a netlist element holds.
 //!
 //! A netlist places an op-amp with
@@ -28,8 +29,10 @@ pub struct OpenLoop {
     pub slew_rate: f64,
     /// Input offset voltage, added to `v(+) − v(−)`.
     pub offset: Volts,
-    /// How close the output swings to each supply rail.
+    /// How close the output swings to the positive supply rail.
     pub headroom: Volts,
+    /// How close the output swings to the negative supply rail.
+    pub negative_headroom: Volts,
 }
 
 /// The op-amp family: every model reports its open-loop specification,
@@ -90,6 +93,7 @@ impl OpAmp for Ideal {
             slew_rate: f64::INFINITY,
             offset: Volts::new(0.0),
             headroom: Volts::new(0.0),
+            negative_headroom: Volts::new(0.0),
         }
     }
 }
@@ -102,6 +106,7 @@ impl OpAmp for Macromodel {
             slew_rate: self.slew_rate,
             offset: self.offset,
             headroom: self.headroom,
+            negative_headroom: self.negative_headroom,
         }
     }
 }

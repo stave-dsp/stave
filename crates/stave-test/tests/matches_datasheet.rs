@@ -979,6 +979,26 @@ mod opamps {
             40.8,
         );
     }
+
+    /// The LM741C's table slew rate and its rise-time bandwidth (the
+    /// sheet's own 0.35 / rise time), read back from a follower.
+    #[test]
+    fn lm741() {
+        for figure in figures("lm741_figures", Macromodel::LM741) {
+            pass(figure);
+        }
+    }
+
+    /// The NJM2904's table slew rate and unity-gain bandwidth, read back
+    /// from a follower. Its swing plot's knee implies a slower slew
+    /// (about 0.22 V/µs) than the table's 0.5; the model follows the
+    /// table.
+    #[test]
+    fn njm2904() {
+        for figure in figures("njm2904_figures", Macromodel::NJM2904) {
+            pass(figure);
+        }
+    }
 }
 
 mod otas {

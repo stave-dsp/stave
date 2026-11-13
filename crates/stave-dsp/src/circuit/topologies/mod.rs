@@ -22,13 +22,17 @@
 //! verification in `stave-test/tests/classics_match_ngspice.rs`.
 
 pub mod big_muff;
+pub mod boss_ce2;
+pub mod boss_ds1;
 pub mod bucket_brigade;
 pub mod common_cathode;
 pub mod coupler;
 pub mod diode_clipper;
 pub mod diode_ladder;
+pub mod klon_centaur;
 pub mod marshall_jcm800;
 pub mod moog_ladder;
+pub mod mxr_phase90;
 pub mod opamp_clipper;
 pub mod power_supply;
 pub mod proco_rat;
@@ -41,8 +45,12 @@ pub mod triode_stage;
 pub mod tube_screamer;
 
 pub use big_muff::{big_muff_rams_head, big_muff_tone_stack};
+pub use boss_ce2::boss_ce2_filters;
+pub use boss_ds1::boss_ds1;
+pub use klon_centaur::klon_centaur;
 pub use marshall_jcm800::marshall_jcm800_2203;
 pub use moog_ladder::moog_ladder_904a;
+pub use mxr_phase90::mxr_phase90;
 pub use proco_rat::proco_rat;
 pub use tone_stacks::{fender_5f6a_tone_stack, fender_ab763_tone_stack, marshall_2203_tone_stack};
 pub use tube_screamer::tube_screamer_ts808;

@@ -366,6 +366,25 @@ impl GummelPoon {
         ..Self::DEFAULT_NPN
     };
 
+    /// 2N4125, silicon PNP (the MXR Phase 90's output mixer): National
+    /// Semiconductor's card (`IS=1.41f BF=85.04 BR=5.576 VAF=18.7 VAR=6.5
+    /// IKF=80m ISE=0 ISC=0 RB=10 RC=2.5 RE=0.15`, MFG=NSC, as aggregated
+    /// in the KiCad-Spice-Library's `BJT.lib`), at 27 °C; its
+    /// capacitances and transit times are not modelled.
+    pub const N2N4125: Self = Self {
+        polarity: Polarity::P,
+        saturation_amps: 1.41e-15,
+        forward_beta: 85.04,
+        reverse_beta: 5.576,
+        forward_early_volts: 18.7,
+        reverse_early_volts: 6.5,
+        forward_knee_amps: 80e-3,
+        base_ohms: 10.0,
+        emitter_ohms: 0.15,
+        collector_ohms: 2.5,
+        ..Self::DEFAULT_NPN
+    };
+
     /// AC128, germanium PNP, extracted from vintage parts by Holmes,
     /// Holters & van Walstijn ("Comparison of germanium bipolar junction
     /// transistor models for real-time circuit simulation", DAFx-17,

@@ -21,7 +21,7 @@ const fn circuit(name: &'static str, input: fn() -> Input) -> Circuit {
     }
 }
 
-pub static CIRCUITS: [Circuit; 20] = [
+pub static CIRCUITS: [Circuit; 21] = [
     circuit("diode_clipper", || Input::new("v1", 0.0)),
     circuit("opamp_clipper", || Input::new("v1", 0.0)),
     // The TS808 stage rides on the 4.5 V reference.
@@ -54,6 +54,8 @@ pub static CIRCUITS: [Circuit; 20] = [
     circuit("mosfet_booster_static", || Input::new("vin", 0.0)),
     // The VCA with its control held at 5 V (about 0.28 mA of bias).
     circuit("ota_vca", || Input::new("vin", 0.0).holding("vc", 5.0)),
+    // The CE-2's BBD filters (the BBD a unity copy), from IC1A's output.
+    circuit("boss_ce2_filters", || Input::new("vin", 0.0)),
 ];
 
 /// The solver's rate for a case at `tier`: the oversampling its waveform

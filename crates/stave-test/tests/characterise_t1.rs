@@ -68,7 +68,8 @@ t1!(
     rangemaster_static,
     ce_stage_static,
     jfet_booster_static,
-    mosfet_booster_static
+    mosfet_booster_static,
+    boss_ce2_filters
 );
 
 /// The hand topologies' whole matrices.

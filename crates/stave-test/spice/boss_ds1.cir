@@ -1,0 +1,96 @@
+* Boss DS-1 Distortion (the DS1-A circuit since 1994; its op-amp the
+* NJM2904L since 2006), the effect path with the values of ElectroSmash's
+* parts list (the original PCB labels; the JFET bypass switching left out)
+* and the wiring of Aion FX's Comet documentation, schematic p. 8. Sources:
+* ElectroSmash, "Boss DS-1 Distortion Analysis",
+* https://www.electrosmash.com/boss-ds1-analysis; Aion FX, "Comet
+* Distortion" build documentation, https://aionfx.com.
+* Input follower (R1 1k, C1 47n, R2 470k to the 4.5 V reference, R3 10k
+* emitter); two high-passes (C2 0.47u / R4 100k, C3 47n / R5 100k) into
+* the shunt-feedback booster (R7 470k || C4 250p collector-to-base, R8
+* 10k collector, R9 22 ohm emitter); C5 68n / R10 100k to the reference,
+* R39 47k and the D8 1N4148 input clamp to ground; the NJM2904's first
+* half a unity buffer, its second the non-inverting gain stage (the 100kB
+* distortion pot at maximum: all 100k between output and inverting input,
+* R13 4k7 + C8 0.47u to the reference, C7 100p across); R14 2k2 / C9 0.47u
+* into the D4/D5 1N4148 pair and C10 10n to the reference; the tone stage
+* (R16 6k8 / C12 100n low-pass, C11 22n / R15 2k2 / R17 6k8 high-pass,
+* the 20kB tone pot at noon); the 100kB level pot at maximum; R18 10k /
+* C13 47n into the output follower (R19 1M bias, R20 10k emitter), R21 1k
+* / C14 1u / R22 100k out. Supplies ideal: 9 V, and 4.5 V for the
+* reference. The op-amp is stave's opamp::Macromodel::NJM2904 between 0
+* and 9 V (1 V short of the positive rail, reaching the negative one),
+* written as behavioural sources (see opamp_slew.cir). Transistors: the
+* DS-1's 2SC2240s have no published card; the 2N5088 card (Fairchild, DC
+* part, GummelPoon::N2N5088) stands in, a high-beta low-noise NPN of the
+* same class. 1N4148: LTspice standard.dio, static part. Guitar 200 mV,
+* 1 kHz. Output: out.
+.param cc=1e-9 vos=2e-3 vhi=8 vlo=0 vmid=4 vk=0.02 kc=10
+.param gm={6.283185307179586*0.6e6*1e-9} isl={0.5e6*1e-9} g0={gm/100e3}
+VIN in 0 SIN(0 0.2 1k)
+VA va 0 9
+VB vb 0 4.5
+R1 in a 1k
+C1 a b1 47n
+R2 vb b1 470k
+Q1 va b1 e1 Q2N5088
+R3 e1 0 10k
+C2 e1 x 0.47u
+R4 x 0 100k
+C3 x b2 47n
+R5 b2 0 100k
+R7 c2 b2 470k
+C4 c2 b2 250p
+R8 va c2 10k
+Q2 c2 b2 e2 Q2N5088
+R9 e2 0 22
+C5 c2 p 68n
+R10 vb p 100k
+R39 p q 47k
+D8 0 q D1N4148
+BG1 0 n1 I = {isl*tanh(gm*(V(q,ob)+vos)/isl) + g0*vmid - kc*isl*(max((V(n1)-vhi)/vk,0) + ln(1+exp(-abs((V(n1)-vhi)/vk))) - max((vlo-V(n1))/vk,0) - ln(1+exp(-abs((vlo-V(n1))/vk))))}
+RG1 n1 0 {1/g0}
+CC1 n1 0 {cc}
+EO1 ob 0 n1 0 1
+BG2 0 n2 I = {isl*tanh(gm*(V(ob,m)+vos)/isl) + g0*vmid - kc*isl*(max((V(n2)-vhi)/vk,0) + ln(1+exp(-abs((V(n2)-vhi)/vk))) - max((vlo-V(n2))/vk,0) - ln(1+exp(-abs((vlo-V(n2))/vk))))}
+RG2 n2 0 {1/g0}
+CC2 n2 0 {cc}
+EO2 o 0 n2 0 1
+RD o m 100k
+C7 o m 100p
+R13 m h 4.7k
+C8 h vb 0.47u
+R14 o y 2.2k
+C9 y d 0.47u
+D4 d vb D1N4148
+D5 vb d D1N4148
+C10 d vb 10n
+R16 d ta 6.8k
+C12 ta vb 100n
+C11 d tc 22n
+R15 tc tb 2.2k
+R17 tb vb 6.8k
+RT1 ta w 10k
+RT2 w tb 10k
+RLV w vb 100k
+R18 w u 10k
+C13 u b3 47n
+R19 vb b3 1meg
+Q3 va b3 e3 Q2N5088
+R20 e3 0 10k
+R21 e3 z 1k
+C14 z out 1u
+R22 out 0 100k
+.model Q2N5088 NPN(Is=5.911f Bf=1122 Ne=1.394 Ise=5.911f Ikf=14.92m Br=1.271 Nc=2 Isc=0 Ikr=0 Rc=1.61 Rb=10 Vaf=62.37)
+.model D1N4148 D(Is=2.52n Rs=.568 N=1.752)
+* ngspice's starting guess for the operating point; stave ignores it.
+.nodeset v(n1)=4.5 v(ob)=4.5 v(q)=4.5 v(n2)=4.5 v(o)=4.5 v(m)=4.5
+.options interp reltol=1e-7 abstol=1e-12 vntol=1e-9
+.tran 20.8333333u 10m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

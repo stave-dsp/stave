@@ -29,7 +29,7 @@ use crate::units::{Hz, Volts};
 ///     i(n) = Is·tanh(gm·(v₊ − v₋ + Vos)/Is) + G·Vmid
 ///            − Is·K·[softplus((v(n) − Vhi)/Vk) − softplus((Vlo − v(n))/Vk)]
 ///     gm = 2π·GBW·C      Is = SR·C      G = gm/A0
-///     Vhi = V₊rail − headroom      Vlo = V₋rail + headroom      Vmid = (Vhi + Vlo)/2
+///     Vhi = V₊rail − headroom      Vlo = V₋rail + negative_headroom      Vmid = (Vhi + Vlo)/2
 /// ```
 ///
 /// so the small-signal gain is `A0` at DC with one pole, crossing unity
@@ -56,18 +56,23 @@ use crate::units::{Hz, Volts};
 /// 1/√2 at the datasheet's GBW, through `Circuit<Dk>`).
 ///
 /// Against the parts (DSP.md R13):
-/// `crates/stave-test/tests/matches_datasheet.rs::opamps::tl072` and
-/// `crates/stave-test/tests/matches_datasheet.rs::opamps::jrc4558` —
-/// gain-bandwidth and the tables' slew rates read back from a follower;
-/// the TL072's rising edge (sheet ~10 V/µs) and this revision's 20 V/µs
-/// table figure, both open-loop plots and the JRC4558's full-power swing
-/// are known gaps.
+/// `crates/stave-test/tests/matches_datasheet.rs::opamps::tl072`,
+/// `crates/stave-test/tests/matches_datasheet.rs::opamps::jrc4558`,
+/// `crates/stave-test/tests/matches_datasheet.rs::opamps::lm741` and
+/// `crates/stave-test/tests/matches_datasheet.rs::opamps::njm2904` —
+/// gain-bandwidth and the tables' slew rates read back from a follower
+/// within 10%; the TL072's rising edge (sheet ~10 V/µs) and this
+/// revision's 20 V/µs table figure, both open-loop plots and the
+/// JRC4558's full-power swing are known gaps. In circuits, each part
+/// against ngspice in `crates/stave-test/tests/classics_match_ngspice.rs`
+/// (TS-808, RAT, Phase 90, DS-1, Klon).
 ///
 /// # Cost
 ///
 /// The datasheet's `"Circuit<Dk> Tube Screamer (JRC4558)"`: a
 /// two-control nonlinearity in the DK solve (the gain stage's input and
-/// its node), beside the circuit's diodes.
+/// its node), beside the circuit's diodes; five of them in
+/// `"Circuit<Dk> MXR Phase 90 (LM741)"`.
 ///
 /// # Aliasing
 ///
@@ -78,7 +83,10 @@ use crate::units::{Hz, Volts};
 ///
 /// Outputs within the rails; inputs within the supplies (common-mode
 /// limits and phase reversal are not modelled). Supplies are the
-/// netlist element's, not the part's.
+/// netlist element's, not the part's. Output swing is a fixed distance
+/// from each rail: its dependence on load and sink current (the LM358
+/// family's rising low limit) and crossover distortion are not
+/// modelled.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Macromodel {
     pub name: &'static str,
@@ -90,8 +98,13 @@ pub struct Macromodel {
     pub slew_rate: f64,
     /// Input offset voltage, added to `v(+) − v(−)`.
     pub offset: Volts,
-    /// How far short of each supply rail the output swings.
+    /// How far short of the positive supply rail the output swings.
     pub headroom: Volts,
+    /// How far short of the negative supply rail the output swings:
+    /// `headroom` for a part with a symmetric output stage; near zero for
+    /// a single-supply part (the LM358 family) whose output reaches its
+    /// negative rail.
+    pub negative_headroom: Volts,
 }
 
 impl Macromodel {
@@ -116,6 +129,7 @@ impl Macromodel {
         slew_rate: 13e6,
         offset: Volts::new(3e-3),
         headroom: Volts::new(1.5),
+        negative_headroom: Volts::new(1.5),
     };
 
     /// New Japan Radio NJM4558 (the JRC4558D of the Tube Screamer),
@@ -129,6 +143,7 @@ impl Macromodel {
         slew_rate: 1e6,
         offset: Volts::new(0.5e-3),
         headroom: Volts::new(1.0),
+        negative_headroom: Volts::new(1.0),
     };
 
     /// National Semiconductor LM308 (LM108/LM208/LM308 datasheet,
@@ -145,9 +160,47 @@ impl Macromodel {
         slew_rate: 0.3e6,
         offset: Volts::new(2e-3),
         headroom: Volts::new(1.0),
+        negative_headroom: Volts::new(1.0),
     };
 
-    pub const ALL: [Self; 3] = [Self::TL072, Self::JRC4558, Self::LM308];
+    /// Texas Instruments LM741C, SNOSC25D (October 2015), the LM741C
+    /// table, typical at ±15 V, 25 °C: large-signal voltage gain
+    /// 200 V/mV, slew rate 0.5 V/µs (unity gain), VOS 2 mV, output swing
+    /// ±14 V into 10 kΩ (headroom 1 V). The LM741C rows print no
+    /// bandwidth, only the unity-gain rise time, 0.3 µs; the sheet's own
+    /// note derives bandwidth as 0.35/rise time, 1.17 MHz, which for the
+    /// one-pole model is its gain-bandwidth (the LM741A's table prints
+    /// 1.5 MHz typical, 0.437 MHz minimum).
+    pub const LM741: Self = Self {
+        name: "LM741",
+        gain: 200e3,
+        gain_bandwidth: Hz::new(1.17e6),
+        slew_rate: 0.5e6,
+        offset: Volts::new(2e-3),
+        headroom: Volts::new(1.0),
+        negative_headroom: Volts::new(1.0),
+    };
+
+    /// New Japan Radio NJM2904 (the Boss DS-1's op-amp since 2006; the
+    /// LM2904/LM358 family), Nisshinbo datasheet NJM2904 Ver.20260722,
+    /// typical: AV 100 dB, SR 0.5 V/µs and fT 0.6 MHz (both at ±15 V),
+    /// VIO 2 mV. A single-supply part: its output stage reaches the
+    /// negative rail, and the "Maximum Output Voltage Swing vs.
+    /// Frequency" plot's plateau is 14 Vpp on a 15 V supply — 1 V short
+    /// of the positive rail (headroom 1 V, negative headroom 0). The
+    /// family's crossover distortion and its sink-current-dependent low
+    /// limit are not modelled.
+    pub const NJM2904: Self = Self {
+        name: "NJM2904",
+        gain: 100e3,
+        gain_bandwidth: Hz::new(0.6e6),
+        slew_rate: 0.5e6,
+        offset: Volts::new(2e-3),
+        headroom: Volts::new(1.0),
+        negative_headroom: Volts::new(0.0),
+    };
+
+    pub const ALL: [Self; 5] = [Self::TL072, Self::JRC4558, Self::LM308, Self::LM741, Self::NJM2904];
 
     /// The constants the gain stage runs on between supply rails
     /// `negative` and `positive` volts.
@@ -155,8 +208,10 @@ impl Macromodel {
         let c = Self::COMPENSATION_FARADS;
         let gm = std::f64::consts::TAU * f64::from(self.gain_bandwidth.get()) * c;
         let slew_amps = self.slew_rate * c;
-        let headroom = self.headroom.get();
-        let (low, high) = (negative + headroom, positive - headroom);
+        let (low, high) = (
+            negative + self.negative_headroom.get(),
+            positive - self.headroom.get(),
+        );
         Prepared {
             gm,
             slew_amps,

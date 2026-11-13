@@ -160,6 +160,11 @@ fn ota_vca() {
     circuit("ota_vca");
 }
 
+#[test]
+fn boss_ce2_filters() {
+    circuit("boss_ce2_filters");
+}
+
 /// `Circuit<Wdf>` on every circuit's plan at `Circuit<Dk>`'s T0
 /// budgets: the wave digital method (trees under an R-type root, the
 /// devices a K-method root) held to ngspice on the whole matrix — both

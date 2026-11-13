@@ -756,6 +756,17 @@ other references; a model with a capture is held to it within budget.
   with ideal regeneration. Left for later: the TB-303 (no published 2SC1583
   card), the 904-A's own regeneration path (no 2N4058 card), Pultec, Phase
   90, CE-2 and Klon.
+- [ ] **R25** The R24 follow-ups,
+  each a verified deck and a topology in `circuit::topologies`
+  (`classics_match_ngspice.rs`, `solver_conformance.rs`, a datasheet line):
+  the Boss CE-2's BBD filters (`boss_ce2_filters`: the two 2N5088 stages,
+  the MN3007 a unity copy); an LM741 macromodel and on it the MXR Phase
+  90 (`mxr_phase90(gate_volts)`: four 2N5952-swept allpass stages and the
+  2N4125 mixer, the LFO frozen); the Boss DS-1 (`boss_ds1`) on the
+  NJM2904, its real op-amp since 2006 (no DS-1 ever used a 741; the
+  2SC2240s have no published card, the 2N5088 stands in); the Klon
+  Centaur (`klon_centaur(gain, treble)`), its clean/dry blend held at both
+  ends of the dual-gang gain pot by AC decks and its whole path at noon.
 
 ### P — profiling and performance
 

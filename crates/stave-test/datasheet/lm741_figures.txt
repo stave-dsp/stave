@@ -1,0 +1,19 @@
+# title: LM741C typical slew rate and bandwidth from the electrical characteristics table, at +/-15 V and 25 °C.
+# document: Texas Instruments, LM741 Operational Amplifier, SNOSC25D (May 1998, revised October 2015)
+# url: https://www.ti.com/lit/ds/symlink/lm741.pdf
+# figure: 6.7 Electrical Characteristics, LM741C table, page 6, and note (2) of the LM741A table, page 5
+# method: transcribed from the table
+# x: supply voltage per rail (V)
+# y: slew rate (V/s) on curve slew; gain-bandwidth product (Hz) on curve gbw
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 15
+# full-scale-y: 1.2e6
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: vcc=15 t=25
+# notes: typical values only. The LM741C rows give slew rate 0.5 V/us (unity gain) and transient response rise time 0.3 us (unity gain), but no bandwidth; the gbw row is the sheet's own conversion, note (2): BW (MHz) = 0.35 / rise time (us) = 1.167 MHz. The LM741A table prints that bandwidth row as 1.5 MHz typical, 0.437 MHz minimum. The rise time's 5% overshoot shows a second pole the one-pole macromodel leaves out.
+# curve slew=1
+15 5e5
+# curve gbw=1
+15 1.1667e6
