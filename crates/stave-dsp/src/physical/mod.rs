@@ -11,6 +11,8 @@
 //!
 //! | Module | Models |
 //! |---|---|
+//! | [`plate`] | [`Plate`](plate::Plate) (the modes of a thin, tensioned plate: Ducceschi & Gabrielli's DAFx-26 model as Mathews–Smith phasors), [`Geometry::EMT140`](plate::Geometry::EMT140) |
+//! | [`rotary`] | [`Cabinet`](rotary::Cabinet) (a rotary speaker: horn and drum [`Radiator`](rotary::Radiator)s with Smith et al.'s Doppler, directivity and cabinet reflections), rotors [`Rotor::HORN_122H`](rotary::Rotor::HORN_122H), [`Rotor::DRUM_122H`](rotary::Rotor::DRUM_122H) |
 //! | [`spring`] | [`Tank`](spring::Tank), [`Spring`](spring::Spring) (Välimäki, Parker & Abel's dispersive chirps as waveguides), [`Chirp`](spring::Chirp) |
 //! | [`tape`] | [`Chowdhury`](tape::Chowdhury) (a tape machine: [`Recording`](tape::Recording), [`Flutter`](tape::Flutter), [`Playback`](tape::Playback)); machine [`Machine::TC260`](tape::Machine::TC260), transport [`Transport::AKAI_4000D`](tape::Transport::AKAI_4000D) |
 //!
@@ -20,5 +22,7 @@
 //! [`circuit::devices::bbd`](crate::circuit::devices::bbd) though its
 //! transfer is a sampling process.
 
+pub mod plate;
+pub mod rotary;
 pub mod spring;
 pub mod tape;

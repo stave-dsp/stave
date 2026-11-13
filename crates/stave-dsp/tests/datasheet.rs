@@ -78,6 +78,14 @@
 //! sections: 167 with the low chirps alone (100 sections), 566 with the
 //! wide-band chirps (300); a three-spring tank 1.7 µs, which is where
 //! Parker 2011's multirate structures would pay.
+//!
+//! H3, H4 (the reference machine, 2026-11-13, load 2.3): a plate costs
+//! its modes, about 0.47 ns a mode for both pickups a block at a time —
+//! an EMT 140 to 2.5 kHz (3175 modes) 1.5 µs/sample, to 5 kHz (6416) 3.1,
+//! to 10 kHz (12 918) 6.1, to 20 kHz (25 955) 11.9; one `tick` at a time
+//! streams the state through the cache each sample and costs 2.2× the
+//! block form. A rotor with its back-wall image at two microphones 487
+//! ns, a 122H cabinet (crossover, horn, drum) 980.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::methods::wdf::{NonlinearRoot, Wdf};
@@ -110,6 +118,8 @@ use stave_dsp::circuit::devices::bbd::{Chip, Filter, HoltersParker};
 use stave_dsp::circuit::devices::compander::{self, Compander, Mode};
 use stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade;
 use stave_dsp::effects::reverb::{Dattorro, Fdn, Kronecker, Mixing, Schroeder, VelvetNoise, T60};
+use stave_dsp::physical::plate::Plate;
+use stave_dsp::physical::rotary::{Cabinet, Directivity, Radiator, Rotor, Speed, Wall};
 use stave_dsp::physical::spring::{Chirp, Spring, Tank};
 use stave_dsp::physical::tape::{Chowdhury, Flutter, Formulation, Machine, Phase, Playback, Transport};
 use stave_dsp::circuit::devices::photocell::{Najnudel, Vactrol};
@@ -379,6 +389,46 @@ fn primitive_datasheet() {
     let mut tank = Tank::default();
     tank.prepare(sr);
     bench("Tank (3 springs)", &input, |x| tank.tick(x));
+
+    // H3: plate reverb, both pickups, block by block; the cost is the
+    // mode count, linear in the bandwidth (EMT 140: 1.3 modes a hertz).
+    let block: Vec<f32> = input[..512].to_vec();
+    let (mut left, mut right) = (vec![0.0f32; 512], vec![0.0f32; 512]);
+    for (top, name) in [
+        (2_500.0, "Plate (EMT 140, to 2.5 kHz)"),
+        (5_000.0, "Plate (EMT 140, to 5 kHz)"),
+        (10_000.0, "Plate (EMT 140, to 10 kHz)"),
+        (20_000.0, "Plate (EMT 140, to 20 kHz)"),
+    ] {
+        let mut plate = Plate::emt140(units::seconds(3.0));
+        plate.set_bandwidth(units::hz(top));
+        plate.prepare(sr);
+        if sheet::timed() {
+            println!("  {name}: {} modes", plate.modes().len());
+        }
+        bench_points(name, block.len(), || plate.process_stereo(&block, &mut left, &mut right));
+    }
+    let mut plate = Plate::emt140(units::seconds(3.0));
+    plate.set_bandwidth(units::hz(5_000.0));
+    plate.prepare(sr);
+    bench("Plate (EMT 140, to 5 kHz, mono tick)", &input, |x| plate.tick(x));
+
+    // H4: rotary speaker at tremolo, both microphones.
+    let mut horn: Radiator = Radiator::new(Rotor::HORN_122H, Directivity::HORN_122H);
+    horn.set_walls(&[Wall::BACK_122H]);
+    horn.set_speed(Speed::Tremolo);
+    horn.prepare(sr);
+    bench("Radiator (horn, back wall, stereo)", &input, |x| {
+        let (l, r) = horn.tick_stereo(x);
+        l + r
+    });
+    let mut leslie: Cabinet = Cabinet::leslie_122h();
+    leslie.set_speed(Speed::Tremolo);
+    leslie.prepare(sr);
+    bench("Cabinet (Leslie 122H, stereo)", &input, |x| {
+        let (l, r) = leslie.tick_stereo(x);
+        l + r
+    });
 
     // E7: photocells. The cell's TR-BDF2 step under a held LED current,
     // and under a 5 Hz tremolo's sweep (the Newton iterations move).

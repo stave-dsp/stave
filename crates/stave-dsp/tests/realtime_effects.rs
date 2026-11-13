@@ -1,5 +1,5 @@
 //! Realtime safety of the delays, reverbs, dynamics, crossovers, formant
-//! filters and resonators: after `prepare`,
+//! filters, resonators, the plate and the rotary speaker: after `prepare`,
 //! `tick`, setters that are documented as cheap, and `reset` never
 //! allocate. A counting global allocator, armed per thread, watches.
 
@@ -253,4 +253,52 @@ fn bands_and_resonators_never_allocate_after_prepare() {
         }
     });
     assert_eq!(n, 0, "per-sample setters allocated {n} times");
+}
+
+/// The plate and the rotary speaker (DSP.md H3, H4): `tick`, the block
+/// and stereo forms, `reset` and every realtime setter never allocate
+/// after `prepare` — moving a pickup, changing the loss, switching the
+/// rotors' speed, moving a microphone or the walls.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn plate_and_rotary_never_allocate_after_prepare() {
+    use stave_dsp::physical::plate::{Loss, Output, Plate, Point};
+    use stave_dsp::physical::rotary::{Cabinet, Directivity, Mic, Radiator, Rotor, Speed, Wall};
+
+    let mut small = Plate::emt140(seconds(2.0));
+    small.set_bandwidth(hz(1_000.0));
+    no_allocation("Plate", &mut small);
+    no_allocation("Radiator", &mut Radiator::<Lagrange3>::new(Rotor::HORN_122H, Directivity::HORN_122H));
+    no_allocation("Cabinet", &mut Cabinet::<Lagrange3>::leslie_122h());
+
+    let mut plate = Plate::emt140(seconds(2.0));
+    plate.set_bandwidth(hz(1_000.0));
+    plate.prepare(48_000.0);
+    let mut cab = Cabinet::<Lagrange3>::leslie_122h();
+    cab.prepare(48_000.0);
+    let input = [0.25f32; 256];
+    let (mut l, mut r) = ([0.0f32; 256], [0.0f32; 256]);
+    let n = allocations_in(|| {
+        for i in 0..20 {
+            let t = i as f64 / 20.0;
+            plate.set_pickup(i % 2, Point::new(0.2 + 0.5 * t, 0.7 - 0.3 * t));
+            plate.set_drive(Point::new(0.4 + 0.1 * t, 0.5));
+            plate.set_loss(Loss::emt140(seconds(1.0 + 3.0 * t)).unwrap());
+            plate.set_output(if i % 3 == 0 { Output::Acceleration } else { Output::Velocity });
+            plate.process_stereo(&input, &mut l, &mut r);
+            plate.tick_stereo(0.1);
+            let mut block = input;
+            plate.process(&mut block);
+            cab.set_speed([Speed::Chorale, Speed::Tremolo, Speed::Stop][i % 3]);
+            cab.set_mic(i % 2, Mic::at(30.0 + 5.0 * i as f64, 0.5 + 0.1 * t));
+            cab.horn().set_walls(&[Wall::BACK_122H, Wall { angle: 90.0, distance: 0.3, reflection: 0.2 }]);
+            cab.drum().set_directivity(Directivity::OMNI);
+            for _ in 0..256 {
+                cab.tick_stereo(0.1);
+            }
+        }
+        plate.reset();
+        cab.reset();
+    });
+    assert_eq!(n, 0, "plate and rotary setters allocated {n} times");
 }
