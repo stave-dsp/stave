@@ -555,11 +555,11 @@ other references; a model with a capture is held to it within budget.
 
 ### H — hardware beyond circuits
 
-- [ ] **H1** Bucket-brigade delay lines (MN3007/3205, MN3008): clocked
+- [x] **H1** (4527e61b: `circuit::devices::bbd::HoltersParker` (Holters & Parker DAFx-18) with parts `Chip::MN3007`/`MN3008`/`MN3205`, feedthrough and noise; `compander::Compander` (`Chip::NE570`); `topologies::bucket_brigade::BucketBrigade`, its 4th-order Sallen–Key filters against ngspice `.ac` at 1.7e-11 dB; the paper's Fig. 7 at 6.5e-4, delay to 1e-6, eq. 37 gain to 0.0012 dB, alias/image and noise as predicted to 0.1 dB; placed in `circuit`: the chip is a schematic part, its transfer a sampling process no netlist method solves; Gabrielli 2025's BLEP not applied; 74 ns/sample at a 40 kHz clock) Bucket-brigade delay lines (MN3007/3205, MN3008): clocked
   sample-and-hold stages at the BBD clock rate, clock feedthrough,
   compander (NE570) and the anti-alias/reconstruction filters, for analog
   chorus, flanger and delay.
-- [ ] **H2** Spring reverb: dispersive waveguides with chirp allpass
+- [x] **H2** (4527e61b: `physical::spring::{Chirp, Spring, Tank}` — Välimäki–Parker–Abel chirps as waveguides (arrivals at 1, 3, 5 transits), drive-coil lowpass and velocity pickup, up to four springs; group delay vs Parker 2011 eq. 4 to 1e-6 of the peak, the IR's ridge vs design within 0.05 ms, T60 within 0.5 %; the modal engine is not built (the patent-safe path, noted in the module docs); 566 ns/sample a spring, 1.7 µs a three-spring tank) Spring reverb: dispersive waveguides with chirp allpass
   cascades (Välimäki, Parker, Abel 2010), drive transducer and pickup,
   boing on transients; multi-spring tanks. Consider a modal engine too (van Walstijn 2020; McQuillan 2021): physically exact and SIMD-friendly. Before shipping, check US 8,391,504 (spring emulation with dispersive allpass delays), likely in force until about 2027–28.
 - [ ] **H3** Plate reverb: modal synthesis of a thin plate, damping by
