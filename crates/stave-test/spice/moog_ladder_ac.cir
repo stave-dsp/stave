@@ -1,0 +1,60 @@
+* Moog 904-A transistor ladder core, small-signal at a fixed tail
+* current: |Vout/Vin| from 10 Hz to 100 kHz. Sources: R. A. Moog Co.,
+* "904-A Voltage Controlled Low Pass Filter", drawing 1149 (1967, rev. C
+* 1970; the John Leimseider archive at https://archive.org, items JL11323
+* and JL11387);
+* R. A. Moog, US patent 3,475,623 (1969),
+* https://patents.google.com/patent/US3475623A; T. Stinchcombe, "Analysis
+* of the Moog Transistor Ladder and Derivative Filters",
+* https://www.timstinchcombe.co.uk.
+* The bottom pair Q7/Q8 on an ideal 100 uA tail (the Q6 exponential
+* converter frozen; the R45 47 ohm balance trim left out), the rungs
+* Q9/Q10, Q11/Q12, Q13/Q14 and the top pair Q15/Q16, with the range-3
+* capacitor, 0.075 uF, across each of the four rungs. Rung bases from the
+* drawing's divider +12 V - 68 - 220 - 220 - 220 - 680 - ground (about
+* 11.4, 9.5, 7.7 and 5.8 V); the bottom bases at 3.7 V (the drawing's
+* +3.8 / +3.65 V from the input buffer), driven differentially by ideal
+* sources, half the input each (written as the regeneration-ready sources
+* of moog_ladder_feedback.cir, here with k = 0). The top
+* collectors go straight to +12 V and the output is the voltage across the
+* top capacitor: the output buffer Q17-Q21 and the regeneration path are
+* left out, so this is the open-loop four-pole core; the corner is about
+* Itail / (8 pi Vt C) = 2 kHz. Every transistor is the drawing's 2N3392:
+* National Semiconductor's card, DC part (stave's GummelPoon::N2N3392).
+* Output: out.
+VCC v12 0 12
+VBB bb 0 3.7
+VIN sig 0 DC 0 AC 1
+BP inp bb V = {0.5*(V(sig) - 0*V(l4,r4))}
+BN inn bb V = {-0.5*(V(sig) - 0*V(l4,r4))}
+R29 v12 n4 68
+R28 n4 n3 220
+R27 n3 n2 220
+R26 n2 n1 220
+R25 n1 0 680
+Q7 l1 inp t Q2N3392
+Q8 r1 inn t Q2N3392
+IT t 0 100u
+C1 l1 r1 0.075u
+Q9 l2 n1 l1 Q2N3392
+Q10 r2 n1 r1 Q2N3392
+C2 l2 r2 0.075u
+Q11 l3 n2 l2 Q2N3392
+Q12 r3 n2 r2 Q2N3392
+C3 l3 r3 0.075u
+Q13 l4 n3 l3 Q2N3392
+Q14 r4 n3 r3 Q2N3392
+C4 l4 r4 0.075u
+Q15 v12 n4 l4 Q2N3392
+Q16 v12 n4 r4 Q2N3392
+EOUT out 0 l4 r4 1
+.model Q2N3392 NPN(IS=12.03f ISE=4.958p ISC=0 BF=254.8 BR=4.379 IKF=0.1072 IKR=0 VAF=37.37 VAR=12.5 RE=0.1 RC=1 RB=10 NF=1 NR=1 NE=1.971 NC=2)
+.options reltol=1e-9 abstol=1e-15 vntol=1e-12
+.ac dec 20 10 100k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(out)
+.endc
+.end

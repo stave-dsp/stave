@@ -1,0 +1,31 @@
+* Marshall JCM800 2203 tone stack: C8 470p, C9 (bass) 22n, C10 (mid) 22n,
+* R13 slope 33k, VR5 treble 250k (lin), VR7 bass 1M, VR6 mid 25k (lin)
+* wired as a potentiometer. Source: Marshall drawing 2203-01-60-02 (the
+* 2203 reissue; el34world.com schematic archive,
+* https://www.el34world.com). The c.1969+ 1959 Super Lead has the same
+* values (Rob Robinette's annotated Plexi preamp, https://robrobinette.com).
+* The network alone: driven by an ideal source (the amp drives it from
+* V2B's cathode follower) and unloaded (the amp loads the treble wiper
+* with the 1M master volume; marshall_jcm800_2203.cir has it in place).
+* The treble wiper is the output; the bass pot runs from the treble pot's
+* foot to the mid pot's top; C10 lands on the mid pot's wiper. Pots as
+* resistance fractions: treble 0.5, bass 0.5, mid 0.5. Output |Vo/Vi|
+* over 20 Hz to 20 kHz (first column = frequency).
+VI i 0 DC 0 AC 1
+C1 i t 470p
+RT1 t o 125000
+RT2 o b 125000
+R4 i n 33000
+C2 n b 22n
+RB b j 500000
+RM1 j w 12500
+RM2 w 0 12500
+C3 n w 22n
+.ac dec 20 20 20k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(o)
+.endc
+.end

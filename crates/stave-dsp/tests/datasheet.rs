@@ -789,6 +789,25 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
         driven(DiodeLadder { resonance: 10.0, ..DiodeLadder::DEFAULT }.netlist(), sr);
     bench("Circuit<Dk> diode ladder", input, |x| diode_ladder.tick(0.1 * x));
     solve_health(&diode_ladder);
+
+    // R24: the classic circuits, their topologies' netlists, input driven.
+    println!("  classic circuits: Circuit<Dk> on circuit::topologies");
+    use stave_dsp::circuit::topologies;
+    let mut muff = driven(topologies::big_muff_rams_head(), sr);
+    bench("Circuit<Dk> Big Muff (Ram's Head)", input, |x| muff.tick(x));
+    solve_health(&muff);
+    let mut ts808 = driven(topologies::tube_screamer_ts808(), sr);
+    bench("Circuit<Dk> Tube Screamer TS-808", input, |x| ts808.tick(x));
+    solve_health(&ts808);
+    let mut rat = driven(topologies::proco_rat(), sr);
+    bench("Circuit<Dk> ProCo RAT (LM308)", input, |x| rat.tick(x));
+    solve_health(&rat);
+    let mut jcm = driven(topologies::marshall_jcm800_2203(), sr);
+    bench("Circuit<Dk> JCM800 2203 preamp", input, |x| jcm.tick(x));
+    solve_health(&jcm);
+    let mut moog = driven(topologies::moog_ladder_904a(3.0), sr);
+    bench("Circuit<Dk> Moog ladder (k = 3)", input, |x| moog.tick(x));
+    solve_health(&moog);
 }
 
 /// A topology's netlist as `Circuit<Dk>`, its `vin` driven by the input.

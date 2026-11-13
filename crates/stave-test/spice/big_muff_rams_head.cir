@@ -1,0 +1,82 @@
+* Electro-Harmonix Big Muff Pi, "Gilmour '73 Ram's Head" values, the
+* whole effect path. Sources: Aion FX, "Halo Distortion/Sustainer" build
+* documentation, schematic p. 7 (values from Kit Rae's Ram's Head
+* schematic), https://aionfx.com/app/files/docs/halo_documentation.pdf;
+* ElectroSmash, "Big Muff Pi Analysis" (the 1976 V3: same topology),
+* https://www.electrosmash.com/big-muff-pi-analysis.
+* Four 2N3904 common-emitter stages on 9 V: the input booster Q1 (470k ||
+* 470p collector to base, 100 ohm emitter, 33k in), the sustain pot (100k
+* at maximum over a 560 ohm floor), two clipping stages Q2/Q3 (the same,
+* 10k in, with an antiparallel 1N914 pair in series with 100n from
+* collector to base), the passive tone stack (low-pass 33k / 12n,
+* high-pass 3n9 / 33k, the 100k pot at noon: the stock mid-scoop position
+* of Aion's midrange switch), and the fixed-bias output booster Q4 (470k
+* / 100k, 10k collector, 2k7 emitter) into the 100k volume at maximum.
+* The 2M2 input pulldown is kept; the supply is an ideal 9 V (Aion's
+* 1N5817, 100 ohm and filter caps left out). The guitar is an ideal
+* 200 mV, 220 Hz sine. Aion fits 2N3904s; the originals were BC239 /
+* 2N5133-class parts. 2N3904: Fairchild's datasheet card, its DC part
+* (stave's GummelPoon::N2N3904); 1N914: the LTspice standard.dio card,
+* static part (Shockley::N914). Capacitances not modelled. Output: across
+* the volume pot.
+VIN in 0 SIN(0 0.2 220)
+RPD in 0 2.2meg
+VA va 0 9
+R2 in a 33k
+C1 a b1 100n
+R3 b1 0 100k
+R4 c1 b1 470k
+C2 c1 b1 470p
+R6 va c1 10k
+Q1 c1 b1 e1 Q2N3904
+R5 e1 0 100
+C3 c1 s 100n
+RSUS s r7 100k
+R7 r7 0 560
+C4 s a2 100n
+R8 a2 b2 10k
+R9 b2 0 100k
+R10 c2 b2 470k
+C5 c2 b2 470p
+R12 va c2 10k
+Q2 c2 b2 e2 Q2N3904
+R11 e2 0 100
+C6 b2 d2 100n
+D2 d2 c2 D1N914
+D3 c2 d2 D1N914
+C7 c2 a3 100n
+R13 a3 b3 10k
+R14 b3 0 100k
+R15 c3 b3 470k
+C8 c3 b3 470p
+R17 va c3 10k
+Q3 c3 b3 e3 Q2N3904
+R16 e3 0 100
+C9 b3 d3 100n
+D4 d3 c3 D1N914
+D5 c3 d3 D1N914
+R19 c3 lp 33k
+C11 lp 0 12n
+C10 c3 hp 3.9n
+R18 hp 0 33k
+RT1 lp w 50k
+RT2 w hp 50k
+C12 w b4 100n
+R20 va b4 470k
+R21 b4 0 100k
+R22 va c4 10k
+Q4 c4 b4 e4 Q2N3904
+R23 e4 0 2.7k
+C13 c4 out 100n
+RV out 0 100k
+.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Rb=10 Vaf=74.03)
+.model D1N914 D(Is=2.52n Rs=.568 N=1.752)
+.options interp reltol=1e-8 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 20m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

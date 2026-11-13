@@ -1,8 +1,9 @@
 use super::*;
 
-const PARTS: [GummelPoon; 4] = [
+const PARTS: [GummelPoon; 5] = [
     GummelPoon::N2N3904,
     GummelPoon::N2N5088,
+    GummelPoon::N2N3392,
     GummelPoon::AC128,
     GummelPoon::OC44,
 ];

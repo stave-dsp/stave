@@ -1,0 +1,75 @@
+* Marshall JCM800 2203 preamp, high input to the master volume, driven
+* hot. Source: Marshall drawing 2203-01-60-02 (the 2203 reissue;
+* el34world.com schematic archive, https://www.el34world.com); Rob
+* Robinette, "How the Marshall JCM800 Works",
+* https://robrobinette.com/How_the_Marshall_JCM800_Works.htm (the same
+* values, and the B+ node voltages used here).
+* V1B: R47 68k grid stopper, R45 1M input leak, R1 2k7 || C1 680n
+* cathode, R7 100k plate. C3 22n (through the LO jack's switch contact)
+* -> R46 470k || C26 470p -> VR3, the 1M gain pot, at a resistance
+* fraction of 0.5, with C27 1n from its top to its wiper -> V1A, the cold
+* clipper: R2 10k cathode unbypassed, R8 100k plate, biased near cutoff.
+* C4 22n -> R9 470k || C6 470p -> V2A's R10 470k grid leak; V2A R11 820
+* ohm unbypassed, R44 100k plate, DC-coupled to the V2B cathode follower
+* (plate on B+, R12 100k cathode). The tone stack from the cathode: C8
+* 470p, R13 33k, C9 22n, C10 22n, treble 250k, bass 1M, mid 25k, each at
+* 0.5; the treble wiper loaded by VR4, the 1M master volume, full up.
+* Supplies ideal: 335 V for V1, 350 V for V2 (Robinette's node voltages
+* behind R14 and R15). Every triode is Dempwolf & Zolzer's 12AX7 (DAFx
+* 2011, eqs 10-12, Table 1 RSD-1: stave's triode::Dempwolf::RSD_1), so
+* cutoff, plate current and grid current are one smooth law: Ik through
+* BP minus the grid current, the grid current through BG. Interelectrode
+* capacitances are not modelled. The guitar is a 0.5 V, 1 kHz sine: V1A
+* cuts off and V2A's grid conducts every cycle. Output: o.
+.param g=2.242e-3 mu=103.2 gamma=1.26 c=3.40
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+VIN in 0 SIN(0 0.5 1k)
+VB5 b5 0 335
+VB4 b4 0 350
+R45 in 0 1meg
+R47 in g1 68k
+R7 b5 p1 100k
+R1 k1 0 2.7k
+C1 k1 0 680n
+C3 p1 a1 22n
+R46 a1 gt 470k
+C26 a1 gt 470p
+RGT gt g2 500k
+RGB g2 0 500k
+C27 gt g2 1n
+R8 b5 p2 100k
+R2 k2 0 10k
+C4 p2 a2 22n
+R9 a2 g3 470k
+C6 a2 g3 470p
+R10 g3 0 470k
+R44 b4 p3 100k
+R11 k3 0 820
+R12 k4 0 100k
+C8 k4 t 470p
+RT1 t o 125k
+RT2 o bt 125k
+R13 k4 n 33k
+C9 n bt 22n
+RB bt j 500k
+RM1 j w 12.5k
+RM2 w 0 12.5k
+C10 n w 22n
+RMV o 0 1meg
+BG1 g1 k1 I = {gg*pow(ln(1+exp(cg*V(g1,k1)))/cg, xi) + ig0}
+BP1 p1 k1 I = {g*pow(ln(1+exp(c*(V(p1,k1)/mu+V(g1,k1))))/c, gamma) - gg*pow(ln(1+exp(cg*V(g1,k1)))/cg, xi) - ig0}
+BG2 g2 k2 I = {gg*pow(ln(1+exp(cg*V(g2,k2)))/cg, xi) + ig0}
+BP2 p2 k2 I = {g*pow(ln(1+exp(c*(V(p2,k2)/mu+V(g2,k2))))/c, gamma) - gg*pow(ln(1+exp(cg*V(g2,k2)))/cg, xi) - ig0}
+BG3 g3 k3 I = {gg*pow(ln(1+exp(cg*V(g3,k3)))/cg, xi) + ig0}
+BP3 p3 k3 I = {g*pow(ln(1+exp(c*(V(p3,k3)/mu+V(g3,k3))))/c, gamma) - gg*pow(ln(1+exp(cg*V(g3,k3)))/cg, xi) - ig0}
+BG4 p3 k4 I = {gg*pow(ln(1+exp(cg*V(p3,k4)))/cg, xi) + ig0}
+BP4 b4 k4 I = {g*pow(ln(1+exp(c*(V(b4,k4)/mu+V(p3,k4))))/c, gamma) - gg*pow(ln(1+exp(cg*V(p3,k4)))/cg, xi) - ig0}
+.options interp reltol=1e-6 abstol=1e-10 vntol=1e-5
+.tran 20.8333333u 10m 0 0.25u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(o)
+.endc
+.end

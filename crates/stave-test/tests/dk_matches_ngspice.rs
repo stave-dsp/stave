@@ -196,7 +196,7 @@ fn power_supply_matches_ngspice() {
 /// analog one by the bilinear prewarp, exact for a linear circuit.
 #[test]
 fn tone_stack_matches_ngspice() {
-    for name in ["tone_stack_mid", "tone_stack_bright", "tone_stack_dark"] {
+    for name in ["tone_stack_duncan_fender_mid", "tone_stack_duncan_fender_bright", "tone_stack_duncan_fender_dark"] {
         let circuit = Circuit::<Dk>::new(&deck(name)).unwrap();
         Case::ngspice(name)
             .named(format!("{name}/dk"))
@@ -615,7 +615,7 @@ mod agreement {
             slope_resistance_ohms: 100e3,
         });
         stack.set_controls(PassiveToneControlPositions::new(0.9, 0.1, 0.7));
-        let dk = Circuit::<Dk>::new(&deck("tone_stack_bright")).unwrap();
+        let dk = Circuit::<Dk>::new(&deck("tone_stack_duncan_fender_bright")).unwrap();
         let w = (0..60)
             .map(|k| {
                 let hz = 20.0 * 10f64.powf(f64::from(k) / 20.0);

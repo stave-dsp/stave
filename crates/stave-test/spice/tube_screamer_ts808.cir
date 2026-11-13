@@ -1,0 +1,78 @@
+* Ibanez TS-808 Tube Screamer, the whole effect path. Sources: Aion FX,
+* "Stratus Classic Overdrive" build documentation (TS-808 values),
+* schematic p. 6 and parts list, https://aionfx.com; ElectroSmash, "Tube
+* Screamer Analysis", https://www.electrosmash.com/tube-screamer-analysis;
+* R. G. Keen, "The Technology of the Tube Screamer" (GEOFEX),
+* http://www.geofex.com/Article_Folders/TStech/tsxtech.htm.
+* The 2N5088 input follower (22n, 1k, 510k to the 4.5 V reference, 10k
+* emitter, 1u to the op-amp's 10k reference leg); IC1A, the clipping
+* stage (drive at maximum: 51k + 500k, || 51p, || an antiparallel 1N914
+* pair; ground leg 4k7 + 47n to the reference); the tone stage (1k / 220n
+* low-pass, 10k to the reference, the 20k tone pot at noon between IC1B's
+* inputs with 220n + 220 ohm from its wiper, 1k feedback); the level pot
+* (100k at maximum, 1u + 1k in); the 2N5088 output follower (100n, 510k
+* to the reference, 10k emitter, 100 ohm, 1u, 10k). The 2M2 input
+* pulldown is kept. Aion draws C3 as 47p; the 1979 pedal has 51p. The
+* supplies are ideal: 9 V, and 4.5 V for the 10k/10k + 47u reference.
+* Both op-amp halves are stave's opamp::Macromodel::JRC4558 between 0 and
+* 9 V, written as behavioural sources (see opamp_slew.cir); 2N5088:
+* Fairchild's card, DC part (GummelPoon::N2N5088); 1N914: LTspice
+* standard.dio, static part. Guitar 300 mV, 1 kHz. Output: out.
+.param cc=1e-9 vos=0.5e-3 vhi=8 vlo=1 vmid=4.5 vk=0.02 kc=10
+.param gm={6.283185307179586*3e6*1e-9} isl={1e6*1e-9} g0={gm/100e3}
+VIN in 0 SIN(0 0.3 1k)
+RPD in 0 2.2meg
+VA va 0 9
+VB vb 0 4.5
+C1 in a 22n
+R1 a b1 1k
+R2 vb b1 510k
+Q1 va b1 e1 Q2N5088
+R3 e1 0 10k
+C2 e1 p1 1u
+R4 vb p1 10k
+BG1 0 n1 I = {isl*tanh(gm*(V(p1,m1)+vos)/isl) + g0*vmid - kc*isl*(max((V(n1)-vhi)/vk,0) + ln(1+exp(-abs((V(n1)-vhi)/vk))) - max((vlo-V(n1))/vk,0) - ln(1+exp(-abs((vlo-V(n1))/vk))))}
+RG1 n1 0 {1/g0}
+CC1 n1 0 {cc}
+EO1 o1 0 n1 0 1
+RF o1 m1 551k
+CF o1 m1 51p
+D1 o1 m1 D1N914
+D2 m1 o1 D1N914
+R5 m1 s 4.7k
+C4 s vb 47n
+R7 o1 t 1k
+C5 t 0 220n
+R8 vb t 10k
+RT1 t w 10k
+RT2 w m2 10k
+C6 w x 220n
+R9 x 0 220
+BG2 0 n2 I = {isl*tanh(gm*(V(t,m2)+vos)/isl) + g0*vmid - kc*isl*(max((V(n2)-vhi)/vk,0) + ln(1+exp(-abs((V(n2)-vhi)/vk))) - max((vlo-V(n2))/vk,0) - ln(1+exp(-abs((vlo-V(n2))/vk))))}
+RG2 n2 0 {1/g0}
+CC2 n2 0 {cc}
+EO2 o2 0 n2 0 1
+R10 o2 m2 1k
+C7 o2 y 1u
+R11 y l 1k
+RLV l vb 100k
+C8 l b2 100n
+R12 vb b2 510k
+Q2 va b2 e2 Q2N5088
+R13 e2 0 10k
+R14 e2 z 100
+C9 z out 1u
+R15 out 0 10k
+.model Q2N5088 NPN(Is=5.911f Bf=1122 Ne=1.394 Ise=5.911f Ikf=14.92m Br=1.271 Nc=2 Isc=0 Ikr=0 Rc=1.61 Rb=10 Vaf=62.37)
+.model D1N914 D(Is=2.52n Rs=.568 N=1.752)
+* ngspice's starting guess for the operating point; stave ignores it.
+.nodeset v(n1)=4.5 v(o1)=4.5 v(m1)=4.5 v(p1)=4.5 v(n2)=4.5 v(o2)=4.5 v(m2)=4.5 v(t)=4.5
+.options interp reltol=1e-7 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 8m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

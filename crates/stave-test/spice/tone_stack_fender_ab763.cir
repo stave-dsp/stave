@@ -1,0 +1,31 @@
+* Fender AB763 tone stack (Deluxe Reverb, normal channel): C1 250p, C2
+* (bass) 0.1u, C3 (mid) 0.047u, slope 100k, treble 250k, bass 250k, no
+* mid pot: a fixed 6.8k from the bass pot's foot to ground, C3 landing on
+* its top. Sources: Fender's "Deluxe Reverb-Amp AB763" schematic drawing
+* (el34world.com schematic archive, https://www.el34world.com); Rob
+* Robinette, "How the AB763 Deluxe Reverb Works",
+* https://robrobinette.com/How_The_AB763_Deluxe_Reverb_Works.htm (the same
+* values). The Twin Reverb's AB763 has a 10k mid pot instead.
+* The network alone: driven by an ideal source (the amp drives it from
+* V1A's plate, about 38k) and unloaded (the amp loads the treble wiper
+* with the 1M volume pot). The treble wiper is the output; the bass pot,
+* a variable resistor, runs from the treble pot's foot to the 6.8k.
+* Pots as resistance fractions: treble 0.5, bass 0.5. Output |Vo/Vi|
+* over 20 Hz to 20 kHz (first column = frequency).
+VI i 0 DC 0 AC 1
+C1 i t 250p
+RT1 t o 125000
+RT2 o b 125000
+R4 i n 100000
+C2 n b 100n
+RB b j 125000
+RM j 0 6800
+C3 n j 47n
+.ac dec 20 20 20k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(o)
+.endc
+.end

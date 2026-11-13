@@ -1,0 +1,49 @@
+* Moog 904-A transistor ladder core with ideal regeneration, driven into
+* the bottom pair's tanh: the core of moog_ladder_ac.cir (same sources:
+* the 904-A drawing 1149; US patent 3,475,623; T. Stinchcombe's ladder
+* analysis), its four 0.075 uF rungs on a 100 uA tail, every transistor
+* the drawing's 2N3392 (National Semiconductor's card, DC part). The
+* 904-A takes regeneration from its output buffer (Q17-Q21, with 2N4058
+* PNPs that have no published card) through R22; here an ideal source
+* stands in for that path, as in the Stilson-Smith and Huovilainen
+* analyses: the bottom pair's differential drive is the input minus k = 3
+* times the voltage across the top capacitor (resonant, short of
+* self-oscillation at k = 4). The input is a 150 mV, 500 Hz sine, past
+* the pair's linear range (about 2 Vt). Output: out, across the top
+* capacitor.
+VCC v12 0 12
+VBB bb 0 3.7
+VIN sig 0 SIN(0 0.15 500)
+BP inp bb V = {0.5*(V(sig) - 3*V(l4,r4))}
+BN inn bb V = {-0.5*(V(sig) - 3*V(l4,r4))}
+R29 v12 n4 68
+R28 n4 n3 220
+R27 n3 n2 220
+R26 n2 n1 220
+R25 n1 0 680
+Q7 l1 inp t Q2N3392
+Q8 r1 inn t Q2N3392
+IT t 0 100u
+C1 l1 r1 0.075u
+Q9 l2 n1 l1 Q2N3392
+Q10 r2 n1 r1 Q2N3392
+C2 l2 r2 0.075u
+Q11 l3 n2 l2 Q2N3392
+Q12 r3 n2 r2 Q2N3392
+C3 l3 r3 0.075u
+Q13 l4 n3 l3 Q2N3392
+Q14 r4 n3 r3 Q2N3392
+C4 l4 r4 0.075u
+Q15 v12 n4 l4 Q2N3392
+Q16 v12 n4 r4 Q2N3392
+EOUT out 0 l4 r4 1
+.model Q2N3392 NPN(IS=12.03f ISE=4.958p ISC=0 BF=254.8 BR=4.379 IKF=0.1072 IKR=0 VAF=37.37 VAR=12.5 RE=0.1 RC=1 RB=10 NF=1 NR=1 NE=1.971 NC=2)
+.options interp reltol=1e-8 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 10m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

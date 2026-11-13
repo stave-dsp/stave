@@ -128,11 +128,16 @@ mod dk {
         std::fs::read_to_string(path).unwrap()
     }
 
-    fn run(name: &str, text: &str, source: &str, mut input: impl FnMut(usize) -> f64) {
-        let mut c = Circuit::<Dk>::new(&Netlist::parse_spice(text).unwrap()).unwrap();
+    fn run(name: &str, text: &str, source: &str, input: impl FnMut(usize) -> f64) {
+        run_netlist(name, &Netlist::parse_spice(text).unwrap(), source, RATE as usize, input);
+    }
+
+    /// `frames` samples of `input` into `source`.
+    fn run_netlist(name: &str, netlist: &Netlist, source: &str, frames: usize, mut input: impl FnMut(usize) -> f64) {
+        let mut c = Circuit::<Dk>::new(netlist).unwrap();
         c.drive(source).unwrap();
         c.prepare(RATE as f32);
-        for n in 0..RATE as usize {
+        for n in 0..frames {
             assert!(c.tick_f64(input(n)).is_finite(), "{name}: sample {n}");
         }
         let h = c.health();
@@ -226,5 +231,41 @@ mod dk {
     #[test]
     fn mosfet_booster_converges_at_the_host_rate() {
         run("MOSFET booster", &deck("mosfet_booster"), "vin", |n| hot(n, 8.0));
+    }
+
+    // The classic circuits (DSP.md R24), their topologies hot at the host
+    // rate: every clipping stage, slew limit, cutoff and grid conduction
+    // reached each cycle, for a tenth of a second: eleven periods of the
+    // 110 Hz tone (the ladder's sixteen transistors keep a longer run slow).
+    const CLASSIC_FRAMES: usize = RATE as usize / 10;
+
+    #[test]
+    fn big_muff_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::big_muff_rams_head;
+        run_netlist("Big Muff (Ram's Head)", &big_muff_rams_head(), "vin", CLASSIC_FRAMES, |n| hot(n, 3.0));
+    }
+
+    #[test]
+    fn tube_screamer_ts808_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::tube_screamer_ts808;
+        run_netlist("Tube Screamer TS-808", &tube_screamer_ts808(), "vin", CLASSIC_FRAMES, |n| hot(n, 1.5));
+    }
+
+    #[test]
+    fn proco_rat_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::proco_rat;
+        run_netlist("ProCo RAT", &proco_rat(), "vin", CLASSIC_FRAMES, |n| hot(n, 1.5));
+    }
+
+    #[test]
+    fn marshall_jcm800_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::marshall_jcm800_2203;
+        run_netlist("JCM800 2203 preamp", &marshall_jcm800_2203(), "vin", CLASSIC_FRAMES, |n| hot(n, 3.0));
+    }
+
+    #[test]
+    fn moog_ladder_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::moog_ladder_904a;
+        run_netlist("Moog ladder (k = 3)", &moog_ladder_904a(3.0), "vin", CLASSIC_FRAMES, |n| hot(n, 0.3));
     }
 }

@@ -177,6 +177,26 @@ impl GummelPoon {
         ..Self::DEFAULT_NPN
     };
 
+    /// 2N3392, silicon NPN (the Moog 904-A ladder's part): National
+    /// Semiconductor's card (`IS=12.03f BF=254.8 BR=4.379 VAF=37.37
+    /// VAR=12.5 IKF=0.1072 ISE=4.958p NE=1.971 ISC=0 RB=10 RC=1 RE=0.1`,
+    /// MFG=NSC, as aggregated in the KiCad-Spice-Library's `BJT.lib`), at
+    /// 27 °C; its capacitances and transit times are not modelled.
+    pub const N2N3392: Self = Self {
+        saturation_amps: 12.03e-15,
+        forward_beta: 254.8,
+        reverse_beta: 4.379,
+        forward_early_volts: 37.37,
+        reverse_early_volts: 12.5,
+        forward_knee_amps: 0.1072,
+        emitter_leakage_amps: 4.958e-12,
+        emitter_leakage_emission: 1.971,
+        base_ohms: 10.0,
+        emitter_ohms: 0.1,
+        collector_ohms: 1.0,
+        ..Self::DEFAULT_NPN
+    };
+
     /// AC128, germanium PNP, extracted from vintage parts by Holmes,
     /// Holters & van Walstijn ("Comparison of germanium bipolar junction
     /// transistor models for real-time circuit simulation", DAFx-17,

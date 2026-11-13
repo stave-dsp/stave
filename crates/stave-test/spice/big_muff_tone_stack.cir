@@ -1,0 +1,32 @@
+* Big Muff Pi tone stack (Ram's Head values) on its own: |Vo/Vi| from
+* 20 Hz to 20 kHz (first column = frequency). Sources as
+* big_muff_rams_head.cir: Aion FX, "Halo Distortion/Sustainer" schematic
+* p. 7, https://aionfx.com/app/files/docs/halo_documentation.pdf;
+* ElectroSmash, "Big Muff Pi Analysis",
+* https://www.electrosmash.com/big-muff-pi-analysis (the V3's -13.5 dB
+* notch near 1 kHz at noon). The low-pass R19 33k / C11 12n and the
+* high-pass C10 3n9 / R18 33k, mixed by the 100k tone pot at noon (the
+* stock mid-scoop position of Aion's midrange switch), loaded as in the
+* pedal by C12 100n into the output booster's 470k || 100k bias divider
+* (R20 goes to the 9 V rail, an AC ground; the transistor's own input
+* impedance is left out). Driven by an ideal
+* source where Q3's collector (about 10k) drives it in the pedal.
+* Output: the tone pot's wiper.
+VI i 0 DC 0 AC 1
+R19 i lp 33k
+C11 lp 0 12n
+C10 i hp 3.9n
+R18 hp 0 33k
+RT1 lp w 50k
+RT2 w hp 50k
+C12 w b4 100n
+R20 b4 0 470k
+R21 b4 0 100k
+.ac dec 20 20 20k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(w)
+.endc
+.end

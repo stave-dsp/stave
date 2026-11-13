@@ -1,5 +1,10 @@
-* Passive treble/bass/mid tone stack (Yeh & Smith, DAFx-06), no load.
-* C1 250p, C2 100n, C3 47n, treble 250k, bass 1M, mid 25k, slope 100k.
+* Duncan Amps Tone Stack Calculator's default "Fender" preset, which
+* matches no real amplifier: AB763 capacitors (250p, 100n, 47n, 100k
+* slope) with Bassman pots (bass 1M, mid 25k). For the real stacks see
+* tone_stack_fender_5f6a.cir, tone_stack_fender_ab763.cir and
+* tone_stack_marshall_2203.cir. The network is Yeh & Smith's (DAFx-06),
+* no load: C1 250p, C2 100n, C3 47n, treble 250k, bass 1M, mid 25k,
+* slope 100k.
 * The treble wiper is the output; the bass pot runs from the treble
 * pot's foot to the mid pot's top; C3 lands on the mid pot's wiper.
 * Pots: treble 0.2, bass 0.8, mid 0.3. Output |Vo/Vi| over 20 Hz-20 kHz

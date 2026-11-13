@@ -117,6 +117,19 @@ impl ShichmanHodges {
         ..Self::DEFAULT_N
     };
 
+    /// 2N5458, N-channel (the ProCo RAT's output follower): Siliconix's
+    /// card (`VTO=-4.00 BETA=2.34E-03 LAMBDA=5.16M RD=3.80E+01
+    /// RS=6.52E+01 IS=6.74E-15`).
+    pub const N2N5458: Self = Self {
+        threshold_volts: -4.0,
+        beta: 2.34e-3,
+        channel_modulation: 5.16e-3,
+        saturation_amps: 6.74e-15,
+        drain_ohms: 38.0,
+        source_ohms: 65.2,
+        ..Self::DEFAULT_N
+    };
+
     /// 2N5460, P-channel: Motorola's card (05-06-1991: `VTO=-3.2
     /// BETA=1.7M LAMBDA=5.63M RD=4.94E+01 RS=4.45E+01 IS=1.95F`).
     pub const N2N5460: Self = Self {

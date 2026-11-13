@@ -202,7 +202,7 @@ fn rc_lowpass_matches_ngspice() {
 #[test]
 fn tone_stack_matches_ngspice_and_yeh_smith() {
     use stave_dsp::{PassiveToneControlPositions, PassiveToneStack, PassiveToneStackComponents};
-    for (name, controls) in [("tone_stack_mid", (0.5, 0.5, 0.5)), ("tone_stack_bright", (0.9, 0.1, 0.7))] {
+    for (name, controls) in [("tone_stack_duncan_fender_mid", (0.5, 0.5, 0.5)), ("tone_stack_duncan_fender_bright", (0.9, 0.1, 0.7))] {
         let circuit = ac(name, 1e-10);
         let s = circuit.structure();
         assert!(!s.is_tree() && s.ports >= 4, "{name}: {s:?}");
@@ -226,7 +226,7 @@ fn tone_stack_matches_ngspice_and_yeh_smith() {
         println!("  {name}: Yeh–Smith closed form vs WDF, largest difference {worst:.3e} dB");
         assert!(worst < 1e-10, "{name}: {worst}");
     }
-    assert!(!ac("tone_stack_dark", 1e-10).structure().is_tree());
+    assert!(!ac("tone_stack_duncan_fender_dark", 1e-10).structure().is_tree());
 }
 
 /// A bridged-T notch with a load (a bridge: no series–parallel form)
@@ -308,7 +308,7 @@ mod agreement {
 
     #[test]
     fn wdf_and_dk_agree_on_the_linear_responses() {
-        for name in ["rc_lowpass", "tone_stack_mid", "tone_stack_bright", "tone_stack_dark", "bridged_t"] {
+        for name in ["rc_lowpass", "tone_stack_duncan_fender_mid", "tone_stack_duncan_fender_bright", "tone_stack_duncan_fender_dark", "bridged_t"] {
             let wdf = Circuit::<Wdf>::new(&deck(name)).unwrap();
             let dk = Circuit::<Dk>::new(&deck(name)).unwrap();
             let worst = (0..60)

@@ -7,7 +7,9 @@
 //! `circuit`, `physical`, `learned`, `effects`) and runs as a `Stage` or
 //! implements a device family's trait (`circuit::devices::*`), or when
 //! its rustdoc has a *Models* section anywhere in the crate (how a
-//! primitive that is a published model opts in). Every model has the
+//! primitive that is a published model opts in). A function in
+//! `circuit::topologies` with a *Models* section is one too: a classic
+//! circuit as data, the netlist it returns. Every model has the
 //! six sections; the build fails when one is missing or empty, when
 //! *Verified* names no test, or a test (`path/to/file.rs::name`) that
 //! is not a `#[test]` in the workspace, or a test file (`path/to/file.rs`)
@@ -157,7 +159,10 @@ fn models(cx: &Ctx<'_>, measured: &BTreeMap<String, f64>) -> Result<Vec<Model>> 
     let mut seen = std::collections::BTreeSet::new();
     let mut out = Vec::new();
     let mut problems = Vec::new();
-    for item in items.iter().filter(|i| matches!(i.kind.as_str(), "struct" | "enum")) {
+    // Types, and the classic circuits as data: functions in
+    // `circuit::topologies` that return a netlist and say what it models.
+    let catalogued = |i: &&rustdoc::Item| matches!(i.kind.as_str(), "struct" | "enum") || (i.kind == "fn" && i.path.starts_with("stave_dsp::circuit::topologies::"));
+    for item in items.iter().filter(catalogued) {
         if !seen.insert(item.href.clone()) {
             continue;
         }

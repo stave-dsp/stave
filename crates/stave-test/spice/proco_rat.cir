@@ -1,0 +1,66 @@
+* ProCo RAT, the whole effect path, stock (LM308, 1N914 pair). Sources:
+* Aion FX, "Helios Classic Distortion" build documentation, schematic p. 7
+* and build notes (C3 33p for an LM308; the RAT's own part is 30p),
+* https://aionfx.com; ElectroSmash, "ProCo RAT Analysis",
+* https://www.electrosmash.com/proco-rat.
+* Input 22n with 1M to the 4.5 V reference, then 1k / 1n into the LM308's
+* + input; the non-inverting gain stage with the 100k distortion pot at
+* maximum || 100p in feedback and two ground legs, 47 ohm + 2.2u and
+* 560 ohm + 4.7u (Aion's SWEEP mod at zero, i.e. absent); 4.7u and 1k
+* into an antiparallel 1N914 pair to ground (Aion's MODE switch in the
+* stock position; its LEDs, an addition, left out); the 100k filter pot at
+* zero (brightest: only the 1k5 / 3n3 low-pass left), 22n into the 2N5458
+* source follower (1M gate leak, 10k source), 1u into the 100k volume at
+* maximum. The 2M2 input pulldown is kept; the supplies are ideal, 9 V and
+* the 4.5 V reference. The op-amp is stave's opamp::Macromodel::LM308 (its
+* datasheet's 30 pF compensation figures) between 0 and 9 V, written as
+* behavioural sources (see opamp_slew.cir); 2N5458: Siliconix's card
+* (`VTO=-4.00 BETA=2.34E-03 LAMBDA=5.16M RD=3.80E+01 RS=6.52E+01
+* IS=6.74E-15`, DC part; stave's jfet::ShichmanHodges::N2N5458); 1N914:
+* LTspice standard.dio, static part. Guitar 100 mV, 1 kHz. Output: across
+* the volume pot.
+.param cc=1e-9 vos=2e-3 vhi=8 vlo=1 vmid=4.5 vk=0.02 kc=10
+.param gm={6.283185307179586*0.4e6*1e-9} isl={0.3e6*1e-9} g0={gm/300e3}
+VIN in 0 SIN(0 0.1 1k)
+RPD in 0 2.2meg
+VA va 0 9
+VB vb 0 4.5
+C1 in a 22n
+R1 a vb 1meg
+R2 a p 1k
+C2 p 0 1n
+BG 0 n I = {isl*tanh(gm*(V(p,m)+vos)/isl) + g0*vmid - kc*isl*(max((V(n)-vhi)/vk,0) + ln(1+exp(-abs((V(n)-vhi)/vk))) - max((vlo-V(n))/vk,0) - ln(1+exp(-abs((vlo-V(n))/vk))))}
+RG n 0 {1/g0}
+CC n 0 {cc}
+EO o 0 n 0 1
+RD o m 100k
+C4 o m 100p
+R3 m k1 47
+C5 k1 0 2.2u
+R4 m k2 560
+C6 k2 0 4.7u
+C7 o q 4.7u
+R5 q d 1k
+D2 d 0 D1N914
+D3 0 d D1N914
+R6 d f 1.5k
+C8 f 0 3.3n
+C9 f g 22n
+R7 g 0 1meg
+J1 va g s J2N5458
+R8 s 0 10k
+C10 s out 1u
+RV out 0 100k
+.model D1N914 D(Is=2.52n Rs=.568 N=1.752)
+.model J2N5458 NJF(VTO=-4.00 BETA=2.34E-03 LAMBDA=5.16M RD=3.80E+01 RS=6.52E+01 IS=6.74E-15)
+* ngspice's starting guess for the operating point; stave ignores it.
+.nodeset v(n)=4.5 v(o)=4.5 v(m)=4.5 v(p)=4.5
+.options interp reltol=1e-8 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 8m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

@@ -1,8 +1,9 @@
 use super::*;
 
-const PARTS: [ShichmanHodges; 4] = [
+const PARTS: [ShichmanHodges; 5] = [
     ShichmanHodges::J201,
     ShichmanHodges::N2N5457,
+    ShichmanHodges::N2N5458,
     ShichmanHodges::N2N5460,
     ShichmanHodges::J175,
 ];

@@ -1,0 +1,36 @@
+* Fender Bassman 5F6-A tone stack: C1 250p, C2 (bass) 20n, C3 (mid) 20n,
+* slope 56k, treble 250k, bass 1M, mid 25k wired as a potentiometer.
+* Sources: Fender's "Bassman" model 5F6-A schematic drawing (el34world.com
+* schematic archive, https://www.el34world.com); D. T. Yeh and J. O.
+* Smith, "Discretization of the '59 Fender Bassman Tone Stack", DAFx-06,
+* Fig. 1 (author's copy, https://ccrma.stanford.edu/~dtyeh). Both give
+* .00025 / .02 / .02 uF and 56k. Rob Robinette ("How the TMB Tone Stack
+* Works", https://robrobinette.com/How_The_TMB_Tone_Stack_Works.htm)
+* states production units as 0.1u / 100k: the AB763's bass cap and slope,
+* backed by no 5F6-A drawing or measured unit, against two primary
+* sources that agree, so the drawing's values are used.
+* The network alone, as Yeh & Smith analyse it: driven by an ideal source
+* (the amp drives it from a 12AX7 cathode follower) and unloaded (the
+* amp loads it with 0.02u into the phase inverter's 1M). The treble wiper
+* is the output; the bass pot runs from the treble pot's foot to the mid
+* pot's top; C3 lands on the mid pot's wiper. Pots as resistance
+* fractions: treble 0.5, bass 0.5, mid 0.5. Output |Vo/Vi| over 20 Hz to
+* 20 kHz (first column = frequency).
+VI i 0 DC 0 AC 1
+C1 i t 250p
+RT1 t o 125000
+RT2 o b 125000
+R4 i n 56000
+C2 n b 20n
+RB b j 500000
+RM1 j w 12500
+RM2 w 0 12500
+C3 n w 20n
+.ac dec 20 20 20k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(o)
+.endc
+.end

@@ -162,9 +162,9 @@ fn tone_stack_matches_ngspice() {
         slope_resistance_ohms: 100e3,
     };
     for (name, treble, bass, midrange) in [
-        ("tone_stack_mid", 0.5, 0.5, 0.5),
-        ("tone_stack_bright", 0.9, 0.1, 0.7),
-        ("tone_stack_dark", 0.2, 0.8, 0.3),
+        ("tone_stack_duncan_fender_mid", 0.5, 0.5, 0.5),
+        ("tone_stack_duncan_fender_bright", 0.9, 0.1, 0.7),
+        ("tone_stack_duncan_fender_dark", 0.2, 0.8, 0.3),
     ] {
         let mut stack = PassiveToneStack::new(components);
         stack.set_controls(PassiveToneControlPositions::new(treble, bass, midrange));

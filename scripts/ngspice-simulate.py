@@ -80,6 +80,18 @@ def on_exit(status, _unload, _quit, _id, _user):
     return 0
 
 
+def no_operating_point(log):
+    """When gmin and source stepping both fail, ngspice falls back to a
+    pseudo-transient "operating point" and runs on from it without an
+    error: a state no DC solution has (charged coupling caps, volts on a
+    node with a resistor to ground), which no stave run starts from. That
+    is a failed deck, not a reference."""
+    if "source stepping failed" in log:
+        return ("no DC operating point (gmin and source stepping failed; ngspice fell back to a "
+                "transient op): loosen reltol/vntol or add a .nodeset")
+    return ""
+
+
 class Library:
     """libngspice through ctypes."""
 
@@ -96,9 +108,10 @@ class Library:
 
     def run(self, path):
         errors.clear()
+        output.clear()
         self.spice.ngSpice_Command(f"source {path}".encode())
         self.spice.ngSpice_Command(b"remcirc")
-        return "".join(errors)
+        return "".join(errors) or no_operating_point("".join(output))
 
     def run_text(self, path):
         """The run's problem (empty when none) and its printed output."""
@@ -123,7 +136,8 @@ class Program:
         with SLOTS:
             done = subprocess.run([self.where, "-b", path], capture_output=True, text=True)
         failed = done.returncode != 0 or re.search(r"^Error", done.stdout + done.stderr, re.M)
-        return ((done.stdout + done.stderr) if failed else ""), done.stdout
+        log = done.stdout + done.stderr
+        return (log if failed else no_operating_point(log)), done.stdout
 
 
 def load():

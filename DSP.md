@@ -742,6 +742,21 @@ other references; a model with a capture is held to it within budget.
   and published responses as reference tables, sources cited, in the ngspice
   table format, so a model can be held to a target where no capture exists.
 
+- [ ] **R24** Classic circuits as verified decks and topologies: each unit's
+  ngspice deck with its sources cited in the header, and a named netlist in
+  `circuit::topologies` (stave's op-amp and triode elements where the deck
+  writes behavioural sources) held to the same reference
+  (`stave-test/tests/classics_match_ngspice.rs`), hot at the host rate
+  (`solver_conformance.rs`), with a datasheet line. Big Muff Pi (Ram's Head)
+  and its tone stack; Tube Screamer TS-808 (two JRC4558s); ProCo RAT (LM308,
+  2N5458); the real tone stacks — Fender 5F6-A, AB763, Marshall 2203 — with
+  the old `tone_stack_*` decks renamed `tone_stack_duncan_fender_*` (Duncan's
+  calculator preset, no real amp); the JCM800 2203 preamp (four Dempwolf
+  12AX7s, the cold clipper hot); the Moog 904-A ladder core (2N3392), AC and
+  with ideal regeneration. Left for later: the TB-303 (no published 2SC1583
+  card), the 904-A's own regeneration path (no 2N4058 card), Pultec, Phase
+  90, CE-2 and Klon.
+
 ### P — profiling and performance
 
 - [x] **P1** (67108c3: `crates/stave-dsp/datasheet.json` from the reference machine via `scripts/datasheet.sh`, held to the benched stages by the test itself; the docs site's Cost page) The datasheet as data: `datasheet.rs` writes JSON
