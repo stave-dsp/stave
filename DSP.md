@@ -251,7 +251,7 @@ circuit/
 - [x] **E3** (d9295b0: `pentode::Koren` with screen current — `EL34`, `T6L6GC`, `KT88`, `EL84`; beam tetrodes in the same family; Cohen–Hélie not done, no pentode fit exists to check it against. The push-pull pair used 12AX7 triode halves; `PushPull::set_pentode(PentodePair::EL34 …)` gives it real output tubes at their datasheets' fixed-bias conditions. Plate curves and an EL34 pair against ngspice at 2.2e-7 and 8.6e-9) Pentode and beam tetrode (Koren pentode, Cohen–Hélie) with
   screen current: EL34, 6L6, KT88, EL84. Check which device the push-pull
   stage uses today and give it a true pentode option.
-- [ ] **E4** Op-amp beyond ideal: rail clipping, slew limit, finite gain-bandwidth,
+- [x] **E4** (c92b311: `opamp::Ideal` (the nullor) and `opamp::Macromodel` — one gain stage whose DC gain, GBW, slew, offset and swing are the datasheet's — as `ElementKind::OpAmp` in `Circuit<Dk>`; parts `TL072`, `JRC4558`, `LM308`; slewing/clipping at 2.6e-4 (128×) and a Tube Screamer on its JRC4558 at 3.1e-5 against ngspice. N5's WDF op-amp is not done) Op-amp beyond ideal: rail clipping, slew limit, finite gain-bandwidth,
   input offset, as a macromodel usable in N2/N5 (TL072, JRC4558, LM308).
 - [ ] **E5** OTA (CA3080, LM13700) with tanh transconductance and bias
   current, for synth filters and VCA compressors.
