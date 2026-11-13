@@ -412,14 +412,14 @@ circuit/
 
 ### P — profiling and performance
 
-- [ ] **P1** The datasheet as data: `datasheet.rs` writes JSON
+- [x] **P1** (67108c3: `crates/stave-dsp/datasheet.json` from stave-mini via `scripts/datasheet.sh`, held to the benched stages by the test itself; the docs site's Cost page) The datasheet as data: `datasheet.rs` writes JSON
   (ns/sample, spread, rate) per stage; the docs site shows it as a
   reference page, the same way the catalogue is generated.
-- [ ] **P2** Deterministic performance regression in CI: instruction
+- [x] **P2** (67108c3: `benches/stages.rs` + `scripts/icount.sh`, baseline `benches/stages.icount`, the `perf` workflow at +5%, about a minute) Deterministic performance regression in CI: instruction
   counts (iai-callgrind / cachegrind on Linux) per stage, with a
   committed baseline and a threshold, since wall clock on shared runners
   is noise.
-- [ ] **P3** `scripts/profile.sh`: a flamegraph of any stage or plugin
+- [x] **P3** (67108c3: stage, test, stave-bench or any command; offload-friendly with `STAVE_OFFLOAD_FETCH`) `scripts/profile.sh`: a flamegraph of any stage or plugin
   (samply on macOS, perf on Linux), opening the result.
 - [ ] **P4** SIMD: portable lanes (`std::simd` when stable, or a narrow
   internal abstraction) for FFT, convolution, FIR and the M1 engine; the
