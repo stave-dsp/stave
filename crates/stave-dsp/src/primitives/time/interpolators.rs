@@ -83,6 +83,26 @@ pub trait Interpolator: Clone + Default + Debug {
     /// `taps.len() == NEWER + OLDER + 1` consecutive samples, newest
     /// first.
     fn interpolate(&mut self, taps: &[f32], frac: f32) -> f32;
+
+    /// The read's frequency response `(re, im)` at `omega` radians per
+    /// sample for `frac`, relative to the whole part of the delay
+    /// (ideally `e^(−jω·frac)`): what a tuned loop compensates
+    /// ([`resonators`](crate::primitives::resonators)). The default is
+    /// that ideal, for an interpolator that cannot say; the crate's own
+    /// return their exact response.
+    fn response(&self, frac: f32, omega: f64) -> (f64, f64) {
+        let p = -omega * f64::from(frac);
+        (p.cos(), p.sin())
+    }
+}
+
+/// The response of FIR `weights` (newest tap first, the first `newer`
+/// samples newer than the whole delay) at `omega`.
+fn fir_response(weights: &[f32], newer: usize, omega: f64) -> (f64, f64) {
+    weights.iter().enumerate().fold((0.0, 0.0), |(re, im), (j, &w)| {
+        let p = -omega * (j as f64 - newer as f64);
+        (re + f64::from(w) * p.cos(), im + f64::from(w) * p.sin())
+    })
 }
 
 /// Straight-line interpolation between the two nearest samples.
@@ -114,6 +134,10 @@ pub struct Linear;
 impl Interpolator for Linear {
     const NEWER: usize = 0;
     const OLDER: usize = 1;
+
+    fn response(&self, frac: f32, omega: f64) -> (f64, f64) {
+        fir_response(&[1.0 - frac, frac], 0, omega)
+    }
 
     #[inline]
     fn interpolate(&mut self, taps: &[f32], frac: f32) -> f32 {
@@ -179,6 +203,10 @@ impl Interpolator for Lagrange3 {
     const NEWER: usize = 1;
     const OLDER: usize = 2;
 
+    fn response(&self, frac: f32, omega: f64) -> (f64, f64) {
+        fir_response(&Self::weights(frac), Self::NEWER, omega)
+    }
+
     #[inline]
     fn interpolate(&mut self, taps: &[f32], frac: f32) -> f32 {
         let h = Self::weights(frac);
@@ -223,6 +251,10 @@ impl Lagrange5 {
 impl Interpolator for Lagrange5 {
     const NEWER: usize = 2;
     const OLDER: usize = 3;
+
+    fn response(&self, frac: f32, omega: f64) -> (f64, f64) {
+        fir_response(&Self::weights(frac), Self::NEWER, omega)
+    }
 
     #[inline]
     fn interpolate(&mut self, taps: &[f32], frac: f32) -> f32 {
@@ -289,6 +321,20 @@ impl Interpolator for Thiran {
 
     fn reset(&mut self) {
         self.y1 = 0.0;
+    }
+
+    /// `(a + e^(−jω))/(1 + a·e^(−jω))`, one sample early when the read
+    /// borrows from the whole delay (`frac < 0.5`).
+    fn response(&self, frac: f32, omega: f64) -> (f64, f64) {
+        let (d, early) = if frac < 0.5 { (1.0 + frac, 1.0) } else { (frac, 0.0) };
+        let a = f64::from(Self::coefficient(d));
+        let (c, s) = (omega.cos(), -omega.sin());
+        let (nr, ni) = (a + c, s);
+        let (dr, di) = (1.0 + a * c, a * s);
+        let den = dr * dr + di * di;
+        let (hr, hi) = ((nr * dr + ni * di) / den, (ni * dr - nr * di) / den);
+        let (er, ei) = ((omega * early).cos(), (omega * early).sin());
+        (hr * er - hi * ei, hr * ei + hi * er)
     }
 
     #[inline]
@@ -405,6 +451,25 @@ fn bessel_i0(x: f64) -> f64 {
 impl<const N: usize> Interpolator for Sinc<N> {
     const NEWER: usize = N / 2 - 1;
     const OLDER: usize = N / 2;
+
+    /// The weights the read uses at `frac` (two table rows blended, as
+    /// in [`interpolate`](Interpolator::interpolate)).
+    fn response(&self, frac: f32, omega: f64) -> (f64, f64) {
+        let mut w = [0.0f32; N];
+        if self.table.is_empty() {
+            w[N / 2 - 1] = 1.0 - frac;
+            w[N / 2] = frac;
+        } else {
+            let pos = frac * SINC_PHASES as f32;
+            let p = (pos as usize).min(SINC_PHASES - 1);
+            let t = pos - p as f32;
+            let (lo, hi) = self.table[p * N..(p + 2) * N].split_at(N);
+            for j in 0..N {
+                w[j] = lo[j] + (hi[j] - lo[j]) * t;
+            }
+        }
+        fir_response(&w, Self::NEWER, omega)
+    }
 
     fn prepare(&mut self) {
         let () = Self::VALID;

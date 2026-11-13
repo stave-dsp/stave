@@ -1,4 +1,5 @@
-//! Realtime safety of the delays, reverbs and dynamics: after `prepare`,
+//! Realtime safety of the delays, reverbs, dynamics, crossovers, formant
+//! filters and resonators: after `prepare`,
 //! `tick`, setters that are documented as cheap, and `reset` never
 //! allocate. A counting global allocator, armed per thread, watches.
 
@@ -6,8 +7,13 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use stave_dsp::effects::dynamics::{
-    Compressor, GainComputer, Limiter, Peak, Peaks, ProgramDependent, Rms, Sidechain, Topology,
+    Compressor, GainComputer, Limiter, Link, Multiband, Peak, Peaks, ProgramDependent, Rms,
+    Sidechain, Topology,
 };
+use stave_dsp::primitives::filters::crossover::{Crossover, Order};
+use stave_dsp::primitives::filters::formant::{Formants, Speaker, Vowel};
+use stave_dsp::primitives::resonators::{Bank, Comb, KarplusStrong, Mode};
+use stave_dsp::units::{db, hz, seconds};
 use stave_dsp::effects::reverb::{Dattorro, Fdn, Mixing, Schroeder};
 use stave_dsp::primitives::time::delay::Delay;
 use stave_dsp::primitives::time::interpolators::{Lagrange3, Lagrange5, Sinc, Thiran};
@@ -176,4 +182,61 @@ fn spectral_effects_never_allocate_after_prepare() {
         }
     });
     assert_eq!(n, 0, "band changes allocated {n} times");
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn bands_and_resonators_never_allocate_after_prepare() {
+    let corners = [hz(120.0), hz(800.0), hz(5_000.0)];
+    let lr = Crossover::<4>::linkwitz_riley(Order::Lr8, &corners);
+    let lin = Crossover::<4>::linear_phase(&corners, hz(200.0), db(80.0));
+    no_allocation("Crossover (LR8)", &mut lr.clone());
+    no_allocation("Crossover (linear phase)", &mut lin.clone());
+    let curve = GainComputer { threshold_db: -20.0, ratio: 4.0, knee_db: 6.0 };
+    let comp = |_| Compressor::new(curve, Topology::FeedForward);
+    no_allocation("Multiband (LR8)", &mut Multiband::new(lr.clone(), comp));
+    no_allocation("Multiband (linear phase)", &mut Multiband::new(lin, comp));
+    let vowel = Vowel::Aa.formants(Speaker::Man);
+    no_allocation("Formants", &mut Formants::new(vowel));
+    no_allocation("Comb resonator", &mut Comb::<Lagrange3>::new(hz(40.0), hz(110.0), seconds(2.0)));
+    no_allocation("KarplusStrong", &mut KarplusStrong::<Sinc<16>>::new(hz(40.0), hz(110.0)));
+    let modes: Vec<Mode> = (1..=16)
+        .map(|k| Mode { frequency: hz(110.0 * k as f32), decay: seconds(1.0), gain: 0.5 })
+        .collect();
+    no_allocation("Bank", &mut Bank::new(&modes));
+
+    // What moves per sample: corners, switches, link, keyed stereo, a
+    // morphing vowel, a gliding string, a retuned mode.
+    let mut mb = Multiband::new(lr, comp);
+    mb.prepare(48_000.0);
+    let mut f = Formants::new(vowel);
+    f.prepare(48_000.0);
+    let mut string = KarplusStrong::<Thiran>::new(hz(40.0), hz(110.0));
+    string.prepare(48_000.0);
+    let mut bank = Bank::new(&modes);
+    bank.prepare(48_000.0);
+    let ee = Vowel::Iy.formants(Speaker::Man);
+    let n = allocations_in(|| {
+        for i in 0..2_000 {
+            let t = i as f32 / 2_000.0;
+            mb.set_corner(1, hz(800.0 + 400.0 * t));
+            mb.set_solo(i % 4, i % 3 == 0);
+            mb.set_bypass(i % 4, i % 5 == 0);
+            mb.set_link(if i % 2 == 0 { Link::Max } else { Link::Mean });
+            mb.tick_stereo_linked(0.3, -0.2);
+            mb.tick_stereo_keyed(0.3, -0.2, 0.9, 0.0);
+            mb.tick_stereo(0.1, 0.1);
+            f.morph(vowel, ee, t);
+            f.tick(0.1);
+            string.set_pitch(hz(110.0 + 20.0 * t));
+            string.set_decay(seconds(2.0), seconds(0.3 + f64::from(t)));
+            if i % 500 == 0 {
+                string.pluck(0.8);
+            }
+            string.tick(0.0);
+            bank.set(i % 16, Mode { frequency: hz(200.0 + t), decay: seconds(0.5), gain: 0.3 });
+            bank.tick(0.1);
+        }
+    });
+    assert_eq!(n, 0, "per-sample setters allocated {n} times");
 }

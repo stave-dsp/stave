@@ -1,5 +1,6 @@
 //! Filters: biquads, the state-variable filter, first-order sections,
-//! allpasses, Linkwitz-Riley crossovers and the Hilbert pair (linear);
+//! allpasses, Linkwitz-Riley crossovers (the N-band [`crossover`], LR or
+//! linear phase), [`formant`] (vowel) filters and the Hilbert pair (linear);
 //! and the published nonlinear filter structures — the [`ladder`]s
 //! ([`Huovilainen`](ladder::Huovilainen) transistor,
 //! [`Stinchcombe`](ladder::Stinchcombe) diode), the
@@ -11,6 +12,8 @@
 
 pub mod allpass;
 pub mod biquad;
+pub mod crossover;
+pub mod formant;
 pub mod hilbert;
 pub mod korg35;
 pub mod ladder;

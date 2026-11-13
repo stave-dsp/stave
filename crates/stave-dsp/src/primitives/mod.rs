@@ -2,8 +2,8 @@
 //! family: filters (linear, the Hilbert pair, and the published nonlinear
 //! filter structures with their saturators), time (delay lines and recirculating delays),
 //! control (generators, followers, smoothers), oscillators, gain and
-//! pitch helpers, randomness, and the spectral family (FFT and
-//! convolution). Depends on the kernel only.
+//! pitch helpers, randomness, tuned resonators (comb, Karplus–Strong,
+//! modal bank), and the spectral family (FFT and convolution). Depends on the kernel only.
 
 pub mod control;
 pub mod filters;
@@ -11,6 +11,7 @@ pub mod gain;
 pub mod osc;
 pub mod pitch;
 pub mod random;
+pub mod resonators;
 #[cfg(test)]
 pub(crate) mod resample;
 pub mod solve;

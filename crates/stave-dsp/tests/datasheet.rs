@@ -88,6 +88,8 @@ use stave_dsp::learned::{nam, Gru, LoadError, RatePolicy};
 mod sheet;
 #[path = "datasheet/knobs.rs"]
 mod knobs;
+#[path = "datasheet/bands.rs"]
+mod bands;
 
 use sheet::{bench, bench_points, N, RATE};
 use stave_dsp::FilterSpec;
@@ -379,6 +381,7 @@ fn primitive_datasheet() {
         limiter.prepare(sr);
         bench(name, &input, |x| limiter.tick(x * 4.0));
     }
+    bands::datasheet(sr, &input);
 
     let mut lag = Lag::new(50.0, 50.0);
     lag.prepare(sr);

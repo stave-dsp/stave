@@ -758,6 +758,108 @@ up.prepare(48_000.0);
 assert_eq!(up.latency(), 4_114);
 ```
 
+### Multiband
+
+[`Multiband`](stave_dsp::effects::dynamics::Multiband) splits with an
+N-band [`Crossover`](stave_dsp::primitives::filters::crossover::Crossover)
+and runs a stage per band and channel: a compressor makes a multiband
+compressor, a saturator a multiband saturator. The crossover is
+Linkwitz–Riley of any [`Order`](stave_dsp::primitives::filters::crossover::Order)
+(the bands sum to an allpass: flat, no latency) or linear phase (the
+bands sum to a pure delay, exactly). Bands solo, mute and bypass with a
+5 ms cross-fade; a [`Keyed`](stave_dsp::effects::dynamics::Keyed) stage
+hears its band of the stereo [`Link`](stave_dsp::effects::dynamics::Link)
+or of an external sidechain, split at the same corners. Every band is
+delayed to the slowest band's latency, and the total is reported:
+
+```rust
+use stave_dsp::effects::dynamics::{Compressor, GainComputer, Limiter, Multiband, Peaks, Topology};
+use stave_dsp::primitives::filters::crossover::{Crossover, Order};
+use stave_dsp::units::{db, hz};
+use stave_dsp::Stage;
+
+// Three bands, 24 dB/octave, a compressor in each, linked.
+let split = Crossover::<3>::linkwitz_riley(Order::Lr4, &[hz(150.0), hz(2_500.0)]);
+let curve = GainComputer { threshold_db: -24.0, ratio: 3.0, knee_db: 6.0 };
+let mut mb = Multiband::new(split, |_| Compressor::new(curve, Topology::FeedForward));
+mb.prepare(48_000.0);
+mb.band_mut(0)[0].set_attack_ms(30.0); // slower lows, left
+mb.band_mut(0)[1].set_attack_ms(30.0); // and right
+mb.set_bypass(2, true); // leave the highs alone
+let (l, r) = mb.tick_stereo_linked(0.5, 0.4);
+assert!(l.is_finite() && r.is_finite());
+assert_eq!(mb.latency(), 0);
+
+// Linear phase, a look-ahead limiter per band: the latency is the
+// crossover's half-length plus the limiter's, and an impulse lands there.
+let split = Crossover::<4>::linear_phase(&[hz(120.0), hz(800.0), hz(5_000.0)], hz(200.0), db(80.0));
+let mut mb = Multiband::new(split, |_| Limiter::new(Peaks::Sample, 0.0));
+mb.prepare(48_000.0);
+let mut one = Limiter::new(Peaks::Sample, 0.0);
+one.prepare(48_000.0);
+let d = mb.latency() as usize;
+assert_eq!(d, 603 + one.latency() as usize);
+let out: Vec<f32> = (0..d + 8).map(|n| mb.tick(if n == 0 { 0.5 } else { 0.0 })).collect();
+assert!((out[d] - 0.5).abs() < 1e-5);
+```
+
+## Formants and resonators
+
+A [`Formants`](stave_dsp::primitives::filters::formant::Formants)
+filter imposes a vowel: three of Klatt's formant resonators in cascade,
+the vowel table Peterson & Barney's measured averages for men, women
+and children ([`Vowel::formants`](stave_dsp::primitives::filters::formant::Vowel::formants)),
+the output scaled so the strongest formant peaks at 0 dB. Retune it
+every sample to morph one vowel into another.
+
+[`primitives::resonators`](stave_dsp::primitives::resonators) holds the
+tuned resonators, in hertz and T60 seconds: the pitched
+[`Comb`](stave_dsp::primitives::resonators::Comb) (every harmonic
+alike), the [`KarplusStrong`](stave_dsp::primitives::resonators::KarplusStrong)
+string (a loss filter fitted to a fundamental and a treble T60, so high
+partials die first), and the modal
+[`Bank`](stave_dsp::primitives::resonators::Bank) (any set of modes).
+The delay loops read through an S2 interpolator and compensate its
+phase and magnitude at the pitch, so they are in tune within 0.1 cent
+whichever read you choose:
+
+```rust
+use stave_dsp::primitives::filters::formant::{Formants, Speaker, Vowel};
+use stave_dsp::primitives::resonators::{Bank, KarplusStrong, Mode};
+use stave_dsp::primitives::time::interpolators::Thiran;
+use stave_dsp::units::{hz, seconds};
+use stave_dsp::{Generator, Osc, Stage, Waveform};
+
+// "ah" on a sawtooth, gliding to "ee".
+let (ah, ee) = (Vowel::Aa.formants(Speaker::Woman), Vowel::Iy.formants(Speaker::Woman));
+let mut voice = Formants::new(ah);
+voice.prepare(48_000.0);
+let mut saw = Osc::new(Waveform::Saw);
+saw.prepare(48_000.0);
+saw.set_hz(220.0);
+for n in 0..4_800 {
+    voice.morph(ah, ee, n as f32 / 4_800.0);
+    assert!(voice.tick(0.3 * saw.next()).abs() < 4.0);
+}
+
+// A plucked A2: three seconds at the fundamental, half a second up top.
+let mut string = KarplusStrong::<Thiran>::new(hz(40.0), hz(110.0));
+string.set_decay(seconds(3.0), seconds(0.5));
+string.prepare(48_000.0);
+string.pluck(0.7);
+let first: f32 = (0..4_800).map(|_| string.tick(0.0).abs()).sum();
+let later: f32 = (0..4_800).map(|_| string.tick(0.0).abs()).sum();
+assert!(later < first);
+
+// A struck bar's modes.
+let mut bar = Bank::new(&[
+    Mode { frequency: hz(523.0), decay: seconds(1.5), gain: 1.0 },
+    Mode { frequency: hz(1_444.0), decay: seconds(0.6), gain: 0.4 },
+]);
+bar.prepare(48_000.0);
+assert!(bar.tick(1.0).is_finite());
+```
+
 ## Hardware beyond circuits: bucket brigades and springs
 
 A bucket-brigade delay is a schematic part, so it lives in `circuit`
