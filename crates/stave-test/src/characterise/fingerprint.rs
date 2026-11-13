@@ -524,13 +524,24 @@ pub fn of_stage(
     rate: f64,
     knee: Option<Knee>,
 ) -> (Fingerprint, Plan) {
+    of_black_box(case, model, catalogue, move |r| (make(r), 0), rate, knee)
+}
+
+/// [`of_stage`] for a black box that answers late: `make(rate)` returns
+/// a fresh ticker and its delay in samples (a hosted plugin through
+/// [`black_box::maker`](super::black_box::maker)).
+pub fn of_black_box(
+    case: &str,
+    model: &str,
+    catalogue: Option<&str>,
+    make: impl Fn(f64) -> (super::model::Ticker, usize) + 'static,
+    rate: f64,
+    knee: Option<Knee>,
+) -> (Fingerprint, Plan) {
     let settle = STAGE_SETTLE_SECONDS;
-    let found = super::model::stage_knee(&make, rate, settle);
+    let found = super::model::delayed_knee(&make, rate, settle);
     let plan = stage_plan(case, knee.unwrap_or(found), settle);
-    let m = super::model::Model::Stage {
-        make: Box::new(make),
-        operating_point: Vec::new(),
-    };
+    let m = super::model::Model::Delayed { make: Box::new(make) };
     let (table, _) = m.measure(&plan, &stave_dsp::circuit::netlist::Netlist::new(), Tier::T0, rate, false, &[]);
     let fp = Fingerprint::new(case, model, catalogue, vec![(rate, Role::Both, table)], None, Some(found), Some(settle));
     (fp, plan)

@@ -169,15 +169,30 @@ pub enum Model {
         make: Box<dyn Fn(f64) -> Ticker>,
         operating_point: Vec<(String, f64)>,
     },
+    /// A black box that answers late (a plugin with latency, a block
+    /// renderer): `make(rate)` returns a fresh ticker and its delay in
+    /// samples; each run is fed that many samples further so the output
+    /// lines up with its stimulus ([`super::black_box`]).
+    Delayed { make: Box<Maker> },
 }
+
+/// A fresh delayed ticker at a rate, and its delay in samples.
+pub type Maker = dyn Fn(f64) -> (Ticker, usize);
 
 /// One run at `rate`: the measured periods and the one before them.
 fn simulate(run: &Run, rate: f64, tick: &mut dyn FnMut(f64) -> f64) -> Vec<Vec<f64>> {
+    simulate_delayed(run, rate, tick, 0)
+}
+
+/// [`simulate`] for a ticker whose output is `delay` samples late: the
+/// stimulus runs `delay` samples longer and the first `delay` outputs
+/// are dropped, so sample `i` out answers sample `i` in.
+fn simulate_delayed(run: &Run, rate: f64, tick: &mut dyn FnMut(f64) -> f64, delay: usize) -> Vec<Vec<f64>> {
     let n = run.period().samples(rate);
     let total = (run.settle + run.measure) as usize * n;
-    let keep = (run.settle as usize - 1) * n;
-    let mut out = Vec::with_capacity(total - keep);
-    for i in 0..total {
+    let keep = (run.settle as usize - 1) * n + delay;
+    let mut out = Vec::with_capacity(total + delay - keep);
+    for i in 0..total + delay {
         let y = tick(run.excitation.at(i as f64 / rate));
         if i >= keep {
             out.push(y);
@@ -265,18 +280,30 @@ impl Model {
                     let periods = simulate(run, rate, &mut *tick);
                     table.runs.insert(run.id.clone(), measure_run(run, rate, &periods));
                 }
-                // C2 from the −40 dB multisine's BLA (averaged over its
-                // realisations) at the response points.
-                if let Some(bla) = averaged_bla(plan, tier, &table, -40.0) {
-                    table.ac = bla
-                        .into_iter()
-                        .map(|(k, g)| (super::plan::MULTISINE_PERIOD.hz(k), g))
-                        .collect();
+                black_box_response(plan, tier, &mut table);
+            }
+            Model::Delayed { make } => {
+                for run in plan.runs(tier) {
+                    let (mut tick, delay) = make(rate);
+                    let periods = simulate_delayed(run, rate, &mut *tick, delay);
+                    table.runs.insert(run.id.clone(), measure_run(run, rate, &periods));
                 }
+                black_box_response(plan, tier, &mut table);
             }
         }
         let _ = deck;
         (table, health)
+    }
+}
+
+/// C2 of a black box: the −40 dB multisine's BLA (averaged over its
+/// realisations) at the response points.
+fn black_box_response(plan: &Plan, tier: Tier, table: &mut Table) {
+    if let Some(bla) = averaged_bla(plan, tier, table, -40.0) {
+        table.ac = bla
+            .into_iter()
+            .map(|(k, g)| (super::plan::MULTISINE_PERIOD.hz(k), g))
+            .collect();
     }
 }
 
@@ -393,6 +420,11 @@ pub fn knee(deck: &Netlist, input: &Input, settle: f64) -> Knee {
 /// sine climbing from 10 µ to 100 (of full scale) until the gain moves
 /// 1 dB or THD reaches 1 %, rounded to 0.1 dB.
 pub fn stage_knee(make: &dyn Fn(f64) -> Ticker, rate: f64, settle: f64) -> Knee {
+    delayed_knee(&|r| (make(r), 0), rate, settle)
+}
+
+/// [`stage_knee`] for a delayed black box ([`Model::Delayed`]).
+pub fn delayed_knee(make: &dyn Fn(f64) -> (Ticker, usize), rate: f64, settle: f64) -> Knee {
     let period = Period::units(6);
     let bin = tone_bin(period, 1_000.0, HARMONICS, &SHIPPING_RATES).unwrap();
     let settle_periods = (settle / period.seconds()).ceil() as u32 + 1;
@@ -411,8 +443,8 @@ pub fn stage_knee(make: &dyn Fn(f64) -> Ticker, rate: f64, settle: f64) -> Knee 
             bins: wanted.clone(),
             excitation: Excitation::sine(period, bin, amplitude).faded_in(0.5 * settle.max(1e-3)),
         };
-        let mut tick = make(rate);
-        let periods = simulate(&run, rate, &mut *tick);
+        let (mut tick, delay) = make(rate);
+        let periods = simulate_delayed(&run, rate, &mut *tick, delay);
         let s = bins(&periods[1], period, rate, &wanted);
         let h = Harmonics::of(&s, bin, HARMONICS);
         (db(gain(&run.excitation.tones[0], h.fundamental()).norm()), h.thd())

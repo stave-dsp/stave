@@ -22,7 +22,7 @@
 
 mod bless;
 mod builtin;
-mod candidate;
+pub(crate) mod candidate;
 mod log;
 mod material;
 mod modes;

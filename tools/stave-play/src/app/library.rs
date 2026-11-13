@@ -37,10 +37,14 @@ pub fn stages() -> impl Iterator<Item = PathBuf> {
         .map(|m| PathBuf::from(format!("{}{}", stave_host::stages::PREFIX, m.name)))
 }
 
-/// "Foo" for ".../Foo.vst3"; the whole `stage:<name>` for a catalog stage.
+/// "Foo" for ".../Foo.vst3"; the whole `stage:<name>` for a catalog
+/// stage; `au:<name>` for an Audio Unit (or its `.component`).
 pub fn display_name(p: &Path) -> String {
     if stave_host::opened::stage_name(p).is_some() {
         return p.display().to_string();
+    }
+    if let Some(q) = stave_host::opened::au_query(p) {
+        return format!("au:{q}");
     }
     p.file_stem()
         .map_or_else(|| "?".into(), |s| s.to_string_lossy().into_owned())

@@ -19,7 +19,10 @@
 //! - a **model** ([`model`]): `Circuit<Dk>` or `Circuit<Wdf>` on the
 //!   deck, or a hand topology's ticking stage, run through the plan into
 //!   a table;
-//! - the **comparison** ([`compare`]), check by check.
+//! - the **comparison** ([`compare`]), check by check;
+//! - any hosted plugin as a **black box** ([`black_box`]): a VST3, an
+//!   Audio Unit or a catalog stage through the same plan, set side by
+//!   side with another (a benchmark, never a reference).
 //!
 //! Tiers: [`Tier::T0`] (every commit: C1, C2, C3 and C5 at three levels
 //! at 1 kHz, C10 at 48 kHz, well under a second) and [`Tier::T1`] (the
@@ -42,6 +45,7 @@
 //!     .assert();
 //! ```
 
+pub mod black_box;
 pub mod compare;
 pub mod fingerprint;
 pub mod model;
@@ -337,6 +341,7 @@ impl Characterise {
             Model::Circuit(_) => "Circuit<Dk>",
             Model::Wdf(_) => "Circuit<Wdf>",
             Model::Stage { .. } => "a hand topology",
+            Model::Delayed { .. } => "a black box",
         };
         Characterisation {
             name: self.name,

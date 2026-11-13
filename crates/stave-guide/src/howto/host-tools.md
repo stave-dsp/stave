@@ -1,7 +1,7 @@
 # Use the host tools
 
-Load any VST3, stave-built or third-party, and drive, measure and
-validate it: from Rust with the `stave-host` library, from a shell or an
+Load any VST3 (or, on macOS, any Audio Unit), stave-built or
+third-party, and drive, measure and validate it: from Rust with the `stave-host` library, from a shell or an
 agent with `stave-bench`, by ear with `stave-play`, and after a DAW
 session with `stave-events`. This page is recipes; the CLI reference
 lists every flag from each binary's own `--help`.
@@ -13,10 +13,11 @@ lists every flag from each binary's own `--help`.
 | Piece | What it is |
 |---|---|
 | [`plugin`](stave_host::plugin) | VST3 hosting: [`LoadedPlugin`](stave_host::plugin::LoadedPlugin) |
+| `au` (macOS) | Audio Unit (v2) hosting, offline: `AuInstance` |
 | [`instance`](stave_host::instance) | the [`Instance`](stave_host::instance::Instance) trait, the seam everything measures through |
 | [`adapt`](stave_host::adapt) | any stave-dsp [`Stage`](stave_dsp::Stage) as an `Instance` |
 | [`stages`](stave_host::stages) | stave-dsp stages by name ([`CATALOG`](stave_host::stages::CATALOG)), loadable like plugins |
-| [`opened`](stave_host::opened) | what a tool opens: a bundle or `stage:<name>` ([`Opened`](stave_host::opened::Opened)) |
+| [`opened`](stave_host::opened) | what a tool opens: a bundle, `au:<name>` or `stage:<name>` ([`Opened`](stave_host::opened::Opened)) |
 | [`drive`](stave_host::drive) | [`Driver`](stave_host::drive::Driver): run an `Instance` from a signal and notes, block by block |
 | [`response`](stave_host::response) | frequency response by log sweep (H1) |
 | [`bench`](stave_host::bench) | the bench: phases, typed reports, the describe dump |
@@ -159,6 +160,60 @@ stave-play build/StaveTilt.vst3 --screenshot face.png --editor-only
 offscreen. `--face-trace PATH` records every pointer and key event the
 face sees: a session that replays as a test
 ([`Trace`](stave_face::Trace), [`FaceDriver`](stave_test::FaceDriver)).
+
+## Benchmark against another plugin
+
+A plugin from another vendor is a **benchmark** and a **listening
+contender** — never a reference (circuits are held to ngspice and
+datasheets). Every tool opens one the way it opens a stave plugin, so
+the bench, the response sweep, the validation suite, the Voicing tab
+and the characterisation measure it unchanged.
+
+**Audio Units** (macOS) open as `au:<name>`, `au:<manufacturer>:<name>`
+when two vendors share a name, or by the `.component` path. The host
+processes offline: mono in and out when the unit takes it, else stereo
+(every input gets the signal, the first output is read), at the tool's
+rate and block size, with the unit's reported latency and tail. A
+misspelt name lists the installed units it resembles.
+
+```sh
+stave-bench 'au:Apple:AUDelay' --list
+stave-bench 'au:Some Vendor Overdrive' --signal sine:1000:-12 --set Drive=0.7
+```
+
+**Side by side.** `stave-play --characterise` runs the characterisation
+(DSP.md R17–R19, [Fingerprints and perceptual
+metrics](crate::howto::fingerprints)) on each candidate as a black box,
+at each rate, and prints one markdown table: the knee, latency, tail,
+CPU per sample, the small-signal response, compression and H2/H3/H5,
+THD and the even/odd balance at each level re knee, the aliasing floor
+and ANMR, and Rnonlin. A candidate is the Voicing tab's spec; the
+classic circuits are catalog stages (`circuit/ts808`,
+`circuit/jcm800_2203`, `circuit/moog_904a`, `filter/ladder`, each with
+an `oversample` choice: 0 = 1×, 1 = 2×, 2 = 4×, 3 = 8×).
+
+```sh
+stave-play \
+  --characterise 'stage:circuit/ts808;oversample=2;label=stave 4x' \
+  --characterise 'au:Some Vendor Overdrive;Drive=1;label=theirs' \
+  --rates 44100,48000 --tier t1 --process-block 64 --report research/ts.md
+```
+
+Levels are relative to each contender's own knee (1 dB of compression
+or 1 % THD at 1 kHz), so a plugin's full scale and a circuit's volts
+need no common calibration. Knobs rarely map one to one: match them by
+measurement — the same small-signal gain, or the same THD at a level
+re knee — and say which in the write-up. A contender that passes its
+input unchanged (a plugin missing its licence or DSP hardware, say) is
+flagged `identity`; one that outputs nothing, `silent`. The host does
+nothing to get around either.
+
+To listen, give the same specs to `--compare`: the Voicing tab matches
+loudness and runs blind ABX and rating trials with an Audio Unit as a
+contender like any other ([Voicing and listening
+tests](crate::howto::voicing)). A vendor's processed audio and measurements
+are its output: keep them out of the repository (the gitignored
+`research/` is the place), and never fit a model to them.
 
 ## stave-events: check a DAW session
 

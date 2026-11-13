@@ -768,6 +768,33 @@ other references; a model with a capture is held to it within budget.
   Centaur (`klon_centaur(gain, treble)`), its clean/dry blend held at both
   ends of the dual-gang gain pot by AC decks and its whole path at noon.
 
+- [x] **R26** Benchmarks against other vendors' plugins, with the
+  measurement stack unchanged: an Audio Unit (v2) host in stave-host
+  (`au`, macOS, AudioToolbox through plain FFI: `au:<name>`,
+  `au:<manufacturer>:<name>` or a `.component`, mono or stereo, the
+  tool's rate and block size, params by name, latency, tail) behind the
+  `Instance` seam, so stave-bench, the response sweep, validation and the
+  Voicing tab (loudness-matched ABX and rating with an AU as a contender)
+  take one like a VST3; `stave_test::characterise::black_box`, any
+  `Instance` through the R17 plan at its own knee in blocks with its
+  latency fed through (`Model::Delayed`; bless's fingerprints now go the
+  same way), flagging a contender that passes its input unchanged
+  (`identity`, as a DSP-card plugin with no card does) or is silent;
+  `stave-play --characterise` sets candidates side by side in one
+  markdown table (knee, latency, tail, CPU per sample, response,
+  compression, H2/H3/H5, THD and even/odd per level re knee, alias floor
+  and ANMR, Rnonlin); the classic netlists as catalog stages
+  (`circuit/ts808`, `circuit/jcm800_2203`, `circuit/moog_904a`,
+  `filter/ladder`, each at 1/2/4/8×). Another vendor's plugin is a
+  benchmark and a listening contender, never a reference: its output
+  and tables stay out of the repository and no model is fitted to it.
+  FINDINGS, the whole netlists at the host rate: the TS-808 costs 8.4
+  µs/sample at 1× (40 % of a core at 48 kHz) and 29 µs at 4×; the JCM800
+  preamp 9.1 and 33 µs; at +20 dB re knee their worst ANMR (8 kHz tone,
+  44.1 kHz) is +70/+42/−2 dB (TS-808 1/2/4×) and +60/+37 dB (JCM800
+  1/4×) — audible aliasing until 8× or ADAA; at 1× the TS-808 is 11 dB
+  down at 16 kHz against 4× (bilinear warping, R17).
+
 ### P — profiling and performance
 
 - [x] **P1** (67108c3: `crates/stave-dsp/datasheet.json` from the reference machine via `scripts/datasheet.sh`, held to the benched stages by the test itself; the docs site's Cost page) The datasheet as data: `datasheet.rs` writes JSON
