@@ -61,7 +61,11 @@ const N: usize = 10;
 /// (the 1 kHz difference tone of 10 and 11 kHz at least 12 dB lower
 /// with companding) and
 /// `crates/stave-dsp/src/behavioral/smooth_sat/tests.rs::oversampled_alias_floor_high_input`
-/// (a 7 kHz tone's aliases below −65 dB at 4×).
+/// (a 7 kHz tone's aliases below −65 dB at 4×);
+/// `crates/stave-dsp/tests/aliasing_budgets.rs::nonlinear_stages_hold_their_alias_budgets`
+/// (DSP.md R5): at drive 1.6 with the shaper in a 4× region, a
+/// stepped tone's inharmonic energy below 20 kHz under −101 dB at
+/// 44.1 kHz (measured −103.3) and −97 at 48 (−99.9).
 ///
 /// # Cost
 ///

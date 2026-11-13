@@ -574,7 +574,12 @@ impl Frame {
 /// (within 5e-5 of `ln cosh`) and
 /// `crates/stave-dsp/src/behavioral/adaa.rs::adaa_reduces_aliasing_on_a_hard_driven_tone`
 /// (the folded 9th harmonic of a 5 kHz tone into `tanh(6x)` more than
-/// 6 dB below direct evaluation).
+/// 6 dB below direct evaluation);
+/// `crates/stave-dsp/tests/aliasing_budgets.rs::nonlinear_stages_hold_their_alias_budgets`
+/// (DSP.md R5): `tanh(6x)` with first-order ADAA at the host rate, a
+/// stepped tone's inharmonic energy below 20 kHz under −28 dB at
+/// 44.1 kHz (measured −30.4) and −26 at 48 (−28.0); second order
+/// under −30 at both (−32.1, −32.9).
 ///
 /// # Cost
 ///

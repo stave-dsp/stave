@@ -48,7 +48,11 @@ pub enum PairSolver {
 /// 5e-4 normalized RMS against ngspice at 4×, with either solver, no
 /// capped solve;
 /// `crates/stave-test/tests/solver_conformance.rs::diode_clipper_converges_at_the_host_rate`:
-/// no solve capped at the host rate under a hot signal.
+/// no solve capped at the host rate under a hot signal;
+/// `crates/stave-dsp/tests/aliasing_budgets.rs::nonlinear_stages_hold_their_alias_budgets`
+/// (DSP.md R5): ×10 into the Newton pair inside a 4× region, a
+/// stepped tone's inharmonic energy below 20 kHz under −41 dB at
+/// 44.1 kHz (measured −43.3) and −36 at 48 (−38.0).
 ///
 /// # Cost
 /// Datasheet `"DiodeClipper (WDF, Newton)"`,

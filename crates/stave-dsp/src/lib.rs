@@ -13,7 +13,7 @@
 //! | Layer | Claim | Verified by |
 //! |---|---|---|
 //! | [`units`] | quantities as types: [`Hz`], [`Db`], [`Gain`], [`Seconds`], [`Samples`], [`SampleRate`], [`Ratio`], [`Semitones`], [`Cents`], circuit units ([`Ohms`], [`Farads`] …); explicit conversions (`Db::to_gain`, `Seconds::samples`), SI-prefix constructors (`kohm(4.7)`) | property tests, Kani |
-//! | [`kernel`] | the [`Stage`] contract and the graph forms: [`Serial`], [`Par2`], [`Loop`], [`Oversampled2x`], [`PerChannel`], [`Router`], [`VoiceRack`] | property tests, loom, Kani |
+//! | [`kernel`] | the [`Stage`] contract and the graph forms: [`Serial`], [`Par2`], [`Loop`], [`Oversampled2x`], [`Oversampled`], [`PerChannel`], [`Router`], [`VoiceRack`] | property tests, loom, Kani |
 //! | [`primitives`] | textbook linear DSP: filters, delays, oscillators, control, spectral ([`Fft`], [`Convolver`]) | naive references (direct DFT, direct convolution) and analytic responses |
 //! | [`behavioral`] | a shape chosen or fitted, with no hardware claim: curves with ADAA, saturators, slew, hysteresis | analytic antiderivatives, aliasing budgets |
 //! | [`circuit`] | derived from a schematic: devices, methods, netlists, topologies | ngspice on the same netlist |
@@ -50,7 +50,7 @@ pub use kernel::control::{Full, Route, Router, Source, StageSource};
 pub use kernel::feedback::Loop;
 pub use kernel::lanes::{downmix_51, ms_decode, ms_encode, ChannelLayout, PerChannel};
 pub use kernel::node::{Generator, Stage, Tail};
-pub use kernel::oversampled::Oversampled2x;
+pub use kernel::oversampled::{Oversampled, Oversampled2x};
 pub use kernel::parallel::{Compensator, Par2};
 pub use kernel::sequence::Serial;
 pub use kernel::voices::{Steal, Voice, VoiceEvent, VoiceRack};
@@ -74,7 +74,7 @@ pub use primitives::filters::linkwitz_riley::{Crossover3, CrossoverSide, Linkwit
 pub use primitives::filters::one_pole::{tau_coeff, tau_coeff64, DcBlocker, OnePole, OnePoleMode};
 pub use primitives::filters::svf::{Svf, SvfTaps};
 pub use primitives::gain::{amp_to_db, db_to_amp, t60_gain};
-pub use primitives::osc::{Osc, Waveform};
+pub use primitives::osc::{Osc, Waveform, Wavetable};
 pub use primitives::pitch::hz_of_key;
 pub use primitives::random::Xorshift32;
 pub use primitives::spectral::{Convolver, Fft, ImpulseResponse};

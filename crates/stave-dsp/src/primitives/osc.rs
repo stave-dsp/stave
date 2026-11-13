@@ -1,19 +1,31 @@
 //! `Osc` — the audio-rate oscillator (`Lfo` is the control-rate one)
-//! — and [`Waveform`], the shape vocabulary both share. A phase
-//! accumulator with f64 phase (pitch is exactness, and f32 increments
-//! drift audibly over a held note), producing:
+//! — [`Wavetable`], the mip-mapped table oscillator, and [`Waveform`],
+//! the shape vocabulary they share. A phase accumulator with f64 phase
+//! (pitch is exactness, and f32 increments drift audibly over a held
+//! note), producing:
 //! * `Sine` — pure, THD at the float floor;
-//! * `Triangle` — naive; its harmonics fall at 12 dB/octave;
-//! * `Saw` / `Square` — polyBLEP band-limited: each discontinuity is
-//!   smoothed over the two samples around it by the polynomial
-//!   residual. Measured at 2 kHz/48 k (the in-module invariant): exposed
-//!   midband aliases (< 8 kHz, where naive saws audibly ring) drop
-//!   ≥ 20 dB; the worst near-Nyquist fold drops 12.4 dB — first-
-//!   order BLEP rejection grows as the alias departs Nyquist, and
-//!   that residual sits where ears are masked. Wavetable-grade
-//!   cleanness is a wavetable's job, not this leaf's.
+//! * `Saw` / `Square` — band-limited steps at each discontinuity;
+//! * `Triangle` — band-limited ramps (BLAMP) at each corner.
+//!
+//! Two band-limiting kinds, chosen at construction:
+//! [`Osc::new`] corrects each edge over the two samples around it with
+//! the polynomial residuals (polyBLEP and polyBLAMP), and
+//! [`Osc::min_blep`] adds a tabulated minimum-phase residual over the
+//! samples after it (minBLEP and minBLAMP), much cleaner near Nyquist
+//! for a few samples of delay. Either oscillator hard-syncs to a master
+//! frequency ([`Osc::set_sync`]): each reset is one more edge, a jump
+//! and a slope change, corrected the same way. The residual kernels live
+//! in `osc/blep.rs`.
 
 use crate::kernel::node::{Generator, Stage, Tail};
+use crate::units::Hz;
+
+mod blep;
+mod wavetable;
+
+pub use wavetable::Wavetable;
+
+use blep::MinBlep;
 
 /// The periodic waveforms every oscillator and LFO draws from.
 ///
@@ -55,51 +67,156 @@ impl Waveform {
             }
         }
     }
+
+    /// The naive value at `t` (in `[0, 1)`), in f64.
+    #[inline]
+    fn value(self, t: f64) -> f64 {
+        match self {
+            Waveform::Sine => (core::f64::consts::TAU * t).sin(),
+            Waveform::Triangle => {
+                if t < 0.5 {
+                    4.0 * t - 1.0
+                } else {
+                    3.0 - 4.0 * t
+                }
+            }
+            Waveform::Saw => 2.0 * t - 1.0,
+            Waveform::Square => {
+                if t < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+        }
+    }
+
+    /// The naive slope at `t`, per sample, at `inc` cycles per sample.
+    #[inline]
+    fn slope(self, t: f64, inc: f64) -> f64 {
+        match self {
+            Waveform::Sine => core::f64::consts::TAU * inc * (core::f64::consts::TAU * t).cos(),
+            Waveform::Triangle => {
+                if t < 0.5 {
+                    4.0 * inc
+                } else {
+                    -4.0 * inc
+                }
+            }
+            Waveform::Saw => 2.0 * inc,
+            Waveform::Square => 0.0,
+        }
+    }
+
+    /// The naive edges within a cycle: `(phase, jump, slope change)`,
+    /// ascending; the last is the wrap at 1 (an edge of zero size for a
+    /// sine).
+    #[inline]
+    fn edges(self, inc: f64) -> ([(f64, f64, f64); 2], usize) {
+        match self {
+            Waveform::Sine => ([(1.0, 0.0, 0.0), (0.0, 0.0, 0.0)], 1),
+            Waveform::Saw => ([(1.0, -2.0, 0.0), (0.0, 0.0, 0.0)], 1),
+            Waveform::Square => ([(0.5, -2.0, 0.0), (1.0, 2.0, 0.0)], 2),
+            Waveform::Triangle => ([(0.5, 0.0, -8.0 * inc), (1.0, 0.0, 8.0 * inc)], 2),
+        }
+    }
 }
+
+/// How an [`Osc`] band-limits its edges.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Edges {
+    /// Two-sample polynomial residuals, centred on the edge.
+    Poly,
+    /// Tabulated minimum-phase residuals, after the edge.
+    MinBlep,
+}
+
+/// One edge inside a sample interval: `(fraction, jump, slope change)`.
+type Edge = (f64, f64, f64);
+
+/// The most edges one interval can hold below Nyquist: a natural edge,
+/// a sync reset, and a natural edge after it.
+const MAX_EDGES: usize = 4;
+
+/// The minBLEP correction ring, in samples (a power of two above the
+/// residual's length; checked by `the_minblep_ring_holds_the_residual`).
+const RING: usize = 128;
+
+/// The naive history the minBLEP output is delayed through.
+const HISTORY: usize = 8;
 
 /// The audio-rate oscillator: a generator [`Stage`] (its input is
 /// ignored). Phase is `f64` cycles.
 ///
 /// # Models
 ///
-/// The four [`Waveform`]s from a phase accumulator; saw and square
-/// band-limited by polyBLEP, sine exact, triangle naive.
+/// The four [`Waveform`]s from a phase accumulator, sine exact; saw and
+/// square band-limited at every jump, the triangle at every corner, and
+/// a hard-synced oscillator at every reset. [`Osc::new`] uses the
+/// two-sample polynomial residuals, [`Osc::min_blep`] the tabulated
+/// minimum-phase ones.
 ///
 /// # Derivation
 ///
-/// The two-sample polynomial band-limited step of Välimäki and Huovilainen
-/// (2007), subtracted at each discontinuity.
+/// The polynomial band-limited step of Välimäki and Huovilainen (2007)
+/// and its integral, the band-limited ramp (Esqueda, Välimäki and
+/// Bilbao, DAFx 2016); the minimum-phase band-limited step of Brandt
+/// ("Hard sync without aliasing", ICMC 2001) from a 100 dB Kaiser
+/// windowed sinc with 32 zero crossings, made minimum phase by the real
+/// cepstrum, and its integral. A hard-sync reset is an edge at the
+/// master's wrap: a jump to the start of the cycle and a change of
+/// slope, each corrected by its residual.
 ///
 /// # Verified
 ///
-/// `crates/stave-dsp/src/primitives/osc.rs::polyblep_buys_at_least_20_db_on_the_worst_alias`
-/// (a 2093 Hz saw's exposed aliases below 8 kHz at least 20 dB under the
-/// naive saw's, the worst near-Nyquist fold at least 10 dB),
-/// `crates/stave-dsp/src/primitives/osc.rs::pitch_is_exact` and
-/// `crates/stave-dsp/src/primitives/osc.rs::sine_harmonics_are_at_the_floor`
-/// (2nd and 3rd under −80 dB).
+/// `crates/stave-dsp/tests/aliasing_budgets.rs::oscillators_hold_their_alias_budgets`
+/// (each kind's worst inharmonic energy over a stepped tone, 110 Hz to
+/// 5 kHz at 44.1 and 48 kHz, held to a budget recorded beside its
+/// measurement), `crates/stave-dsp/src/primitives/osc/tests.rs::polyblep_buys_at_least_20_db_on_the_worst_alias`,
+/// `crates/stave-dsp/src/primitives/osc/tests.rs::blamp_buys_at_least_20_db_on_the_triangle`,
+/// `crates/stave-dsp/src/primitives/osc/tests.rs::pitch_is_exact` and
+/// `crates/stave-dsp/src/primitives/osc/tests.rs::sine_harmonics_are_at_the_floor`.
 ///
 /// # Cost
 ///
-/// Datasheet `"Osc (sine)"` and `"Osc (saw, polyBLEP)"`.
+/// Datasheet `"Osc (sine)"`, `"Osc (saw, polyBLEP)"`,
+/// `"Osc (triangle, polyBLAMP)"`, `"Osc (saw, minBLEP)"` and
+/// `"Osc (saw, hard sync)"`.
 ///
 /// # Aliasing
 ///
-/// First-order polyBLEP on saw and square (residual aliasing near
-/// Nyquist, see Verified); the naive triangle's harmonics fall at
-/// 12 dB/octave. Wavetable-grade cleanness needs a wavetable.
+/// Band-limited edges: polyBLEP leaves residual aliasing near Nyquist
+/// (first-order rejection grows as an alias departs it); minBLEP rejects
+/// it until its prototype's transition, 0.46 of the rate. The budgets
+/// are in Verified. [`Wavetable`] is alias-free to its interpolation.
 ///
 /// # Valid ranges
 ///
-/// `0 ≤ hz < sample_rate / 2`; polyBLEP assumes the increment is below
-/// half a cycle per sample.
+/// `0 ≤ hz < sample_rate / 2`, and the same for a sync master. The
+/// residuals assume edges at least a sample apart; above a quarter of
+/// the rate they overlap and add, still finite. The minBLEP output lags
+/// the phase by a few samples (the minimum-phase step's delay).
 #[derive(Copy, Clone, Debug)]
 pub struct Osc {
     waveform: Waveform,
+    edges: Edges,
     hz: f32,
     sample_rate: f32,
     phase: f64,
     inc: f64,
+    /// The sync master, when set: its frequency, increment and phase.
+    master: Option<f32>,
+    master_inc: f64,
+    master_phase: f64,
+    /// polyBLEP with edges found by the accumulator: the next sample's
+    /// share of this interval's edges.
+    pending: f64,
+    /// minBLEP: corrections waiting for their samples, and the naive
+    /// waveform's recent past (the output is delayed to match the
+    /// residuals').
+    ring: [f32; RING],
+    at: usize,
+    history: [f32; HISTORY],
 }
 
 #[inline]
@@ -116,13 +233,35 @@ fn polyblep(t: f64, dt: f64) -> f64 {
 }
 
 impl Osc {
+    /// polyBLEP and polyBLAMP: two samples per edge, no delay.
     pub fn new(waveform: Waveform) -> Self {
+        Self::with_edges(waveform, Edges::Poly)
+    }
+
+    /// minBLEP and minBLAMP: a tabulated minimum-phase residual after
+    /// each edge, cleaner near Nyquist; the output lags the phase by the
+    /// residual's delay (3 samples). The first call builds the shared
+    /// tables (it allocates once, for every oscillator after it).
+    pub fn min_blep(waveform: Waveform) -> Self {
+        let _ = MinBlep::get();
+        Self::with_edges(waveform, Edges::MinBlep)
+    }
+
+    fn with_edges(waveform: Waveform, edges: Edges) -> Self {
         Self {
             waveform,
+            edges,
             hz: 0.0,
             sample_rate: 48_000.0,
             phase: 0.0,
             inc: 0.0,
+            master: None,
+            master_inc: 0.0,
+            master_phase: 0.0,
+            pending: 0.0,
+            ring: [0.0; RING],
+            at: 0,
+            history: [0.0; HISTORY],
         }
     }
 
@@ -136,6 +275,17 @@ impl Osc {
         self.inc = f64::from(hz) / f64::from(self.sample_rate);
     }
 
+    /// Hard sync to a master oscillator at `master` (`None`: free
+    /// running): each time the master's phase wraps, this oscillator's
+    /// restarts at 0, mid-sample, with the jump and the slope change
+    /// band-limited.
+    pub fn set_sync(&mut self, master: Option<Hz>) {
+        self.master = master.map(Hz::get);
+        self.master_inc = self
+            .master
+            .map_or(0.0, |m| f64::from(m) / f64::from(self.sample_rate));
+    }
+
     /// Phase in cycles, `0 ≤ t < 1`.
     pub fn phase(&self) -> f64 {
         self.phase
@@ -144,34 +294,36 @@ impl Osc {
     pub fn set_phase(&mut self, cycles: f64) {
         self.phase = cycles.rem_euclid(1.0);
     }
-}
 
-impl Stage for Osc {
-    fn prepare(&mut self, sample_rate: f32) {
-        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
-        self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
-        self.reset();
-    }
-    fn reset(&mut self) {
-        self.phase = 0.0;
-    }
+    /// The polyBLEP oscillator without sync: edges found from the phase
+    /// alone (the saw and square as they always were; the triangle's
+    /// corners get polyBLAMP).
     #[inline]
-    fn tick(&mut self, _: f32) -> f32 {
+    fn tick_free(&mut self) -> f64 {
         let t = self.phase;
         self.phase += self.inc;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
         }
         let dt = self.inc;
-        let y = match self.waveform {
+        match self.waveform {
             Waveform::Sine => (core::f64::consts::TAU * t).sin(),
-            // Harmonics fall at 12 dB/octave: the naive form is used.
             Waveform::Triangle => {
-                if t < 0.5 {
+                let naive = if t < 0.5 {
                     4.0 * t - 1.0
                 } else {
                     3.0 - 4.0 * t
+                };
+                // Corners at 0 (slope +8·dt) and ½ (−8·dt), at τ samples.
+                let corner = |c: f64| {
+                    let d = t - c;
+                    let d = d - d.round();
+                    blep::poly_ramp(d / dt)
+                };
+                if dt > 0.0 {
+                    naive + 8.0 * dt * (corner(0.0) - corner(0.5))
+                } else {
+                    naive
                 }
             }
             Waveform::Saw => (2.0 * t - 1.0) - polyblep(t, dt),
@@ -179,6 +331,134 @@ impl Stage for Osc {
                 let raw = if t < 0.5 { 1.0 } else { -1.0 };
                 raw + polyblep(t, dt) - polyblep((t + 0.5).rem_euclid(1.0), dt)
             }
+        }
+    }
+
+    /// Advance one sample, collecting every edge in the interval: the
+    /// waveform's own and a sync reset, with each one's fraction.
+    fn advance(&mut self) -> ([Edge; MAX_EDGES], usize) {
+        let inc = self.inc;
+        let w = self.waveform;
+        let mut out = [(0.0, 0.0, 0.0); MAX_EDGES];
+        let mut n = 0;
+        let reset = if self.master.is_some() {
+            let m = self.master_phase + self.master_inc;
+            if m >= 1.0 && self.master_inc > 0.0 {
+                let f = (1.0 - self.master_phase) / self.master_inc;
+                self.master_phase = (m - 1.0).rem_euclid(1.0);
+                Some(f.clamp(0.0, 1.0))
+            } else {
+                self.master_phase = m;
+                None
+            }
+        } else {
+            None
+        };
+        let (natural, count) = w.edges(inc);
+        let mut t = self.phase;
+        let mut done = 0.0;
+        // The waveform's edges up to `limit`, from phase `t` at `done`.
+        let run = |t: &mut f64,
+                       done: &mut f64,
+                       limit: f64,
+                       out: &mut [Edge; MAX_EDGES],
+                       n: &mut usize| {
+            for _ in 0..MAX_EDGES {
+                let Some(&(e, dv, ds)) = natural[..count].iter().find(|&&(e, _, _)| e > *t) else {
+                    break;
+                };
+                let f = *done + (e - *t) / inc;
+                if f.is_nan() || f > limit {
+                    break;
+                }
+                if (dv != 0.0 || ds != 0.0) && *n < MAX_EDGES {
+                    out[*n] = (f, dv, ds);
+                    *n += 1;
+                }
+                *t = if e >= 1.0 { 0.0 } else { e };
+                *done = f;
+            }
+        };
+        run(&mut t, &mut done, reset.unwrap_or(1.0), &mut out, &mut n);
+        if let Some(f) = reset {
+            let before = (t + (f - done) * inc).min(1.0);
+            if n < MAX_EDGES {
+                out[n] = (
+                    f,
+                    w.value(0.0) - w.value(before),
+                    w.slope(0.0, inc) - w.slope(before, inc),
+                );
+                n += 1;
+            }
+            t = 0.0;
+            done = f;
+            run(&mut t, &mut done, 1.0, &mut out, &mut n);
+        }
+        t += (1.0 - done) * inc;
+        self.phase = if t >= 1.0 { t - 1.0 } else { t };
+        (out, n)
+    }
+
+    /// The polyBLEP oscillator with edges from [`advance`](Self::advance):
+    /// each edge corrects this sample and the next.
+    fn tick_poly(&mut self) -> f64 {
+        let mut y = self.waveform.value(self.phase) + self.pending;
+        let (edges, n) = self.advance();
+        let mut next = 0.0;
+        for &(f, dv, ds) in &edges[..n] {
+            let (before, after) = blep::poly(f, dv, ds);
+            y += before;
+            next += after;
+        }
+        self.pending = next;
+        y
+    }
+
+    /// The minBLEP oscillator: the naive waveform delayed by the
+    /// residual's delay, plus the corrections due now.
+    fn tick_min(&mut self) -> f64 {
+        let table = MinBlep::get();
+        let d = table.delay;
+        self.history.copy_within(0..HISTORY - 1, 1);
+        self.history[0] = self.waveform.value(self.phase) as f32;
+        let mask = RING - 1;
+        let y = f64::from(self.history[d]) + f64::from(self.ring[self.at]);
+        self.ring[self.at] = 0.0;
+        let (edges, n) = self.advance();
+        for &(f, dv, ds) in &edges[..n] {
+            for k in 1..=table.len {
+                let (step, ramp) = table.residual(k as f64 - f);
+                let slot = &mut self.ring[(self.at + k) & mask];
+                *slot += (dv * step + ds * ramp) as f32;
+            }
+        }
+        self.at = (self.at + 1) & mask;
+        y
+    }
+}
+
+impl Stage for Osc {
+    fn prepare(&mut self, sample_rate: f32) {
+        debug_assert!(sample_rate > 0.0, "sample rate must be positive");
+        self.sample_rate = sample_rate;
+        self.set_hz(self.hz);
+        self.set_sync(self.master.map(Hz::new));
+        self.reset();
+    }
+    fn reset(&mut self) {
+        self.phase = 0.0;
+        self.master_phase = 0.0;
+        self.pending = 0.0;
+        self.ring = [0.0; RING];
+        self.at = 0;
+        self.history = [0.0; HISTORY];
+    }
+    #[inline]
+    fn tick(&mut self, _: f32) -> f32 {
+        let y = match (self.edges, self.master) {
+            (Edges::Poly, None) => self.tick_free(),
+            (Edges::Poly, Some(_)) => self.tick_poly(),
+            (Edges::MinBlep, _) => self.tick_min(),
         };
         y as f32
     }
@@ -191,127 +471,4 @@ impl Stage for Osc {
 impl Generator for Osc {}
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SR: f32 = 48_000.0;
-
-    /// Single-bin correlation (Goertzel-shaped) magnitude at `hz`.
-    fn mag_at(w: &[f32], hz: f64) -> f64 {
-        let n = w.len() as f64;
-        let (mut re, mut im) = (0.0f64, 0.0f64);
-        for (i, &x) in w.iter().enumerate() {
-            let ph = core::f64::consts::TAU * hz * i as f64 / f64::from(SR);
-            re += f64::from(x) * ph.cos();
-            im += f64::from(x) * ph.sin();
-        }
-        (re * re + im * im).sqrt() / n
-    }
-
-    fn run(shape: Waveform, hz: f32, n: usize, blep: bool) -> Vec<f32> {
-        let mut o = Osc::new(shape);
-        o.prepare(SR);
-        o.set_hz(hz);
-        (0..n)
-            .map(|_| {
-                if blep {
-                    o.tick(0.0)
-                } else {
-                    // The naive comparison: same accumulator, no BLEP.
-                    let t = o.phase;
-                    o.phase = (o.phase + o.inc).rem_euclid(1.0);
-                    match shape {
-                        Waveform::Sine => (core::f64::consts::TAU * t).sin() as f32,
-                        other => other.eval(t as f32),
-                    }
-                }
-            })
-            .collect()
-    }
-
-    #[test]
-    fn pitch_is_exact() {
-        // The fundamental dominates at exactly the dialed hz, and a
-        // detuned probe half a semitone off reads ≥ 30 dB down.
-        for shape in [
-            Waveform::Sine,
-            Waveform::Triangle,
-            Waveform::Saw,
-            Waveform::Square,
-        ] {
-            let w = run(shape, 440.0, 48_000, true);
-            let on = mag_at(&w, 440.0);
-            let off = mag_at(&w, 440.0 * 1.03);
-            assert!(
-                on > off * 30.0,
-                "{shape:?}: fundamental {on:.4} vs detuned probe {off:.4}"
-            );
-        }
-    }
-
-    #[test]
-    fn sine_harmonics_are_at_the_floor() {
-        let w = run(Waveform::Sine, 997.0, 48_000, true);
-        let h1 = mag_at(&w, 997.0);
-        let h2 = mag_at(&w, 2.0 * 997.0);
-        let h3 = mag_at(&w, 3.0 * 997.0);
-        assert!(
-            h2 / h1 < 1e-4 && h3 / h1 < 1e-4,
-            "sine THD: h2 {h2:.2e} h3 {h3:.2e}"
-        );
-    }
-
-    #[test]
-    fn polyblep_buys_at_least_20_db_on_the_worst_alias() {
-        // 2093 Hz saw at 48 k. Aliases land at EXACTLY |k·f0 mod fs|
-        // folded into the band, for the partials k past Nyquist —
-        // probe those frequencies (skipping any that collide with a
-        // true harmonic), never a grid. Domain-qualified per the
-        // physics of first-order BLEP (rejection grows as the alias
-        // departs Nyquist): the worst near-Nyquist fold wins a
-        // measured 12.4 dB (≥ 10 asserted) and is perceptually
-        // masked; the EXPOSED midband folds (< 8 kHz — where naive
-        // saws audibly ring) win ≥ 20 dB.
-        let (f0, fs) = (2_093.0f64, f64::from(SR));
-        let naive = run(Waveform::Saw, f0 as f32, 48_000, false);
-        let blep = run(Waveform::Saw, f0 as f32, 48_000, true);
-        let mut alias_freqs = Vec::new();
-        for k in 1..200 {
-            let f = k as f64 * f0;
-            if f <= fs / 2.0 {
-                continue; // a true partial, not an alias
-            }
-            let mut folded = f % fs;
-            if folded > fs / 2.0 {
-                folded = fs - folded;
-            }
-            let in_band = (100.0..20_000.0).contains(&folded);
-            let near_harmonic = (folded / f0 - (folded / f0).round()).abs() < 0.02;
-            if in_band && !near_harmonic {
-                alias_freqs.push(folded);
-            }
-        }
-        assert!(
-            !alias_freqs.is_empty(),
-            "test premise: aliases exist in band"
-        );
-        let worst = |w: &[f32], lo: f64, hi: f64| {
-            alias_freqs
-                .iter()
-                .filter(|f| (lo..hi).contains(*f))
-                .map(|&f| mag_at(w, f))
-                .fold(0.0f64, f64::max)
-        };
-        let win = |lo: f64, hi: f64| {
-            let (n, b) = (worst(&naive, lo, hi), worst(&blep, lo, hi));
-            20.0 * (n / b.max(1e-30)).log10()
-        };
-        let full = win(100.0, 24_000.0);
-        let exposed = win(100.0, 8_000.0);
-        assert!(full > 10.0, "full-band worst-alias win only {full:.1} dB");
-        assert!(
-            exposed > 20.0,
-            "exposed midband alias win only {exposed:.1} dB"
-        );
-    }
-}
+mod tests;

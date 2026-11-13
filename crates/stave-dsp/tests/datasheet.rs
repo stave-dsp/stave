@@ -69,8 +69,8 @@ use stave_dsp::primitives::spectral::{Complex, Fir, Head, Passband, Stft, Window
 use stave_dsp::units::SampleRate;
 use stave_dsp::{
     Adaa, Adsr, Allpass1, Biquad, Convolver, Curve, DelayLine, DiodeClipper, DiodeClipperConfig,
-    Fft, Hysteresis, ImpulseResponse, Lag, Lfo, NonlinearRc, Osc, PairSolver, RandomWalk, Shockley,
-    Slew, Stage, Waveform,
+    Fft, Hysteresis, ImpulseResponse, Lag, Lfo, NonlinearRc, Osc, Oversampled, PairSolver,
+    RandomWalk, Shockley, Slew, Stage, Waveform, Wavetable,
 };
 use stave_dsp::{
     CommonCathode, CommonCathodeConfig, Koren, OpAmpClipper, OpAmpClipperConfig,
@@ -294,6 +294,50 @@ fn primitive_datasheet() {
     osc_saw.prepare(sr);
     osc_saw.set_hz(220.0);
     bench("Osc (saw, polyBLEP)", &input, |x| osc_saw.tick(x));
+
+    // A3: the triangle's corners, the tabulated residuals, a hard-synced
+    // saw (a reset every master cycle) and the mip-mapped table.
+    let mut osc_tri = Osc::new(Waveform::Triangle);
+    osc_tri.prepare(sr);
+    osc_tri.set_hz(220.0);
+    bench("Osc (triangle, polyBLAMP)", &input, |x| osc_tri.tick(x));
+    let mut osc_min = Osc::min_blep(Waveform::Saw);
+    osc_min.prepare(sr);
+    osc_min.set_hz(220.0);
+    bench("Osc (saw, minBLEP)", &input, |x| osc_min.tick(x));
+    let mut osc_sync = Osc::new(Waveform::Saw);
+    osc_sync.prepare(sr);
+    osc_sync.set_hz(370.0);
+    osc_sync.set_sync(Some(stave_dsp::units::Hz::new(220.0)));
+    bench("Osc (saw, hard sync)", &input, |x| osc_sync.tick(x));
+    let mut table = Wavetable::new(Waveform::Saw);
+    table.prepare(sr);
+    table.set_hz(220.0);
+    bench("Wavetable (saw)", &input, |x| table.tick(x));
+
+    // A2: each oversampling region around nothing (the filters alone),
+    // in blocks, per outer sample.
+    for (phase, factor) in [
+        ("linear", 2),
+        ("linear", 3),
+        ("linear", 4),
+        ("linear", 6),
+        ("linear", 8),
+        ("minimum", 2),
+        ("minimum", 4),
+        ("minimum", 8),
+    ] {
+        let mut os = if phase == "linear" {
+            Oversampled::linear((), factor)
+        } else {
+            Oversampled::minimum((), factor)
+        };
+        os.prepare(sr);
+        let mut block = input[..4_096].to_vec();
+        bench_points(&format!("Oversampled {phase} {factor}x (wire)"), block.len(), || {
+            os.process(black_box(&mut block))
+        });
+    }
 
     for n in [512usize, 4096] {
         let fft = Fft::<f32>::new(n);

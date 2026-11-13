@@ -16,6 +16,7 @@
 //! compare     bitwise divergence; null-test residuals
 //! tone_window   a bin-centred tone (or two) through a system: alias, gain, IMD
 //! nonlinear   alias floor, gain surfaces, hysteresis
+//! aliasing    a stepped tone's inharmonic energy, harmonics apart (DSP.md A4)
 //! dynamics    gain trajectories, time constants, residuals, decay
 //! modulation  sidebands, subharmonics, period multiplication
 //! zipper      parameter-ramp spray
@@ -55,6 +56,7 @@
 pub const AUDIBLE_MIN_HZ: f64 = 20.0;
 pub const AUDIBLE_MAX_HZ: f64 = 20_000.0;
 
+pub mod aliasing;
 pub mod compare;
 pub mod dynamics;
 pub mod latency;

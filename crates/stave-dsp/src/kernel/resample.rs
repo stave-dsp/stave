@@ -1,7 +1,13 @@
 //! [`Oversampled2x`](crate::Oversampled2x)'s resampling machinery:
 //! the linear-phase FIR half-band pairs it runs between — `front`
 //! (133-tap, full steepness) and `nested` (73-tap, relaxed interior).
-//! Crate-private: everything composes `Oversampled2x`.
+//! Crate-private: everything composes `Oversampled2x`, or
+//! [`Oversampled`](crate::Oversampled), which also runs the odd-factor
+//! polyphase stages of [`polyphase`] and the IIR half-bands of
+//! [`allpass`].
+
+pub(crate) mod allpass;
+pub(crate) mod polyphase;
 
 // ===== Linear-phase FIR half-band oversampler =====
 //
@@ -48,7 +54,7 @@ pub(crate) const HB_BETA: f64 = 9.62;
 
 /// Zeroth-order modified Bessel function of the first kind (series;
 /// converges fast for the β range used here).
-fn bessel_i0(x: f64) -> f64 {
+pub(crate) fn bessel_i0(x: f64) -> f64 {
     let mut sum = 1.0f64;
     let mut term = 1.0f64;
     let half = 0.5 * x;
@@ -153,6 +159,22 @@ impl HalfbandFir {
         }
     }
 
+    /// The same Kaiser design at any length `taps ≡ 1 (mod 4)`, up to
+    /// [`HB_TAPS`] (the deeper levels of an
+    /// [`Oversampled`](crate::Oversampled) stack).
+    pub fn with_taps(taps: usize) -> Self {
+        debug_assert!(taps % 4 == 1 && taps <= HB_TAPS);
+        let (center, side) = halfband_coeffs_n(taps);
+        Self {
+            buf: [0.0; HB_RING],
+            idx: 0,
+            center,
+            side,
+            m: (taps - 1) / 2,
+            n_side: (taps - 1) / 4,
+        }
+    }
+
     pub fn reset(&mut self) {
         self.buf = [0.0; HB_RING];
         self.idx = 0;
@@ -234,6 +256,19 @@ impl HalfbandUp {
             center,
             side,
             half: HB_HALF_INNER,
+        }
+    }
+
+    /// See [`HalfbandFir::with_taps`].
+    pub fn with_taps(taps: usize) -> Self {
+        debug_assert!(taps % 4 == 1 && taps <= HB_TAPS);
+        let (center, side) = halfband_coeffs_n(taps);
+        Self {
+            sig: [0.0; 128],
+            n: 0,
+            center,
+            side,
+            half: (taps - 1) / 4,
         }
     }
 

@@ -1,5 +1,7 @@
-//! **Oversampled2x** — run a stage in a clock domain twice as fast. The
-//! one public oversampler: one name, two linear-phase half-band designs
+//! **Oversampled2x** — run a stage in a clock domain twice as fast, and
+//! [`Oversampled`], the same region at any whole factor with linear- or
+//! minimum-phase filters (`general.rs`). `Oversampled2x` is the 2×/4×
+//! form plugins build: one name, two linear-phase half-band designs
 //! as construction presets — `front` (full-steepness pair guarding the
 //! base Nyquist) and `nested` (the relaxed interior pair: inside a front
 //! region the wideband content is already gone). The wrapper owns the
@@ -10,6 +12,12 @@
 
 use crate::kernel::node::{Stage, Tail};
 use crate::kernel::resample::{Oversampler2xFir, Oversampler2xFirInner};
+
+mod general;
+#[cfg(test)]
+mod tests;
+
+pub use general::Oversampled;
 
 #[derive(Clone)]
 enum Halfbands {
@@ -135,36 +143,6 @@ impl<S: Stage> Oversampled2x<S> {
         match &mut self.os {
             Halfbands::Front(o) => o.reset(),
             Halfbands::Nested(o) => o.reset(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct Drive(f32);
-
-    impl Stage for Drive {
-        fn tick(&mut self, x: f32) -> f32 {
-            (x * self.0).tanh()
-        }
-    }
-
-    /// A closure interior is the same region as the stage it inlines,
-    /// sample for sample, at both designs and nested.
-    #[test]
-    fn a_closure_interior_matches_its_stage() {
-        let input: Vec<f32> = (0..2_000).map(|i| (i as f32 * 0.031).sin() * 0.9).collect();
-        let mut staged = Oversampled2x::front(Oversampled2x::nested(Drive(3.0)));
-        let mut closed = Oversampled2x::front(Oversampled2x::nested(()));
-        staged.prepare(48_000.0);
-        closed.prepare(48_000.0);
-        assert_eq!(staged.latency(), closed.latency());
-        for &x in &input {
-            let a = staged.tick(x);
-            let b = closed.tick_with(x, |inner, s| inner.tick_with(s, |(), u| (u * 3.0).tanh()));
-            assert_eq!(a.to_bits(), b.to_bits());
         }
     }
 }

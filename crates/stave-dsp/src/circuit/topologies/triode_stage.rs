@@ -137,7 +137,11 @@ pub enum Bias {
 /// `crates/stave-test/tests/matches_ngspice.rs::triode_stage_static_transfer_matches_ngspice`:
 /// the static transfer against an ngspice grid sweep, 5e-7 normalized
 /// RMS up to the level scale, the operating point to 1 µV;
-/// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::koren_matches_12ax7_datasheet`.
+/// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::koren_matches_12ax7_datasheet`;
+/// `crates/stave-dsp/tests/aliasing_budgets.rs::nonlinear_stages_hold_their_alias_budgets`
+/// (DSP.md R5): driven at 77 V per unit with first-order ADAA and no
+/// oversampler, a stepped tone's inharmonic energy below 20 kHz stays
+/// under −19 dB at 44.1 kHz (measured −21.8) and −18 at 48 (−20.2).
 ///
 /// # Cost
 /// No datasheet line yet (DSP.md P1).

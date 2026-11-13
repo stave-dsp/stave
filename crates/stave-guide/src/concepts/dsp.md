@@ -115,7 +115,7 @@ asserts those invariants with probe leaves.
 | Sequence | [`Serial`](stave_dsp::Serial) | prepare cascades; latencies sum; tails add (an infinite tail absorbs) |
 | Branch | [`Par2`](stave_dsp::Par2) + [`Compensator`](stave_dsp::Compensator) | both paths arrive at the join aligned; each branch rings on through its pad |
 | Loop | [`Loop`](stave_dsp::Loop) | feedback only through a `NonZeroU32` delay; tail infinite unless a bound is declared |
-| Oversampled | [`Oversampled2x`](stave_dsp::Oversampled2x) | the interior is prepared at twice the rate; latency and tail are divided back, the tail rounding up |
+| Oversampled | [`Oversampled2x`](stave_dsp::Oversampled2x), [`Oversampled`](stave_dsp::Oversampled) | the interior is prepared at the factor × the rate; latency and tail are divided back, the latency exact (rounded to the nearest sample for the host), the tail rounding up |
 | Lanes | [`PerChannel`](stave_dsp::PerChannel) + [`ChannelLayout`](stave_dsp::ChannelLayout) | one state per lane; lanes never mix |
 | Control | [`Source`](stave_dsp::Source), [`Route`](stave_dsp::Route), [`Router`](stave_dsp::Router) | routes displace from the knob's base value |
 | Voices | [`VoiceRack`](stave_dsp::VoiceRack), [`Voice`](stave_dsp::Voice), [`VoiceEvent`](stave_dsp::VoiceEvent) | a fixed pool under a declared [`Steal`](stave_dsp::Steal) policy (`tests/voice_properties.rs`) |
@@ -153,13 +153,92 @@ let x4 = Oversampled2x::front(Oversampled2x::nested(()));
 assert_eq!(x4.latency(), 84);
 ```
 
-[`Oversampled2x`](stave_dsp::Oversampled2x) is the only oversampler:
+[`Oversampled2x`](stave_dsp::Oversampled2x) is the 2×/4× region:
 [`front`](stave_dsp::Oversampled2x::front) is the full-steepness pair
 for the outermost region and
 [`nested`](stave_dsp::Oversampled2x::nested) the relaxed pair inside it.
 [`tick_with`](stave_dsp::Oversampled2x::tick_with) runs a closure once
 per inner sample, so per-sample context reaches the faster domain
 without being parked in fields.
+
+### Any factor, either phase
+
+[`Oversampled`](stave_dsp::Oversampled) is the same region at any whole
+factor, with the phase response named by its constructor:
+[`linear`](stave_dsp::Oversampled::linear) (a constant delay, so a dry
+path aligns with a plain integer delay) or
+[`minimum`](stave_dsp::Oversampled::minimum) (IIR half-bands: the same
+magnitude for a few samples of delay, at the price of a phase that
+bends near the band edge). The factor is built from its primes,
+outermost first, and `linear(s, 2)` and `linear(s, 4)` are
+`Oversampled2x`'s own filters. The latency is exact in
+[`latency_exact`](stave_dsp::Oversampled::latency_exact) and rounded
+to the nearest sample by `latency`:
+
+```rust
+use stave_dsp::{Oversampled, Stage};
+
+// Linear phase: whole samples by construction.
+assert_eq!(Oversampled::linear((), 3).latency(), 66);
+assert_eq!(Oversampled::linear((), 6).latency(), 73); // 66 + the 3x stage's 7
+assert_eq!(Oversampled::linear((), 8).latency(), 87);
+
+// Minimum phase: the group delay at DC, rounded for the host.
+let x4 = Oversampled::minimum((), 4);
+assert!((x4.latency_exact() - 5.63).abs() < 0.01);
+assert_eq!(x4.latency(), 6);
+
+// A hard clipper run 6x, with its drive as per-sample context.
+let mut clip = Oversampled::linear((), 6);
+clip.prepare(44_100.0);
+let drive = 8.0;
+let y = clip.tick_with(0.3, |(), s| (drive * s).clamp(-1.0, 1.0));
+assert!(y.abs() <= 1.0);
+```
+
+### Oscillators and measured aliasing
+
+[`Osc`](stave_dsp::Osc) band-limits every edge: [`Osc::new`](stave_dsp::Osc::new)
+with the two-sample polynomial residuals (polyBLEP for jumps, polyBLAMP
+for the triangle's corners), [`Osc::min_blep`](stave_dsp::Osc::min_blep)
+with the tabulated minimum-phase ones, and either hard-syncs to a master
+([`set_sync`](stave_dsp::Osc::set_sync)). [`Wavetable`](stave_dsp::Wavetable)
+plays any cycle from tables band-limited per octave.
+[`stave_measure::aliasing`] measures what each one folds: a stepped tone
+(or an oscillator stepped across its range), its inharmonic energy in dB
+below the fundamental, harmonics apart. `crates/stave-dsp/tests/aliasing_budgets.rs`
+holds every nonlinear stage and oscillator to a budget that way (DSP.md R5).
+
+```rust
+use stave_dsp::{Osc, Stage, Waveform, Wavetable};
+use stave_measure::aliasing::SteppedTone;
+
+let sweep = SteppedTone { low_hz: 1_000.0, high_hz: 5_000.0, steps: 3, ..SteppedTone::default() };
+let folds = |make: &dyn Fn() -> Osc| {
+    sweep
+        .generated(|hz| {
+            let mut o = make();
+            o.prepare(48_000.0);
+            o.set_hz(hz as f32);
+            move |_: f32| o.tick(0.0)
+        })
+        .worst_audible()
+        .audible_db
+};
+let poly = folds(&|| Osc::new(Waveform::Saw));
+let min = folds(&|| Osc::min_blep(Waveform::Saw));
+assert!(poly > -40.0 && min < -85.0, "polyBLEP {poly:.1} dB, minBLEP {min:.1} dB");
+
+// The table oscillator folds nothing but its interpolation's images.
+let table = Wavetable::new(Waveform::Saw);
+let clean = sweep.generated(|hz| {
+    let mut w = table.clone();
+    w.prepare(48_000.0);
+    w.set_hz(hz as f32);
+    move |_: f32| w.tick(0.0)
+});
+assert!(clean.worst().inharmonic_db < -100.0);
+```
 
 [`ModMatrix`](stave_dsp::ModMatrix) is a [`Router`](stave_dsp::Router)
 whose targets are a chain's stage axes. [`VoiceEvent`](stave_dsp::VoiceEvent)
