@@ -160,13 +160,13 @@ circuit/
 - [ ] **K3** Prune the crate root's flat re-exports to the author-level
   vocabulary (rule 5); everything else by path. Migrate the 17 plugins in
   the same release.
-- [ ] **K4** Apply the naming rules to every existing public item;
+- [x] **K4** (a22c18f: the one break was the root's `TriodeModel`, retired with no alias since no plugin uses it; deferred to K3: the root's flat names; noted, not renamed: `JilesAthertonCore` (model + device in one name, E's area), `SmoothSat` (a design, its maths name would be a compound)) Apply the naming rules to every existing public item;
   rename what breaks them (rule 1–3), with the vocabulary gate extended
   to reject the banned suffixes in stave-dsp's public API.
-- [ ] **K5** The standard rustdoc sections (rule 7) on every public model,
+- [x] **K5** (41b8301: 57 models; `tools/docsite/src/models.rs`, reference/models; Cost quotes datasheet stages, priced from `datasheet.json`) The standard rustdoc sections (rule 7) on every public model,
   and the generated **model catalogue** page on the docs site, failing
   the build on a missing section or a verification test that doesn't exist.
-- [ ] **K6** A short "where does my model go?" decision guide in
+- [x] **K6** (decdc3e: `howto::model_placement`) A short "where does my model go?" decision guide in
   crates/stave-guide, with the diode example, so humans and agents place
   new work correctly the first time.
 
