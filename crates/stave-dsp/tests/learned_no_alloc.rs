@@ -1,32 +1,52 @@
 //! The learned networks are realtime after loading: `prepare`, `reset`,
 //! `tick` and `process` never touch the allocator. A counting global
-//! allocator watches; this file holds one test so nothing else
-//! allocates concurrently.
+//! allocator, armed per thread, watches: only the measuring thread's
+//! allocations count. (A process-wide counter also saw the test
+//! harness's main thread, which allocates when it first blocks waiting
+//! for the test thread — a race that failed this test on a loaded
+//! runner.)
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 
 use stave_dsp::learned::{nam, Gru};
 use stave_dsp::Stage;
 
 struct Counting;
 
-static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static ARMED: Cell<bool> = const { Cell::new(false) };
+    static COUNT: Cell<usize> = const { Cell::new(0) };
+}
 
-// SAFETY: forwards every call to `System` unchanged; only counts.
+fn count() {
+    let _ = ARMED.try_with(|armed| {
+        if armed.get() {
+            COUNT.with(|c| c.set(c.get() + 1));
+        }
+    });
+}
+
+// SAFETY: every method forwards to `System` with the caller's arguments,
+// unchanged; counting touches only thread-local cells.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-        // SAFETY: the caller's contract for `alloc` is passed through.
+        count();
+        // SAFETY: the caller's contract for `alloc`, passed through.
         unsafe { System.alloc(layout) }
     }
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        count();
+        // SAFETY: the caller's contract for `alloc_zeroed`, passed through.
+        unsafe { System.alloc_zeroed(layout) }
+    }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        // SAFETY: `ptr` came from `System.alloc` with this layout.
+        // SAFETY: `ptr` came from `System` via the methods above.
         unsafe { System.dealloc(ptr, layout) }
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-        // SAFETY: the caller's contract for `realloc` is passed through.
+        count();
+        // SAFETY: the caller's contract for `realloc`, passed through.
         unsafe { System.realloc(ptr, layout, new_size) }
     }
 }
@@ -34,22 +54,41 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
+fn allocations_in(f: impl FnOnce()) -> usize {
+    COUNT.with(|c| c.set(0));
+    ARMED.with(|a| a.set(true));
+    f();
+    ARMED.with(|a| a.set(false));
+    COUNT.with(Cell::get)
+}
+
+/// The whole audio-path life of a freshly loaded network, its first
+/// `prepare` and first `tick` included, counted.
 fn assert_no_alloc(what: &str, stage: &mut impl Stage) {
     let mut block = [0.0f32; 256];
     for (i, x) in block.iter_mut().enumerate() {
         *x = (i as f32 * 0.05).sin() * 0.7;
     }
-    let before = ALLOCATIONS.load(Ordering::Relaxed);
-    stage.prepare(48_000.0);
-    stage.reset();
-    for &x in &block {
-        std::hint::black_box(stage.tick(x));
-    }
-    stage.process(&mut block);
-    stage.prepare(44_100.0); // a refused rate: still no allocation
-    std::hint::black_box(stage.tick(0.1));
-    let after = ALLOCATIONS.load(Ordering::Relaxed);
-    assert_eq!(after, before, "{what} allocated on the audio path");
+    let n = allocations_in(|| {
+        stage.prepare(48_000.0);
+        stage.reset();
+        for &x in &block {
+            std::hint::black_box(stage.tick(x));
+        }
+        stage.process(&mut block);
+        stage.prepare(44_100.0); // a refused rate: still no allocation
+        std::hint::black_box(stage.tick(0.1));
+    });
+    assert_eq!(n, 0, "{what} allocated {n} times on the audio path");
+}
+
+/// The counter sees this thread's allocations: a check that cannot fail
+/// is not a check.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn the_counter_counts() {
+    let n = allocations_in(|| drop(std::hint::black_box(vec![1u8, 2, 3])));
+    assert_eq!(n, 1);
 }
 
 #[test]
