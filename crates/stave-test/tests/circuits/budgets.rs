@@ -1128,8 +1128,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (GroupDelay, Shipping, 2e-4, NAN), // 1.5e-08
             (Harmonics, Oversampled, 2.0, 20.0), // 0.54 / 5.41
             (Harmonics, Shipping, 0.1, 1.0), // 0.0322 / 0.33 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
-            (OperatingPoint, Oversampled, 5e-6, NAN), // 1.53e-06
-            (OperatingPoint, Shipping, 5e-6, NAN), // 1.53e-06
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.12e-07
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.12e-07
             (Response, Oversampled, 2e-4, 0.001), // 4.45e-05 / 0.000321
             (Response, Shipping, 0.5, 0.5), // 0.077 / 0.153 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (ThdN, Oversampled, 0.01, NAN), // 0.00264
@@ -1152,8 +1152,8 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Harmonics, Shipping, 0.5, 2.0), // 0.13 / 0.395 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (Intermodulation, Oversampled, 100.0, 50.0), // 18.9 / 10.3 — CCIF products near −94 dBc: aliasing at 4×
             (Intermodulation, Shipping, 1.0, 2.0), // 0.183 / 0.341 — aliasing as it ships
-            (OperatingPoint, Oversampled, 5e-6, NAN), // 1.53e-06
-            (OperatingPoint, Shipping, 5e-6, NAN), // 1.53e-06
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.12e-07
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.12e-07
             (Response, Oversampled, 2e-4, 0.001), // 4.45e-05 / 0.000321
             (Response, Shipping, 0.5, 1.0), // 0.0913 / 0.181 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (ThdN, Oversampled, 5.0, NAN), // 0.679
