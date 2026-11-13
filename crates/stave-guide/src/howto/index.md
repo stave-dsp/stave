@@ -12,6 +12,8 @@ Each assumes you know the [concepts](crate::concepts).
   the tree rules, and the gates that hold them.
 - [Local configuration](crate::howto::local_config): per-machine hosts,
   sample libraries and captures, and building on another machine.
+- [Gate what a change affects](crate::howto::affected): only the
+  packages and gates a change can reach, and a tree never gated twice.
 - [Measure performance](crate::howto::performance): the perf report,
   honest timings, the CPU tap, profiling.
 - [Voicing and listening tests](crate::howto::voicing): loudness-matched

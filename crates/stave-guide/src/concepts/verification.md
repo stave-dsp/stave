@@ -30,7 +30,10 @@ runs.
 
 `scripts/gates.sh` is the commit gate: the tree rules, then every test
 under cargo-nextest, then the doctests. `scripts/gates.sh affected` runs
-only the packages the uncommitted change can reach.
+only the packages the uncommitted change can reach. `scripts/affected.sh`
+runs these checks and every cargo gate (clippy, tests, doctests, rustdoc,
+MSRV, the docs site) for just what a change affects, and never twice for
+the same tree (see [gating what a change affects](crate::howto::affected)).
 
 | script | holds |
 |---|---|

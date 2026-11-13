@@ -60,6 +60,8 @@ pub mod howto {
     pub mod release {}
     #[doc = include_str!("howto/local-config.md")]
     pub mod local_config {}
+    #[doc = include_str!("howto/affected.md")]
+    pub mod affected {}
 }
 
 #[doc = include_str!("glossary.md")]
