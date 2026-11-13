@@ -91,6 +91,12 @@ pub fn circuit(deck: &Netlist, input: &Input, rate: f64) -> Circuit<Dk> {
     <Circuit<Dk> as Solver>::on(deck, input, rate)
 }
 
+/// `Circuit<Wdf>` on the split deck, driven, at `rate` (its devices
+/// solved statically: compare it with DK on `deck.without_charge()`).
+pub fn wdf_circuit(deck: &Netlist, input: &Input, rate: f64) -> Circuit<Wdf> {
+    <Circuit<Wdf> as Solver>::on(deck, input, rate)
+}
+
 /// A circuit method a plan runs a netlist through.
 trait Solver: Clone {
     fn on(deck: &Netlist, input: &Input, rate: f64) -> Self;

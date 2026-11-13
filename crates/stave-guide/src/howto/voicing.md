@@ -60,6 +60,14 @@ sliders. Up to nine candidates fit, one per digit key.
   environment or the [local configuration](crate::howto::local_config)),
   **Scan library** lists the WAVs under its `Test Corpus/`. If the drive
   is not mounted, the list is empty and says so.
+- **A corpus role.** `--material role:NAME` (or `role:NAME#N` for item N)
+  plays an item of a reference-corpus role — `guitar_di`, `bass_di`,
+  `drums_loop`, `mix_bus`, `vocal`, `piano`, `synth_pad`, `transients` and
+  the rest in `crates/stave-test/corpus.spec` — picked from the library
+  by the committed rules and, when `scripts/corpus.sh lock` has run, by
+  the files and checksums the lock names. `--list-material` lists the
+  roles and what this machine's library fills them with; the session log
+  records the role, the item and every file's checksum.
 
 **Input trim** sets the level the candidates are driven at, which
 matters for every nonlinear model. Every take is loudness-matched

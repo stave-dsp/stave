@@ -17,7 +17,6 @@
 //! log.rs       the session log and summary
 //! bless.rs     "bless this sound", and re-verifying blessed takes
 //! rng.rs       a seeded generator
-//! sha256.rs    content checksums
 //! ```
 
 mod bless;
@@ -28,7 +27,7 @@ mod material;
 mod modes;
 mod player;
 mod rng;
-mod sha256;
+use stave_test::sha256;
 mod takes;
 #[cfg(test)]
 mod tests;
@@ -82,6 +81,8 @@ impl Launch {
 pub enum MaterialChoice {
     Builtin(String),
     File(PathBuf),
+    /// Item `.1` of a corpus role (DSP.md R22).
+    Role(String, usize),
 }
 
 impl MaterialChoice {
@@ -89,6 +90,7 @@ impl MaterialChoice {
         match self {
             Self::Builtin(n) => Material::builtin(n, sample_rate),
             Self::File(p) => Material::file(p, sample_rate),
+            Self::Role(r, i) => Material::corpus(r, *i, sample_rate),
         }
     }
 }
@@ -198,6 +200,8 @@ impl Voicing {
             let name = m.strip_prefix("builtin:").unwrap_or(m);
             setup.material = if builtin::find(name).is_some() {
                 MaterialChoice::Builtin(name.into())
+            } else if let Some((role, index)) = material::parse_role(m) {
+                MaterialChoice::Role(role, index)
             } else {
                 MaterialChoice::File(candidate::expand_home(m))
             };
@@ -324,6 +328,7 @@ impl Voicing {
         match (&self.setup.material, &m.source) {
             (MaterialChoice::Builtin(n), material::Source::Builtin { name }) => n == name,
             (MaterialChoice::File(p), material::Source::File { path, .. }) => p == path,
+            (MaterialChoice::Role(r, i), material::Source::Corpus { role, index, .. }) => r == role && i == index,
             _ => false,
         }
     }

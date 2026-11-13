@@ -14,7 +14,7 @@ use std::process::ExitCode;
 use stave_dsp::learned::block::{Block, Linear};
 use stave_dsp::Stage;
 use stave_host::wav;
-use stave_measure::identify::capture::{Capture, Measurements};
+use stave_measure::identify::capture::{Capture, Measurements, Program, Segment};
 use stave_measure::identify::hammerstein;
 use stave_measure::identify::wiener_hammerstein::{self as wh, Structure};
 use stave_measure::identify::Validation;
@@ -23,11 +23,12 @@ const USAGE: &str = "\
 stave-fit — capture and fit block-oriented models (DSP.md M3, M4)
 
 USAGE:
-  stave-fit stimulus OUT.wav [--rate HZ] [--reference RMS]
+  stave-fit stimulus OUT.wav [--rate HZ] [--reference RMS] [--program ROLE]
       Write the capture stimulus (mono, 32-bit float) and OUT.wav.capture,
       its description. 0 dB is an input RMS of --reference (default 0.05,
       -26 dBFS): multisines at -20, -6, 0, +6, +12 dB, a synchronized sweep
-      peaking at the 0 dB sine's peak, noise bursts held out for validation.
+      peaking at the 0 dB sine's peak, noise bursts held out for validation,
+      and with --program real program material, held out too.
       Play it through the device and record the output from the start.
 
   stave-fit fit --stimulus OUT.wav --capture RECORDING.wav -o MODEL.json [options]
@@ -57,6 +58,12 @@ OPTIONS (fit):
   --latency N        the recording's delay in samples (default: measured)
   --export-pair DIR  also write DIR/input.wav and DIR/output.wav, aligned,
                      for training a network out of tree (Neural Amp Modeler)
+  --program ROLE     --plugin, --circuit: also play ROLE (a reference-corpus
+                     role, DSP.md R22, e.g. guitar_di or drums_loop; ROLE#N
+                     for item N) and validate the model on it
+
+OPTIONS (stimulus and fit):
+  --program-db DB    the program material's RMS, dB re --reference (default 0)
   -h, --help         this text
 ";
 
@@ -134,10 +141,50 @@ fn sidecar(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// The corpus material `--program` names, at the capture's rate, mono,
+/// with 10 ms fades, at an RMS of `--program-db` re the reference.
+fn program(a: &Args, capture: &Capture) -> Result<Option<Program>, Box<dyn Error>> {
+    let Some(spec) = a.get("program") else { return Ok(None) };
+    let (role, index) = match spec.split_once('#') {
+        Some((r, n)) => (r, n.parse::<usize>().map_err(|_| format!("--program {spec}: ROLE or ROLE#N"))?),
+        None => (spec, 0),
+    };
+    let corpus = stave_test::corpus::Corpus::open().map_err(|s| format!("--program {spec}: {s}"))?;
+    if corpus.spec.role(role).is_none() {
+        let names: Vec<&str> = corpus.spec.roles.iter().map(|r| r.name.as_str()).collect();
+        return Err(format!("--program: no role {role} (roles: {})", names.join(", ")).into());
+    }
+    let items = corpus.role(role).map_err(|s| format!("--program {spec}: {s}"))?;
+    let item = items.get(index).ok_or_else(|| format!("--program: role {role} has {} items", items.len()))?;
+    let m = corpus.load(item)?;
+    let channels = m.at_rate(capture.rate);
+    let n = channels[0].len();
+    let k = channels.len() as f64;
+    let mut x: Vec<f64> = (0..n).map(|i| channels.iter().map(|c| f64::from(c[i])).sum::<f64>() / k).collect();
+    let fade = ((0.01 * capture.rate) as usize).min(n / 2);
+    for i in 0..fade {
+        let g = 0.5 - 0.5 * (std::f64::consts::PI * i as f64 / fade as f64).cos();
+        x[i] *= g;
+        x[n - 1 - i] *= g;
+    }
+    let rms = (x.iter().map(|v| v * v).sum::<f64>() / n.max(1) as f64).sqrt();
+    if rms <= 0.0 {
+        return Err(format!("--program {spec}: silent").into());
+    }
+    let gain = capture.reference * 10f64.powf(a.number("program-db", 0.0)? / 20.0) / rms;
+    x.iter_mut().for_each(|v| *v *= gain);
+    eprintln!("program material: {}", m.describe());
+    Ok(Some(Program {
+        name: format!("{role}#{index} {}", m.name),
+        samples: x,
+    }))
+}
+
 fn stimulus(a: &Args) -> Result<(), Box<dyn Error>> {
-    a.check(&["rate", "reference"])?;
+    a.check(&["rate", "reference", "program", "program-db"])?;
     let out = PathBuf::from(a.words.get(1).ok_or("stimulus: no output file")?);
-    let capture = Capture::standard(a.number("rate", 48_000.0)?, a.number("reference", 0.05)?);
+    let mut capture = Capture::standard(a.number("rate", 48_000.0)?, a.number("reference", 0.05)?);
+    capture.program = program(a, &capture)?;
     let x = capture.samples();
     let peak = x.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     if peak >= 1.0 {
@@ -172,7 +219,8 @@ fn recording(path: &Path) -> Result<Recording, Box<dyn Error>> {
 /// The measurements and the capture design, from a recording or a circuit.
 fn measure(a: &Args) -> Result<(Capture, Measurements, String), Box<dyn Error>> {
     if let Some(path) = a.get("plugin") {
-        let capture = Capture::standard(48_000.0, a.number("reference", 0.05)?);
+        let mut capture = Capture::standard(48_000.0, a.number("reference", 0.05)?);
+        capture.program = program(a, &capture)?;
         let config = stave_host::config::HostConfig {
             sample_rate: stave_host::config::SampleRate::constant(48_000.0),
             ..stave_host::config::HostConfig::default()
@@ -209,7 +257,8 @@ fn measure(a: &Args) -> Result<(Capture, Measurements, String), Box<dyn Error>> 
         let plan = stave_test::characterise::Plan::parse(&text)?;
         let knee = plan.knee.ok_or("the plan has no knee")?.amplitude;
         let factor: usize = a.number("oversample", 4)?;
-        let capture = Capture::standard(48_000.0, knee / std::f64::consts::SQRT_2);
+        let mut capture = Capture::standard(48_000.0, knee / std::f64::consts::SQRT_2);
+        capture.program = program(a, &capture)?;
         let deck = stave_test::characterise::deck(name);
         let input = plan.input.clone();
         let rate = 48_000.0 * factor as f64;
@@ -225,9 +274,18 @@ fn measure(a: &Args) -> Result<(Capture, Measurements, String), Box<dyn Error>> 
     } else {
         let stim = PathBuf::from(a.get("stimulus").ok_or("fit: --stimulus or --circuit")?);
         let rec = PathBuf::from(a.get("capture").ok_or("fit: --capture (the recording)")?);
-        let capture = Capture::parse(&std::fs::read_to_string(sidecar(&stim)).map_err(|e| {
+        let mut capture = Capture::parse(&std::fs::read_to_string(sidecar(&stim)).map_err(|e| {
             format!("{}: {e} (stave-fit stimulus writes it beside the stimulus)", sidecar(&stim).display())
         })?)?;
+        if a.get("program").is_some() {
+            return Err("--program goes on `stave-fit stimulus` for a recording (the stimulus file holds it)".into());
+        }
+        // The program material's samples are the stimulus file's own.
+        let layout = capture.layout();
+        if let (Some(p), Some(Segment::Program { start, len })) = (&mut capture.program, layout.last()) {
+            let (_, played, _) = recording(&stim)?;
+            p.samples = played.get(*start..start + len).ok_or("the stimulus file is shorter than its description")?.to_vec();
+        }
         let (rate, recorded, loopback) = recording(&rec)?;
         if f64::from(rate) != capture.rate {
             return Err(format!("the recording is at {rate} Hz, the stimulus at {} Hz", capture.rate).into());
@@ -249,7 +307,7 @@ fn measure(a: &Args) -> Result<(Capture, Measurements, String), Box<dyn Error>> 
 fn fit(a: &Args) -> Result<(), Box<dyn Error>> {
     a.check(&[
         "stimulus", "capture", "circuit", "plugin", "reference", "oversample", "o", "structure", "order", "max-order",
-        "knots", "latency", "export-pair",
+        "knots", "latency", "export-pair", "program", "program-db",
     ])?;
     let out = PathBuf::from(a.get("o").ok_or("fit: -o MODEL.json")?);
     let (capture, m, what) = measure(a)?;
@@ -320,6 +378,16 @@ fn fit(a: &Args) -> Result<(), Box<dyn Error>> {
         let v = Validation::of(&m.bursts_output[span.clone()], &y[span], capture.rate);
         lines.push(format!("  {db:+5.1} dB: {:.1} dB / {:.2} dB / {:.1} dB", v.error_db, v.erb.max_db, v.nmr.total_db));
     }
+    if let Some(p) = &capture.program {
+        let mut model = block.clone();
+        model.prepare(capture.rate as f32);
+        let y: Vec<f64> = m.program_input.iter().map(|&x| model.tick_f64(x)).collect();
+        let v = Validation::of(&m.program_output, &y, capture.rate);
+        lines.push(format!(
+            "held-out program material {} (simulation error / ERB worst / NMR total): {:.1} dB / {:.2} dB / {:.1} dB",
+            p.name, v.error_db, v.erb.max_db, v.nmr.total_db
+        ));
+    }
     let sections = |l: &Linear| match l {
         Linear::Rational(s) => s.len(),
         Linear::Fir(_) => 0,
@@ -338,7 +406,7 @@ fn fit(a: &Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// The measured multisines, sweep and bursts back to back, input and
+/// The measured multisines, sweep, bursts and program material back to back, input and
 /// output aligned: a training pair for a network fitted out of tree.
 fn export_pair(dir: &Path, capture: &Capture, m: &Measurements) -> Result<(), Box<dyn Error>> {
     let (mut x, mut y) = (Vec::new(), Vec::new());
@@ -350,6 +418,8 @@ fn export_pair(dir: &Path, capture: &Capture, m: &Measurements) -> Result<(), Bo
     y.extend(m.sweep_output.iter().map(|&v| v as f32));
     x.extend(m.bursts_input.iter().map(|&v| v as f32));
     y.extend(m.bursts_output.iter().map(|&v| v as f32));
+    x.extend(m.program_input.iter().map(|&v| v as f32));
+    y.extend(m.program_output.iter().map(|&v| v as f32));
     let rate = capture.rate as u32;
     wav::write(&dir.join("input.wav"), &wav::Audio { sample_rate: rate, channels: vec![x] })?;
     wav::write(&dir.join("output.wav"), &wav::Audio { sample_rate: rate, channels: vec![y] })?;

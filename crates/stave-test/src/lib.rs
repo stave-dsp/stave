@@ -8,6 +8,7 @@
 //!   - `harness`        drive a `Plugin` in-process (no FFI)
 //!   - `checks`         host behaviour: block sizes, rates, cycles, automation, state
 //!   - `characterise`   a circuit's characterisation matrix against its reference (DSP.md R17)
+//!   - `corpus`         reference program material by role from the sample library (DSP.md R22, C13)
 //!   - `validation`     stave-host's validation suite on a linked plugin
 //!   - `face`           drive a face as a person would (`FaceDriver`), its laws
 //!   - `instance`       the harness as a stave-host `Instance` (T1)
@@ -22,6 +23,7 @@
 
 pub mod characterise;
 pub mod checks;
+pub mod corpus;
 pub mod face;
 pub mod harness;
 pub mod image;
@@ -30,6 +32,7 @@ pub mod no_alloc;
 pub mod perf;
 pub mod plugin_checks;
 pub mod reference;
+pub mod sha256;
 pub mod stability;
 pub mod validation;
 

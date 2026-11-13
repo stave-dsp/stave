@@ -375,18 +375,42 @@ see `stave.env.example`). The maintainer's library holds:
   loops, kicks, snares, hats, percussion, piano and synth notes, vocals and
   vocal phrases, tonal loops, textures, fx, guitar), curated for stave.
 - `Stems/` — real multitracks (guitars, bass, drums, vocals in context).
-- Clean **DI guitar and bass** for amps, pedals and cabs — a gap today:
-  the corpus's guitar files are already processed. Record DI takes (single
-  coil, humbucker; picked, strummed, palm-muted, chords, single notes) and
-  pull DI tracks from stems where they exist.
+- Clean **DI guitar and bass** for amps, pedals and cabs — a gap today
+  (the `guitar_di` and `bass_di` roles are empty). Searched 2026-11-13:
+  nothing in the manifest is a dry DI. The Test Corpus guitars are amped
+  loops; every guitar stem is stereo with differing sides and rolls off
+  like a miked cab (−35 to −50 dB at 4–6 kHz re 200 Hz–2 kHz); the
+  "DI"/"dry"/"clean" names are drums, a sidestick, and one-shot AIFF
+  notes. Closest: a stem's mono `BASS CLEAN`, the clean side of a split
+  bass, held as `bass_clean` and not counted as a DI. The fill is cheapest
+  recorded: mono, 48 kHz/24-bit, the interface's instrument input, no
+  processing, peaks −12 to −6 dBFS, into `Source Material/DI/Guitar` and
+  `Source Material/DI/Bass` — guitar (about 4 min): single-coil neck
+  single notes with bends (30 s); single-coil strummed open chords left
+  to ring (30 s); bridge humbucker palm-muted low-string chugs, 8ths to
+  16ths (30 s); humbucker sustained power chords (30 s); humbucker lead,
+  legato and vibrato (30 s); edge of breakup, soft fingerpicking building
+  to hard pick attack (30 s); drop-tuned chugs (30 s); 10 s plugged in,
+  volume up, not played (hum and noise). Bass (about 2 min):
+  fingerstyle line (30 s); picked 8ths (30 s); slap and pop (20 s); low
+  notes left to decay into silence (20 s). If the stems' own sessions
+  kept DI tracks, exporting them fills the roles too.
 
 The audio is never committed (its licences allow use, not redistribution).
-A committed manifest names each file with a checksum and its role;
-`STAVE_SAMPLE_LIBRARY` points at the library; tests that need it run when it
-is present (on the machine with the drive, or a synced copy on a build host)
-and report "skipped: library absent" otherwise. Program-material results
-(C13) are judged by NMR on the null residual against the pinned fingerprint
-or reference, and auditioned.
+A committed spec (`crates/stave-test/corpus.spec`) names what the checks
+need by role — guitar DI, bass DI, amped guitar, drum loops and stems,
+transients, a mix bus of summed stems, vocal, piano, synth pads and notes,
+tonal loops, textures, fx — with the rules that pick each from the
+library (`_corpus.json` sets, `_manifest.csv` categories, directories,
+length, rate; WAV only, never AppleDouble sidecars or AIFF). A local lock
+(`scripts/corpus.sh lock`, never committed) records each pick's SHA-256,
+so a run plays exactly what the lock names and fails on drift;
+`scripts/corpus.sh check` reports missing roles and drift without copying
+anything. `STAVE_SAMPLE_LIBRARY` points at the library; tests that need it
+run when it is present (on the machine with the drive, or a synced copy on
+a build host) and report "skipped: library absent" otherwise. Program-material
+results (C13) are judged by NMR on the null residual against the pinned
+fingerprint or reference (`stave_test::corpus::c13`), and auditioned.
 
 ### Hardware captures (when a unit is available)
 

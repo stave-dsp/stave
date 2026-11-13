@@ -126,6 +126,7 @@ impl Voicing {
         let current = match &self.setup.material {
             MaterialChoice::Builtin(n) => format!("built-in: {n}"),
             MaterialChoice::File(p) => format!("file: {}", p.file_name().map_or_else(String::new, |f| f.to_string_lossy().into())),
+            MaterialChoice::Role(r, i) => format!("role: {r}#{i}"),
         };
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_source("voicing_material")
@@ -190,6 +191,7 @@ impl Voicing {
                 let about = match &m.source {
                     material::Source::Builtin { name } => builtin::find(name).map_or("", |b| b.about).to_string(),
                     material::Source::File { path, .. } => path.display().to_string(),
+                    material::Source::Corpus { role, item, .. } => format!("corpus role {role}: {item}"),
                 };
                 let conv = if (m.original_rate - m.sample_rate).abs() > 0.5 {
                     format!(" (from {} Hz)", m.original_rate)

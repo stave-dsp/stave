@@ -13,7 +13,7 @@ source "$ROOT/scripts/lib/config.sh"
 stave_config_load "$ROOT"
 
 values=()
-for key in STAVE_LINUX_HOST STAVE_MACOS_HOST STAVE_REFERENCE_HOST STAVE_SAMPLE_LIBRARY STAVE_CAPTURES; do
+for key in STAVE_LINUX_HOST STAVE_MACOS_HOST STAVE_REFERENCE_HOST STAVE_SAMPLE_LIBRARY STAVE_CORPUS_LOCK STAVE_CAPTURES; do
   [[ -n "${!key:-}" ]] && values+=("${!key}")
 done
 for host in ${STAVE_TAR_HOSTS:-} ${STAVE_AUTO_HOSTS:-}; do

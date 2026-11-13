@@ -36,7 +36,9 @@ wav:FILE or blessed:RECORD, then ;name=value settings, ;preset=NAME,
 ;label=TEXT or ;ref (quote it). --characterise measures each plugin or
 stage candidate as a black box (DSP.md R17-R19) and prints them side by
 side (default rates 44100,48000, tier t1, process block 64).
-MATERIAL is a built-in name (see --list-material) or a WAV path.";
+MATERIAL is a built-in name, role:NAME[#N] (item N of a reference-corpus
+role from the sample library, DSP.md R22; see --list-material) or a WAV
+path.";
 
 fn main() -> std::process::ExitCode {
     let launch = match parse(std::env::args().skip(1)) {
@@ -54,6 +56,7 @@ fn main() -> std::process::ExitCode {
         for b in voicing::BUILTINS {
             println!("{:<14} {}", b.name, b.about);
         }
+        list_roles();
     }
     if let Some(dir) = &launch.export_material {
         match voicing::export_builtins(dir, launch.app.sample_rate.hz()) {
@@ -122,6 +125,28 @@ fn main() -> std::process::ExitCode {
 /// Re-run every blessed candidate under `path` with this build and null
 /// it against its blessed take; fails when any residual is above
 /// `tolerance_db` (relative to the take).
+/// The reference corpus's roles (`--material role:NAME`), and how many
+/// items each has in this machine's library.
+fn list_roles() {
+    use stave_test::corpus::{Corpus, Spec};
+    let corpus = Corpus::open();
+    if let Err(skip) = &corpus {
+        println!("\ncorpus roles (role:NAME[#N]) — {skip}");
+    } else {
+        println!("\ncorpus roles (role:NAME[#N]):");
+    }
+    for role in Spec::committed().roles {
+        let items = match &corpus {
+            Ok(c) => match c.role(&role.name) {
+                Ok(items) => format!("{} items: {}", items.len(), items.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", ")),
+                Err(_) => "none in the library".into(),
+            },
+            Err(_) => String::new(),
+        };
+        println!("role:{:<14} {items}\n    {}", role.name, role.about);
+    }
+}
+
 fn verify_blessed(path: &std::path::Path, tolerance_db: f64) -> std::process::ExitCode {
     let records = voicing::bless_records(path);
     if records.is_empty() {

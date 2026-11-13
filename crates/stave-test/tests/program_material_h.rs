@@ -1,51 +1,37 @@
-//! H1 and H2 on program material (DSP.md C13): picks from the reference
-//! corpus (`$STAVE_SAMPLE_LIBRARY/Test Corpus`) through the bucket-brigade
+//! H1 and H2 on program material (DSP.md C13): the reference corpus's
+//! roles (`stave_test::corpus`, DSP.md R22) through the bucket-brigade
 //! delay and the spring tank. The audio is never committed; without the
 //! library these tests say so and pass.
-
-use std::path::PathBuf;
 
 use stave_dsp::circuit::devices::bbd::Chip;
 use stave_dsp::circuit::topologies::bucket_brigade::BucketBrigade;
 use stave_dsp::physical::spring::Tank;
 use stave_dsp::units::hz;
 use stave_dsp::Stage;
+use stave_test::corpus::Corpus;
 
-/// The corpus file `name` (relative to `Test Corpus/`), mono, at its
-/// rate; `None` when the library is absent.
-fn corpus(name: &str) -> Option<(Vec<f32>, f32)> {
-    let root = std::env::var_os("STAVE_SAMPLE_LIBRARY").map(PathBuf::from)?;
-    let path = root.join("Test Corpus").join(name);
-    if !path.exists() {
-        return None;
-    }
-    let audio = stave_host::wav::read(&path).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
-    let n = audio.channels[0].len();
-    let mono = (0..n)
-        .map(|i| audio.channels.iter().map(|c| c[i]).sum::<f32>() / audio.channels.len() as f32)
-        .collect();
-    Some((mono, audio.sample_rate as f32))
-}
-
-fn skipped(name: &str) {
-    println!("skipped: library absent (STAVE_SAMPLE_LIBRARY, Test Corpus/{name})");
+/// The first item of `role`, mono, at its rate, and its description;
+/// `None` (printed why) when the library or the role's material is absent.
+fn corpus(role: &str) -> Option<(Vec<f32>, f32, String)> {
+    let skip = |why: &dyn std::fmt::Display| println!("{role}: {why}");
+    let c = Corpus::open().map_err(|s| skip(&s)).ok()?;
+    let item = c.role(role).map_err(|s| skip(&s)).ok()?.into_iter().next()?;
+    let m = c.load(&item).unwrap_or_else(|e| panic!("{role}: {e}"));
+    Some((m.mono(), m.rate as f32, m.describe()))
 }
 
 fn rms(x: &[f64]) -> f64 {
     (x.iter().map(|v| v * v).sum::<f64>() / x.len().max(1) as f64).sqrt()
 }
 
-/// A guitar chop through the BBD at a 40 kHz clock: the output is the
+/// An amped guitar chop (the role's first item) through the BBD at a 40 kHz clock: the output is the
 /// input delayed by `stages/(2·clock)` (the cross-correlation peaks
 /// there, within the filters' 0.15 ms of group delay), and the
 /// compander tracks on real dynamics — its output's level within 1 dB of
 /// the line alone.
 #[test]
 fn guitar_through_the_bucket_brigade() {
-    let name = "guitar/Beefy Chop F#.wav";
-    let Some((input, rate)) = corpus(name) else {
-        return skipped(name);
-    };
+    let Some((input, rate, name)) = corpus("guitar_amped") else { return };
     let input = &input[..input.len().min(rate as usize * 4)];
     let run = |compander: bool| -> Vec<f64> {
         let mut bbd = BucketBrigade::new(Chip::MN3007);
@@ -75,14 +61,11 @@ fn guitar_through_the_bucket_brigade() {
     assert!(level.abs() < 1.0, "{level} dB");
 }
 
-/// A snare into the three-spring tank: nothing before the shortest
+/// A snare (the transients role's first item) into the three-spring tank: nothing before the shortest
 /// spring's first arrival, a tail that rings on past the hit, finite.
 #[test]
 fn snare_through_the_spring_tank() {
-    let name = "snares/Snare Crack It.wav";
-    let Some((input, rate)) = corpus(name) else {
-        return skipped(name);
-    };
+    let Some((input, rate, name)) = corpus("transients") else { return };
     let mut tank = Tank::default();
     tank.prepare(rate);
     let len = input.len() + rate as usize * 2;
