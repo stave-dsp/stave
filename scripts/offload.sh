@@ -143,10 +143,29 @@ exec 5<&0   # the command's stdin (background jobs would get /dev/null)
 HOLD_PID="" JOB_PID="" SLOT="" RESULT="" LOGGED=0
 T0="$(date +%s)" T_SLOT="" T_SYNC="" T_END=""
 
+# STAVE_OFFLOAD_EVENTS, if set, is a command that receives one JSON line on
+# stdin when a job takes its slot and when it ends (e.g. a dashboard's
+# ingest CLI). It runs in the background and its failure never fails a job.
+event() { # kind [outcome]
+  [[ -n "${STAVE_OFFLOAD_EVENTS:-}" ]] || return 0
+  perl -MJSON::PP -e '
+    my ($kind, $label, $host, $class, $slot, $t0, $pid, $outcome) = @ARGV;
+    my %e = (kind => $kind, project => "stave", id => "offload-$t0-$pid-$label",
+      title => $label, host => $host, slot => $slot, detail => "$class slot", at => time() * 1000);
+    $e{outcome} = $outcome if length $outcome;
+    print JSON::PP->new->canonical->encode(\%e), "\n";
+  ' "$1" "$NAME" "$HOST" "$CLASS" "$SLOT" "$T0" "$$" "${2:-}" \
+    | bash -c "$STAVE_OFFLOAD_EVENTS" >/dev/null 2>&1 &
+  disown $! 2>/dev/null || true
+}
+
 log_job() {
   ((LOGGED)) && return 0
   LOGGED=1
   [[ -n "$SLOT" ]] || return 0
+  local st="${STATUS:-1}"
+  [[ "$RESULT" == *"exit "* ]] && st="${RESULT#*exit }" && st="${st%% *}"
+  event job.finished "$([[ "$st" == 0 ]] && echo success || echo "failure (exit $st)")"
   mkdir -p "$(dirname "$LOG")"
   T_END="${T_END:-$(date +%s)}"
   T_SLOT="${T_SLOT:-$T_END}"
@@ -278,6 +297,7 @@ case "$HOST" in
 esac
 T_SLOT="$(date +%s)"
 echo "offload: $NAME → $HOST slot $SLOT ($CLASS, $JOBS of $CORES cores, queued $((T_SLOT - T0))s)" >&2
+event job.started
 
 NICE=10
 [[ "$CLASS" == long ]] && NICE=19

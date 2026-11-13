@@ -63,7 +63,17 @@ EXIT = ctypes.CFUNCTYPE(
 errors = []
 output = []
 # How many ngspice programs run at once (--jobs).
-SLOTS = threading.BoundedSemaphore(os.cpu_count() or 1)
+def default_jobs():
+    """The offload slot's share of the cores when run through offload.sh, else all of them."""
+    for key in ("STAVE_OFFLOAD_JOBS", "RAYON_NUM_THREADS"):
+        try:
+            return max(1, int(os.environ[key]))
+        except (KeyError, ValueError):
+            pass
+    return os.cpu_count() or 1
+
+
+SLOTS = threading.BoundedSemaphore(default_jobs())
 
 
 @PRINT
@@ -583,7 +593,7 @@ def main():
     parser.add_argument("--tables-only", action="store_true", help="skip the waveforms")
     parser.add_argument("--keep", type=pathlib.Path,
                         help="--check: copy every stale table's fresh simulation here (CI uploads them)")
-    parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1,
+    parser.add_argument("--jobs", type=int, default=default_jobs(),
                         help="parallel characterisation runs (with the ngspice program)")
     args = parser.parse_args()
     only = set(args.only.split(",")) if args.only else None

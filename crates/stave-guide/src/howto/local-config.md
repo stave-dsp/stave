@@ -25,6 +25,7 @@ one says which, and how to set it.
 | `STAVE_LINUX_SLOTS`, `STAVE_MACOS_SLOTS`, `STAVE_LOCAL_SLOTS` | `scripts/offload.sh` | build slots on that host: jobs it runs at once (default a quarter of its cores, at least 1; local 1) |
 | `STAVE_OFFLOAD_LONG_SLOT` | `scripts/offload.sh` | 1 (default): a build host keeps a separate slot for `long` jobs; 0: they take a build slot |
 | `STAVE_OFFLOAD_TIMEOUT` | `scripts/offload.sh` | stop a job after this long (seconds, or `30m`, `2h`); unset, no limit |
+| `STAVE_OFFLOAD_EVENTS` | `scripts/offload.sh` | a command fed one JSON line (`job.started` / `job.finished`, with host, slot, outcome) per job event, e.g. a dashboard's ingest; unset, none |
 | `STAVE_REFERENCE_HOST` | `scripts/datasheet.sh` | the machine whose numbers are committed to `datasheet.json` |
 | `STAVE_REFERENCE_NAME` | `scripts/datasheet.sh` | how the Cost page describes it (the hardware, e.g. "Apple M1, 8 cores") |
 | `STAVE_SAMPLE_LIBRARY` | program-material tests | reference audio (never committed; tests skip when unset) |
