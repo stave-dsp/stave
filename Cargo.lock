@@ -3041,6 +3041,9 @@ dependencies = [
 [[package]]
 name = "stave-dsp"
 version = "0.4.0"
+dependencies = [
+ "stave-measure",
+]
 
 [[package]]
 name = "stave-face"

@@ -37,6 +37,14 @@ use stave_dsp::learned::{nam, Gru, LoadError};
 use stave_dsp::FilterSpec;
 use stave_dsp::RcClipperConfig;
 use stave_dsp::{AdaaOrder, AdsrConfig};
+use stave_dsp::effects::dynamics::{
+    Compressor, GainComputer, Limiter, Peak, Peaks, ProgramDependent, Rms, Sidechain, Topology,
+};
+use stave_dsp::effects::reverb::{Dattorro, Fdn, Mixing, Schroeder};
+use stave_dsp::primitives::time::delay::Delay;
+use stave_dsp::primitives::time::interpolators::{
+    Interpolator, Lagrange3, Lagrange5, Linear, Sinc, Thiran,
+};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -127,6 +135,19 @@ fn bench_points(name: &str, points: usize, mut run_once: impl FnMut()) {
     println!("  {name:<28} {median:>7.2} ns/sample  (spread {spread:.0}%)");
 }
 
+/// A [`Delay`] whose time glides 10 → 15 ms and jumps back, so every
+/// read is fractional.
+fn modulated_delay<I: Interpolator>(name: &str, input: &[f32], sample_rate: f32) {
+    let mut delay = Delay::<I>::new(20.0, 10.0);
+    delay.prepare(sample_rate);
+    let mut ms = 10.0f32;
+    bench(name, input, |x| {
+        ms = if ms > 15.0 { 10.0 } else { ms + 1.3e-4 };
+        delay.set_ms(ms);
+        delay.tick(x)
+    });
+}
+
 #[test]
 fn primitive_datasheet() {
     if cfg!(debug_assertions) {
@@ -203,6 +224,72 @@ fn primitive_datasheet() {
         line.advance();
         line.read_cubic(1_234.6)
     });
+
+    // S2: a 10 ms delay gliding over 5 ms (a chorus voice), per interpolator.
+    modulated_delay::<Linear>("Delay<Linear> (modulated)", &input, sr);
+    modulated_delay::<Lagrange3>("Delay<Lagrange3> (modulated)", &input, sr);
+    modulated_delay::<Lagrange5>("Delay<Lagrange5> (modulated)", &input, sr);
+    modulated_delay::<Thiran>("Delay<Thiran> (modulated)", &input, sr);
+    modulated_delay::<Sinc<8>>("Delay<Sinc<8>> (modulated)", &input, sr);
+    modulated_delay::<Sinc<16>>("Delay<Sinc<16>> (modulated)", &input, sr);
+
+    // S3: reverbs, T60 2 s.
+    for (name, mixing) in [
+        ("Fdn (8 lines, Householder)", Mixing::Householder),
+        ("Fdn (8 lines, Hadamard)", Mixing::Hadamard),
+    ] {
+        let mut fdn = Fdn::new(mixing);
+        fdn.set_t60_s(2.0);
+        fdn.prepare(sr);
+        bench(name, &input, |x| fdn.tick(x));
+    }
+    let mut plate = Dattorro::new(50.0);
+    plate.set_t60_s(2.0);
+    plate.prepare(sr);
+    bench("Dattorro (plate)", &input, |x| plate.tick(x));
+    let mut schroeder = Schroeder::new();
+    schroeder.set_t60_s(2.0);
+    schroeder.prepare(sr);
+    bench("Schroeder (4 combs, 2 allpasses)", &input, |x| schroeder.tick(x));
+    let mut moorer = Schroeder::moorer();
+    moorer.set_t60_s(2.0);
+    moorer.prepare(sr);
+    bench("Schroeder::moorer (6 combs)", &input, |x| moorer.tick(x));
+
+    // D1–D3: dynamics.
+    let mut peak = Peak::new(5.0, 50.0);
+    peak.prepare(sr);
+    bench("Peak detector", &input, |x| peak.tick(x));
+    let mut rms = Rms::new(10.0);
+    rms.prepare(sr);
+    bench("Rms detector (10 ms)", &input, |x| rms.tick(x));
+    let mut program = ProgramDependent::new(1.0, 50.0, 1_000.0, 500.0);
+    program.prepare(sr);
+    bench("ProgramDependent detector", &input, |x| program.tick(x));
+    let mut sidechain = Sidechain::new(Some(100.0), Some(8_000.0));
+    sidechain.prepare(sr);
+    bench("Sidechain (HP + LP)", &input, |x| sidechain.tick(x));
+    let curve = GainComputer {
+        threshold_db: -20.0,
+        ratio: 4.0,
+        knee_db: 6.0,
+    };
+    for (name, topology) in [
+        ("Compressor (feed-forward)", Topology::FeedForward),
+        ("Compressor (feedback)", Topology::Feedback),
+    ] {
+        let mut comp = Compressor::new(curve, topology);
+        comp.prepare(sr);
+        bench(name, &input, |x| comp.tick(x * 4.0));
+    }
+    for (name, peaks) in [
+        ("Limiter (true peak)", Peaks::True),
+        ("Limiter (sample peak)", Peaks::Sample),
+    ] {
+        let mut limiter = Limiter::new(peaks, -1.0);
+        limiter.prepare(sr);
+        bench(name, &input, |x| limiter.tick(x * 4.0));
+    }
 
     let mut lag = Lag::new(50.0, 50.0);
     lag.prepare(sr);

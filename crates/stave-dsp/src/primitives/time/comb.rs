@@ -71,6 +71,11 @@ impl Comb {
         self.delay = delay_samples(self.delay_ms, self.sample_rate);
     }
 
+    /// The loop length in whole samples at the prepared rate.
+    pub fn delay_samples(&self) -> usize {
+        self.delay
+    }
+
     /// Loop gain; `|feedback| < 1` decays.
     pub fn set_feedback(&mut self, feedback: f32) {
         self.feedback = feedback;

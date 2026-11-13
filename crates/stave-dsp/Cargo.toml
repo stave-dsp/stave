@@ -10,3 +10,8 @@ description = "Shared DSP primitives for stave plugins — no_std friendly, no a
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Tests measure through the shared metrics (T60, true peak); never a
+# runtime dependency.
+stave-measure.workspace = true

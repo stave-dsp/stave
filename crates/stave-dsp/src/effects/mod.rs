@@ -1,12 +1,16 @@
 //! **Layer 7 — effects.** Algorithmic designs that model no hardware:
-//! reverbs (FDN, Dattorro), pitch, granular, dynamics and EQ.
+//! [`reverb`] (FDN, Dattorro plate, Schroeder/Moorer) and [`dynamics`]
+//! (detectors, gain computers, compressor, look-ahead limiter); pitch,
+//! granular and EQ to come.
 //!
 //! *Claim:* the design has the properties it states — a decay time in
-//! seconds, a lossless feedback matrix, a gain computer's static curve —
-//! and nothing about hardware.
+//! seconds, a lossless feedback matrix, a gain computer's static curve,
+//! a ceiling — and nothing about hardware.
 //!
-//! *Verified by:* analytic properties (energy, decay, static curves)
-//! and golden audio at fixed settings.
+//! *Verified by:* analytic properties (energy, decay, static curves,
+//! measured true peak) and golden audio at fixed settings.
 //!
-//! Empty until its first design lands (DSP.md S3–S7, D1–D4). It may use
-//! every layer above it.
+//! It may use every layer above it.
+
+pub mod dynamics;
+pub mod reverb;

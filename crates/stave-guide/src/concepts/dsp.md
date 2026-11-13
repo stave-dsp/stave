@@ -23,7 +23,7 @@ than silently checking nothing).
 | 4 [`circuit`](stave_dsp::circuit) | devices, solver methods, netlists and topologies derived from schematics | units, kernel, primitives, behavioral |
 | 5 [`physical`](stave_dsp::physical) | models derived from mechanics or acoustics (empty until the first lands) | the layers above |
 | 6 [`learned`](stave_dsp::learned) | models trained from captures: [`WaveNet`](stave_dsp::learned::WaveNet), [`Lstm`](stave_dsp::learned::Lstm), [`Gru`](stave_dsp::learned::Gru), and Neural Amp Modeler's `.nam` files ([`nam::parse`](stave_dsp::learned::nam::parse)) | the layers above |
-| 7 [`effects`](stave_dsp::effects) | algorithmic designs that model no hardware (empty until the first lands) | the layers above |
+| 7 [`effects`](stave_dsp::effects) | algorithmic designs that model no hardware: [`reverb`](stave_dsp::effects::reverb) (FDN, Dattorro plate, Schroeder/Moorer) and [`dynamics`](stave_dsp::effects::dynamics) (detectors, gain computer, compressor, look-ahead limiter) | the layers above |
 | 8 [`structures`](stave_dsp::structures) | [`Chain`](stave_dsp::Chain) (serial composition with addressable slots), [`chain!`](stave_dsp::chain), [`ModMatrix`](stave_dsp::ModMatrix) | all of the above |
 
 The crate root re-exports the public vocabulary flat, so
@@ -406,6 +406,120 @@ knowingly. `crates/stave-dsp/tests/nam_parity.rs` holds every
 architecture to the trainer's own forward pass on files it exported
 (`scripts/nam-reference.py`), within 1e-5, and to an independent f64
 forward pass on random shapes.
+
+## Fractional delays
+
+A [`DelayLine`](stave_dsp::DelayLine) reads between its samples through
+the interpolator named in its type:
+[`Linear`](stave_dsp::primitives::time::interpolators::Linear) by default,
+[`Lagrange3`](stave_dsp::primitives::time::interpolators::Lagrange3) and
+[`Lagrange5`](stave_dsp::primitives::time::interpolators::Lagrange5),
+the [`Thiran`](stave_dsp::primitives::time::interpolators::Thiran)
+allpass (flat magnitude, one read per line) or a windowed
+[`Sinc`](stave_dsp::primitives::time::interpolators::Sinc)`<N>`. Each
+has a measured error budget for a sine's magnitude and phase in
+`interpolators/tests.rs`. The
+[`Delay`](stave_dsp::primitives::time::delay::Delay) stage is a line
+written, read and advanced once per sample: the voice of a chorus,
+flanger or vibrato.
+
+```rust
+use stave_dsp::primitives::time::delay::{Delay, DelayLine};
+use stave_dsp::primitives::time::interpolators::{Lagrange3, Thiran};
+use stave_dsp::Stage;
+
+// A chorus voice: 10 ms through four-point Lagrange, gliding.
+let mut voice = Delay::<Lagrange3>::new(20.0, 10.0);
+voice.prepare(48_000.0);
+let mut y = 0.0;
+for n in 0..4_800 {
+    voice.set_ms(10.0 + 2.0 * (n as f32 / 4_800.0));
+    y = voice.tick(0.5);
+}
+// The weights sum to one: a constant reads back as itself.
+assert!((y - 0.5).abs() < 1e-6);
+
+// Storage with an allpass read: an impulse read 2.5 samples late
+// arrives spread over its neighbours, its energy kept.
+let mut line = DelayLine::<Thiran>::default();
+line.allocate(64);
+let mut out = Vec::new();
+for n in 0..32 {
+    line.write(if n == 0 { 1.0 } else { 0.0 });
+    out.push(line.interpolated(2.5));
+    line.advance();
+}
+let energy: f32 = out.iter().map(|y| y * y).sum();
+assert!((energy - 1.0).abs() < 1e-4);
+```
+
+## Effects: reverbs and dynamics
+
+The [`effects`](stave_dsp::effects) layer holds algorithmic designs
+that model no hardware, held to analytic properties instead of a
+device. They are reached by path.
+
+[`effects::reverb`](stave_dsp::effects::reverb) has three reverbs:
+the [`Fdn`](stave_dsp::effects::reverb::Fdn) (eight modulated lines
+through a Householder or Hadamard [`Mixing`](stave_dsp::effects::reverb::Mixing)
+matrix), the [`Dattorro`](stave_dsp::effects::reverb::Dattorro) plate
+and [`Schroeder`](stave_dsp::effects::reverb::Schroeder) (with
+[`Schroeder::moorer`](stave_dsp::effects::reverb::Schroeder::moorer)).
+Each takes its decay as a T60 in seconds, is wet only, and is tested to
+decay at the T60 it is set to, at every sample rate from 44.1 to 192 kHz:
+
+```rust
+use stave_dsp::effects::reverb::{Fdn, Mixing};
+use stave_dsp::{Stage, Tail};
+
+let mut room = Fdn::new(Mixing::Hadamard);
+room.set_t60_s(1.2);
+room.set_hf_ratio(0.5); // highs die twice as fast
+room.prepare(48_000.0);
+let (left, right) = room.tick_stereo(1.0);
+assert!(left.is_finite() && right.is_finite());
+// The tail is two T60s (−120 dB) plus the longest line.
+let Tail::Samples(n) = room.tail() else { unreachable!() };
+assert!(n > 2 * 57_600);
+// An infinite T60 freezes the loop.
+room.set_t60_s(f32::INFINITY);
+assert_eq!(room.tail(), Tail::Infinite);
+```
+
+[`effects::dynamics`](stave_dsp::effects::dynamics) has the detectors
+([`Peak`](stave_dsp::effects::dynamics::Peak),
+windowed [`Rms`](stave_dsp::effects::dynamics::Rms),
+[`ProgramDependent`](stave_dsp::effects::dynamics::ProgramDependent),
+stereo [`Link`](stave_dsp::effects::dynamics::Link) modes and the
+[`Sidechain`](stave_dsp::effects::dynamics::Sidechain) filter), the
+[`GainComputer`](stave_dsp::effects::dynamics::GainComputer) static
+curve, the [`Compressor`](stave_dsp::effects::dynamics::Compressor) in
+feed-forward or feedback [`Topology`](stave_dsp::effects::dynamics::Topology),
+and the look-ahead [`Limiter`](stave_dsp::effects::dynamics::Limiter),
+which holds sample or true [`Peaks`](stave_dsp::effects::dynamics::Peaks)
+under its ceiling and reports its latency exactly:
+
+```rust
+use stave_dsp::effects::dynamics::{Compressor, GainComputer, Limiter, Peaks, Topology};
+use stave_dsp::Stage;
+
+// 4:1 above −20 dB with a 6 dB knee: 0 dB in comes out at −15 dB.
+let curve = GainComputer { threshold_db: -20.0, ratio: 4.0, knee_db: 6.0 };
+assert_eq!(curve.output_db(0.0), -15.0);
+let mut comp = Compressor::new(curve, Topology::FeedForward);
+comp.prepare(48_000.0);
+let y = (0..48_000).fold(0.0, |_, _| comp.tick(1.0));
+assert!((20.0 * y.log10() + 15.0).abs() < 0.01);
+
+// A true-peak limiter at −1 dBTP: the latency is its lookahead plus the
+// interpolator's look forward and hold, and an impulse under the
+// ceiling arrives exactly that late.
+let mut limiter = Limiter::new(Peaks::True, -1.0);
+limiter.prepare(48_000.0);
+assert_eq!(limiter.latency(), 16 + 71 + 16);
+let out: Vec<f32> = (0..200).map(|n| limiter.tick(if n == 0 { 0.5 } else { 0.0 })).collect();
+assert!((out[limiter.latency() as usize] - 0.5).abs() < 1e-5);
+```
 
 ## Conventions
 
