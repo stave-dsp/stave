@@ -16,7 +16,7 @@ than silently checking nothing).
 
 | Layer | What it holds | May use |
 |---|---|---|
-| 0 [`units`](stave_dsp::units) | quantities as types (empty until the first lands) | nothing |
+| 0 [`units`](stave_dsp::units) | quantities as types: [`Hz`](stave_dsp::Hz), [`Db`](stave_dsp::Db), [`Gain`](stave_dsp::Gain), [`Seconds`](stave_dsp::Seconds), [`Samples`](stave_dsp::Samples), [`SampleRate`](stave_dsp::SampleRate), [`Ratio`](stave_dsp::Ratio), [`Semitones`](stave_dsp::Semitones), [`Cents`](stave_dsp::Cents), and the circuit units [`Volts`](stave_dsp::Volts), [`Amps`](stave_dsp::Amps), [`Ohms`](stave_dsp::Ohms), [`Farads`](stave_dsp::Farads), [`Henries`](stave_dsp::Henries) | nothing |
 | 1 [`kernel`](stave_dsp::kernel) | the [`Stage`](stave_dsp::Stage) contract and [`Tail`](stave_dsp::Tail); the composition forms; the denormal and non-finite guards | units |
 | 2 [`primitives`](stave_dsp::primitives) | filters ([`Biquad`](stave_dsp::Biquad), [`Svf`](stave_dsp::Svf), [`OnePole`](stave_dsp::OnePole), [`DcBlocker`](stave_dsp::DcBlocker), [`Allpass1`](stave_dsp::Allpass1), [`LinkwitzRiley4`](stave_dsp::LinkwitzRiley4), [`Crossover3`](stave_dsp::Crossover3)); time ([`DelayLine`](stave_dsp::DelayLine), [`Comb`](stave_dsp::Comb), [`DelayAllpass`](stave_dsp::DelayAllpass)); control (LFOs, envelopes, followers, smoothers, [`RandomWalk`](stave_dsp::RandomWalk)); [`Osc`](stave_dsp::Osc) and [`Waveform`](stave_dsp::Waveform); spectral ([`Fft`](stave_dsp::Fft), [`Convolver`](stave_dsp::Convolver), [`ImpulseResponse`](stave_dsp::ImpulseResponse)); gain and pitch helpers; seeded randomness | units, kernel |
 | 3 [`behavioral`](stave_dsp::behavioral) | models fitted to measurement or chosen by ear: tabulated curves with ADAA, [`soft_clip`](stave_dsp::soft_clip) and the [`shapes`](stave_dsp::shapes) library, [`SmoothSat`](stave_dsp::SmoothSat), [`Slew`](stave_dsp::Slew), [`Hysteresis`](stave_dsp::Hysteresis), [`NonlinearRc`](stave_dsp::NonlinearRc) | units, kernel, primitives |
@@ -288,6 +288,50 @@ The models are held to references outside the code:
 
 Physical behaviour belongs to the library; a product that wants
 exaggeration owns it in its own code.
+
+## Units
+
+Quantities are types ([`units`](stave_dsp::units)), so a frequency
+cannot be passed where a level belongs. Each is a `Copy` newtype,
+`#[repr(transparent)]` and inlined, so it costs nothing; constructors
+read as a datasheet writes the value (`ms(30.0)`, `khz(2.4)`,
+`kohm(4.7)`, `nf(22.0)`), check the range in debug builds only, and
+`get()` reads the scalar back. Conversions are named methods, and the
+rate-derived ones take the one prepared-rate type,
+[`SampleRate`](stave_dsp::SampleRate) (an
+[`Environment`](stave::Environment) converts into one with
+`SampleRate::from(env)`):
+
+```rust
+use stave_dsp::units::{db, hz, kohm, ma, ms, nf, semitones, volts, SampleRate};
+
+let sample_rate = SampleRate::new(48_000.0);
+assert_eq!(ms(10.0).samples(sample_rate).get(), 480.0);       // time → samples
+assert!((db(-6.0).to_gain().get() - 0.501).abs() < 1e-3); // dB → linear gain
+assert_eq!(hz(500.0).period(), ms(2.0));               // frequency → period
+assert_eq!(hz(440.0) * semitones(-12.0).ratio(), hz(220.0)); // pitch
+assert_eq!(volts(9.0) / kohm(4.5), ma(2.0));           // Ohm's law
+let tau = kohm(10.0) * nf(100.0);                      // RC is a time constant
+assert!((tau - ms(1.0)).get().abs() < 1e-15);
+assert_eq!(hz(2_400.0).to_string(), "2.40 kHz");       // reads as a Unit::Hz param
+assert_eq!(kohm(4.7).to_string(), "4.70 kΩ");
+```
+
+Operators exist only where they read as physics. Adding a level to a
+frequency, or a duration to a sample count without a rate, does not
+compile:
+
+```rust,compile_fail
+use stave_dsp::units::{db, hz};
+let nonsense = hz(440.0) + db(-6.0);
+```
+
+Audio-rate quantities (`Hz`, `Db`, `Gain`, `Ratio`, pitch, `SampleRate`)
+are `f32` like the samples and setters they meet; durations
+(`Seconds`, `Samples`) are `f64` because they become sample counts,
+which `f32` stops counting exactly past 2²⁴; circuit units are `f64`
+like the solvers. The setters still take bare `f32`s named `_hz`,
+`_ms` and `_db` (below) until they move to these types.
 
 ## Conventions
 

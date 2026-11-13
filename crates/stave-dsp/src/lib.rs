@@ -12,7 +12,7 @@
 //!
 //! | Layer | Claim | Verified by |
 //! |---|---|---|
-//! | [`units`] | quantities as types | unit tests, Kani |
+//! | [`units`] | quantities as types: [`Hz`], [`Db`], [`Gain`], [`Seconds`], [`Samples`], [`SampleRate`], [`Ratio`], [`Semitones`], [`Cents`], circuit units ([`Ohms`], [`Farads`] …); explicit conversions (`Db::to_gain`, `Seconds::samples`), SI-prefix constructors (`kohm(4.7)`) | property tests, Kani |
 //! | [`kernel`] | the [`Stage`] contract and the graph forms: [`Serial`], [`Par2`], [`Loop`], [`Oversampled2x`], [`PerChannel`], [`Router`], [`VoiceRack`] | property tests, loom, Kani |
 //! | [`primitives`] | textbook linear DSP: filters, delays, oscillators, control, spectral ([`Fft`], [`Convolver`]) | naive references (direct DFT, direct convolution) and analytic responses |
 //! | [`behavioral`] | a shape chosen or fitted, with no hardware claim: curves with ADAA, saturators, slew, hysteresis | analytic antiderivatives, aliasing budgets |
@@ -38,6 +38,12 @@ pub mod structures;
 pub mod units;
 
 pub use behavioral::shapes;
+
+// Layer 0 — units (the types; constructors such as `ms` and `kohm` by path).
+pub use units::{
+    Amps, Cents, Db, Farads, Gain, Henries, Hz, Ohms, Ratio, SampleRate, Samples, Seconds,
+    Semitones, Volts,
+};
 
 // Layer 1 — kernel.
 pub use kernel::control::{Full, Route, Router, Source, StageSource};
