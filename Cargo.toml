@@ -1,5 +1,10 @@
 [workspace]
-resolver = "2"
+# Resolver 3: `cargo update` picks dependency versions whose own
+# rust-version the workspace's (below) satisfies, so the lockfile stays
+# buildable at the MSRV on every target. Under resolver 2 a Linux-only
+# dependency (home, through stave-play's webbrowser) moved to a release
+# needing 1.88 while the macOS MSRV check, which never builds it, passed.
+resolver = "3"
 members = [
     "crates/stave",
     "crates/stave-clap",
