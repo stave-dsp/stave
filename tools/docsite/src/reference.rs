@@ -778,13 +778,61 @@ fn git(repo: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8(out.stdout)?)
 }
 
+/// A release's notes, `releases/<tag>.md`: a title line, then paragraphs,
+/// `- ` bullets and short headings (a line followed by bullets). Every tag
+/// has notes, or the site does not build.
+fn release_notes(cx: &Ctx<'_>, tag: &str) -> Result<String> {
+    let path = cx.repo.join("releases").join(format!("{tag}.md"));
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("{}: {e} — every release tag needs its notes", path.display()))?;
+    let inline = |s: &str| {
+        let mut out = String::new();
+        for (k, part) in esc(s).split('`').enumerate() {
+            if k % 2 == 1 {
+                let _ = write!(out, "<code>{part}</code>");
+            } else {
+                out.push_str(part);
+            }
+        }
+        out
+    };
+    let mut html = String::from("<div class=\"notes\">");
+    let lines: Vec<&str> = text.lines().skip(1).collect();
+    let mut in_list = false;
+    for (k, line) in lines.iter().enumerate() {
+        let line = line.trim_end();
+        if let Some(item) = line.strip_prefix("- ") {
+            if !in_list {
+                html.push_str("<ul>");
+                in_list = true;
+            }
+            let _ = write!(html, "<li>{}</li>", inline(item));
+            continue;
+        }
+        if in_list {
+            html.push_str("</ul>");
+            in_list = false;
+        }
+        if line.is_empty() {
+            continue;
+        }
+        let heading = lines.get(k + 1).is_some_and(|next| next.starts_with("- "));
+        let _ = write!(html, "{}", if heading { format!("<h3>{}</h3>", inline(line)) } else { format!("<p>{}</p>", inline(line)) });
+    }
+    if in_list {
+        html.push_str("</ul>");
+    }
+    html.push_str("</div>");
+    Ok(html)
+}
+
 pub fn changelog(cx: &Ctx<'_>) -> Result<Generated> {
     const PATH: &str = "changelog/index.html";
     let tags: Vec<String> = git(cx.repo, &["tag", "--list", "v*", "--sort=-v:refname"])?.lines().map(String::from).collect();
     if tags.is_empty() {
         return Err("no release tags (v*) — the deploy checkout needs fetch-depth: 0".into());
     }
-    let mut body = String::from("<p>Every release, newest first, from the repository's <code>v*</code> tags: the commits each one added since the release before it. Commit subjects follow the ledger's items (S, L, A, D, F, T, C, V, U, X …).</p>");
+    let mut body = String::from("<p>Every release, newest first, from the repository's <code>v*</code> tags: its notes (<code>releases/&lt;tag&gt;.md</code>), then the commits it added since the release before it. Commit subjects follow the ledger's items (S, L, A, D, F, T, C, V, U, X …).</p>");
     let mut spans: Vec<(String, Option<String>, String)> = Vec::new();
     spans.push(("Unreleased".into(), None, format!("{}..HEAD", tags[0])));
     for (k, t) in tags.iter().enumerate() {
@@ -809,7 +857,11 @@ pub fn changelog(cx: &Ctx<'_>) -> Result<Generated> {
             Some(t) => format!("<a href=\"{GITHUB}/releases/tag/{t}\">{t}</a>"),
             None => title.clone(),
         };
-        let _ = write!(body, "<h2 id=\"{id}\">{heading} <span class=\"date\">{date} · {} commits</span></h2><ul class=\"commits\">", lines.len());
+        let _ = write!(body, "<h2 id=\"{id}\">{heading} <span class=\"date\">{date} · {} commits</span></h2>", lines.len());
+        if let Some(t) = &tag {
+            body.push_str(&release_notes(cx, t)?);
+        }
+        body.push_str("<ul class=\"commits\">");
         for l in lines {
             let mut f = l.splitn(3, '\t');
             let (h, d, s) = (f.next().unwrap_or_default(), f.next().unwrap_or_default(), f.next().unwrap_or_default());

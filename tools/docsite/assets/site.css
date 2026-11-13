@@ -256,6 +256,9 @@ table.kv td { padding: 4px 12px 4px 0; font: 400 12.5px var(--mono); }
 .part .stage img { max-width: 100%; height: auto; }
 .part figcaption { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
 
+.notes { margin: 8px 0 14px; }
+.notes h3 { font-size: 15px; margin: 14px 0 4px; }
+.notes ul { margin: 4px 0; }
 .commits { list-style: none; padding: 0 !important; font-size: 14px; }
 .commits li { padding: 3px 0; }
 .commits .date, h2 .date { font: 400 12px var(--mono); color: var(--ink-3); }

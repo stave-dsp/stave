@@ -3,7 +3,7 @@
 #
 #   scripts/release.sh 0.2.0
 #
-# Requires a clean tree on main. Sets [workspace.package] version (every
+# Requires a clean tree on main and the release notes, releases/v<version>.md. Sets [workspace.package] version (every
 # crate inherits it), refreshes Cargo.lock, checks the version against
 # the API change (scripts/semver-checks.sh), runs the gates, commits, tags
 # v<version> and pushes main + the tag to every configured remote.
@@ -18,6 +18,8 @@ TAG="v${VERSION}"
 [[ "$(git branch --show-current)" == main ]] || { echo "release from main" >&2; exit 1; }
 [[ -z "$(git status --porcelain)" ]] || { echo "working tree is not clean" >&2; exit 1; }
 git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null && { echo "${TAG} already exists" >&2; exit 1; }
+NOTES="releases/${TAG}.md"
+[[ -s "$NOTES" ]] || { echo "write ${NOTES} first: a title line, then what changed (the docs changelog and the GitHub release show it)" >&2; exit 1; }
 
 python3 - "$VERSION" <<'PY'
 import re, sys
@@ -31,9 +33,11 @@ cargo update --workspace
 bash scripts/semver-checks.sh "$(git describe --tags --abbrev=0 --match 'v*')"
 bash scripts/gates.sh
 
+git add "$NOTES"
 git commit -qam "Release ${TAG}"
 git tag -a "$TAG" -m "stave ${VERSION}"
 for remote in $(git remote); do
   git push "$remote" main "$TAG" || echo "push to $remote failed"
 done
+gh release create "$TAG" --title "stave ${VERSION}" --notes-file <(tail -n +2 "$NOTES") || echo "GitHub release for ${TAG} not created" >&2
 echo "released ${TAG}; next, in stave-plugins: scripts/bump-framework.sh ${TAG}"
