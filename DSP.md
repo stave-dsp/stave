@@ -756,7 +756,7 @@ other references; a model with a capture is held to it within budget.
   with ideal regeneration. Left for later: the TB-303 (no published 2SC1583
   card), the 904-A's own regeneration path (no 2N4058 card), Pultec, Phase
   90, CE-2 and Klon.
-- [ ] **R25** The R24 follow-ups,
+- [x] **R25** (9b258046: CE-2 BBD filters 3.3e-6 dB AC, in R17's T0/T1 matrix with its R18 fingerprint (operating point 7.9e-7 V, response 4.4e-5 dB at 4×; FINDING at the host rate: the sixth-order stopband 28 dB off at 16 kHz, bilinear without prewarp, and −21 dBc aliasing at +20 dB re knee); `Macromodel::LM741` (the LM741C table: 200 V/mV, 0.5 V/µs, ±14 V, 2 mV, 1.17 MHz from its 0.3 µs rise time by the sheet's own 0.35/tr) and `Macromodel::NJM2904` (100 dB, 0.6 MHz, 0.5 V/µs, 2 mV, 14 Vpp on 15 V: the output reaches its negative rail, so `Macromodel` gains `negative_headroom`), both read back from their tables within 10% (`stave-test/datasheet/{lm741,njm2904}_figures.txt`); Phase 90 at 3.4 V gates 9.7e-6 dB AC, 3.0e-5 at 16×; DS-1 1.4e-4 at 32×; Klon clean blend 2.3e-9 dB at gain 0, 2.2e-6 dB at gain 1, 4.2e-5 at 8× at noon; every transient h²-converging, no cap hits at 48 kHz; parts `ShichmanHodges::N2N5952`, `GummelPoon::N2N4125`; cost at 1× 48 kHz: CE-2 1.4 µs/sample, Klon 7.3, DS-1 33, Phase 90 38 — the op-amp pedals are not realtime as whole netlists; Phase 90 and Klon left out of R17 for their 16× op-amp grids; the NJM2904's swing plot implies 0.22 V/µs against its table's 0.5, the model follows the table) The R24 follow-ups,
   each a verified deck and a topology in `circuit::topologies`
   (`classics_match_ngspice.rs`, `solver_conformance.rs`, a datasheet line):
   the Boss CE-2's BBD filters (`boss_ce2_filters`: the two 2N5088 stages,
