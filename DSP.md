@@ -248,7 +248,7 @@ circuit/
   Rangemaster).
 - [x] **E2** (b71d292: `devices::jfet::ShichmanHodges` — `J201`, `N2N5457`, `N2N5460`, `J175`; `devices::mosfet::ShichmanHodges`, the level-1 square law with body effect — `VN10KM`, `BSS138`, `CD4007_N`/`_P`; `J`/`M` elements; Id(Vds) families at 1e-7 and J201/VN10KM boosters against ngspice; EKV is not done) JFET (Shichman–Hodges) and MOSFET (square law, then EKV for
   subthreshold) for boosters, FET compressors and buffers.
-- [ ] **E3** Pentode and beam tetrode (Koren pentode, Cohen–Hélie) with
+- [x] **E3** (d9295b0: `pentode::Koren` with screen current — `EL34`, `T6L6GC`, `KT88`, `EL84`; beam tetrodes in the same family; Cohen–Hélie not done, no pentode fit exists to check it against. The push-pull pair used 12AX7 triode halves; `PushPull::set_pentode(PentodePair::EL34 …)` gives it real output tubes at their datasheets' fixed-bias conditions. Plate curves and an EL34 pair against ngspice at 2.2e-7 and 8.6e-9) Pentode and beam tetrode (Koren pentode, Cohen–Hélie) with
   screen current: EL34, 6L6, KT88, EL84. Check which device the push-pull
   stage uses today and give it a true pentode option.
 - [ ] **E4** Op-amp beyond ideal: rail clipping, slew limit, finite gain-bandwidth,
