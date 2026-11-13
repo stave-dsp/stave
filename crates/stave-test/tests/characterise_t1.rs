@@ -9,10 +9,9 @@
 #[allow(dead_code)]
 mod circuits;
 
-use circuits::{budgets, CIRCUITS};
-use stave_measure::aliasing::{anmr, SteppedTone};
+use circuits::{budgets, par_map, piano_anmr, shipping, CIRCUITS};
 use stave_measure::perceptual::nmr::AUDIBLE_ANMR_DB;
-use stave_test::characterise::model::{circuit as solver, knee};
+use stave_test::characterise::model::knee;
 use stave_test::characterise::{deck, Characterise, Plan, Tier};
 
 fn circuit(name: &str) {
@@ -97,64 +96,31 @@ mod hand {
 }
 
 /// C10 by audibility (DSP.md, "Aliasing budget by audibility"): each
-/// circuit's `Circuit<Dk>` at 44.1 kHz, no oversampling — the worst
-/// host rate — with a tone on every semitone of the piano (27.5 Hz to
-/// 4186 Hz; the 8192-point window merges neighbouring keys in the lowest
-/// octave) at +12 and +20 dB re its knee: the worst step's ANMR
-/// (Kahles et al. 2019) held to −10 dB, inaudible. A circuit that
-/// aliases audibly at the host rate is a finding, held to its recorded
-/// worst + 3 dB (it needs oversampling or ADAA to ship): see
-/// [`PIANO`].
+/// circuit's `Circuit<Dk>` at 44.1 kHz — the worst host rate — as it
+/// ships (`circuits::SHIPPING`, DSP.md R12: run at its oversampling and
+/// read through an ideal decimator), with a tone on every semitone of the
+/// piano (27.5 Hz to 4186 Hz; the 8192-point window merges neighbouring
+/// keys in the lowest octave) at +12 and +20 dB re its knee: the worst
+/// step's ANMR (Kahles et al. 2019) held to −10 dB, inaudible. A circuit
+/// above it at its shipping factor is a finding, held to its recorded
+/// worst + 3 dB: see [`PIANO`].
 #[test]
 #[ignore = "T1: the references job runs it"]
 fn anmr_over_the_piano() {
     let rate = 44_100.0;
-    let results: Vec<(&str, f64, f64, f64)> = std::thread::scope(|scope| {
-        let jobs: Vec<_> = CIRCUITS
-            .iter()
-            .filter(|c| !c.supply)
-            .map(|c| {
-                scope.spawn(move || {
-                    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("spice");
-                    let plan = Plan::parse(&std::fs::read_to_string(dir.join(format!("{}.plan", c.name))).unwrap()).unwrap();
-                    let deck = deck(c.name);
-                    let knee = plan.knee.unwrap();
-                    let worst = |offset: f64| {
-                        let sweep = SteppedTone {
-                            amplitude: knee.at(offset),
-                            // Past the slowest settling (≤ 50 ms) in one window.
-                            warmup_windows: 1,
-                            ..SteppedTone::piano(rate, 88)
-                        };
-                        let base = solver(&deck, &plan.input, rate);
-                        sweep
-                            .bins()
-                            .into_iter()
-                            .map(|bin| {
-                                let mut c = base.clone();
-                                let n = sweep.window;
-                                let total = (sweep.warmup_windows + 1) * n;
-                                let mut out = Vec::with_capacity(n);
-                                for i in 0..total {
-                                    let x = sweep.amplitude * (std::f64::consts::TAU * (bin * (i % n)) as f64 / n as f64).sin();
-                                    let y = if i == 0 { c.output() } else { c.tick_f64(x) };
-                                    if i >= total - n {
-                                        out.push(y);
-                                    }
-                                }
-                                (anmr(&out, bin, rate), bin as f64 * rate / n as f64)
-                            })
-                            .fold((f64::NEG_INFINITY, 0.0), |a, b| if b.0 > a.0 { b } else { a })
-                    };
-                    let (a12, hz12) = worst(12.0);
-                    let (a20, hz20) = worst(20.0);
-                    let (w, hz) = if a12 > a20 { (a12, hz12) } else { (a20, hz20) };
-                    println!("{}: worst ANMR {a12:.1} dB at +12, {a20:.1} dB at +20 (at {hz:.0} Hz)", c.name);
-                    (c.name, a12, a20, w)
-                })
-            })
-            .collect();
-        jobs.into_iter().map(|j| j.join().unwrap()).collect()
+    // A thread a circuit, at most the slot's share of the cores.
+    let circuits: Vec<_> = CIRCUITS.iter().filter(|c| !c.supply).collect();
+    let results: Vec<(&str, f64, f64, f64)> = par_map(&circuits, |c| {
+        let config = shipping(c.name);
+        let worst = |offset: f64| piano_anmr(c.name, rate, config, offset);
+        let (a12, hz12) = worst(12.0);
+        let (a20, hz20) = worst(20.0);
+        let (w, hz) = if a12 > a20 { (a12, hz12) } else { (a20, hz20) };
+        println!(
+            "{} ({config}): worst ANMR {a12:.1} dB at +12, {a20:.1} dB at +20 (at {hz:.0} Hz)",
+            c.name
+        );
+        (c.name, a12, a20, w)
     });
     let mut over = Vec::new();
     for (name, a12, a20, worst) in results {
@@ -166,33 +132,20 @@ fn anmr_over_the_piano() {
     assert!(over.is_empty(), "ANMR over budget:\n  {}", over.join("\n  "));
 }
 
-/// The circuits that alias audibly at 44.1 kHz with no oversampling
-/// (findings, DSP.md R19): `(circuit, budget, recorded worst)`, the
-/// budget 3 dB above the recording. Every other circuit is held to
-/// −10 dB: the common cathode (−65.3 / −28.8 dB at +12 / +20), the Fuzz
-/// Face (−116.8 / −70.4; −81.7 at +20 on its static deck) and the
-/// Rangemaster (−64.2 / −28.8; −24.3 static). Measured 2026-11-13: every
-/// worst step is the top of the piano, 4.2 kHz, where a hot tone's sixth
-/// harmonic and above fold back below 20 kHz.
+/// The circuits above −10 dB at 44.1 kHz as they ship (findings, DSP.md
+/// R12/R19): `(circuit, budget, recorded worst)`, the budget 3 dB above
+/// the recording. Their floor does not fall with oversampling (the CE
+/// stage reads +10.0 dB at 8× and 16×, the JFET booster −6.6 at 8× and
+/// 16×, the MOSFET booster +13.5), so it is not aliasing: what remains is
+/// R19's sweep to explain. Every other circuit is held to −10 dB; at 1×
+/// (DSP.md R12's "before") 15 of 20 read above it, the diode clipper at
+/// +51.0 dB, the MOSFET booster at +55.7, the CE-2's filters at +47.3.
+/// Measured 2026-11-13.
 const PIANO: &[(&str, f64, f64)] = &[
-    ("diode_clipper", 54.0, 51.0), // 38.3 / 51.0 dB at +12 / +20
-    ("opamp_clipper", 49.7, 46.7), // 35.7 / 46.7 dB at +12 / +20
-    ("tube_screamer", 39.0, 36.0), // 4.8 / 36.0 dB at +12 / +20
-    ("common_cathode_grid_current", 40.0, 37.0), // -0.6 / 37.0 dB at +12 / +20
-    ("triode_stage", 30.7, 27.7), // -49.6 / 27.7 dB at +12 / +20
-    ("push_pull", 45.1, 42.1), // -20.8 / 42.1 dB at +12 / +20
-    ("push_pull_pentode", 30.2, 27.2), // -8.1 / 27.2 dB at +12 / +20
-    ("ce_stage", 45.3, 42.3), // 31.6 / 42.3 dB at +12 / +20
-    ("jfet_booster", 36.0, 33.0), // -6.6 / 33.0 dB at +12 / +20
-    ("mosfet_booster", 58.7, 55.7), // 42.4 / 55.7 dB at +12 / +20
-    ("ce_stage_static", 45.3, 42.3), // 31.6 / 42.3 dB at +12 / +20
-    ("jfet_booster_static", 36.0, 33.0), // -6.6 / 33.0 dB at +12 / +20
-    ("mosfet_booster_static", 59.1, 56.1), // 42.5 / 56.1 dB at +12 / +20
-    ("ota_vca", 40.2, 37.2), // -7.6 / 37.2 dB at +12 / +20
-    // R25, recorded after the list above: the same at both levels, so the
-    // stopband, not the drive — a 4.2 kHz tone lies in its sixth-order
-    // stopband, which bilinear warping without prewarp leaves 28 dB too
-    // shallow at the host rate (DSP.md R25; R12 owns the fix), and the
-    // followers' folded products stand above what is left of the tone.
-    ("boss_ce2_filters", 50.3, 47.3), // 47.2 / 47.3 dB at +12 / +20
+    ("ce_stage", 13.0, 10.0), // -11.6 / 10.0 dB at +12 / +20, 8×
+    ("jfet_booster", -3.2, -6.2), // -6.7 / -6.2 dB at +12 / +20, 8×
+    ("mosfet_booster", 17.2, 14.2), // 13.0 / 14.2 dB at +12 / +20, 8×
+    ("ce_stage_static", 13.0, 10.0), // -11.5 / 10.0 dB at +12 / +20, 8×
+    ("jfet_booster_static", -3.2, -6.2), // -6.7 / -6.2 dB at +12 / +20, 8×
+    ("mosfet_booster_static", 16.9, 13.9), // 13.0 / 13.9 dB at +12 / +20, 8×
 ];

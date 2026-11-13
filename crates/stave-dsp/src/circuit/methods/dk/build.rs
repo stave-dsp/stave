@@ -225,6 +225,9 @@ impl<'a> Builder<'a> {
             }
         }
         let node_total = next;
+        // SPICE's junction gmin, linear across each junction beside the
+        // shunt (which the device output takes back out; gmin stays).
+        let gmin = netlist.junction_gmin();
         // A variable resistor is a branch, so its resistance is one entry.
         let variables = Variables::new(netlist)?;
         let varies = |name: &str, kind: BranchKind| {
@@ -353,7 +356,7 @@ impl<'a> Builder<'a> {
                 } => {
                     let junction = self.terminal(pin(*anode), internal[i][0], diode.series_ohms);
                     let k = pin(*cathode);
-                    self.conductance(junction, k, SHUNT);
+                    self.conductance(junction, k, SHUNT + gmin);
                     let model = diode.junction();
                     let stored: &[(Slot, Pin, Pin)] =
                         if model.stores_charge() { &[(Slot::Junction, junction, k)] } else { &[] };
@@ -469,8 +472,8 @@ impl<'a> Builder<'a> {
                     let c = self.terminal(pin(*collector), internal[i][0], bjt.collector_ohms);
                     let b = self.terminal(pin(*base), internal[i][1], bjt.base_ohms);
                     let e = self.terminal(pin(*emitter), internal[i][2], bjt.emitter_ohms);
-                    self.conductance(b, e, SHUNT);
-                    self.conductance(b, c, SHUNT);
+                    self.conductance(b, e, SHUNT + gmin);
+                    self.conductance(b, c, SHUNT + gmin);
                     // bjtload.c: the external part of CJC from the external
                     // base; the substrate junction to the intrinsic
                     // collector (vertical) or base (lateral).
@@ -478,6 +481,9 @@ impl<'a> Builder<'a> {
                         Substrate::Vertical => c,
                         Substrate::Lateral => b,
                     };
+                    // bjtload.c's substrate junction carries gmin even with
+                    // no substrate current (`gdsub = CKTgmin`).
+                    self.conductance(pin(*substrate), meets, gmin);
                     let all = [
                         (Slot::BaseEmitter, b, e),
                         (Slot::BaseCollector, b, c),
@@ -502,8 +508,8 @@ impl<'a> Builder<'a> {
                     let d = self.terminal(pin(*drain), internal[i][0], jfet.drain_ohms);
                     let g = pin(*gate);
                     let s = self.terminal(pin(*source), internal[i][2], jfet.source_ohms);
-                    self.conductance(g, s, SHUNT);
-                    self.conductance(g, d, SHUNT);
+                    self.conductance(g, s, SHUNT + gmin);
+                    self.conductance(g, d, SHUNT + gmin);
                     let all = [(Slot::GateSource, g, s), (Slot::GateDrain, g, d)];
                     let stored: Vec<_> =
                         all.into_iter().zip(jfet.stored_charges()).filter(|(_, s)| *s).map(|(c, _)| c).collect();
@@ -635,6 +641,7 @@ impl<'a> Builder<'a> {
             settings,
             health: Health::default(),
             antialiasing: Antialiasing::None,
+            prewarp: None,
             adaa: adaa::State::new(nx, nu, nv, nq),
             earlier: Health::default(),
             varying: Varying::new(variables, stamps),

@@ -542,7 +542,7 @@ pub fn of_black_box(
     let found = super::model::delayed_knee(&make, rate, settle);
     let plan = stage_plan(case, knee.unwrap_or(found), settle);
     let m = super::model::Model::Delayed { make: Box::new(make) };
-    let (table, _) = m.measure(&plan, &stave_dsp::circuit::netlist::Netlist::new(), Tier::T0, rate, false, &[]);
+    let (table, _) = m.measure(&plan, &stave_dsp::circuit::netlist::Netlist::new(), Tier::T0, rate, false, super::Shipping::PLAIN, &[]);
     let fp = Fingerprint::new(case, model, catalogue, vec![(rate, Role::Both, table)], None, Some(found), Some(settle));
     (fp, plan)
 }
@@ -569,7 +569,9 @@ pub fn diff(committed: &Fingerprint, now: &Fingerprint, plan: &Plan) -> Vec<Stri
         moved.push(format!("knee: {a:e} → {b:e} ({:+.2} dB)", db(b / a)));
     }
     for (rate, role, table) in &now.tables {
-        let Some((_, _, old)) = committed.tables.iter().find(|t| t.0 == *rate) else {
+        // By rate and role: a circuit shipping oversampled can share its
+        // solver's rate (the Fuzz Face's static deck: 4× both ways).
+        let Some((_, _, old)) = committed.tables.iter().find(|t| t.0 == *rate && t.1 == *role) else {
             moved.push(format!("{:.1} kHz: no committed table at this rate", rate / 1e3));
             continue;
         };

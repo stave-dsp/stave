@@ -2,6 +2,7 @@
 //! topology (any ticking stage), run through a plan at one rate into a
 //! [`Table`] of the same measurements the reference holds.
 
+use stave_dsp::circuit::methods::adaa::Antialiasing;
 use stave_dsp::circuit::methods::dk::{Dk, Phasor};
 use stave_dsp::circuit::methods::newton::NewtonStats;
 use stave_dsp::circuit::methods::wdf::Wdf;
@@ -9,7 +10,7 @@ use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
 use stave_dsp::kernel::node::Tail;
 use stave_measure::suite::analysis::{
-    aliasing, anmr, bins, gain, steady_state, thd_n, Harmonics, Spectrum,
+    aliasing, anmr, bins, gain, steady_state, thd_n, waveform, Harmonics, Spectrum,
 };
 use stave_measure::suite::excitation::Excitation;
 use stave_measure::suite::levels::{find_knee, Knee};
@@ -17,6 +18,7 @@ use stave_measure::suite::period::{harmonic_bins, tone_bin, Period, SHIPPING_RAT
 use stave_measure::suite::{db, Complex};
 
 use super::compare::averaged_bla;
+use super::Shipping;
 use super::plan::{Input, Kind, Plan, Run, Tier, HARMONICS};
 use super::table::{Measured, Table};
 
@@ -97,6 +99,10 @@ trait Solver: Clone {
     fn stats(&self) -> NewtonStats;
     /// The small-signal response at `hz`: analog (prewarped) or discrete.
     fn response(&self, hz: f64, analog: bool) -> Option<Phasor>;
+    /// Prewarp every reactance to `hz` (R12).
+    fn set_prewarp(&mut self, hz: Option<f64>);
+    /// Stateful ADAA in the solve (A1).
+    fn set_antialiasing(&mut self, a: Antialiasing);
 }
 
 impl Solver for Circuit<Dk> {
@@ -115,6 +121,12 @@ impl Solver for Circuit<Dk> {
     }
     fn stats(&self) -> NewtonStats {
         Dk::stats(self)
+    }
+    fn set_prewarp(&mut self, hz: Option<f64>) {
+        Dk::set_prewarp(self, hz);
+    }
+    fn set_antialiasing(&mut self, a: Antialiasing) {
+        Dk::set_antialiasing(self, a);
     }
     fn response(&self, hz: f64, analog: bool) -> Option<Phasor> {
         if analog {
@@ -141,6 +153,12 @@ impl Solver for Circuit<Wdf> {
     }
     fn stats(&self) -> NewtonStats {
         Wdf::stats(self)
+    }
+    fn set_prewarp(&mut self, hz: Option<f64>) {
+        Wdf::set_prewarp(self, hz);
+    }
+    fn set_antialiasing(&mut self, a: Antialiasing) {
+        Wdf::set_antialiasing(self, a);
     }
     fn response(&self, hz: f64, analog: bool) -> Option<Phasor> {
         if analog {
@@ -209,14 +227,35 @@ pub const ANMR_MAX_RATE: f64 = 96_000.0;
 /// A run's measurements from its simulated periods (the first is the
 /// one before the measured ones).
 pub fn measure_run(run: &Run, rate: f64, periods: &[Vec<f64>]) -> Measured {
+    measure_decimated(run, rate, periods, 1)
+}
+
+/// The same, for a model run at `m` times its host rate (`rate` is the
+/// run's): every period read through an ideal decimator — the bins below
+/// the host's Nyquist kept, the rest gone — as a plugin oversampling by
+/// `m` hands them to the host.
+pub fn measure_decimated(run: &Run, rate: f64, periods: &[Vec<f64>], m: u32) -> Measured {
     let p = run.period();
+    let host = rate / f64::from(m.max(1));
+    let nh = p.samples(host) as u64;
+    let below = |k: &u32| 2 * u64::from(*k) < nh;
     let spectra: Vec<Spectrum> = periods[1..]
         .iter()
-        .map(|x| bins(x, p, rate, &run.bins))
+        .map(|x| {
+            let wanted: Vec<u32> = run.bins.iter().copied().filter(below).collect();
+            bins(x, p, rate, &wanted)
+        })
         .collect();
+    let decimated;
+    let (rate, last) = if m > 1 {
+        let all: Vec<u32> = (0..(p.samples(host) as u32).div_ceil(2)).collect();
+        decimated = waveform(&bins(&periods[1], p, rate, &all), p, host);
+        (host, &decimated)
+    } else {
+        (rate, &periods[1])
+    };
     let (thdn, floor, anmr) = match run.kind {
         Kind::Tone { bin, .. } => {
-            let last = &periods[1];
             (
                 Some(thd_n(last, p, rate, bin)),
                 Some(aliasing(last, p, rate, bin)),
@@ -243,7 +282,11 @@ pub struct Health {
 
 impl Model {
     /// Run `plan`'s `tier` at `rate` into a table; `nodes` are the
-    /// operating-point nodes to read (the reference's).
+    /// operating-point nodes to read (the reference's). A circuit is
+    /// prewarped and anti-aliased as `config` says (R12; its oversampling
+    /// is already in `rate`); a hand topology has its own discretisation
+    /// and ignores it.
+    #[allow(clippy::too_many_arguments)]
     pub fn measure(
         &self,
         plan: &Plan,
@@ -251,6 +294,7 @@ impl Model {
         tier: Tier,
         rate: f64,
         oversampled: bool,
+        config: Shipping,
         nodes: &[String],
     ) -> (Table, Health) {
         let mut table = Table {
@@ -261,10 +305,10 @@ impl Model {
         let mut health = Health::default();
         match self {
             Model::Circuit(netlist) => {
-                measure_circuit::<Circuit<Dk>>(netlist, plan, tier, rate, oversampled, nodes, &mut table, &mut health);
+                measure_circuit::<Circuit<Dk>>(netlist, plan, tier, rate, oversampled, config, nodes, &mut table, &mut health);
             }
             Model::Wdf(netlist) => {
-                measure_circuit::<Circuit<Wdf>>(netlist, plan, tier, rate, oversampled, nodes, &mut table, &mut health);
+                measure_circuit::<Circuit<Wdf>>(netlist, plan, tier, rate, oversampled, config, nodes, &mut table, &mut health);
             }
             Model::Stage {
                 make,
@@ -278,7 +322,7 @@ impl Model {
                 for run in plan.runs(tier) {
                     let mut tick = make(rate);
                     let periods = simulate(run, rate, &mut *tick);
-                    table.runs.insert(run.id.clone(), measure_run(run, rate, &periods));
+                    table.runs.insert(run.id.clone(), measure_decimated(run, rate, &periods, config.oversample));
                 }
                 black_box_response(plan, tier, &mut table);
             }
@@ -317,11 +361,18 @@ fn measure_circuit<S: Solver>(
     tier: Tier,
     rate: f64,
     oversampled: bool,
+    config: Shipping,
     nodes: &[String],
     table: &mut Table,
     health: &mut Health,
 ) {
-    let base = S::on(netlist, &plan.input, rate);
+    let mut base = S::on(netlist, &plan.input, rate);
+    if config.prewarp.is_some() {
+        base.set_prewarp(config.prewarp);
+    }
+    if config.adaa {
+        base.set_antialiasing(Antialiasing::Adaa);
+    }
     let uic = netlist.tran.is_some_and(|t| t.uic);
     if !uic {
         let dk = circuit(netlist, &plan.input, rate);
@@ -355,7 +406,7 @@ fn measure_circuit<S: Solver>(
         let stats = c.stats();
         health.capped += stats.capped;
         health.solves += stats.solves;
-        table.runs.insert(run.id.clone(), measure_run(run, rate, &periods));
+        table.runs.insert(run.id.clone(), measure_decimated(run, rate, &periods, config.oversample));
     }
 }
 

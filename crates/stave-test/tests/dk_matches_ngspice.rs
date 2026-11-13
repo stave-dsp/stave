@@ -556,7 +556,8 @@ mod agreement {
         let mut dk = driven(
             "clipper\nV1 in 0 0\nE1 inm 0 in 0 1\nR1 inm s 4.7k\nVS s g 0\nC1 g 0 47n\n\
              E2 fb 0 in 0 1\nF1 0 out VS 1\nRF out fb 551k\nCF out fb 51p\nD1 out fb DI\n\
-             D2 fb out DI\n.model DI D(Is=2.52n N=1.752)\n.control\nwrdata f v(out)\n.endc",
+             D2 fb out DI\n.model DI D(Is=2.52n N=1.752)\n\
+             .options gmin=0\n.control\nwrdata f v(out)\n.endc",
             "v1",
             rate,
         );
@@ -589,20 +590,20 @@ mod agreement {
         });
         hand.prepare(rate as f32);
         assert!((dk.output() - hand.plate_volts()).abs() < 1e-6);
-        let x = |n| hot(n, rate, 2.0) as f32;
-        // The hand stage returns f32 volts near 200 V: its rounding is ~1e-5 V.
-        let w = largest(
-            19_200,
-            |n| f64::from(dk.tick(x(n))),
-            |n| f64::from(hand.tick(x(n))),
-        );
-        agree("common cathode", w, 1e-4, &dk);
+        let x = |n| hot(n, rate, 2.0);
+        // Both in f64 (the hand stage's f32 `tick` rounds its ~200 V
+        // plate to ~1e-5 V).
+        let w = largest(19_200, |n| dk.tick_f64(x(n)), |n| hand.tick_f64(x(n)));
+        agree("common cathode", w, 5e-10, &dk);
     }
 
     #[test]
     fn power_supply() {
         let rate = 48e3;
-        let mut dk = Circuit::<Dk>::new(&deck("power_supply")).unwrap();
+        // The hand supply's rectifiers carry no junction gmin.
+        let mut netlist = deck("power_supply");
+        netlist.gmin_siemens = Some(0.0);
+        let mut dk = Circuit::<Dk>::new(&netlist).unwrap();
         dk.drive("il").unwrap();
         dk.prepare(rate as f32);
         let mut hand = PowerSupply::new(PowerSupplyConfig::SILICON_CHOKE);

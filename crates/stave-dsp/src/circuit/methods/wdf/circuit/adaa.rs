@@ -50,6 +50,19 @@ impl Wdf {
         self.antialiasing
     }
 
+    /// Prewarp every reactance to `hz`, as
+    /// [`Dk::set_prewarp`](crate::circuit::methods::dk::Dk::set_prewarp)
+    /// (DSP.md R12); `None` is the plain trapezoidal rule. Re-prepares at
+    /// the current rate.
+    pub fn set_prewarp(&mut self, hz: Option<f64>) {
+        self.prewarp = hz;
+        self.prepare(self.sample_rate);
+    }
+
+    pub fn prewarp(&self) -> Option<f64> {
+        self.prewarp
+    }
+
     /// How ADAA forms the root's mean, `None` with ADAA off.
     pub fn adaa_mean(&self) -> Option<Mean> {
         self.adaa_active().then(|| self.adaa.kernel.mean())

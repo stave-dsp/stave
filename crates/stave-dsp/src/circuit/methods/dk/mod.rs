@@ -91,7 +91,11 @@
 //! capacitor and output buffer), OTAs, and behavioural sources of node
 //! voltages (`B … I = {…}` or
 //! `V = {…}`, at most four node voltages each), provided its MNA matrix
-//! is nonsingular (no floating node, no loop of voltage sources). The
+//! is nonsingular (no floating node, no loop of voltage sources). Every
+//! diode, BJT and JFET junction carries SPICE's `gmin` (the deck's
+//! `.options gmin=`, else 1e-12 S) as a linear conductance, as ngspice's
+//! device loads add it, so a reverse-biased junction leaks as it does
+//! there. The
 //! operating point is solved with capacitors open and inductors shorted,
 //! by Newton and then source stepping; a deck with `.tran … UIC` starts
 //! from its `IC=` values instead.
@@ -139,6 +143,7 @@ use solve::{Prediction, Workspace};
 
 use crate::circuit::methods::adaa::Antialiasing;
 use crate::circuit::methods::newton::NewtonStats;
+use crate::circuit::methods::prewarp;
 use crate::circuit::netlist::expr::{Dual, Tape};
 use crate::circuit::netlist::{Netlist, NetlistError, Node, Probe, Source};
 use crate::kernel::node::Tail;
@@ -243,6 +248,9 @@ pub struct Dk {
     /// The solves since the last `take_health` (or prepare), and before.
     health: Health,
     antialiasing: Antialiasing,
+    /// The frequency every reactance is prewarped to (R12), `None` for
+    /// the plain trapezoidal rule.
+    prewarp: Option<f64>,
     adaa: adaa::State,
     earlier: Health,
     /// Variable parts (N6).
@@ -371,10 +379,47 @@ impl Dk {
         (self.antialiasing == Antialiasing::Adaa).then(|| self.adaa.kernel.mean())
     }
 
+    /// Prewarp every reactance to `hz` (DSP.md R12,
+    /// [`methods::prewarp`](crate::circuit::methods::prewarp)): the
+    /// response is the analog one at `hz` and bent further below it;
+    /// `None` is the plain trapezoidal rule. Re-prepares at the current
+    /// rate.
+    ///
+    /// ```
+    /// use stave_dsp::circuit::methods::dk::Dk;
+    /// use stave_dsp::circuit::netlist::Netlist;
+    ///
+    /// let netlist = Netlist::parse_spice(
+    ///     "* rc
+    ///      V1 in 0 DC 0 AC 1
+    ///      R1 in out 2.2k
+    ///      C1 out 0 10n
+    ///      .control
+    ///      wrdata out v(out)
+    ///      .endc",
+    /// )
+    /// .unwrap();
+    /// let mut dk = Dk::new(&netlist).unwrap();
+    /// let analog = 1.0 / (1.0 + (std::f64::consts::TAU * 16e3 * 22e-6).powi(2)).sqrt();
+    /// let plain = dk.frequency_response(16e3).unwrap().magnitude();
+    /// dk.set_prewarp(Some(16e3));
+    /// let warped = dk.frequency_response(16e3).unwrap().magnitude();
+    /// assert!((20.0 * (plain / analog).log10()).abs() > 3.5);
+    /// assert!((warped / analog - 1.0).abs() < 1e-9);
+    /// ```
+    pub fn set_prewarp(&mut self, hz: Option<f64>) {
+        self.prewarp = hz;
+        self.prepare(self.sample_rate);
+    }
+
+    pub fn prewarp(&self) -> Option<f64> {
+        self.prewarp
+    }
+
     /// The step the linear part is discretised for: the sample period,
-    /// stretched by 1.5 under ADAA.
+    /// prewarped, stretched by 1.5 under ADAA.
     fn design_step(&self) -> f64 {
-        self.step * self.antialiasing.design_step_scale()
+        prewarp::design_step(self.step * self.antialiasing.design_step_scale(), self.prewarp)
     }
 
     /// Newton work, cap hits, continuation fallbacks and the worst
@@ -573,7 +618,7 @@ impl Dk {
     /// frequency the bilinear transform maps there, exact for a linear
     /// circuit (module docs).
     pub fn analog_response(&self, hz: f64) -> Option<Phasor> {
-        let angle = 2.0 * (std::f64::consts::PI * hz * self.step).atan();
+        let angle = prewarp::digital_angle(hz, prewarp::design_step(self.step, self.prewarp));
         self.response_at(angle)
     }
 }

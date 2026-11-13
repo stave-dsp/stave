@@ -21,7 +21,8 @@
 //!   (noise, Meyer's `TOX` capacitance, sidewalls, excess phase) is
 //!   accepted and listed in [`Netlist::unmodelled`];
 //! - `.temp` or `.options temp= tnom=` (equal: model cards are read at
-//!   the circuit's temperature, with no temperature scaling);
+//!   the circuit's temperature, with no temperature scaling), and
+//!   `.options gmin=` (the junction conductance, [`Netlist::gmin_siemens`]);
 //! - `.param`, `.model`, `.tran … [UIC]`, `.ac dec …`, and a `.control`
 //!   block's `wrdata FILE v(a[, b])` (or `vm(…)`) as the probe;
 //!   `.options`, `.op`, `.end` and other control lines are skipped.
@@ -231,6 +232,7 @@ impl Netlist {
         // before definition, and cards are read at the temperature.
         let temp = temperature(&deck)?;
         netlist.temperature_celsius = temp;
+        netlist.gmin_siemens = option(&deck, "gmin")?;
         let thermal = temp.map_or(THERMAL_VOLTS_27C, thermal_volts);
         for line in &deck {
             match line.tokens[0].word() {
@@ -340,6 +342,24 @@ fn temperature(deck: &[Line]) -> Result<Option<f64>, NetlistError> {
         });
     }
     Ok(temp)
+}
+
+/// The last `.options key=value` the deck sets.
+fn option(deck: &[Line], key: &str) -> Result<Option<f64>, NetlistError> {
+    let mut found = None;
+    for line in deck {
+        let t = &line.tokens;
+        if let Some(".options" | ".option" | ".opt") = t[0].word() {
+            for i in 1..t.len() {
+                if let (Some(k), Some(Token::Equals)) = (t[i].word(), t.get(i + 1)) {
+                    if k == key {
+                        found = Some(number(line, t.get(i + 2), &[])?);
+                    }
+                }
+            }
+        }
+    }
+    Ok(found)
 }
 
 /// A card's `KEY=value` pairs.

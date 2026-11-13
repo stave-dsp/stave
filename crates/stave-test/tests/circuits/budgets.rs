@@ -1,19 +1,21 @@
 //! Every case's budgets, per tier: the measured error with a margin
-//! (three times, rounded up to 1-2-5; aliasing ceilings 5 dB above the
+//! (three times, rounded up to 1-2-5; aliasing ceilings 2 dB above the
 //! measured level; group delay at the audibility budget, 0.2 ms from
 //! 500 Hz to 4 kHz; ANMR at Kahles et al.'s audibility threshold, −10 dB,
-//! where the model is under it, else 5 dB above the measured level,
-//! rounded up to 5 — every circuit here runs unoversampled at the host
-//! rate, so a hot tone's aliases are heard: the case for the plugin's
-//! oversampling or ADAA, recorded, not a budget to chase), as `(check, rates, first, second)` — the second is
-//! degrees (dB of probe level for dynamics), `NAN` where the check has
-//! none. Measured against the ngspice 42 tables; rows marked "R11" were
-//! re-measured when the transistor decks gained their cards' charge (their
-//! `*_static` twins keep the static rows). A row that holds a finding
-//! says so beside it: its budget is the measured value with the same
-//! margin, so the finding cannot get worse unnoticed; DSP.md R17 lists
-//! them. Errors at shipping rates are the model run unoversampled at 44.1,
-//! 48 and 96 kHz: what a plugin that ships it that way would have.
+//! where the model is under it, else 3 dB above the measured level), as
+//! `(check, rates, first, second)` — the second is degrees (dB of probe
+//! level for dynamics), `NAN` where the check has none. Measured against
+//! the ngspice 42 tables; rows marked "R11" were re-measured when the
+//! transistor decks gained their cards' charge (their `*_static` twins
+//! keep the static rows). A row that holds a finding says so beside it:
+//! its budget is the measured value with the same margin, so the finding
+//! cannot get worse unnoticed; DSP.md R17 lists them. Errors at shipping
+//! rates are the model as it ships (DSP.md R12, `SHIPPING` in
+//! `circuits/mod.rs`) at 44.1, 48 and 96 kHz: run at its oversampling
+//! and read through an ideal decimator — what the plugin will have.
+//! Re-measured for R12 and tightened; two checks were raised (on four
+//! rows: each deck and its `_static` twin), each marked
+//! "RAISED" with why.
 
 use stave_test::characterise::Check::{self, *};
 use stave_test::characterise::Rates::{self, *};
@@ -26,71 +28,71 @@ pub type Row = (Check, Rates, f64, f64);
 pub fn table(case: &str, tier: Tier) -> &'static [Row] {
     match (case, tier) {
         ("diode_clipper", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -65.0, NAN), // -73.8 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -34.6 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.491
-            (Bla, Shipping, 20.0, 50.0), // 4.07 / 9.65 — FINDING: bilinear warping at 1× (no prewarp)
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 1.0, 2.0), // 0.173 / 0.512
+            (Bla, Shipping, 0.2, 0.5), // 0.0414 / 0.126 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 5e-4, 0.02), // 0.000109 / 0.0054
-            (Compression, Shipping, 0.005, 0.1), // 0.00153 / 0.0301
-            (Detection, Oversampled, 0.05, NAN), // 0.0108
-            (Detection, Shipping, 1.0, NAN), // 0.186
+            (Compression, Shipping, 5e-4, 0.02), // 0.000118 / 0.00585
+            (Detection, Oversampled, 0.05, NAN), // 0.0122
+            (Detection, Shipping, 0.01, NAN), // 0.00297
             (GroupDelay, Oversampled, 2e-4, NAN), // 1.73e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 6.09e-07
-            (Harmonics, Oversampled, 0.2, 2.0), // 0.0663 / 0.402
-            (Harmonics, Shipping, 5.0, 50.0), // 1.61 / 6.84
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
-            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.69e-08
+            (Harmonics, Oversampled, 0.2, 2.0), // 0.0788 / 0.402
+            (Harmonics, Shipping, 0.1, 0.5), // 0.0189 / 0.111
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 1.06e-25
+            (OperatingPoint, Shipping, 1e-9, NAN), // 1.06e-25
             (Response, Oversampled, 0.02, 0.1), // 0.0058 / 0.0228 — FINDING: the deck's 4 pF Cjo, which DK leaves out (R11)
-            (Response, Shipping, 20.0, 50.0), // 4.07 / 9.25 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.005, NAN), // 0.000825
-            (ThdN, Shipping, 0.1, NAN), // 0.0211 — aliasing at the host rate
+            (Response, Shipping, 0.2, 0.5), // 0.043 / 0.126 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (ThdN, Oversampled, 0.005, NAN), // 0.00129
+            (ThdN, Shipping, 0.005, NAN), // 0.00141 — aliasing as it ships
         ],
         ("ce_stage", Tier::T0) => &[
-            (Aliasing, Oversampled, -95.0, NAN), // -101
-            (Aliasing, Shipping, -60.0, NAN), // -65.5 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -13.2 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.005, 0.1), // 0.00143 / 0.0271
-            (Bla, Shipping, 0.5, 2.0), // 0.0977 / 0.458
-            (Compression, Oversampled, 2e-5, 0.001), // 4.34e-06 / 0.000254
-            (Compression, Shipping, 1e-4, 0.02), // 2.48e-05 / 0.00389
+            (Aliasing, Oversampled, -104.0, NAN), // -106
+            (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -18.5 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.005, 0.05), // 0.000967 / 0.0102
+            (Bla, Shipping, 0.01, 0.05), // 0.00221 / 0.0102
+            (Compression, Oversampled, 1e-5, 1e-4), // 2.88e-06 / 1.73e-05
+            (Compression, Shipping, 1e-5, 2e-4), // 3.01e-06 / 6.66e-05
             (Detection, Oversampled, 50.0, NAN), // 9.28
-            (Detection, Shipping, 50.0, NAN), // 9.27
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.98e-10
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.15e-08
-            (Harmonics, Oversampled, 0.05, 0.05), // 0.0135 / 0.0118
-            (Harmonics, Shipping, 0.5, 0.2), // 0.0797 / 0.0573
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.33e-05
-            (OperatingPoint, Shipping, 5e-5, NAN), // 1.33e-05
-            (Response, Oversampled, 5e-4, 0.002), // 0.00015 / 0.000361
-            (Response, Shipping, 0.002, 2.0), // 0.00064 / 0.389 (R11: the whole card)
-            (ThdN, Oversampled, 2e-4, NAN), // 6.06e-05
-            (ThdN, Shipping, 0.002, NAN), // 0.000505 — aliasing at the host rate
+            (Detection, Shipping, 50.0, NAN), // 9.28
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.56e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.21e-10
+            (Harmonics, Oversampled, 0.05, 0.01), // 0.0135 / 0.0023
+            (Harmonics, Shipping, 0.05, 0.02), // 0.0135 / 0.006
+            (OperatingPoint, Oversampled, 5e-6, NAN), // 9.02e-07
+            (OperatingPoint, Shipping, 5e-6, NAN), // 9.02e-07
+            (Response, Oversampled, 5e-6, 1e-5), // 7.76e-07 / 1.77e-06
+            (Response, Shipping, 2e-5, 0.02), // 3.68e-06 / 0.00376 (R11: the whole card)
+            (ThdN, Oversampled, 2e-4, NAN), // 3.98e-05
+            (ThdN, Shipping, 2e-4, NAN), // 4.6e-05 — aliasing as it ships
         ],
         ("ce_stage_static", Tier::T0) => &[
-            (Aliasing, Oversampled, -95.0, NAN), // -101
-            (Aliasing, Shipping, -60.0, NAN), // -65.5 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -13.1 — inaudible (Kahles et al.'s −10 dB)
+            (Aliasing, Oversampled, -99.0, NAN), // -101
+            (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -18.5 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.1), // 0.00143 / 0.0271
-            (Bla, Shipping, 0.5, 2.0), // 0.0977 / 0.458
-            (Compression, Oversampled, 2e-5, 0.001), // 4.34e-06 / 0.000254
-            (Compression, Shipping, 1e-4, 0.02), // 2.48e-05 / 0.00389
+            (Bla, Shipping, 0.005, 0.05), // 0.00141 / 0.0102
+            (Compression, Oversampled, 2e-5, 0.001), // 4.01e-06 / 0.000253
+            (Compression, Shipping, 1e-5, 2e-4), // 2.99e-06 / 6.6e-05
             (Detection, Oversampled, 50.0, NAN), // 9.28
-            (Detection, Shipping, 50.0, NAN), // 9.27
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.98e-10
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.15e-08
+            (Detection, Shipping, 50.0, NAN), // 9.28
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.58e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.78e-10
             (Harmonics, Oversampled, 0.05, 0.05), // 0.0135 / 0.0118
-            (Harmonics, Shipping, 0.5, 0.2), // 0.0797 / 0.0573
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.33e-05
-            (OperatingPoint, Shipping, 5e-5, NAN), // 1.33e-05
-            (Response, Oversampled, 5e-4, 0.002), // 0.00015 / 0.000361
-            (Response, Shipping, 5e-4, 0.5), // 0.000131 / 0.0723
-            (ThdN, Oversampled, 2e-4, NAN), // 6.06e-05
-            (ThdN, Shipping, 0.002, NAN), // 0.000505 — aliasing at the host rate
+            (Harmonics, Shipping, 0.05, 0.02), // 0.0135 / 0.00584
+            (OperatingPoint, Oversampled, 5e-6, NAN), // 9.02e-07
+            (OperatingPoint, Shipping, 5e-6, NAN), // 9.02e-07
+            (Response, Oversampled, 5e-6, 1e-5), // 7.76e-07 / 1.77e-06
+            (Response, Shipping, 2e-6, 0.005), // 4.33e-07 / 0.00104
+            (ThdN, Oversampled, 2e-4, NAN), // 5.99e-05
+            (ThdN, Shipping, 2e-4, NAN), // 4.62e-05 — aliasing as it ships
         ],
         ("common_cathode", Tier::T0) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -112
-            (Aliasing, Shipping, -95.0, NAN), // -104 — aliasing at the host rate
+            (Aliasing, Oversampled, -110.0, NAN), // -112
+            (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -25.5 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000373
             (Bla, Shipping, 0.005, 0.02), // 0.00097 / 0.00649
@@ -98,140 +100,140 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Compression, Shipping, 2e-5, 0.002), // 3.76e-06 / 0.000348
             (Detection, Oversampled, 0.02, NAN), // 0.00421
             (Detection, Shipping, 0.05, NAN), // 0.0119
-            (GroupDelay, Oversampled, 2e-4, NAN), // 3.51e-14
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.43e-15
             (GroupDelay, Shipping, 2e-4, NAN), // 1.03e-09
             (Harmonics, Oversampled, 1.0, 0.02), // 0.239 / 0.00588
             (Harmonics, Shipping, 5.0, 0.1), // 1.13 / 0.0245
-            (OperatingPoint, Oversampled, 1e-5, NAN), // 2.51e-06
-            (OperatingPoint, Shipping, 1e-5, NAN), // 2.51e-06
-            (Response, Oversampled, 1e-6, 1e-5), // 1.26e-07 / 1.56e-07
-            (Response, Shipping, 2e-6, 0.02), // 6.61e-07 / 0.00648
+            (OperatingPoint, Oversampled, 5e-8, NAN), // 7.21e-09
+            (OperatingPoint, Shipping, 5e-8, NAN), // 7.21e-09
+            (Response, Oversampled, 5e-9, 1e-8), // 7.57e-10 / 2.25e-09
+            (Response, Shipping, 2e-6, 0.02), // 7.87e-07 / 0.00648
             (ThdN, Oversampled, 2e-4, NAN), // 3.98e-05
-            (ThdN, Shipping, 5e-4, NAN), // 9.32e-05 — aliasing at the host rate
+            (ThdN, Shipping, 5e-4, NAN), // 9.32e-05 — aliasing as it ships
         ],
         ("fuzz_face", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -37.0 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
-            (Bla, Shipping, 20.0, 50.0), // 4.27 / 13 (R11: the whole card)
-            (Compression, Oversampled, 0.5, 0.05), // 0.12 / 0.0162 — FINDING: +0.12 dB of gain from the operating point
-            (Compression, Shipping, 0.5, 0.05), // 0.12 / 0.0104
-            (Detection, Oversampled, 1.0, NAN), // 0.324
-            (Detection, Shipping, 1.0, NAN), // 0.332
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.53e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.71e-07
-            (Harmonics, Oversampled, 2.0, 0.5), // 0.587 / 0.133 (R11: the whole card)
-            (Harmonics, Shipping, 2.0, 1.0), // 0.423 / 0.231 (R11: the whole card)
-            (OperatingPoint, Oversampled, 0.05, NAN), // 0.00936 — FINDING: 9.4 mV off ngspice at Q2's collector (open)
-            (OperatingPoint, Shipping, 0.05, NAN), // 0.00936
-            (Response, Oversampled, 0.5, 1.0), // 0.12 / 0.226 — FINDING: +0.12 dB of gain from the operating point
-            (Response, Shipping, 20.0, 50.0), // 4.27 / 13 (R11: the whole card)
-            (ThdN, Oversampled, 0.5, NAN), // 0.129
-            (ThdN, Shipping, 0.5, NAN), // 0.129 — aliasing at the host rate
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -116.0, NAN), // -118 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -37.1 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.05, 0.2), // 0.00992 / 0.0356
+            (Bla, Shipping, 1.0, 2.0), // 0.188 / 0.613 (R11: the whole card)
+            (Compression, Oversampled, 2e-6, 5e-4), // 6.47e-07 / 6.88e-05 — R12: closed with the operating point (was 0.12 dB)
+            (Compression, Shipping, 1e-4, 0.005), // 1.87e-05 / 0.00118
+            (Detection, Oversampled, 0.001, NAN), // 0.000299
+            (Detection, Shipping, 0.02, NAN), // 0.00508
+            (GroupDelay, Oversampled, 2e-4, NAN), // 5.68e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 4.64e-08
+            (Harmonics, Oversampled, 0.02, 0.001), // 0.00507 / 0.000226 (R11: the whole card)
+            (Harmonics, Shipping, 0.1, 0.02), // 0.0283 / 0.0054 (R11: the whole card)
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.23e-07 — R12: closed (was 9.4 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.23e-07
+            (Response, Oversampled, 1e-5, 2e-5), // 2.92e-06 / 5.48e-06 — R12: closed with the operating point (was 0.12 dB)
+            (Response, Shipping, 1.0, 2.0), // 0.189 / 0.614 (R11: the whole card)
+            (ThdN, Oversampled, 5e-5, NAN), // 9.68e-06
+            (ThdN, Shipping, 0.001, NAN), // 0.000267 — aliasing as it ships
         ],
         ("fuzz_face_static", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -94.2 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
-            (Bla, Shipping, 0.5, 1.0), // 0.121 / 0.227
-            (Compression, Oversampled, 0.5, 0.05), // 0.12 / 0.0162 — FINDING: +0.12 dB of gain from the operating point
-            (Compression, Shipping, 0.5, 0.05), // 0.12 / 0.0104
-            (Detection, Oversampled, 1.0, NAN), // 0.324
-            (Detection, Shipping, 1.0, NAN), // 0.332
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.53e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.71e-07
-            (Harmonics, Oversampled, 2.0, 0.1), // 0.645 / 0.0172
-            (Harmonics, Shipping, 2.0, 0.05), // 0.645 / 0.0132
-            (OperatingPoint, Oversampled, 0.05, NAN), // 0.00936 — FINDING: 9.4 mV off ngspice at Q2's collector (open)
-            (OperatingPoint, Shipping, 0.05, NAN), // 0.00936
-            (Response, Oversampled, 0.5, 1.0), // 0.12 / 0.226 — FINDING: +0.12 dB of gain from the operating point
-            (Response, Shipping, 0.5, 1.0), // 0.12 / 0.226
-            (ThdN, Oversampled, 0.5, NAN), // 0.129
-            (ThdN, Shipping, 0.5, NAN), // 0.129 — aliasing at the host rate
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -94.3 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.005, 0.05), // 0.000966 / 0.00669
+            (Bla, Shipping, 0.005, 0.05), // 0.000966 / 0.00669
+            (Compression, Oversampled, 5e-6, 0.002), // 1.24e-06 / 0.00039 — R12: closed with the operating point (was 0.12 dB)
+            (Compression, Shipping, 5e-6, 0.002), // 1.24e-06 / 0.00039
+            (Detection, Oversampled, 5e-4, NAN), // 7.58e-05
+            (Detection, Shipping, 5e-4, NAN), // 7.58e-05
+            (GroupDelay, Oversampled, 2e-4, NAN), // 3.7e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.14e-09
+            (Harmonics, Oversampled, 5e-4, 0.001), // 7.25e-05 / 0.000263
+            (Harmonics, Shipping, 5e-4, 0.001), // 7.25e-05 / 0.000263
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.23e-07 — R12: closed (was 9.4 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.23e-07
+            (Response, Oversampled, 1e-5, 2e-5), // 2.92e-06 / 5.49e-06 — R12: closed with the operating point (was 0.12 dB)
+            (Response, Shipping, 1e-5, 0.05), // 2.14e-06 / 0.00672
+            (ThdN, Oversampled, 5e-5, NAN), // 6.96e-06
+            (ThdN, Shipping, 5e-5, NAN), // 6.96e-06 — aliasing as it ships
         ],
         ("common_cathode/hand", Tier::T0) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -113
-            (Aliasing, Shipping, -95.0, NAN), // -104 — aliasing at the host rate
+            (Aliasing, Oversampled, -110.0, NAN), // -112
+            (Aliasing, Shipping, -102.0, NAN), // -104 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -25.5 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.005, 0.002), // 0.000995 / 0.000462
-            (Bla, Shipping, 0.005, 0.05), // 0.0011 / 0.00669
-            (Compression, Oversampled, 1e-5, 1e-4), // 2.99e-06 / 2.88e-05
-            (Compression, Shipping, 2e-5, 0.002), // 6.25e-06 / 0.000343
-            (Detection, Oversampled, 1.0, NAN), // 0.303
-            (Detection, Shipping, 2.0, NAN), // 0.361
-            (GroupDelay, Oversampled, 2e-4, NAN), // 3.46e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 5.58e-08
-            (Harmonics, Oversampled, 2.0, 0.05), // 0.38 / 0.0104
-            (Harmonics, Shipping, 5.0, 0.1), // 1.06 / 0.0232
-            (OperatingPoint, Oversampled, 1e-5, NAN), // 2.51e-06
-            (OperatingPoint, Shipping, 1e-5, NAN), // 2.51e-06
-            (Response, Oversampled, 0.01, 0.01), // 0.0022 / 0.00309
-            (Response, Shipping, 0.01, 0.05), // 0.00224 / 0.0067
-            (ThdN, Oversampled, 0.001, NAN), // 0.00024
-            (ThdN, Shipping, 0.001, NAN), // 0.000178 — aliasing at the host rate
+            (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000373
+            (Bla, Shipping, 0.005, 0.02), // 0.00097 / 0.00649
+            (Compression, Oversampled, 1e-5, 1e-4), // 3.03e-06 / 2.14e-05
+            (Compression, Shipping, 2e-5, 0.002), // 3.76e-06 / 0.000348
+            (Detection, Oversampled, 0.02, NAN), // 0.00421
+            (Detection, Shipping, 0.05, NAN), // 0.0119
+            (GroupDelay, Oversampled, 2e-4, NAN), // 3.01e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 3.13e-08
+            (Harmonics, Oversampled, 1.0, 0.02), // 0.239 / 0.00588
+            (Harmonics, Shipping, 5.0, 0.1), // 1.13 / 0.0245
+            (OperatingPoint, Oversampled, 5e-8, NAN), // 7.21e-09
+            (OperatingPoint, Shipping, 5e-8, NAN), // 7.21e-09
+            (Response, Oversampled, 0.01, 0.01), // 0.00225 / 0.00309
+            (Response, Shipping, 0.01, 0.02), // 0.00225 / 0.0065
+            (ThdN, Oversampled, 2e-4, NAN), // 3.98e-05
+            (ThdN, Shipping, 5e-4, NAN), // 9.32e-05 — aliasing as it ships
         ],
         ("common_cathode_grid_current/hand", Tier::T0) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -110
-            (Aliasing, Shipping, -95.0, NAN), // -103 — aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.002), // 0.000981 / 0.000488
-            (Bla, Shipping, 0.1, 0.5), // 0.0195 / 0.123
-            (Compression, Oversampled, 2e-5, 1e-4), // 3.46e-06 / 2.36e-05
-            (Compression, Shipping, 2e-5, 0.002), // 4.21e-06 / 0.000389
-            (Detection, Oversampled, 0.5, NAN), // 0.141
-            (Detection, Shipping, 0.2, NAN), // 0.0431
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.54e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.07e-08
-            (Harmonics, Oversampled, 0.1, 0.2), // 0.0283 / 0.0554
-            (Harmonics, Shipping, 0.5, 1.0), // 0.144 / 0.233
+            (Aliasing, Oversampled, -108.0, NAN), // -111
+            (Aliasing, Shipping, -112.0, NAN), // -114 — aliasing as it ships
+            (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000411
+            (Bla, Shipping, 0.005, 5e-4), // 0.000968 / 0.000145
+            (Compression, Oversampled, 2e-5, 1e-4), // 3.49e-06 / 2.36e-05
+            (Compression, Shipping, 2e-5, 2e-5), // 3.44e-06 / 5.66e-06
+            (Detection, Oversampled, 0.005, NAN), // 0.00125
+            (Detection, Shipping, 0.002, NAN), // 0.000557
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.62e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.61e-08
+            (Harmonics, Oversampled, 0.1, 0.2), // 0.0279 / 0.0536
+            (Harmonics, Shipping, 0.05, 0.1), // 0.0143 / 0.0249
             (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
             (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
-            (Response, Oversampled, 0.01, 0.01), // 0.00195 / 0.00274
-            (Response, Shipping, 0.01, 0.05), // 0.00194 / 0.00752
-            (ThdN, Oversampled, 2e-4, NAN), // 5.29e-05
-            (ThdN, Shipping, 0.001, NAN), // 0.000271 — aliasing at the host rate
+            (Response, Oversampled, 0.01, 0.01), // 0.00196 / 0.0027
+            (Response, Shipping, 0.01, 0.01), // 0.00196 / 0.0027
+            (ThdN, Oversampled, 2e-4, NAN), // 5.3e-05
+            (ThdN, Shipping, 2e-4, NAN), // 4.46e-05 — aliasing as it ships
         ],
         ("common_cathode_grid_current", Tier::T0) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -111
-            (Aliasing, Shipping, -95.0, NAN), // -103 — aliasing at the host rate
+            (Aliasing, Oversampled, -108.0, NAN), // -111
+            (Aliasing, Shipping, -112.0, NAN), // -114 — aliasing as it ships
             (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000411
-            (Bla, Shipping, 0.1, 0.5), // 0.0195 / 0.123
+            (Bla, Shipping, 0.005, 5e-4), // 0.000968 / 0.000145
             (Compression, Oversampled, 2e-5, 1e-4), // 3.49e-06 / 2.36e-05
-            (Compression, Shipping, 2e-5, 0.002), // 4.31e-06 / 0.000384
+            (Compression, Shipping, 2e-5, 2e-5), // 3.44e-06 / 5.66e-06
             (Detection, Oversampled, 0.005, NAN), // 0.00125
-            (Detection, Shipping, 0.2, NAN), // 0.0431
+            (Detection, Shipping, 0.002, NAN), // 0.000557
             (GroupDelay, Oversampled, 2e-4, NAN), // 2.28e-15
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.13e-09
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.76e-11
             (Harmonics, Oversampled, 0.1, 0.2), // 0.0279 / 0.0536
-            (Harmonics, Shipping, 0.5, 1.0), // 0.111 / 0.232
+            (Harmonics, Shipping, 0.05, 0.1), // 0.0143 / 0.0249
             (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
             (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
-            (Response, Oversampled, 1e-6, 1e-5), // 6.39e-10 / 1.41e-09
-            (Response, Shipping, 5e-6, 0.05), // 8.96e-07 / 0.00714
+            (Response, Oversampled, 2e-9, 5e-9), // 6.39e-10 / 1.41e-09
+            (Response, Shipping, 5e-8, 5e-4), // 1.46e-08 / 0.000103
             (ThdN, Oversampled, 2e-4, NAN), // 5.3e-05
-            (ThdN, Shipping, 5e-4, NAN), // 0.000103 — aliasing at the host rate
+            (ThdN, Shipping, 2e-4, NAN), // 4.46e-05 — aliasing as it ships
         ],
         ("diode_clipper/hand", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -65.0, NAN), // -73.8 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -34.6 — inaudible (Kahles et al.'s −10 dB)
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -93.3 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.49
-            (Bla, Shipping, 20.0, 50.0), // 4.07 / 9.65 — FINDING: bilinear warping at 1× (no prewarp)
+            (Bla, Shipping, 0.2, 0.5), // 0.0355 / 0.107 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.01, 0.02), // 0.00257 / 0.00541
-            (Compression, Shipping, 0.02, 0.1), // 0.00403 / 0.031
+            (Compression, Shipping, 0.01, 0.02), // 0.0025 / 0.00585
             (Detection, Oversampled, 0.05, NAN), // 0.0161
-            (Detection, Shipping, 1.0, NAN), // 0.191
+            (Detection, Shipping, 0.05, NAN), // 0.00689
             (GroupDelay, Oversampled, 2e-4, NAN), // 2.69e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 6.08e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.7e-08
             (Harmonics, Oversampled, 0.5, 2.0), // 0.0757 / 0.376
-            (Harmonics, Shipping, 5.0, 50.0), // 1.61 / 6.8
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
-            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
+            (Harmonics, Shipping, 0.05, 0.5), // 0.00959 / 0.0853
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 1.06e-25
+            (OperatingPoint, Shipping, 1e-9, NAN), // 1.06e-25
             (Response, Oversampled, 1.0, 2.0), // 0.169 / 0.489
-            (Response, Shipping, 20.0, 50.0), // 4.07 / 9.25 — FINDING: bilinear warping at 1× (no prewarp)
+            (Response, Shipping, 0.2, 0.5), // 0.0372 / 0.109 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (ThdN, Oversampled, 0.02, NAN), // 0.00402
-            (ThdN, Shipping, 0.05, NAN), // 0.0163 — aliasing at the host rate
+            (ThdN, Shipping, 0.02, NAN), // 0.00502 — aliasing as it ships
         ],
         ("power_supply/hand", Tier::T0) => &[
             (Dynamics, Oversampled, 5e-4, 0.02), // 0.000113 / 0.00488
@@ -242,365 +244,365 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Shipping, 0.005, NAN), // 0.000679
         ],
         ("jfet_booster", Tier::T0) => &[
-            (Aliasing, Oversampled, -95.0, NAN), // -100
-            (Aliasing, Shipping, -85.0, NAN), // -91.2 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -10.6 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00494
-            (Bla, Shipping, 0.1, 0.5), // 0.0213 / 0.144
-            (Compression, Oversampled, 5e-5, 2e-4), // 1.22e-05 / 3.99e-05
-            (Compression, Shipping, 5e-5, 0.002), // 1.15e-05 / 0.000622
-            (Detection, Oversampled, 0.05, NAN), // 0.00778
-            (Detection, Shipping, 0.5, NAN), // 0.141
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.77e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.83e-09
+            (Aliasing, Oversampled, -99.0, NAN), // -101
+            (Aliasing, Shipping, -103.0, NAN), // -105 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -10.7 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00491
+            (Bla, Shipping, 0.005, 0.005), // 0.000978 / 0.00133
+            (Compression, Oversampled, 2e-5, 2e-4), // 3.39e-06 / 3.82e-05
+            (Compression, Shipping, 2e-5, 5e-5), // 3.34e-06 / 9.15e-06
+            (Detection, Oversampled, 0.05, NAN), // 0.00789
+            (Detection, Shipping, 0.005, NAN), // 0.000811
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.42e-14
+            (GroupDelay, Shipping, 2e-4, NAN), // 3.29e-11
             (Harmonics, Oversampled, 1.0, 0.1), // 0.245 / 0.0227
-            (Harmonics, Shipping, 5.0, 0.5), // 1.28 / 0.095
-            (OperatingPoint, Oversampled, 1e-4, NAN), // 3.21e-05 — FINDING: ngspice's gate sits 4.3 µV up (4.3 pA in 1 MΩ; not gmin)
-            (OperatingPoint, Shipping, 1e-4, NAN), // 3.21e-05
-            (Response, Oversampled, 5e-5, 5e-4), // 1.45e-05 / 7.98e-05
-            (Response, Shipping, 5e-5, 0.05), // 1.37e-05 / 0.0116
-            (ThdN, Oversampled, 5e-6, NAN), // 1.25e-06
-            (ThdN, Shipping, 0.001, NAN), // 0.000299 — aliasing at the host rate
+            (Harmonics, Shipping, 0.5, 0.05), // 0.115 / 0.0106
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 3.65e-10 — R12: closed (was 3.2e-5: SPICE's junction gmin, 4.3 pA in 1 MΩ)
+            (OperatingPoint, Shipping, 2e-9, NAN), // 3.65e-10
+            (Response, Oversampled, 2e-8, 2e-8), // 3.44e-09 / 5.03e-09
+            (Response, Shipping, 1e-7, 0.002), // 1.89e-08 / 0.000448
+            (ThdN, Oversampled, 2e-4, NAN), // 8.4e-05 — RAISED from 5e-6 (R12): DK now carries the gate junction's gmin (its bias to 3.7e-10 V, was 3.2e-5), which moves THD+N at −20 dB by 1e-5 of itself; 5e-6 dB sat below the reference's own resolution (ngspice's deck tolerances move this figure 1.5e-4 dB)
+            (ThdN, Shipping, 2e-4, NAN), // 3.4e-05 — aliasing as it ships
         ],
         ("jfet_booster_static", Tier::T0) => &[
-            (Aliasing, Oversampled, -95.0, NAN), // -100
-            (Aliasing, Shipping, -85.0, NAN), // -91.2 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -10.6 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00494
-            (Bla, Shipping, 0.1, 0.5), // 0.0213 / 0.144
-            (Compression, Oversampled, 5e-5, 2e-4), // 1.22e-05 / 3.99e-05
-            (Compression, Shipping, 5e-5, 0.002), // 1.15e-05 / 0.000622
-            (Detection, Oversampled, 0.05, NAN), // 0.00778
-            (Detection, Shipping, 0.5, NAN), // 0.141
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.77e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.83e-09
+            (Aliasing, Oversampled, -99.0, NAN), // -101
+            (Aliasing, Shipping, -103.0, NAN), // -105 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -10.7 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.005, 0.02), // 0.00113 / 0.00492
+            (Bla, Shipping, 0.005, 0.005), // 0.000977 / 0.00104
+            (Compression, Oversampled, 2e-5, 2e-4), // 3.34e-06 / 3.79e-05
+            (Compression, Shipping, 1e-5, 5e-5), // 3.3e-06 / 9.09e-06
+            (Detection, Oversampled, 0.05, NAN), // 0.00797
+            (Detection, Shipping, 0.005, NAN), // 0.000792
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.27e-14
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.85e-11
             (Harmonics, Oversampled, 1.0, 0.1), // 0.245 / 0.0227
-            (Harmonics, Shipping, 5.0, 0.5), // 1.28 / 0.095
-            (OperatingPoint, Oversampled, 1e-4, NAN), // 3.21e-05 — FINDING: ngspice's gate sits 4.3 µV up (4.3 pA in 1 MΩ; not gmin)
-            (OperatingPoint, Shipping, 1e-4, NAN), // 3.21e-05
-            (Response, Oversampled, 5e-5, 5e-4), // 1.45e-05 / 7.98e-05
-            (Response, Shipping, 5e-5, 0.05), // 1.37e-05 / 0.0116
-            (ThdN, Oversampled, 5e-6, NAN), // 1.25e-06
-            (ThdN, Shipping, 0.001, NAN), // 0.000299 — aliasing at the host rate
+            (Harmonics, Shipping, 0.5, 0.05), // 0.115 / 0.0106
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 3.65e-10 — R12: closed (was 3.2e-5: SPICE's junction gmin, 4.3 pA in 1 MΩ)
+            (OperatingPoint, Shipping, 2e-9, NAN), // 3.65e-10
+            (Response, Oversampled, 1e-8, 2e-8), // 2.92e-09 / 5.01e-09
+            (Response, Shipping, 1e-7, 0.001), // 1.83e-08 / 0.000167
+            (ThdN, Oversampled, 2e-4, NAN), // 8.4e-05 — RAISED from 5e-6 (R12): DK now carries the gate junction's gmin (its bias to 3.7e-10 V, was 3.2e-5), which moves THD+N at −20 dB by 1e-5 of itself; 5e-6 dB sat below the reference's own resolution (ngspice's deck tolerances move this figure 1.5e-4 dB)
+            (ThdN, Shipping, 2e-4, NAN), // 3.4e-05 — aliasing as it ships
         ],
         ("opamp_clipper/hand", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -90.0, NAN), // -97.5 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -55.0 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.001, 0.1), // 0.000317 / 0.021
-            (Bla, Shipping, 2.0, 50.0), // 0.489 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 1e-4, 5e-4), // 1.9e-05 / 0.000118
-            (Compression, Shipping, 0.02, 0.1), // 0.00404 / 0.0327
-            (Detection, Oversampled, 5e-4, NAN), // 0.000107
-            (Detection, Shipping, 0.5, NAN), // 0.105
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.001, 0.1), // 0.000316 / 0.021
+            (Bla, Shipping, 0.02, 0.5), // 0.00361 / 0.0887 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (Compression, Oversampled, 1e-4, 5e-4), // 1.81e-05 / 0.000119
+            (Compression, Shipping, 2e-4, 0.002), // 6.54e-05 / 0.0005
+            (Detection, Oversampled, 5e-4, NAN), // 0.000106
+            (Detection, Shipping, 0.005, NAN), // 0.000685
             (GroupDelay, Oversampled, 2e-4, NAN), // 1.68e-09
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.45e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 3.91e-09
             (Harmonics, Oversampled, 0.5, 0.05), // 0.0717 / 0.0106
-            (Harmonics, Shipping, 0.5, 20.0), // 0.147 / 4.12
+            (Harmonics, Shipping, 0.5, 0.2), // 0.0706 / 0.0445
             (OperatingPoint, Oversampled, 1e-9, NAN), // 0
             (OperatingPoint, Shipping, 1e-9, NAN), // 0
-            (Response, Oversampled, 0.005, 0.1), // 0.000826 / 0.0224
-            (Response, Shipping, 2.0, 50.0), // 0.49 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.002, NAN), // 0.000612
-            (ThdN, Shipping, 0.05, NAN), // 0.0139 — aliasing at the host rate
+            (Response, Oversampled, 0.005, 0.1), // 0.000827 / 0.0224
+            (Response, Shipping, 0.01, 0.5), // 0.00327 / 0.0901 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (ThdN, Oversampled, 0.002, NAN), // 0.000608
+            (ThdN, Shipping, 0.005, NAN), // 0.000764 — aliasing as it ships
         ],
         ("mosfet_booster", Tier::T0) => &[
-            (Aliasing, Oversampled, -95.0, NAN), // -104
-            (Aliasing, Shipping, -40.0, NAN), // -46.1 — aliasing at the host rate
-            (Anmr, Shipping, 15.0, NAN), // 9.1 — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
-            (Bla, Shipping, 1.0, 5.0), // 0.205 / 1.13
-            (Compression, Oversampled, 2e-5, 0.001), // 3.34e-06 / 0.000228
-            (Compression, Shipping, 5e-4, 0.005), // 7.57e-05 / 0.00163 (R11: the whole card)
-            (Detection, Oversampled, 1.0, NAN), // 0.224
-            (Detection, Shipping, 2.0, NAN), // 0.414
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.46e-09
-            (Harmonics, Oversampled, 0.2, 0.5), // 0.0406 / 0.148
-            (Harmonics, Shipping, 1.0, 10.0), // 0.193 / 2.7 (R11: the whole card)
-            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
-            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
-            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
-            (Response, Shipping, 0.01, 2.0), // 0.00262 / 0.423 (R11: the whole card)
-            (ThdN, Oversampled, 0.01, NAN), // 0.00197
-            (ThdN, Shipping, 0.02, NAN), // 0.00408 — aliasing at the host rate
+            (Aliasing, Oversampled, -111.0, NAN), // -114
+            (Aliasing, Shipping, -82.0, NAN), // -84.6 — aliasing as it ships
+            (Anmr, Shipping, 11.0, NAN), // 7.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.005, 0.01), // 0.000964 / 0.00231
+            (Bla, Shipping, 0.005, 0.05), // 0.00164 / 0.00765
+            (Compression, Oversampled, 2e-5, 2e-4), // 3.39e-06 / 4.27e-05
+            (Compression, Shipping, 2e-5, 5e-4), // 3.38e-06 / 0.000141 (R11: the whole card)
+            (Detection, Oversampled, 1.0, NAN), // 0.223
+            (Detection, Shipping, 1.0, NAN), // 0.224
+            (GroupDelay, Oversampled, 2e-4, NAN), // 5.25e-15
+            (GroupDelay, Shipping, 2e-4, NAN), // 7.88e-11
+            (Harmonics, Oversampled, 0.2, 0.05), // 0.0404 / 0.0162
+            (Harmonics, Shipping, 0.2, 0.2), // 0.0403 / 0.0538 (R11: the whole card)
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 8.84e-08
+            (OperatingPoint, Shipping, 5e-7, NAN), // 8.84e-08
+            (Response, Oversampled, 5e-7, 2e-8), // 7.44e-08 / 5.59e-09
+            (Response, Shipping, 5e-5, 0.02), // 1.66e-05 / 0.00368 (R11: the whole card)
+            (ThdN, Oversampled, 0.01, NAN), // 0.0017
+            (ThdN, Shipping, 0.01, NAN), // 0.00175 — aliasing as it ships
         ],
         ("mosfet_booster_static", Tier::T0) => &[
-            (Aliasing, Oversampled, -95.0, NAN), // -104
-            (Aliasing, Shipping, -40.0, NAN), // -46.1 — aliasing at the host rate
-            (Anmr, Shipping, 15.0, NAN), // 9.1 — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -101.0, NAN), // -104
+            (Aliasing, Shipping, -77.0, NAN), // -79.3 — aliasing as it ships
+            (Anmr, Shipping, 11.0, NAN), // 7.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.05, 0.2), // 0.00683 / 0.0433
-            (Bla, Shipping, 1.0, 5.0), // 0.205 / 1.13
+            (Bla, Shipping, 0.01, 0.05), // 0.00167 / 0.0106
             (Compression, Oversampled, 2e-5, 0.001), // 3.34e-06 / 0.000228
-            (Compression, Shipping, 5e-5, 0.005), // 8.18e-06 / 0.00129
+            (Compression, Shipping, 1e-5, 5e-4), // 3.32e-06 / 0.000105
             (Detection, Oversampled, 1.0, NAN), // 0.224
-            (Detection, Shipping, 2.0, NAN), // 0.414
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.46e-09
+            (Detection, Shipping, 1.0, NAN), // 0.224
+            (GroupDelay, Oversampled, 2e-4, NAN), // 7.67e-15
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.26e-11
             (Harmonics, Oversampled, 0.2, 0.5), // 0.0406 / 0.148
-            (Harmonics, Shipping, 0.2, 2.0), // 0.0431 / 0.546
-            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
-            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
-            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
-            (Response, Shipping, 2e-5, 0.05), // 5.86e-06 / 0.00918
+            (Harmonics, Shipping, 0.2, 0.2), // 0.0406 / 0.0643
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 8.84e-08
+            (OperatingPoint, Shipping, 5e-7, NAN), // 8.84e-08
+            (Response, Oversampled, 5e-7, 5e-8), // 7.45e-08 / 7.34e-09
+            (Response, Shipping, 5e-7, 5e-4), // 7.97e-08 / 0.000132
             (ThdN, Oversampled, 0.01, NAN), // 0.00197
-            (ThdN, Shipping, 0.02, NAN), // 0.00408 — aliasing at the host rate
+            (ThdN, Shipping, 0.01, NAN), // 0.00186 — aliasing as it ships
         ],
         ("ota_vca", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -121.3 — inaudible (Kahles et al.'s −10 dB)
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00105
-            (Bla, Shipping, 0.2, 1.0), // 0.053 / 0.177
-            (Compression, Oversampled, 2e-5, 1e-5), // 5.2e-06 / 1.36e-07
-            (Compression, Shipping, 2e-5, 1e-5), // 5.2e-06 / 1.36e-07
+            (Bla, Shipping, 0.005, 0.005), // 0.000968 / 0.00143
+            (Compression, Oversampled, 2e-5, 5e-7), // 5.2e-06 / 1.36e-07
+            (Compression, Shipping, 2e-5, 5e-7), // 5.2e-06 / 1.36e-07
             (Detection, Oversampled, 0.01, NAN), // 0.00257
-            (Detection, Shipping, 0.2, NAN), // 0.0404
+            (Detection, Shipping, 0.01, NAN), // 0.00257
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
             (Harmonics, Oversampled, 0.01, 5e-4), // 0.00206 / 8.53e-05
             (Harmonics, Shipping, 0.01, 5e-4), // 0.00206 / 8.53e-05
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 7.25e-06
-            (OperatingPoint, Shipping, 5e-5, NAN), // 7.25e-06
-            (Response, Oversampled, 0.005, NAN), // 0.00122
-            (Response, Shipping, 0.005, NAN), // 0.00122
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 3.9e-10
+            (OperatingPoint, Shipping, 2e-9, NAN), // 3.9e-10
+            (Response, Oversampled, 2e-9, NAN), // 5.86e-10
+            (Response, Shipping, 2e-9, NAN), // 5.86e-10
             (ThdN, Oversampled, 5e-4, NAN), // 8.6e-05
-            (ThdN, Shipping, 5e-4, NAN), // 8.6e-05 — aliasing at the host rate
+            (ThdN, Shipping, 5e-4, NAN), // 8.6e-05 — aliasing as it ships
         ],
         ("opamp_clipper", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -90.0, NAN), // -97.5 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -55.0 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.001, 0.1), // 0.000317 / 0.021
-            (Bla, Shipping, 2.0, 50.0), // 0.489 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 1e-4, 5e-4), // 1.9e-05 / 0.000118
-            (Compression, Shipping, 0.02, 0.1), // 0.00404 / 0.0327
-            (Detection, Oversampled, 5e-4, NAN), // 0.000107
-            (Detection, Shipping, 0.5, NAN), // 0.105
-            (GroupDelay, Oversampled, 2e-4, NAN), // 3.43e-12
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.45e-07
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.001, 0.1), // 0.000316 / 0.021
+            (Bla, Shipping, 0.02, 0.5), // 0.00361 / 0.0887 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (Compression, Oversampled, 1e-4, 5e-4), // 1.81e-05 / 0.000119
+            (Compression, Shipping, 2e-4, 0.002), // 6.54e-05 / 0.0005
+            (Detection, Oversampled, 5e-4, NAN), // 0.000106
+            (Detection, Shipping, 0.005, NAN), // 0.000685
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.41e-13
+            (GroupDelay, Shipping, 2e-4, NAN), // 3.78e-09
             (Harmonics, Oversampled, 0.5, 0.05), // 0.0717 / 0.0106
-            (Harmonics, Shipping, 0.5, 20.0), // 0.147 / 4.12
+            (Harmonics, Shipping, 0.5, 0.2), // 0.0706 / 0.0445
             (OperatingPoint, Oversampled, 1e-9, NAN), // 0
             (OperatingPoint, Shipping, 1e-9, NAN), // 0
-            (Response, Oversampled, 5e-6, 1e-5), // 8.22e-07 / 2.39e-06
-            (Response, Shipping, 2.0, 50.0), // 0.49 / 9.37 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.002, NAN), // 0.000612
-            (ThdN, Shipping, 0.05, NAN), // 0.0139 — aliasing at the host rate
+            (Response, Oversampled, 1e-7, 1e-7), // 1.85e-08 / 3.25e-08
+            (Response, Shipping, 0.01, 0.5), // 0.00325 / 0.0901 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (ThdN, Oversampled, 0.002, NAN), // 0.000608
+            (ThdN, Shipping, 0.005, NAN), // 0.000764 — aliasing as it ships
         ],
         ("power_supply", Tier::T0) => &[
-            (Dynamics, Oversampled, 5e-4, 0.02), // 0.000113 / 0.00488
+            (Dynamics, Oversampled, 5e-4, 0.02), // 0.000113 / 0.00489
             (Dynamics, Shipping, 0.01, 0.1), // 0.00236 / 0.0319
             (Harmonics, Oversampled, 0.05, 1.0), // 0.00668 / 0.194
             (Harmonics, Shipping, 0.2, 5.0), // 0.0507 / 1.28
-            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.45e-05
+            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.49e-05
             (OperatingPoint, Shipping, 0.005, NAN), // 0.000679
         ],
         ("push_pull", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -118.9 — inaudible (Kahles et al.'s −10 dB)
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.2, 2.0), // 0.0517 / 0.367
-            (Bla, Shipping, 0.2, 2.0), // 0.0517 / 0.367
-            (Compression, Oversampled, 5e-5, 1e-5), // 8.39e-06 / 3.25e-07
-            (Compression, Shipping, 5e-5, 1e-5), // 8.39e-06 / 3.25e-07
+            (Bla, Shipping, 0.005, 0.002), // 0.00102 / 0.000538
+            (Compression, Oversampled, 5e-5, 1e-6), // 8.39e-06 / 3.25e-07
+            (Compression, Shipping, 5e-5, 1e-6), // 8.39e-06 / 3.25e-07
             (Detection, Oversampled, 0.2, NAN), // 0.0642
-            (Detection, Shipping, 0.2, NAN), // 0.0642
+            (Detection, Shipping, 0.005, NAN), // 0.00164
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
             (Harmonics, Oversampled, 0.01, 0.001), // 0.00286 / 0.000208
             (Harmonics, Shipping, 0.01, 0.001), // 0.00286 / 0.000208
             (OperatingPoint, Oversampled, 5e-8, NAN), // 7.5e-09
             (OperatingPoint, Shipping, 5e-8, NAN), // 7.5e-09
-            (Response, Oversampled, 1e-6, NAN), // 4.68e-10
-            (Response, Shipping, 1e-6, NAN), // 4.68e-10
+            (Response, Oversampled, 2e-9, NAN), // 4.68e-10
+            (Response, Shipping, 2e-9, NAN), // 4.68e-10
             (ThdN, Oversampled, 5e-4, NAN), // 0.000101
-            (ThdN, Shipping, 5e-4, NAN), // 0.000101 — aliasing at the host rate
+            (ThdN, Shipping, 5e-4, NAN), // 0.000101 — aliasing as it ships
         ],
         ("push_pull_pentode", Tier::T0) => &[
-            (Aliasing, Oversampled, -85.0, NAN), // -91.4
-            (Aliasing, Shipping, -85.0, NAN), // -91.4 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -27.4 — inaudible (Kahles et al.'s −10 dB)
+            (Aliasing, Oversampled, -89.0, NAN), // -91.4
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -75.6 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.2, 0.5), // 0.0426 / 0.149
-            (Bla, Shipping, 0.2, 0.5), // 0.0426 / 0.149
-            (Compression, Oversampled, 5e-5, 1e-5), // 9.12e-06 / 4.32e-08
-            (Compression, Shipping, 5e-5, 1e-5), // 9.12e-06 / 4.32e-08
+            (Bla, Shipping, 0.005, 0.005), // 0.001 / 0.000775
+            (Compression, Oversampled, 5e-5, 2e-7), // 9.12e-06 / 4.32e-08
+            (Compression, Shipping, 5e-5, 2e-7), // 9.11e-06 / 4.32e-08
             (Detection, Oversampled, 0.2, NAN), // 0.0376
-            (Detection, Shipping, 0.2, NAN), // 0.0376
+            (Detection, Shipping, 0.005, NAN), // 0.0013
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
             (Harmonics, Oversampled, 0.05, 2e-4), // 0.00953 / 4.61e-05
-            (Harmonics, Shipping, 0.05, 2e-4), // 0.00953 / 4.61e-05
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.08e-05
-            (OperatingPoint, Shipping, 5e-5, NAN), // 1.08e-05
-            (Response, Oversampled, 1e-6, NAN), // 5.65e-09
-            (Response, Shipping, 1e-6, NAN), // 5.65e-09
+            (Harmonics, Shipping, 0.02, 2e-4), // 0.00418 / 4.61e-05
+            (OperatingPoint, Oversampled, 1e-7, NAN), // 2.97e-08
+            (OperatingPoint, Shipping, 1e-7, NAN), // 2.97e-08
+            (Response, Oversampled, 2e-9, NAN), // 3.87e-10
+            (Response, Shipping, 2e-9, NAN), // 3.87e-10
             (ThdN, Oversampled, 5e-4, NAN), // 9.66e-05
-            (ThdN, Shipping, 5e-4, NAN), // 9.66e-05 — aliasing at the host rate
+            (ThdN, Shipping, 5e-4, NAN), // 9.69e-05 — aliasing as it ships
         ],
         ("triode_stage", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -121.2 — inaudible (Kahles et al.'s −10 dB)
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.02, 0.1), // 0.0057 / 0.0244
-            (Bla, Shipping, 0.02, 0.1), // 0.0057 / 0.0244
-            (Compression, Oversampled, 2e-5, 1e-5), // 3.34e-06 / 2.54e-08
-            (Compression, Shipping, 2e-5, 1e-5), // 3.34e-06 / 2.54e-08
+            (Bla, Shipping, 0.005, 2e-4), // 0.000968 / 6.51e-05
+            (Compression, Oversampled, 2e-5, 1e-7), // 3.34e-06 / 2.54e-08
+            (Compression, Shipping, 2e-5, 1e-7), // 3.34e-06 / 2.54e-08
             (Detection, Oversampled, 0.1, NAN), // 0.018
-            (Detection, Shipping, 0.1, NAN), // 0.018
+            (Detection, Shipping, 0.005, NAN), // 0.000774
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
-            (Harmonics, Oversampled, 0.002, 1e-5), // 0.000635 / 1.46e-06
-            (Harmonics, Shipping, 0.002, 1e-5), // 0.000635 / 1.46e-06
-            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.11e-05
-            (OperatingPoint, Shipping, 1e-4, NAN), // 2.11e-05
-            (Response, Oversampled, 5e-6, NAN), // 7.23e-07
-            (Response, Shipping, 5e-6, NAN), // 7.23e-07
+            (Harmonics, Oversampled, 0.002, 5e-6), // 0.000635 / 1.46e-06
+            (Harmonics, Shipping, 0.002, 5e-6), // 0.000635 / 1.46e-06
+            (OperatingPoint, Oversampled, 5e-9, NAN), // 7.6e-10
+            (OperatingPoint, Shipping, 5e-9, NAN), // 7.6e-10
+            (Response, Oversampled, 2e-9, NAN), // 5.68e-10
+            (Response, Shipping, 2e-9, NAN), // 5.68e-10
             (ThdN, Oversampled, 1e-4, NAN), // 2.29e-05
-            (ThdN, Shipping, 1e-4, NAN), // 2.29e-05 — aliasing at the host rate
+            (ThdN, Shipping, 1e-4, NAN), // 2.29e-05 — aliasing as it ships
         ],
         ("rangemaster", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -52.1 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.5, 1.0), // 0.137 / 0.325
-            (Bla, Shipping, 1.0, 20.0), // 0.189 / 3.37
-            (Compression, Oversampled, 0.2, 1.0), // 0.0495 / 0.249
-            (Compression, Shipping, 0.2, 1.0), // 0.0585 / 0.212
-            (Detection, Oversampled, 1.0, NAN), // 0.215
-            (Detection, Shipping, 1.0, NAN), // 0.231
-            (GroupDelay, Oversampled, 2e-4, NAN), // 7.08e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 6.65e-07
-            (Harmonics, Oversampled, 2.0, 5.0), // 0.394 / 1.35
-            (Harmonics, Shipping, 2.0, 2.0), // 0.354 / 0.549
-            (OperatingPoint, Oversampled, 0.02, NAN), // 0.0039 — FINDING: 3.9 mV off ngspice at the collector (open)
-            (OperatingPoint, Shipping, 0.02, NAN), // 0.0039
-            (Response, Oversampled, 0.5, 2.0), // 0.133 / 0.337 — FINDING: 0.13 dB of gain from the operating point
-            (Response, Shipping, 1.0, 10.0), // 0.184 / 3.22
-            (ThdN, Oversampled, 0.1, NAN), // 0.0272
-            (ThdN, Shipping, 0.05, NAN), // 0.00715 — aliasing at the host rate
+            (Bla, Oversampled, 0.02, 1.0), // 0.00421 / 0.186
+            (Bla, Shipping, 0.2, 20.0), // 0.0479 / 3.35
+            (Compression, Oversampled, 0.002, 0.01), // 0.00058 / 0.00255
+            (Compression, Shipping, 0.05, 0.2), // 0.00929 / 0.041
+            (Detection, Oversampled, 0.01, NAN), // 0.00327
+            (Detection, Shipping, 0.2, NAN), // 0.0611
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.47e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 5.33e-07
+            (Harmonics, Oversampled, 0.01, 0.2), // 0.00311 / 0.0461
+            (Harmonics, Shipping, 0.2, 2.0), // 0.0404 / 0.755
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 9.19e-08 — R12: closed (was 3.9 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 5e-7, NAN), // 9.19e-08
+            (Response, Oversampled, 1e-5, 2e-5), // 2.84e-06 / 6.54e-06 — R12: closed with the operating point (was 0.13 dB)
+            (Response, Shipping, 0.2, 10.0), // 0.0432 / 3.24
+            (ThdN, Oversampled, 0.01, NAN), // 0.00194
+            (ThdN, Shipping, 0.05, NAN), // 0.031 — aliasing as it ships
         ],
         ("rangemaster_static", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
             (Anmr, Shipping, -10.0, NAN), // -52.9 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.5, 1.0), // 0.137 / 0.325
-            (Bla, Shipping, 1.0, 20.0), // 0.189 / 3.37
-            (Compression, Oversampled, 0.2, 1.0), // 0.0495 / 0.249
-            (Compression, Shipping, 0.2, 1.0), // 0.0585 / 0.212
-            (Detection, Oversampled, 1.0, NAN), // 0.215
-            (Detection, Shipping, 1.0, NAN), // 0.231
-            (GroupDelay, Oversampled, 2e-4, NAN), // 7.08e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 6.65e-07
-            (Harmonics, Oversampled, 2.0, 5.0), // 0.394 / 1.35
-            (Harmonics, Shipping, 2.0, 2.0), // 0.354 / 0.549
-            (OperatingPoint, Oversampled, 0.02, NAN), // 0.0039 — FINDING: 3.9 mV off ngspice at the collector (open)
-            (OperatingPoint, Shipping, 0.02, NAN), // 0.0039
-            (Response, Oversampled, 0.5, 2.0), // 0.133 / 0.337 — FINDING: 0.13 dB of gain from the operating point
-            (Response, Shipping, 1.0, 10.0), // 0.184 / 3.22
-            (ThdN, Oversampled, 0.1, NAN), // 0.0272
-            (ThdN, Shipping, 0.05, NAN), // 0.00715 — aliasing at the host rate
+            (Bla, Oversampled, 0.02, 1.0), // 0.00522 / 0.198
+            (Bla, Shipping, 0.2, 20.0), // 0.0617 / 3.48
+            (Compression, Oversampled, 0.002, 0.01), // 0.000603 / 0.00243
+            (Compression, Shipping, 0.05, 0.2), // 0.00965 / 0.0389
+            (Detection, Oversampled, 0.02, NAN), // 0.00405
+            (Detection, Shipping, 0.5, NAN), // 0.0714
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.62e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 5.8e-07
+            (Harmonics, Oversampled, 0.02, 0.2), // 0.00354 / 0.0523
+            (Harmonics, Shipping, 0.2, 2.0), // 0.0435 / 0.853
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 9.19e-08 — R12: closed (was 3.9 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 5e-7, NAN), // 9.19e-08
+            (Response, Oversampled, 1e-5, 5e-5), // 3.17e-06 / 7.64e-06 — R12: closed with the operating point (was 0.13 dB)
+            (Response, Shipping, 0.2, 10.0), // 0.0534 / 3.3
+            (ThdN, Oversampled, 0.01, NAN), // 0.00212
+            (ThdN, Shipping, 0.05, NAN), // 0.0339 — aliasing as it ships
         ],
         ("tube_screamer", Tier::T0) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -115.0, NAN), // -120 — aliasing at the host rate
-            (Anmr, Shipping, -10.0, NAN), // -103.7 — inaudible (Kahles et al.'s −10 dB)
-            (Bla, Oversampled, 0.2, 0.5), // 0.0455 / 0.109
-            (Bla, Shipping, 20.0, 50.0), // 4.33 / 8.4 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 5e-4, 0.005), // 7.09e-05 / 0.000779
-            (Compression, Shipping, 0.02, 0.2), // 0.00383 / 0.0519
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.2, 0.5), // 0.0456 / 0.109
+            (Bla, Shipping, 1.0, 2.0), // 0.19 / 0.442 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (Compression, Oversampled, 2e-4, 0.005), // 6.21e-05 / 0.000774
+            (Compression, Shipping, 0.001, 0.01), // 0.000241 / 0.0032
             (Detection, Oversampled, 0.01, NAN), // 0.00273
-            (Detection, Shipping, 1.0, NAN), // 0.203
-            (GroupDelay, Oversampled, 2e-4, NAN), // 3.74e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 8.9e-07
-            (Harmonics, Oversampled, 0.1, 1.0), // 0.0207 / 0.231
-            (Harmonics, Shipping, 10.0, 100.0), // 2.53 / 17.4
-            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.05e-08
-            (OperatingPoint, Shipping, 1e-7, NAN), // 3.05e-08
-            (Response, Oversampled, 5e-5, 1e-4), // 9.11e-06 / 3.1e-05
-            (Response, Shipping, 20.0, 50.0), // 4.33 / 6.8 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.001, NAN), // 0.000274
-            (ThdN, Shipping, 0.1, NAN), // 0.0189 — aliasing at the host rate
+            (Detection, Shipping, 0.05, NAN), // 0.0112
+            (GroupDelay, Oversampled, 2e-4, NAN), // 8.79e-13
+            (GroupDelay, Shipping, 2e-4, NAN), // 5.48e-08
+            (Harmonics, Oversampled, 0.1, 1.0), // 0.0208 / 0.231
+            (Harmonics, Shipping, 0.5, 5.0), // 0.108 / 0.945
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 5.31e-10
+            (OperatingPoint, Shipping, 2e-9, NAN), // 5.31e-10
+            (Response, Oversampled, 1e-6, 2e-6), // 1.69e-07 / 5.78e-07
+            (Response, Shipping, 1.0, 2.0), // 0.192 / 0.402 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (ThdN, Oversampled, 0.001, NAN), // 0.000298
+            (ThdN, Shipping, 0.005, NAN), // 0.00116 — aliasing as it ships
         ],
         ("diode_clipper", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -62
-            (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
-            (Anmr, Shipping, 75.0, NAN), // 68.3 / 57.6 / 28.6 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.493
-            (Bla, Shipping, 20.0, 50.0), // 5.33 / 11.8 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 0.1, 0.5), // 0.0247 / 0.16
-            (Compression, Shipping, 5.0, 100.0), // 0.703 / 19.5
-            (Detection, Oversampled, 0.1, NAN), // 0.0191
-            (Detection, Shipping, 500.0, NAN), // 89.1
-            (Dynamics, Oversampled, 5e-5, 0.05), // 1.15e-05 / 0.00843
-            (Dynamics, Shipping, 5e-4, 0.5), // 9.66e-05 / 0.101
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.73e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 7.26e-07
-            (Harmonics, Oversampled, 100.0, 200.0), // 17.6 / 45.8
-            (Harmonics, Shipping, 100.0, 500.0), // 21.7 / 77.3
-            (Intermodulation, Oversampled, 20.0, 20.0), // 5.19 / 5.1
-            (Intermodulation, Shipping, 200.0, 200.0), // 50.9 / 57.2
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
-            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
-            (Response, Oversampled, 0.02, 0.1), // 0.0058 / 0.0228 — FINDING: the deck's 4 pF Cjo, which DK leaves out (R11)
-            (Response, Shipping, 20.0, 50.0), // 5.33 / 11.3 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 200.0, NAN), // 48.8
-            (ThdN, Shipping, 500.0, NAN), // 98.9 — aliasing at the host rate
+            (Aliasing, Oversampled, -59.0, NAN), // -61.7
+            (Aliasing, Shipping, -76.0, NAN), // -78.3 — aliasing as it ships
+            (Anmr, Shipping, 1.0, NAN), // -2.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 1.0, 2.0), // 0.173 / 0.515
+            (Bla, Shipping, 0.2, 0.5), // 0.0493 / 0.15 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (Compression, Oversampled, 0.1, 0.5), // 0.0287 / 0.194
+            (Compression, Shipping, 0.05, 0.2), // 0.00819 / 0.0567
+            (Detection, Oversampled, 0.1, NAN), // 0.0234
+            (Detection, Shipping, 0.05, NAN), // 0.00686
+            (Dynamics, Oversampled, 5e-5, 0.05), // 1.18e-05 / 0.00788
+            (Dynamics, Shipping, 5e-5, 0.01), // 6.8e-06 / 0.00246
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.5e-13
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.12e-08
+            (Harmonics, Oversampled, 100.0, 200.0), // 17.7 / 42.3
+            (Harmonics, Shipping, 50.0, 2.0), // 9.02 / 0.453
+            (Intermodulation, Oversampled, 20.0, 20.0), // 5.23 / 3.81
+            (Intermodulation, Shipping, 2.0, 2.0), // 0.516 / 0.528
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 1.06e-25
+            (OperatingPoint, Shipping, 1e-9, NAN), // 1.06e-25
+            (Response, Oversampled, 5e-9, 2e-8), // 1.12e-09 / 4.08e-09 — FINDING: the deck's 4 pF Cjo, which DK leaves out (R11)
+            (Response, Shipping, 0.2, 0.5), // 0.051 / 0.149 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (ThdN, Oversampled, 200.0, NAN), // 49.1
+            (ThdN, Shipping, 100.0, NAN), // 32.5 — aliasing as it ships
         ],
         ("ce_stage", Tier::T1) => &[
-            (Aliasing, Oversampled, -40.0, NAN), // -48.6
-            (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
-            (Anmr, Shipping, 65.0, NAN), // 58.8 / 47.9 / 37.8 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.02, 0.05), // 0.00389 / 0.0141
-            (Bla, Shipping, 1.0, 5.0), // 0.224 / 0.691
-            (Compression, Oversampled, 0.001, 0.01), // 0.000244 / 0.0022
-            (Compression, Shipping, 0.02, 5.0), // 0.00606 / 0.683 (R11: the whole card)
+            (Aliasing, Oversampled, -72.0, NAN), // -74.7
+            (Aliasing, Shipping, -57.0, NAN), // -59.8 — aliasing as it ships
+            (Anmr, Shipping, 17.0, NAN), // 13.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.005, 0.02), // 0.00101 / 0.00518
+            (Bla, Shipping, 0.005, 0.05), // 0.00139 / 0.0129
+            (Compression, Oversampled, 0.001, 0.001), // 0.00028 / 0.000209
+            (Compression, Shipping, 0.002, 0.005), // 0.000392 / 0.00102 (R11: the whole card)
             (Detection, Oversampled, 50.0, NAN), // 13.8
             (Detection, Shipping, 50.0, NAN), // 13.8
-            (Dynamics, Oversampled, 5e-4, 0.02), // 8.79e-05 / 0.00601
-            (Dynamics, Shipping, 0.002, 0.2), // 0.000585 / 0.0501
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.98e-10
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.36e-08
-            (Harmonics, Oversampled, 1.0, 10.0), // 0.17 / 2.04
-            (Harmonics, Shipping, 50.0, 50.0), // 7.37 / 10.2 (R11: the whole card)
-            (Intermodulation, Oversampled, 0.2, 2.0), // 0.0265 / 0.345 (R11: the whole card)
-            (Intermodulation, Shipping, 2.0, 50.0), // 0.382 / 9.29 (R11: the whole card)
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.33e-05
-            (OperatingPoint, Shipping, 5e-5, NAN), // 1.33e-05
-            (Response, Oversampled, 5e-4, 0.002), // 0.00015 / 0.000361
-            (Response, Shipping, 0.005, 2.0), // 0.000916 / 0.532 (R11: the whole card)
+            (Dynamics, Oversampled, 2e-4, 0.02), // 5e-05 / 0.0038
+            (Dynamics, Shipping, 2e-4, 0.02), // 5e-05 / 0.0038
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.56e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.62e-10
+            (Harmonics, Oversampled, 0.5, 0.5), // 0.0857 / 0.149
+            (Harmonics, Shipping, 0.2, 0.5), // 0.0495 / 0.135 (R11: the whole card)
+            (Intermodulation, Oversampled, 0.1, 2.0), // 0.0265 / 0.345 (R11: the whole card)
+            (Intermodulation, Shipping, 0.1, 0.2), // 0.0266 / 0.0469 (R11: the whole card)
+            (OperatingPoint, Oversampled, 5e-6, NAN), // 9.02e-07
+            (OperatingPoint, Shipping, 5e-6, NAN), // 9.02e-07
+            (Response, Oversampled, 5e-6, 1e-5), // 7.76e-07 / 1.77e-06
+            (Response, Shipping, 2e-5, 0.02), // 4.22e-06 / 0.00446 (R11: the whole card)
             (ThdN, Oversampled, 0.1, NAN), // 0.0277
-            (ThdN, Shipping, 20.0, NAN), // 5.27 — aliasing at the host rate
+            (ThdN, Shipping, 0.1, NAN), // 0.0277 — aliasing as it ships
         ],
         ("ce_stage_static", Tier::T1) => &[
-            (Aliasing, Oversampled, -40.0, NAN), // -48.6
-            (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
-            (Anmr, Shipping, 65.0, NAN), // 58.8 / 47.7 / 37.8 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -46.0, NAN), // -48.6
+            (Aliasing, Shipping, -57.0, NAN), // -59.6 — aliasing as it ships
+            (Anmr, Shipping, 17.0, NAN), // 13.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.02, 0.05), // 0.00389 / 0.0141
-            (Bla, Shipping, 1.0, 5.0), // 0.224 / 0.691
+            (Bla, Shipping, 0.005, 0.05), // 0.00149 / 0.00914
             (Compression, Oversampled, 0.001, 0.01), // 0.000244 / 0.0022
-            (Compression, Shipping, 0.002, 0.2), // 0.000361 / 0.0559
+            (Compression, Shipping, 0.001, 0.005), // 0.000245 / 0.00068
             (Detection, Oversampled, 50.0, NAN), // 13.8
             (Detection, Shipping, 50.0, NAN), // 13.8
-            (Dynamics, Oversampled, 5e-4, 0.02), // 8.79e-05 / 0.00601
-            (Dynamics, Shipping, 0.002, 0.2), // 0.000585 / 0.0501
-            (GroupDelay, Oversampled, 2e-4, NAN), // 2.98e-10
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.36e-08
+            (Dynamics, Oversampled, 5e-4, 0.02), // 8.78e-05 / 0.00601
+            (Dynamics, Shipping, 2e-4, 0.02), // 4.96e-05 / 0.00382
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.58e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.11e-10
             (Harmonics, Oversampled, 1.0, 10.0), // 0.17 / 2.04
-            (Harmonics, Shipping, 5.0, 50.0), // 1.01 / 10.5
+            (Harmonics, Shipping, 0.2, 0.5), // 0.0495 / 0.13
             (Intermodulation, Oversampled, 0.2, 0.1), // 0.0512 / 0.03
-            (Intermodulation, Shipping, 1.0, 0.5), // 0.239 / 0.139
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.33e-05
-            (OperatingPoint, Shipping, 5e-5, NAN), // 1.33e-05
-            (Response, Oversampled, 5e-4, 0.002), // 0.00015 / 0.000361
-            (Response, Shipping, 5e-4, 0.5), // 0.000145 / 0.0871
+            (Intermodulation, Shipping, 0.1, 0.01), // 0.0266 / 0.00321
+            (OperatingPoint, Oversampled, 5e-6, NAN), // 9.02e-07
+            (OperatingPoint, Shipping, 5e-6, NAN), // 9.02e-07
+            (Response, Oversampled, 5e-6, 1e-5), // 7.76e-07 / 1.77e-06
+            (Response, Shipping, 5e-6, 0.005), // 6.9e-07 / 0.00124
             (ThdN, Oversampled, 0.1, NAN), // 0.0277
-            (ThdN, Shipping, 20.0, NAN), // 5.27 — aliasing at the host rate
+            (ThdN, Shipping, 0.1, NAN), // 0.0277 — aliasing as it ships
         ],
         ("common_cathode", Tier::T1) => &[
-            (Aliasing, Oversampled, -90.0, NAN), // -96.5
-            (Aliasing, Shipping, -25.0, NAN), // -32.7 — aliasing at the host rate
-            (Anmr, Shipping, 20.0, NAN), // 12.7 / 3.2 / -3.5 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -94.0, NAN), // -96.5
+            (Aliasing, Shipping, -30.0, NAN), // -32.7 — aliasing as it ships
+            (Anmr, Shipping, 16.0, NAN), // 12.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000382
             (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
@@ -609,118 +611,118 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Detection, Shipping, 0.2, NAN), // 0.0617
             (Dynamics, Oversampled, 0.001, 5e-4), // 0.000319 / 9.51e-05
             (Dynamics, Shipping, 0.01, 0.005), // 0.00181 / 0.00154
-            (GroupDelay, Oversampled, 2e-4, NAN), // 3.51e-14
+            (GroupDelay, Oversampled, 2e-4, NAN), // 2.43e-15
             (GroupDelay, Shipping, 2e-4, NAN), // 1.22e-09
             (Harmonics, Oversampled, 2.0, 0.2), // 0.598 / 0.0663
             (Harmonics, Shipping, 10.0, 5.0), // 2.07 / 0.738
             (Intermodulation, Oversampled, 0.2, 0.05), // 0.0493 / 0.016
             (Intermodulation, Shipping, 0.5, 0.05), // 0.0828 / 0.0126
-            (OperatingPoint, Oversampled, 1e-5, NAN), // 2.51e-06
-            (OperatingPoint, Shipping, 1e-5, NAN), // 2.51e-06
-            (Response, Oversampled, 1e-6, 1e-5), // 1.26e-07 / 1.56e-07
-            (Response, Shipping, 5e-6, 0.05), // 8.06e-07 / 0.0078
+            (OperatingPoint, Oversampled, 5e-8, NAN), // 7.21e-09
+            (OperatingPoint, Shipping, 5e-8, NAN), // 7.21e-09
+            (Response, Oversampled, 5e-9, 1e-8), // 7.57e-10 / 2.25e-09
+            (Response, Shipping, 5e-6, 0.05), // 9.32e-07 / 0.0078
             (ThdN, Oversampled, 0.01, NAN), // 0.0017
-            (ThdN, Shipping, 0.5, NAN), // 0.163 — aliasing at the host rate
+            (ThdN, Shipping, 0.5, NAN), // 0.163 — aliasing as it ships
         ],
         ("common_cathode/hand", Tier::T1) => &[
-            (Aliasing, Oversampled, -85.0, NAN), // -92.6
-            (Aliasing, Shipping, -25.0, NAN), // -32.7 — aliasing at the host rate
-            (Anmr, Shipping, 20.0, NAN), // 12.7 / 3.2 / -3.5 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.000381
+            (Aliasing, Oversampled, -94.0, NAN), // -96.5
+            (Aliasing, Shipping, -30.0, NAN), // -32.7 — aliasing as it ships
+            (Anmr, Shipping, 16.0, NAN), // 12.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.005, 0.002), // 0.000968 / 0.000382
             (Bla, Shipping, 0.05, 0.2), // 0.012 / 0.0553
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000192
-            (Compression, Shipping, 0.001, 0.02), // 0.000245 / 0.00363
-            (Detection, Oversampled, 10.0, NAN), // 2.77
-            (Detection, Shipping, 20.0, NAN), // 5.91
-            (Dynamics, Oversampled, 0.001, 5e-4), // 0.000319 / 9.73e-05
+            (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.00363
+            (Detection, Oversampled, 0.05, NAN), // 0.0125
+            (Detection, Shipping, 0.2, NAN), // 0.0617
+            (Dynamics, Oversampled, 0.001, 5e-4), // 0.000319 / 9.51e-05
             (Dynamics, Shipping, 0.01, 0.005), // 0.00181 / 0.00154
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.64e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.82e-08
-            (Harmonics, Oversampled, 50.0, 0.2), // 7.86 / 0.0662
-            (Harmonics, Shipping, 50.0, 5.0), // 12.1 / 0.739
-            (Intermodulation, Oversampled, 0.5, 0.1), // 0.13 / 0.0179
-            (Intermodulation, Shipping, 1.0, 0.2), // 0.241 / 0.0447
-            (OperatingPoint, Oversampled, 1e-5, NAN), // 2.51e-06
-            (OperatingPoint, Shipping, 1e-5, NAN), // 2.51e-06
-            (Response, Oversampled, 0.01, 0.01), // 0.0018 / 0.00332
-            (Response, Shipping, 0.01, 0.05), // 0.00184 / 0.00749
-            (ThdN, Oversampled, 0.5, NAN), // 0.129
-            (ThdN, Shipping, 5.0, NAN), // 0.924 — aliasing at the host rate
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.39e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.48e-08
+            (Harmonics, Oversampled, 2.0, 0.2), // 0.598 / 0.0663
+            (Harmonics, Shipping, 10.0, 5.0), // 2.07 / 0.738
+            (Intermodulation, Oversampled, 0.2, 0.05), // 0.0493 / 0.016
+            (Intermodulation, Shipping, 0.5, 0.05), // 0.0828 / 0.0126
+            (OperatingPoint, Oversampled, 5e-8, NAN), // 7.21e-09
+            (OperatingPoint, Shipping, 5e-8, NAN), // 7.21e-09
+            (Response, Oversampled, 0.01, 0.01), // 0.00182 / 0.0033
+            (Response, Shipping, 0.01, 0.05), // 0.00183 / 0.00779
+            (ThdN, Oversampled, 0.01, NAN), // 0.0017
+            (ThdN, Shipping, 0.5, NAN), // 0.163 — aliasing as it ships
         ],
         ("fuzz_face", Tier::T1) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -35.0, NAN), // -44.6 — aliasing at the host rate
-            (Anmr, Shipping, 5.0, NAN), // -0.6 / -20.0 / -19.9 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
-            (Bla, Shipping, 20.0, 100.0), // 5.61 / 16.8 (R11: the whole card)
-            (Compression, Oversampled, 0.5, 1.0), // 0.121 / 0.227 — FINDING: +0.12 dB of gain from the operating point
-            (Compression, Shipping, 2.0, 20.0), // 0.641 / 3.88 (R11: the whole card)
-            (Detection, Oversampled, 1.0, NAN), // 0.326
-            (Detection, Shipping, 2.0, NAN), // 0.336
-            (Dynamics, Oversampled, 0.002, 0.1), // 0.000505 / 0.0257
-            (Dynamics, Shipping, 0.005, 2.0), // 0.000698 / 0.566 (R11: the whole card)
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.53e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.75e-07
-            (Harmonics, Oversampled, 5.0, 2.0), // 1.04 / 0.371
-            (Harmonics, Shipping, 20.0, 50.0), // 5.17 / 8.55 (R11: the whole card)
-            (Intermodulation, Oversampled, 2.0, 5.0), // 0.462 / 0.82
-            (Intermodulation, Shipping, 100.0, 1e3), // 25.2 / 170 (R11: the whole card)
-            (OperatingPoint, Oversampled, 0.05, NAN), // 0.00936 — FINDING: 9.4 mV off ngspice at Q2's collector (open)
-            (OperatingPoint, Shipping, 0.05, NAN), // 0.00936
-            (Response, Oversampled, 0.5, 1.0), // 0.12 / 0.226 — FINDING: +0.12 dB of gain from the operating point
-            (Response, Shipping, 20.0, 100.0), // 5.61 / 16.7 (R11: the whole card)
-            (ThdN, Oversampled, 0.5, NAN), // 0.145
-            (ThdN, Shipping, 10.0, NAN), // 2.47 (R11: the whole card)
+            (Aliasing, Oversampled, -115.0, NAN), // -117
+            (Aliasing, Shipping, -107.0, NAN), // -110 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -19.9 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.05, 0.2), // 0.00992 / 0.0357
+            (Bla, Shipping, 1.0, 5.0), // 0.223 / 0.731 (R11: the whole card)
+            (Compression, Oversampled, 0.01, 0.05), // 0.0018 / 0.0109 — R12: closed with the operating point (was 0.12 dB)
+            (Compression, Shipping, 0.2, 1.0), // 0.0412 / 0.221 (R11: the whole card)
+            (Detection, Oversampled, 0.005, NAN), // 0.00113
+            (Detection, Shipping, 0.05, NAN), // 0.00825
+            (Dynamics, Oversampled, 5e-5, 0.1), // 1.52e-05 / 0.0345
+            (Dynamics, Shipping, 2e-4, 0.5), // 3.59e-05 / 0.0858 (R11: the whole card)
+            (GroupDelay, Oversampled, 2e-4, NAN), // 5.68e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 5.5e-08
+            (Harmonics, Oversampled, 0.1, 0.05), // 0.0311 / 0.0113
+            (Harmonics, Shipping, 1.0, 1.0), // 0.21 / 0.175 (R11: the whole card)
+            (Intermodulation, Oversampled, 0.5, 0.5), // 0.0717 / 0.0965
+            (Intermodulation, Shipping, 5.0, 2.0), // 0.985 / 0.424 (R11: the whole card)
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.23e-07 — R12: closed (was 9.4 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.23e-07
+            (Response, Oversampled, 1e-5, 2e-5), // 2.92e-06 / 5.48e-06 — R12: closed with the operating point (was 0.12 dB)
+            (Response, Shipping, 1.0, 5.0), // 0.225 / 0.73 (R11: the whole card)
+            (ThdN, Oversampled, 0.02, NAN), // 0.00644
+            (ThdN, Shipping, 0.5, NAN), // 0.145 (R11: the whole card)
         ],
         ("fuzz_face_static", Tier::T1) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -35.0, NAN), // -44.6 — aliasing at the host rate
-            (Anmr, Shipping, 15.0, NAN), // 8.1 / -25.5 / -78.7 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.5, 1.0), // 0.121 / 0.227
-            (Bla, Shipping, 0.5, 1.0), // 0.121 / 0.227
-            (Compression, Oversampled, 0.5, 1.0), // 0.121 / 0.227 — FINDING: +0.12 dB of gain from the operating point
-            (Compression, Shipping, 0.5, 1.0), // 0.121 / 0.227
-            (Detection, Oversampled, 1.0, NAN), // 0.326
-            (Detection, Shipping, 2.0, NAN), // 0.336
-            (Dynamics, Oversampled, 0.002, 0.1), // 0.000505 / 0.0257
-            (Dynamics, Shipping, 0.005, 0.2), // 0.000729 / 0.056
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.53e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.75e-07
-            (Harmonics, Oversampled, 5.0, 2.0), // 1.04 / 0.371
-            (Harmonics, Shipping, 5.0, 2.0), // 1.03 / 0.371
-            (Intermodulation, Oversampled, 2.0, 5.0), // 0.462 / 0.82
-            (Intermodulation, Shipping, 2.0, 5.0), // 0.452 / 0.82
-            (OperatingPoint, Oversampled, 0.05, NAN), // 0.00936 — FINDING: 9.4 mV off ngspice at Q2's collector (open)
-            (OperatingPoint, Shipping, 0.05, NAN), // 0.00936
-            (Response, Oversampled, 0.5, 1.0), // 0.12 / 0.226 — FINDING: +0.12 dB of gain from the operating point
-            (Response, Shipping, 0.5, 1.0), // 0.12 / 0.226
-            (ThdN, Oversampled, 0.5, NAN), // 0.145
-            (ThdN, Shipping, 0.5, NAN), // 0.159 — aliasing at the host rate
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -78.9 — inaudible (Kahles et al.'s −10 dB)
+            (Bla, Oversampled, 0.005, 0.05), // 0.000966 / 0.00669
+            (Bla, Shipping, 0.005, 0.05), // 0.000967 / 0.00794
+            (Compression, Oversampled, 0.001, 0.02), // 0.000242 / 0.00335 — R12: closed with the operating point (was 0.12 dB)
+            (Compression, Shipping, 0.001, 0.02), // 0.000242 / 0.00397
+            (Detection, Oversampled, 5e-4, NAN), // 0.000158
+            (Detection, Shipping, 5e-4, NAN), // 0.000158
+            (Dynamics, Oversampled, 2e-4, 0.005), // 3.4e-05 / 0.00128
+            (Dynamics, Shipping, 2e-4, 0.005), // 4e-05 / 0.00129
+            (GroupDelay, Oversampled, 2e-4, NAN), // 3.7e-12
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.35e-09
+            (Harmonics, Oversampled, 0.05, 0.02), // 0.0121 / 0.00432
+            (Harmonics, Shipping, 0.02, 0.01), // 0.0061 / 0.00243
+            (Intermodulation, Oversampled, 0.1, 0.1), // 0.0231 / 0.0211
+            (Intermodulation, Shipping, 0.02, 0.05), // 0.0063 / 0.00808
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.23e-07 — R12: closed (was 9.4 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.23e-07
+            (Response, Oversampled, 1e-5, 2e-5), // 2.92e-06 / 5.49e-06 — R12: closed with the operating point (was 0.12 dB)
+            (Response, Shipping, 1e-5, 0.05), // 2.73e-06 / 0.00797
+            (ThdN, Oversampled, 0.005, NAN), // 0.000728
+            (ThdN, Shipping, 0.005, NAN), // 0.000728 — aliasing as it ships
         ],
         ("diode_clipper/hand", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -62.1
-            (Aliasing, Shipping, -5.0, NAN), // -11.9 — aliasing at the host rate
-            (Anmr, Shipping, 75.0, NAN), // 68.5 / 57.8 / 29.7 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -60.0, NAN), // -62.1
+            (Aliasing, Shipping, -76.0, NAN), // -78.5 — aliasing as it ships
+            (Anmr, Shipping, 0.0, NAN), // -3 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 1.0, 2.0), // 0.167 / 0.493
-            (Bla, Shipping, 20.0, 50.0), // 5.33 / 11.8 — FINDING: bilinear warping at 1× (no prewarp)
+            (Bla, Shipping, 0.2, 0.5), // 0.0446 / 0.131 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.1, 0.5), // 0.027 / 0.159
-            (Compression, Shipping, 5.0, 100.0), // 0.714 / 19.6
+            (Compression, Shipping, 0.05, 0.1), // 0.013 / 0.0266
             (Detection, Oversampled, 0.1, NAN), // 0.0303
-            (Detection, Shipping, 500.0, NAN), // 89.2
+            (Detection, Shipping, 0.05, NAN), // 0.0156
             (Dynamics, Oversampled, 5e-5, 0.1), // 1.15e-05 / 0.026
-            (Dynamics, Shipping, 5e-4, 0.5), // 9.66e-05 / 0.119
+            (Dynamics, Shipping, 5e-5, 0.1), // 7.12e-06 / 0.0193
             (GroupDelay, Oversampled, 2e-4, NAN), // 2.69e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 7.26e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.72e-08
             (Harmonics, Oversampled, 100.0, 200.0), // 17.6 / 45.5
-            (Harmonics, Shipping, 100.0, 500.0), // 21.7 / 77.4
+            (Harmonics, Shipping, 50.0, 2.0), // 9.02 / 0.664
             (Intermodulation, Oversampled, 20.0, 20.0), // 5.19 / 5.1
-            (Intermodulation, Shipping, 200.0, 200.0), // 50.9 / 57.1
-            (OperatingPoint, Oversampled, 1e-9, NAN), // 4.34e-22
-            (OperatingPoint, Shipping, 1e-9, NAN), // 4.34e-22
+            (Intermodulation, Shipping, 2.0, 5.0), // 0.475 / 0.692
+            (OperatingPoint, Oversampled, 1e-9, NAN), // 1.06e-25
+            (OperatingPoint, Shipping, 1e-9, NAN), // 1.06e-25
             (Response, Oversampled, 1.0, 2.0), // 0.169 / 0.489
-            (Response, Shipping, 20.0, 50.0), // 5.33 / 11.3 — FINDING: bilinear warping at 1× (no prewarp)
+            (Response, Shipping, 0.2, 0.5), // 0.0452 / 0.132 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (ThdN, Oversampled, 200.0, NAN), // 48.7
-            (ThdN, Shipping, 500.0, NAN), // 98.9 — aliasing at the host rate
+            (ThdN, Shipping, 100.0, NAN), // 32.3 — aliasing as it ships
         ],
         ("power_supply/hand", Tier::T1) => &[
             (Dynamics, Oversampled, 0.001, 0.02), // 0.000177 / 0.00521
@@ -731,182 +733,182 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Shipping, 0.005, NAN), // 0.00114
         ],
         ("common_cathode_grid_current", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -60.3
-            (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
-            (Anmr, Shipping, 65.0, NAN), // 59.9 / 42.6 / 23.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -58.0, NAN), // -60.3
+            (Aliasing, Shipping, -79.0, NAN), // -81.4 — aliasing as it ships
+            (Anmr, Shipping, -1.0, NAN), // -4.1 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.02), // 0.000968 / 0.00432
-            (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
+            (Bla, Shipping, 0.005, 0.002), // 0.000968 / 0.000434
             (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000211
-            (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.00401
+            (Compression, Shipping, 0.001, 2e-4), // 0.000243 / 6.59e-05
             (Detection, Oversampled, 0.05, NAN), // 0.00981
-            (Detection, Shipping, 5.0, NAN), // 1.34
+            (Detection, Shipping, 0.01, NAN), // 0.00196
             (Dynamics, Oversampled, 0.001, 1e-4), // 0.000246 / 2.44e-05
-            (Dynamics, Shipping, 0.005, 0.002), // 0.000966 / 0.000582
+            (Dynamics, Shipping, 0.001, 1e-4), // 0.000193 / 2.64e-05
             (GroupDelay, Oversampled, 2e-4, NAN), // 2.28e-15
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.34e-09
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.08e-11
             (Harmonics, Oversampled, 1.0, 0.5), // 0.235 / 0.122
-            (Harmonics, Shipping, 5.0, 1.0), // 0.989 / 0.265
+            (Harmonics, Shipping, 0.5, 0.1), // 0.107 / 0.0274
             (Intermodulation, Oversampled, 0.2, 0.2), // 0.0617 / 0.0344
-            (Intermodulation, Shipping, 0.2, 0.1), // 0.0343 / 0.0181
+            (Intermodulation, Shipping, 0.1, 0.02), // 0.0283 / 0.00356
             (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
             (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
-            (Response, Oversampled, 1e-6, 1e-5), // 6.39e-10 / 1.41e-09
-            (Response, Shipping, 5e-6, 0.05), // 1.06e-06 / 0.0086
+            (Response, Oversampled, 2e-9, 5e-9), // 6.39e-10 / 1.41e-09
+            (Response, Shipping, 1e-7, 5e-4), // 1.72e-08 / 0.000122
             (ThdN, Oversampled, 0.02, NAN), // 0.00386
-            (ThdN, Shipping, 50.0, NAN), // 15.2 — aliasing at the host rate
+            (ThdN, Shipping, 0.02, NAN), // 0.00655 — aliasing as it ships
         ],
         ("common_cathode_grid_current/hand", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -60.3
-            (Aliasing, Shipping, -5.0, NAN), // -13.2 — aliasing at the host rate
-            (Anmr, Shipping, 65.0, NAN), // 59.9 / 42.6 / 23.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.02), // 0.000969 / 0.00432
-            (Bla, Shipping, 0.5, 1.0), // 0.0789 / 0.272
-            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.00021
-            (Compression, Shipping, 0.001, 0.02), // 0.000244 / 0.004
-            (Detection, Oversampled, 5.0, NAN), // 1.11
-            (Detection, Shipping, 10.0, NAN), // 3.22
-            (Dynamics, Oversampled, 0.001, 1e-4), // 0.000246 / 1.99e-05
-            (Dynamics, Shipping, 0.005, 0.002), // 0.000966 / 0.000576
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.4e-08
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.16e-08
-            (Harmonics, Oversampled, 1.0, 0.5), // 0.247 / 0.122
-            (Harmonics, Shipping, 20.0, 1.0), // 5.46 / 0.265
-            (Intermodulation, Oversampled, 0.2, 0.2), // 0.0623 / 0.037
-            (Intermodulation, Shipping, 0.5, 0.1), // 0.0784 / 0.0205
+            (Aliasing, Oversampled, -58.0, NAN), // -60.3
+            (Aliasing, Shipping, -79.0, NAN), // -81.4 — aliasing as it ships
+            (Anmr, Shipping, -1.0, NAN), // -4.1 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.005, 0.02), // 0.000968 / 0.00432
+            (Bla, Shipping, 0.005, 0.002), // 0.000968 / 0.000434
+            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.000211
+            (Compression, Shipping, 0.001, 2e-4), // 0.000243 / 6.59e-05
+            (Detection, Oversampled, 0.05, NAN), // 0.00981
+            (Detection, Shipping, 0.01, NAN), // 0.00196
+            (Dynamics, Oversampled, 0.001, 1e-4), // 0.000246 / 2.44e-05
+            (Dynamics, Shipping, 0.001, 1e-4), // 0.000193 / 2.64e-05
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.22e-08
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.21e-08
+            (Harmonics, Oversampled, 1.0, 0.5), // 0.235 / 0.122
+            (Harmonics, Shipping, 0.5, 0.1), // 0.107 / 0.0274
+            (Intermodulation, Oversampled, 0.2, 0.2), // 0.0617 / 0.0344
+            (Intermodulation, Shipping, 0.1, 0.02), // 0.0283 / 0.00356
             (OperatingPoint, Oversampled, 1e-7, NAN), // 3.03e-08
             (OperatingPoint, Shipping, 1e-7, NAN), // 3.03e-08
-            (Response, Oversampled, 0.005, 0.01), // 0.00158 / 0.00278
-            (Response, Shipping, 0.005, 0.05), // 0.00161 / 0.00857
-            (ThdN, Oversampled, 0.2, NAN), // 0.041
-            (ThdN, Shipping, 50.0, NAN), // 15.2 — aliasing at the host rate
+            (Response, Oversampled, 0.005, 0.01), // 0.00159 / 0.0028
+            (Response, Shipping, 0.005, 0.01), // 0.00159 / 0.00281
+            (ThdN, Oversampled, 0.02, NAN), // 0.00386
+            (ThdN, Shipping, 0.02, NAN), // 0.00655 — aliasing as it ships
         ],
         ("jfet_booster", Tier::T1) => &[
-            (Aliasing, Oversampled, -45.0, NAN), // -54.8
-            (Aliasing, Shipping, -10.0, NAN), // -16.7 — aliasing at the host rate
-            (Anmr, Shipping, 60.0, NAN), // 52.7 / 41.9 / 33.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.05), // 0.00131 / 0.0101
-            (Bla, Shipping, 0.1, 1.0), // 0.0331 / 0.236
-            (Compression, Oversampled, 0.001, 0.002), // 0.000256 / 0.000358
-            (Compression, Shipping, 0.001, 0.1), // 0.000235 / 0.0303 (R11: the whole card)
-            (Detection, Oversampled, 0.05, NAN), // 0.0108
-            (Detection, Shipping, 5.0, NAN), // 0.759
-            (Dynamics, Oversampled, 2e-5, 0.002), // 4.77e-06 / 0.000449
-            (Dynamics, Shipping, 5e-4, 0.02), // 7.82e-05 / 0.00622
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.77e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.17e-09
+            (Aliasing, Oversampled, -52.0, NAN), // -54.8
+            (Aliasing, Shipping, -64.0, NAN), // -66.4 — aliasing as it ships
+            (Anmr, Shipping, 14.0, NAN), // 10.4 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.005, 0.05), // 0.0013 / 0.00973
+            (Bla, Shipping, 0.005, 0.005), // 0.00098 / 0.00164
+            (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000545
+            (Compression, Shipping, 0.001, 0.001), // 0.00025 / 0.000303 (R11: the whole card)
+            (Detection, Oversampled, 0.05, NAN), // 0.0112
+            (Detection, Shipping, 0.01, NAN), // 0.00314
+            (Dynamics, Oversampled, 2e-5, 0.002), // 1.32e-05 / 0.000393
+            (Dynamics, Shipping, 2e-5, 5e-4), // 5.27e-06 / 0.000121
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.42e-14
+            (GroupDelay, Shipping, 2e-4, NAN), // 3.9e-11
             (Harmonics, Oversampled, 2.0, 20.0), // 0.572 / 4.3 (R11: the whole card)
-            (Harmonics, Shipping, 10.0, 20.0), // 2.23 / 4.69
-            (Intermodulation, Oversampled, 5.0, 0.2), // 0.775 / 0.0482
-            (Intermodulation, Shipping, 10.0, 1.0), // 1.72 / 0.225
-            (OperatingPoint, Oversampled, 1e-4, NAN), // 3.21e-05 — FINDING: ngspice's gate sits 4.3 µV up (4.3 pA in 1 MΩ; not gmin)
-            (OperatingPoint, Shipping, 1e-4, NAN), // 3.21e-05
-            (Response, Oversampled, 5e-5, 5e-4), // 1.45e-05 / 7.98e-05
-            (Response, Shipping, 1e-4, 0.2), // 2.04e-05 / 0.06 (R11: the whole card)
-            (ThdN, Oversampled, 0.01, NAN), // 0.00309
-            (ThdN, Shipping, 50.0, NAN), // 7.42 — aliasing at the host rate
+            (Harmonics, Shipping, 1.0, 0.2), // 0.292 / 0.0462
+            (Intermodulation, Oversampled, 5.0, 0.2), // 1.13 / 0.192
+            (Intermodulation, Shipping, 1.0, 0.1), // 0.21 / 0.0247
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 3.65e-10 — R12: closed (was 3.2e-5: SPICE's junction gmin, 4.3 pA in 1 MΩ)
+            (OperatingPoint, Shipping, 2e-9, NAN), // 3.65e-10
+            (Response, Oversampled, 2e-8, 2e-8), // 3.44e-09 / 5.03e-09
+            (Response, Shipping, 1e-7, 0.002), // 2.17e-08 / 0.000531 (R11: the whole card)
+            (ThdN, Oversampled, 0.01, NAN), // 0.00378
+            (ThdN, Shipping, 0.005, NAN), // 0.000891 — aliasing as it ships
         ],
         ("jfet_booster_static", Tier::T1) => &[
-            (Aliasing, Oversampled, -45.0, NAN), // -54.8
-            (Aliasing, Shipping, -10.0, NAN), // -16.7 — aliasing at the host rate
-            (Anmr, Shipping, 60.0, NAN), // 52.7 / 41.9 / 33.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.005, 0.05), // 0.00131 / 0.0101
-            (Bla, Shipping, 0.1, 1.0), // 0.0331 / 0.236
-            (Compression, Oversampled, 0.001, 0.002), // 0.000256 / 0.000358
-            (Compression, Shipping, 0.001, 0.02), // 0.000261 / 0.00648
-            (Detection, Oversampled, 0.05, NAN), // 0.0108
-            (Detection, Shipping, 5.0, NAN), // 0.759
-            (Dynamics, Oversampled, 2e-5, 0.002), // 4.77e-06 / 0.000449
-            (Dynamics, Shipping, 5e-4, 0.02), // 7.82e-05 / 0.00622
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.77e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.17e-09
-            (Harmonics, Oversampled, 2.0, 1.0), // 0.575 / 0.294
-            (Harmonics, Shipping, 10.0, 20.0), // 2.23 / 4.69
+            (Aliasing, Oversampled, -52.0, NAN), // -54.8
+            (Aliasing, Shipping, -64.0, NAN), // -66.3 — aliasing as it ships
+            (Anmr, Shipping, 14.0, NAN), // 10.4 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.005, 0.05), // 0.0013 / 0.0101
+            (Bla, Shipping, 0.005, 0.01), // 0.000987 / 0.00176
+            (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000358
+            (Compression, Shipping, 0.001, 5e-4), // 0.000243 / 0.000123
+            (Detection, Oversampled, 0.05, NAN), // 0.0114
+            (Detection, Shipping, 0.01, NAN), // 0.00309
+            (Dynamics, Oversampled, 2e-5, 0.002), // 1.32e-05 / 0.000389
+            (Dynamics, Shipping, 2e-5, 5e-4), // 5.26e-06 / 0.000125
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.27e-14
+            (GroupDelay, Shipping, 2e-4, NAN), // 3.37e-11
+            (Harmonics, Oversampled, 2.0, 1.0), // 0.575 / 0.295
+            (Harmonics, Shipping, 1.0, 0.2), // 0.294 / 0.0511
             (Intermodulation, Oversampled, 5.0, 0.2), // 0.775 / 0.0482
-            (Intermodulation, Shipping, 10.0, 1.0), // 1.72 / 0.225
-            (OperatingPoint, Oversampled, 1e-4, NAN), // 3.21e-05 — FINDING: ngspice's gate sits 4.3 µV up (4.3 pA in 1 MΩ; not gmin)
-            (OperatingPoint, Shipping, 1e-4, NAN), // 3.21e-05
-            (Response, Oversampled, 5e-5, 5e-4), // 1.45e-05 / 7.98e-05
-            (Response, Shipping, 5e-5, 0.05), // 1.43e-05 / 0.0139
-            (ThdN, Oversampled, 0.01, NAN), // 0.00309
-            (ThdN, Shipping, 50.0, NAN), // 7.42 — aliasing at the host rate
+            (Intermodulation, Shipping, 1.0, 0.1), // 0.211 / 0.0247
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 3.65e-10 — R12: closed (was 3.2e-5: SPICE's junction gmin, 4.3 pA in 1 MΩ)
+            (OperatingPoint, Shipping, 2e-9, NAN), // 3.65e-10
+            (Response, Oversampled, 1e-8, 2e-8), // 2.92e-09 / 5.01e-09
+            (Response, Shipping, 1e-7, 0.001), // 2.12e-08 / 0.000198
+            (ThdN, Oversampled, 0.01, NAN), // 0.00367
+            (ThdN, Shipping, 0.005, NAN), // 0.000824 — aliasing as it ships
         ],
         ("opamp_clipper/hand", Tier::T1) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -110
-            (Aliasing, Shipping, -5.0, NAN), // -13.3 — aliasing at the host rate
-            (Anmr, Shipping, 70.0, NAN), // 64.5 / 54.1 / 26.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -108.0, NAN), // -110
+            (Aliasing, Shipping, -68.0, NAN), // -70.4 — aliasing as it ships
+            (Anmr, Shipping, 8.0, NAN), // 5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
-            (Bla, Shipping, 5.0, 50.0), // 0.737 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 0.001, 0.05), // 0.000216 / 0.0137
-            (Compression, Shipping, 2.0, 50.0), // 0.37 / 9.29
-            (Detection, Oversampled, 0.001, NAN), // 0.000272
-            (Detection, Shipping, 500.0, NAN), // 88.5
+            (Bla, Shipping, 0.05, 0.5), // 0.00839 / 0.106 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (Compression, Oversampled, 0.001, 0.05), // 0.000215 / 0.0137
+            (Compression, Shipping, 0.01, 0.2), // 0.00188 / 0.0565
+            (Detection, Oversampled, 0.001, NAN), // 0.000269
+            (Detection, Shipping, 0.005, NAN), // 0.00128
             (Dynamics, Oversampled, 1e-4, 0.01), // 2.24e-05 / 0.00273
-            (Dynamics, Shipping, 0.002, 0.2), // 0.000357 / 0.0538
+            (Dynamics, Shipping, 1e-4, 0.01), // 2.24e-05 / 0.00273
             (GroupDelay, Oversampled, 2e-4, NAN), // 1.5e-09
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.91e-07
+            (GroupDelay, Shipping, 2e-4, NAN), // 4.43e-09
             (Harmonics, Oversampled, 2.0, 20.0), // 0.511 / 3.62
-            (Harmonics, Shipping, 50.0, 500.0), // 12.2 / 72.1
+            (Harmonics, Shipping, 1.0, 1.0), // 0.269 / 0.288
             (Intermodulation, Oversampled, 0.5, 5.0), // 0.074 / 0.669
-            (Intermodulation, Shipping, 100.0, 500.0), // 26.4 / 112
+            (Intermodulation, Shipping, 0.2, 2.0), // 0.035 / 0.431
             (OperatingPoint, Oversampled, 1e-9, NAN), // 0
             (OperatingPoint, Shipping, 1e-9, NAN), // 0
-            (Response, Oversampled, 0.005, 0.1), // 0.000824 / 0.0224
-            (Response, Shipping, 5.0, 50.0), // 0.738 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (Response, Oversampled, 0.005, 0.1), // 0.000825 / 0.0224
+            (Response, Shipping, 0.02, 0.5), // 0.00388 / 0.107 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (ThdN, Oversampled, 50.0, NAN), // 9.53
-            (ThdN, Shipping, 500.0, NAN), // 107 — aliasing at the host rate
+            (ThdN, Shipping, 200.0, NAN), // 49.6 — aliasing as it ships
         ],
         ("mosfet_booster", Tier::T1) => &[
-            (Aliasing, Oversampled, -35.0, NAN), // -41.7
-            (Aliasing, Shipping, 0.0, NAN), // -7.7 — aliasing at the host rate
-            (Anmr, Shipping, 80.0, NAN), // 70.7 / 62.0 / 47.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
-            (Bla, Shipping, 1.0, 10.0), // 0.294 / 2.26
+            (Aliasing, Oversampled, -63.0, NAN), // -65.8
+            (Aliasing, Shipping, -49.0, NAN), // -51.4 — aliasing as it ships
+            (Anmr, Shipping, 26.0, NAN), // 22.5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.005, 0.01), // 0.000979 / 0.00328
+            (Bla, Shipping, 0.01, 0.1), // 0.00297 / 0.0179
             (Compression, Oversampled, 0.002, 0.05), // 0.000406 / 0.00731 (R11: the whole card)
-            (Compression, Shipping, 0.05, 5.0), // 0.0136 / 0.87 (R11: the whole card)
-            (Detection, Oversampled, 50.0, NAN), // 9.93
-            (Detection, Shipping, 50.0, NAN), // 9.93
-            (Dynamics, Oversampled, 2e-4, 0.02), // 4.33e-05 / 0.00452
-            (Dynamics, Shipping, 0.002, 0.5), // 0.000351 / 0.142
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.73e-09
-            (Harmonics, Oversampled, 1.0, 2.0), // 0.275 / 0.638
-            (Harmonics, Shipping, 50.0, 200.0), // 14.4 / 65.7 (R11: the whole card)
-            (Intermodulation, Oversampled, 2.0, 1.0), // 0.639 / 0.245
-            (Intermodulation, Shipping, 50.0, 200.0), // 9.76 / 44.5 (R11: the whole card)
-            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
-            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
-            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
-            (Response, Shipping, 0.02, 2.0), // 0.00406 / 0.591 (R11: the whole card)
-            (ThdN, Oversampled, 5.0, NAN), // 1.14
-            (ThdN, Shipping, 100.0, NAN), // 21.2 — aliasing at the host rate
+            (Compression, Shipping, 0.005, 0.1), // 0.000894 / 0.0197 (R11: the whole card)
+            (Detection, Oversampled, 50.0, NAN), // 10
+            (Detection, Shipping, 50.0, NAN), // 10
+            (Dynamics, Oversampled, 5e-5, 0.005), // 1.1e-05 / 0.00132
+            (Dynamics, Shipping, 5e-5, 0.01), // 1.1e-05 / 0.00252
+            (GroupDelay, Oversampled, 2e-4, NAN), // 5.25e-15
+            (GroupDelay, Shipping, 2e-4, NAN), // 9.33e-11
+            (Harmonics, Oversampled, 1.0, 2.0), // 0.309 / 1.13
+            (Harmonics, Shipping, 1.0, 2.0), // 0.275 / 0.413 (R11: the whole card)
+            (Intermodulation, Oversampled, 1.0, 1.0), // 0.266 / 0.563
+            (Intermodulation, Shipping, 2.0, 2.0), // 0.395 / 0.554 (R11: the whole card)
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 8.84e-08
+            (OperatingPoint, Shipping, 5e-7, NAN), // 8.84e-08
+            (Response, Oversampled, 5e-7, 2e-8), // 7.44e-08 / 5.59e-09
+            (Response, Shipping, 1e-4, 0.02), // 1.97e-05 / 0.00436 (R11: the whole card)
+            (ThdN, Oversampled, 5.0, NAN), // 1.13
+            (ThdN, Shipping, 5.0, NAN), // 1.13 — aliasing as it ships
         ],
         ("mosfet_booster_static", Tier::T1) => &[
-            (Aliasing, Oversampled, -35.0, NAN), // -41.7
-            (Aliasing, Shipping, 0.0, NAN), // -7.7 — aliasing at the host rate
-            (Anmr, Shipping, 80.0, NAN), // 71.2 / 62.5 / 46.9 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -39.0, NAN), // -41.7
+            (Aliasing, Shipping, -49.0, NAN), // -51 — aliasing as it ships
+            (Anmr, Shipping, 26.0, NAN), // 22.6 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.05, 0.1), // 0.00834 / 0.0303
-            (Bla, Shipping, 1.0, 10.0), // 0.294 / 2.26
+            (Bla, Shipping, 0.01, 0.05), // 0.00274 / 0.0161
             (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000652
-            (Compression, Shipping, 0.001, 0.02), // 0.000266 / 0.0062
+            (Compression, Shipping, 0.001, 0.002), // 0.000243 / 0.000355
             (Detection, Oversampled, 50.0, NAN), // 9.93
             (Detection, Shipping, 50.0, NAN), // 9.93
             (Dynamics, Oversampled, 2e-4, 0.02), // 4.33e-05 / 0.00452
-            (Dynamics, Shipping, 0.002, 0.5), // 0.000351 / 0.142
-            (GroupDelay, Oversampled, 2e-4, NAN), // 1.05e-14
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.73e-09
+            (Dynamics, Shipping, 5e-5, 0.01), // 1.09e-05 / 0.00216
+            (GroupDelay, Oversampled, 2e-4, NAN), // 7.67e-15
+            (GroupDelay, Shipping, 2e-4, NAN), // 2.68e-11
             (Harmonics, Oversampled, 1.0, 2.0), // 0.275 / 0.638
-            (Harmonics, Shipping, 5.0, 50.0), // 0.905 / 8.21
+            (Harmonics, Shipping, 1.0, 1.0), // 0.275 / 0.234
             (Intermodulation, Oversampled, 2.0, 1.0), // 0.639 / 0.245
-            (Intermodulation, Shipping, 2.0, 10.0), // 0.647 / 1.78
-            (OperatingPoint, Oversampled, 2e-5, NAN), // 6.53e-06
-            (OperatingPoint, Shipping, 2e-5, NAN), // 6.53e-06
-            (Response, Oversampled, 2e-5, 1e-5), // 6.15e-06 / 1.03e-08
-            (Response, Shipping, 2e-5, 0.05), // 6.07e-06 / 0.0111
+            (Intermodulation, Shipping, 2.0, 0.5), // 0.624 / 0.131
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 8.84e-08
+            (OperatingPoint, Shipping, 5e-7, NAN), // 8.84e-08
+            (Response, Oversampled, 5e-7, 5e-8), // 7.45e-08 / 7.32e-09
+            (Response, Shipping, 5e-7, 5e-4), // 8.06e-08 / 0.000157
             (ThdN, Oversampled, 5.0, NAN), // 1.14
-            (ThdN, Shipping, 100.0, NAN), // 21.2 — aliasing at the host rate
+            (ThdN, Shipping, 5.0, NAN), // 1.14 — aliasing as it ships
         ],
         ("power_supply", Tier::T1) => &[
-            (Dynamics, Oversampled, 0.001, 0.02), // 0.000177 / 0.00521
+            (Dynamics, Oversampled, 0.001, 0.02), // 0.000176 / 0.00521
             (Dynamics, Shipping, 0.01, 0.2), // 0.00272 / 0.0374
             (Harmonics, Oversampled, 0.05, 1.0), // 0.00668 / 0.194
             (Harmonics, Shipping, 0.2, 5.0), // 0.0571 / 1.57
@@ -914,15 +916,15 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (OperatingPoint, Shipping, 0.005, NAN), // 0.00114
         ],
         ("ota_vca", Tier::T1) => &[
-            (Aliasing, Oversampled, -80.0, NAN), // -88
-            (Aliasing, Shipping, -5.0, NAN), // -11.1 — aliasing at the host rate
-            (Anmr, Shipping, 75.0, NAN), // 65.7 / 48.4 / 8.4 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -86.0, NAN), // -88
+            (Aliasing, Shipping, -32.0, NAN), // -34.7 — aliasing as it ships
+            (Anmr, Shipping, 36.0, NAN), // 32.7 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00123
-            (Bla, Shipping, 0.5, 5.0), // 0.1 / 0.733
+            (Bla, Shipping, 0.05, 0.2), // 0.00817 / 0.0651
             (Compression, Oversampled, 0.001, 0.002), // 0.000332 / 0.000346
             (Compression, Shipping, 0.001, 0.002), // 0.000332 / 0.000346
             (Detection, Oversampled, 0.01, NAN), // 0.00257
-            (Detection, Shipping, 100.0, NAN), // 24.3
+            (Detection, Shipping, 0.2, NAN), // 0.048
             (Dynamics, Oversampled, 5e-6, 2e-4), // 1.47e-06 / 4.73e-05
             (Dynamics, Shipping, 5e-6, 2e-4), // 1.47e-06 / 4.73e-05
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
@@ -931,98 +933,98 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Harmonics, Shipping, 0.1, 0.05), // 0.0293 / 0.0133
             (Intermodulation, Oversampled, 0.2, 0.1), // 0.065 / 0.0254
             (Intermodulation, Shipping, 0.1, 0.02), // 0.0265 / 0.00433
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 7.25e-06
-            (OperatingPoint, Shipping, 5e-5, NAN), // 7.25e-06
-            (Response, Oversampled, 0.005, NAN), // 0.00122
-            (Response, Shipping, 0.005, NAN), // 0.00122
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 3.9e-10
+            (OperatingPoint, Shipping, 2e-9, NAN), // 3.9e-10
+            (Response, Oversampled, 2e-9, NAN), // 5.86e-10
+            (Response, Shipping, 2e-9, NAN), // 5.86e-10
             (ThdN, Oversampled, 0.01, NAN), // 0.0024
-            (ThdN, Shipping, 200.0, NAN), // 42.7 — aliasing at the host rate
+            (ThdN, Shipping, 100.0, NAN), // 19.2 — aliasing as it ships
         ],
         ("opamp_clipper", Tier::T1) => &[
-            (Aliasing, Oversampled, -105.0, NAN), // -110
-            (Aliasing, Shipping, -5.0, NAN), // -13.3 — aliasing at the host rate
-            (Anmr, Shipping, 70.0, NAN), // 64.5 / 54.1 / 26.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -108.0, NAN), // -110
+            (Aliasing, Shipping, -68.0, NAN), // -70.4 — aliasing as it ships
+            (Anmr, Shipping, 8.0, NAN), // 5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.1), // 0.000793 / 0.0233
-            (Bla, Shipping, 5.0, 50.0), // 0.737 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
-            (Compression, Oversampled, 0.001, 0.05), // 0.000216 / 0.0137
-            (Compression, Shipping, 2.0, 50.0), // 0.37 / 9.29
-            (Detection, Oversampled, 0.001, NAN), // 0.000272
-            (Detection, Shipping, 500.0, NAN), // 88.5
+            (Bla, Shipping, 0.05, 0.5), // 0.00839 / 0.106 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (Compression, Oversampled, 0.001, 0.05), // 0.000215 / 0.0137
+            (Compression, Shipping, 0.01, 0.2), // 0.00188 / 0.0565
+            (Detection, Oversampled, 0.001, NAN), // 0.000269
+            (Detection, Shipping, 0.005, NAN), // 0.00128
             (Dynamics, Oversampled, 1e-4, 0.01), // 2.24e-05 / 0.00273
-            (Dynamics, Shipping, 0.002, 0.2), // 0.000357 / 0.0538
-            (GroupDelay, Oversampled, 2e-4, NAN), // 3.43e-12
-            (GroupDelay, Shipping, 2e-4, NAN), // 2.91e-07
+            (Dynamics, Shipping, 1e-4, 0.01), // 2.24e-05 / 0.00273
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.41e-13
+            (GroupDelay, Shipping, 2e-4, NAN), // 4.47e-09
             (Harmonics, Oversampled, 2.0, 20.0), // 0.511 / 3.62
-            (Harmonics, Shipping, 50.0, 500.0), // 12.2 / 72.1
+            (Harmonics, Shipping, 1.0, 1.0), // 0.269 / 0.288
             (Intermodulation, Oversampled, 0.5, 5.0), // 0.074 / 0.669
-            (Intermodulation, Shipping, 100.0, 500.0), // 26.4 / 112
+            (Intermodulation, Shipping, 0.2, 2.0), // 0.035 / 0.431
             (OperatingPoint, Oversampled, 1e-9, NAN), // 0
             (OperatingPoint, Shipping, 1e-9, NAN), // 0
-            (Response, Oversampled, 5e-6, 1e-5), // 8.22e-07 / 2.39e-06
-            (Response, Shipping, 5.0, 50.0), // 0.738 / 12.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (Response, Oversampled, 1e-7, 1e-7), // 1.85e-08 / 3.25e-08
+            (Response, Shipping, 0.02, 0.5), // 0.00386 / 0.107 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (ThdN, Oversampled, 50.0, NAN), // 9.53
-            (ThdN, Shipping, 500.0, NAN), // 107 — aliasing at the host rate
+            (ThdN, Shipping, 200.0, NAN), // 49.6 — aliasing as it ships
         ],
         ("rangemaster", Tier::T1) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -20.0, NAN), // -25.3 — aliasing at the host rate
-            (Anmr, Shipping, 40.0, NAN), // 34.6 / 3.4 / -8.2 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.5, 10.0), // 0.137 / 2.84
-            (Bla, Shipping, 5.0, 200.0), // 1.66 / 35.9
-            (Compression, Oversampled, 0.5, 1.0), // 0.131 / 0.293
-            (Compression, Shipping, 1.0, 10.0), // 0.191 / 2.03
-            (Detection, Oversampled, 2.0, NAN), // 0.365
-            (Detection, Shipping, 10.0, NAN), // 2.34
-            (Dynamics, Oversampled, 2e-4, 0.02), // 4.34e-05 / 0.00587
-            (Dynamics, Shipping, 5e-4, 0.5), // 0.000166 / 0.0976
-            (GroupDelay, Oversampled, 2e-4, NAN), // 7.08e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 7.73e-07
-            (Harmonics, Oversampled, 10.0, 10.0), // 1.79 / 1.72
-            (Harmonics, Shipping, 10.0, 50.0), // 2.51 / 10.9
-            (Intermodulation, Oversampled, 2.0, 20.0), // 0.608 / 3.89
-            (Intermodulation, Shipping, 10.0, 50.0), // 2.6 / 13.7
-            (OperatingPoint, Oversampled, 0.02, NAN), // 0.0039 — FINDING: 3.9 mV off ngspice at the collector (open)
-            (OperatingPoint, Shipping, 0.02, NAN), // 0.0039
-            (Response, Oversampled, 0.5, 2.0), // 0.133 / 0.337 — FINDING: 0.13 dB of gain from the operating point
-            (Response, Shipping, 1.0, 20.0), // 0.193 / 3.9
-            (ThdN, Oversampled, 1.0, NAN), // 0.234
-            (ThdN, Shipping, 2.0, NAN), // 0.342 — aliasing at the host rate
+            (Aliasing, Oversampled, -91.0, NAN), // -94 — RAISED from -115 (R12): not aliasing at 4×; the 8 kHz +20 dB tone's inharmonic floor is the circuit's own (-64.9 dBc in both), and the check reads the model's excess over the reference — 0.005 dB of agreement on that floor reads -94; the temp-corrected reference moved it from just above the model's to just below
+            (Aliasing, Shipping, -27.0, NAN), // -29.7 — aliasing as it ships
+            (Anmr, Shipping, 38.0, NAN), // 34.6 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.5, 2.0), // 0.0877 / 0.404
+            (Bla, Shipping, 2.0, 100.0), // 0.426 / 28.7
+            (Compression, Oversampled, 0.01, 0.5), // 0.00299 / 0.0944
+            (Compression, Shipping, 0.2, 10.0), // 0.0511 / 1.9
+            (Detection, Oversampled, 0.5, NAN), // 0.135
+            (Detection, Shipping, 10.0, NAN), // 1.69
+            (Dynamics, Oversampled, 2e-4, 0.02), // 3.39e-05 / 0.0147
+            (Dynamics, Shipping, 5e-4, 0.5), // 0.000262 / 0.107
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.47e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 6.32e-07
+            (Harmonics, Oversampled, 5.0, 5.0), // 1.04 / 1.01
+            (Harmonics, Shipping, 10.0, 50.0), // 1.85 / 11.2
+            (Intermodulation, Oversampled, 2.0, 20.0), // 1.04 / 10.4
+            (Intermodulation, Shipping, 10.0, 20.0), // 5.17 / 5.56
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 9.19e-08 — R12: closed (was 3.9 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 5e-7, NAN), // 9.19e-08
+            (Response, Oversampled, 1e-5, 2e-5), // 2.84e-06 / 6.54e-06 — R12: closed with the operating point (was 0.13 dB)
+            (Response, Shipping, 0.2, 20.0), // 0.0508 / 3.95
+            (ThdN, Oversampled, 0.1, NAN), // 0.0187
+            (ThdN, Shipping, 0.5, NAN), // 0.149 — aliasing as it ships
         ],
         ("rangemaster_static", Tier::T1) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -20.0, NAN), // -25.3 — aliasing at the host rate
-            (Anmr, Shipping, 45.0, NAN), // 37.3 / 12.6 / -9.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
-            (Bla, Oversampled, 0.5, 10.0), // 0.137 / 2.84
-            (Bla, Shipping, 5.0, 200.0), // 1.66 / 35.9
-            (Compression, Oversampled, 0.5, 1.0), // 0.131 / 0.293
-            (Compression, Shipping, 1.0, 10.0), // 0.191 / 2.03
-            (Detection, Oversampled, 2.0, NAN), // 0.365
-            (Detection, Shipping, 10.0, NAN), // 2.34
-            (Dynamics, Oversampled, 2e-4, 0.02), // 4.34e-05 / 0.00587
-            (Dynamics, Shipping, 5e-4, 0.5), // 0.000166 / 0.0976
-            (GroupDelay, Oversampled, 2e-4, NAN), // 7.08e-07
-            (GroupDelay, Shipping, 2e-4, NAN), // 7.73e-07
-            (Harmonics, Oversampled, 10.0, 10.0), // 1.79 / 1.72
-            (Harmonics, Shipping, 10.0, 50.0), // 2.51 / 10.9
-            (Intermodulation, Oversampled, 2.0, 20.0), // 0.608 / 3.89
-            (Intermodulation, Shipping, 10.0, 50.0), // 2.6 / 13.7
-            (OperatingPoint, Oversampled, 0.02, NAN), // 0.0039 — FINDING: 3.9 mV off ngspice at the collector (open)
-            (OperatingPoint, Shipping, 0.02, NAN), // 0.0039
-            (Response, Oversampled, 0.5, 2.0), // 0.133 / 0.337 — FINDING: 0.13 dB of gain from the operating point
-            (Response, Shipping, 1.0, 20.0), // 0.193 / 3.9
-            (ThdN, Oversampled, 1.0, NAN), // 0.234
-            (ThdN, Shipping, 2.0, NAN), // 0.342 — aliasing at the host rate
+            (Aliasing, Oversampled, -91.0, NAN), // -93.7 — RAISED from -115 (R12): not aliasing at 4×; the 8 kHz +20 dB tone's inharmonic floor is the circuit's own (-64.9 dBc in both), and the check reads the model's excess over the reference — 0.005 dB of agreement on that floor reads -94; the temp-corrected reference moved it from just above the model's to just below
+            (Aliasing, Shipping, -23.0, NAN), // -25.3 — aliasing as it ships
+            (Anmr, Shipping, 41.0, NAN), // 37.3 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
+            (Bla, Oversampled, 0.1, 5.0), // 0.0317 / 1.39
+            (Bla, Shipping, 5.0, 200.0), // 1.65 / 34.5
+            (Compression, Oversampled, 0.02, 0.5), // 0.00362 / 0.107
+            (Compression, Shipping, 0.2, 10.0), // 0.0628 / 2.17
+            (Detection, Oversampled, 0.5, NAN), // 0.143
+            (Detection, Shipping, 10.0, NAN), // 2.14
+            (Dynamics, Oversampled, 1e-4, 0.02), // 3.11e-05 / 0.0144
+            (Dynamics, Shipping, 5e-4, 0.5), // 0.00024 / 0.106
+            (GroupDelay, Oversampled, 2e-4, NAN), // 1.62e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 6.88e-07
+            (Harmonics, Oversampled, 5.0, 10.0), // 1.14 / 1.96
+            (Harmonics, Shipping, 10.0, 50.0), // 2.92 / 11.7
+            (Intermodulation, Oversampled, 2.0, 20.0), // 0.393 / 4.47
+            (Intermodulation, Shipping, 10.0, 50.0), // 2.16 / 13.2
+            (OperatingPoint, Oversampled, 5e-7, NAN), // 9.19e-08 — R12: closed (was 3.9 mV: the reference had dropped the deck's temp)
+            (OperatingPoint, Shipping, 5e-7, NAN), // 9.19e-08
+            (Response, Oversampled, 1e-5, 5e-5), // 3.17e-06 / 7.64e-06 — R12: closed with the operating point (was 0.13 dB)
+            (Response, Shipping, 0.2, 20.0), // 0.0627 / 3.98
+            (ThdN, Oversampled, 0.05, NAN), // 0.00924
+            (ThdN, Shipping, 1.0, NAN), // 0.248 — aliasing as it ships
         ],
         ("triode_stage", Tier::T1) => &[
-            (Aliasing, Oversampled, -70.0, NAN), // -78.6
-            (Aliasing, Shipping, -15.0, NAN), // -20.9 — aliasing at the host rate
-            (Anmr, Shipping, 50.0, NAN), // 42.0 / 28.3 / 16.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -76.0, NAN), // -78.6
+            (Aliasing, Shipping, -72.0, NAN), // -74.7 — aliasing as it ships
+            (Anmr, Shipping, 6.0, NAN), // 2.8 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.000992
-            (Bla, Shipping, 0.05, 1.0), // 0.0163 / 0.261
+            (Bla, Shipping, 0.005, 0.005), // 0.000968 / 0.00131
             (Compression, Oversampled, 0.001, 5e-5), // 0.000243 / 1.03e-05
             (Compression, Shipping, 0.001, 5e-5), // 0.000243 / 1.03e-05
             (Detection, Oversampled, 0.01, NAN), // 0.00327
-            (Detection, Shipping, 2.0, NAN), // 0.397
+            (Detection, Shipping, 0.01, NAN), // 0.00327
             (Dynamics, Oversampled, 1e-4, 2e-4), // 2.27e-05 / 6.38e-05
             (Dynamics, Shipping, 1e-4, 2e-4), // 2.27e-05 / 6.38e-05
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
@@ -1031,25 +1033,25 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Harmonics, Shipping, 0.5, 0.05), // 0.0949 / 0.00675
             (Intermodulation, Oversampled, 0.2, 0.05), // 0.0655 / 0.0131
             (Intermodulation, Shipping, 0.1, 0.02), // 0.0273 / 0.00353
-            (OperatingPoint, Oversampled, 1e-4, NAN), // 2.11e-05
-            (OperatingPoint, Shipping, 1e-4, NAN), // 2.11e-05
-            (Response, Oversampled, 5e-6, NAN), // 7.23e-07
-            (Response, Shipping, 5e-6, NAN), // 7.23e-07
+            (OperatingPoint, Oversampled, 5e-9, NAN), // 7.6e-10
+            (OperatingPoint, Shipping, 5e-9, NAN), // 7.6e-10
+            (Response, Oversampled, 2e-9, NAN), // 5.68e-10
+            (Response, Shipping, 2e-9, NAN), // 5.68e-10
             (ThdN, Oversampled, 0.05, NAN), // 0.0101
-            (ThdN, Shipping, 50.0, NAN), // 10.5 — aliasing at the host rate
+            (ThdN, Shipping, 0.05, NAN), // 0.0102 — aliasing as it ships
         ],
         ("push_pull", Tier::T1) => &[
-            (Aliasing, Oversampled, -45.0, NAN), // -52.8
-            (Aliasing, Shipping, -5.0, NAN), // -14.8 — aliasing at the host rate
-            (Anmr, Shipping, 60.0, NAN), // 49.0 / 53.1 / 30.0 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -50.0, NAN), // -52.8
+            (Aliasing, Shipping, -63.0, NAN), // -65.1 — aliasing as it ships
+            (Anmr, Shipping, 14.0, NAN), // 10.5 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.05), // 0.00166 / 0.0114
-            (Bla, Shipping, 0.5, 2.0), // 0.0912 / 0.48
+            (Bla, Shipping, 0.005, 0.01), // 0.00106 / 0.0024
             (Compression, Oversampled, 0.002, 5e-4), // 0.000455 / 0.000105
             (Compression, Shipping, 0.002, 5e-4), // 0.000455 / 0.000105
             (Detection, Oversampled, 0.02, NAN), // 0.00342
-            (Detection, Shipping, 500.0, NAN), // 82.6
+            (Detection, Shipping, 0.005, NAN), // 0.00164
             (Dynamics, Oversampled, 2e-4, 5e-4), // 4.54e-05 / 7.9e-05
-            (Dynamics, Shipping, 2e-4, 5e-4), // 4.54e-05 / 0.000114
+            (Dynamics, Shipping, 2e-4, 5e-4), // 4.54e-05 / 7.9e-05
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
             (Harmonics, Oversampled, 0.5, 0.1), // 0.109 / 0.0175
@@ -1058,104 +1060,104 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Intermodulation, Shipping, 0.05, 0.05), // 0.0156 / 0.0157
             (OperatingPoint, Oversampled, 5e-8, NAN), // 7.5e-09
             (OperatingPoint, Shipping, 5e-8, NAN), // 7.5e-09
-            (Response, Oversampled, 1e-6, NAN), // 4.68e-10
-            (Response, Shipping, 1e-6, NAN), // 4.68e-10
+            (Response, Oversampled, 2e-9, NAN), // 4.68e-10
+            (Response, Shipping, 2e-9, NAN), // 4.68e-10
             (ThdN, Oversampled, 200.0, NAN), // 64.9
-            (ThdN, Shipping, 500.0, NAN), // 103 — aliasing at the host rate
+            (ThdN, Shipping, 200.0, NAN), // 52.5 — aliasing as it ships
         ],
         ("push_pull_pentode", Tier::T1) => &[
-            (Aliasing, Oversampled, -55.0, NAN), // -63.7
-            (Aliasing, Shipping, -10.0, NAN), // -18.7 — aliasing at the host rate
-            (Anmr, Shipping, 65.0, NAN), // 59.6 / 31.2 / 18.3 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -61.0, NAN), // -63.7
+            (Aliasing, Shipping, -70.0, NAN), // -72.1 — aliasing as it ships
+            (Anmr, Shipping, 6.0, NAN), // 2.6 — FINDING: above −10 dB as it ships, on the grid's hottest tones (to 8 kHz at +20 dB; R12 chose its factor on the piano, to 4.2 kHz)
             (Bla, Oversampled, 0.005, 0.02), // 0.00112 / 0.0061
-            (Bla, Shipping, 0.2, 2.0), // 0.0629 / 0.588
+            (Bla, Shipping, 0.005, 0.005), // 0.00105 / 0.00165
             (Compression, Oversampled, 0.002, 5e-4), // 0.000426 / 0.000146
             (Compression, Shipping, 0.002, 5e-4), // 0.000426 / 0.000146
             (Detection, Oversampled, 0.01, NAN), // 0.00217
-            (Detection, Shipping, 500.0, NAN), // 82.3
+            (Detection, Shipping, 0.005, NAN), // 0.00146
             (Dynamics, Oversampled, 2e-4, 2e-4), // 5.19e-05 / 3.92e-05
-            (Dynamics, Shipping, 2e-4, 0.02), // 5.19e-05 / 0.00377
+            (Dynamics, Shipping, 2e-4, 1e-4), // 5.19e-05 / 3.25e-05
             (GroupDelay, Oversampled, 2e-4, NAN), // 0
             (GroupDelay, Shipping, 2e-4, NAN), // 0
             (Harmonics, Oversampled, 2.0, 1.0), // 0.346 / 0.171
-            (Harmonics, Shipping, 1.0, 0.1), // 0.202 / 0.0322
+            (Harmonics, Shipping, 0.5, 0.1), // 0.0808 / 0.0322
             (Intermodulation, Oversampled, 0.2, 0.1), // 0.0372 / 0.0235
-            (Intermodulation, Shipping, 50.0, 0.02), // 15.8 / 0.00381
-            (OperatingPoint, Oversampled, 5e-5, NAN), // 1.08e-05
-            (OperatingPoint, Shipping, 5e-5, NAN), // 1.08e-05
-            (Response, Oversampled, 1e-6, NAN), // 5.65e-09
-            (Response, Shipping, 1e-6, NAN), // 5.65e-09
+            (Intermodulation, Shipping, 0.1, 0.02), // 0.0283 / 0.00381
+            (OperatingPoint, Oversampled, 1e-7, NAN), // 2.97e-08
+            (OperatingPoint, Shipping, 1e-7, NAN), // 2.97e-08
+            (Response, Oversampled, 2e-9, NAN), // 3.87e-10
+            (Response, Shipping, 2e-9, NAN), // 3.87e-10
             (ThdN, Oversampled, 200.0, NAN), // 52.6
-            (ThdN, Shipping, 500.0, NAN), // 97.7 — aliasing at the host rate
+            (ThdN, Shipping, 200.0, NAN), // 44.2 — aliasing as it ships
         ],
         ("tube_screamer", Tier::T1) => &[
-            (Aliasing, Oversampled, -115.0, NAN), // -120
-            (Aliasing, Shipping, -15.0, NAN), // -20.6 — aliasing at the host rate
-            (Anmr, Shipping, 70.0, NAN), // 60.5 / 43.2 / -7.1 at 44.1 / 48 / 96 kHz — FINDING: audible aliasing at the host rate
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -88.0, NAN), // -90.6 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -17.4 — inaudible (Kahles et al.'s −10 dB)
             (Bla, Oversampled, 0.05, 0.1), // 0.0101 / 0.0265
-            (Bla, Shipping, 20.0, 50.0), // 5.62 / 10.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (Bla, Shipping, 1.0, 2.0), // 0.226 / 0.54 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
             (Compression, Oversampled, 0.01, 0.05), // 0.00198 / 0.0115
-            (Compression, Shipping, 5.0, 20.0), // 0.805 / 5.21
-            (Detection, Oversampled, 0.005, NAN), // 0.000945
-            (Detection, Shipping, 500.0, NAN), // 79.5
+            (Compression, Shipping, 0.2, 1.0), // 0.0448 / 0.232
+            (Detection, Oversampled, 0.005, NAN), // 0.000942
+            (Detection, Shipping, 0.1, NAN), // 0.0205
             (Dynamics, Oversampled, 5e-5, 0.1), // 1.33e-05 / 0.0224
-            (Dynamics, Shipping, 0.001, 2.0), // 0.000208 / 0.466
-            (GroupDelay, Oversampled, 2e-4, NAN), // 3.74e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 1.06e-06
+            (Dynamics, Shipping, 1e-4, 0.2), // 3.13e-05 / 0.0593
+            (GroupDelay, Oversampled, 2e-4, NAN), // 8.79e-13
+            (GroupDelay, Shipping, 2e-4, NAN), // 6.5e-08
             (Harmonics, Oversampled, 5.0, 20.0), // 0.699 / 3.53
-            (Harmonics, Shipping, 100.0, 500.0), // 23 / 69.6
+            (Harmonics, Shipping, 2.0, 10.0), // 0.511 / 1.85
             (Intermodulation, Oversampled, 1.0, 1.0), // 0.207 / 0.203
-            (Intermodulation, Shipping, 200.0, 100.0), // 56.5 / 22.6
-            (OperatingPoint, Oversampled, 1e-7, NAN), // 3.05e-08
-            (OperatingPoint, Shipping, 1e-7, NAN), // 3.05e-08
-            (Response, Oversampled, 5e-5, 1e-4), // 9.11e-06 / 3.1e-05
-            (Response, Shipping, 20.0, 50.0), // 5.62 / 8.07 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.1, NAN), // 0.0248
-            (ThdN, Shipping, 500.0, NAN), // 99.4 — aliasing at the host rate
+            (Intermodulation, Shipping, 5.0, 5.0), // 1.48 / 1.33
+            (OperatingPoint, Oversampled, 2e-9, NAN), // 5.31e-10
+            (OperatingPoint, Shipping, 2e-9, NAN), // 5.31e-10
+            (Response, Oversampled, 1e-6, 2e-6), // 1.69e-07 / 5.78e-07
+            (Response, Shipping, 1.0, 2.0), // 0.228 / 0.476 — R12: shipped oversampled (bilinear warping at 1× read 0.7–5.6 dB at 16 kHz)
+            (ThdN, Oversampled, 0.1, NAN), // 0.0249
+            (ThdN, Shipping, 100.0, NAN), // 29.4 — aliasing as it ships
         ],
         ("boss_ce2_filters", Tier::T0) => &[
-            (Aliasing, Oversampled, -75.0, NAN), // -84.2
-            (Aliasing, Shipping, -40.0, NAN), // -45.2 — aliasing at the host rate
+            (Aliasing, Oversampled, -82.0, NAN), // -84.2
+            (Aliasing, Shipping, -111.0, NAN), // -113 — aliasing as it ships
             (Bla, Oversampled, 5.0, 50.0), // 1.25 / 10.8 — at 16 kHz, 66 dB down in the stopband
-            (Bla, Shipping, 100.0, 200.0), // 28.1 / 48.2 — FINDING: bilinear warping at 1× (no prewarp)
+            (Bla, Shipping, 0.5, 5.0), // 0.0712 / 0.69 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (Compression, Oversampled, 0.005, 0.05), // 0.00158 / 0.0139
-            (Compression, Shipping, 0.1, 1.0), // 0.0328 / 0.205
+            (Compression, Shipping, 5e-4, 0.005), // 9.49e-05 / 0.000846
             (Detection, Oversampled, 0.1, NAN), // 0.0238
-            (Detection, Shipping, 1.0, NAN), // 0.314
-            (GroupDelay, Oversampled, 2e-4, NAN), // 6.31e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 3.92e-06
+            (Detection, Shipping, 0.005, NAN), // 0.00139
+            (GroupDelay, Oversampled, 2e-4, NAN), // 6.48e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.5e-08
             (Harmonics, Oversampled, 2.0, 20.0), // 0.54 / 5.41
-            (Harmonics, Shipping, 20.0, 500.0), // 4.54 / 120 — FINDING: bilinear warping at 1× (no prewarp)
-            (OperatingPoint, Oversampled, 5e-06, NAN), // 7.86e-07
-            (OperatingPoint, Shipping, 5e-06, NAN), // 7.86e-07
-            (Response, Oversampled, 0.0002, 0.001), // 4.41e-05 / 0.00032
-            (Response, Shipping, 100.0, 200.0), // 28.1 / 37.9 — FINDING: bilinear warping at 1× (no prewarp)
-            (ThdN, Oversampled, 0.01, NAN), // 0.00265
-            (ThdN, Shipping, 0.2, NAN), // 0.0566 — aliasing at the host rate
+            (Harmonics, Shipping, 0.1, 1.0), // 0.0322 / 0.33 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.12e-07
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.12e-07
+            (Response, Oversampled, 2e-4, 0.001), // 4.45e-05 / 0.000321
+            (Response, Shipping, 0.5, 0.5), // 0.077 / 0.153 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
+            (ThdN, Oversampled, 0.01, NAN), // 0.00264
+            (ThdN, Shipping, 0.001, NAN), // 0.000172 — aliasing as it ships
         ],
         ("boss_ce2_filters", Tier::T1) => &[
-            (Aliasing, Oversampled, -30.0, NAN), // -39.7
-            (Aliasing, Shipping, -10.0, NAN), // -16.9 — aliasing at the host rate
+            (Aliasing, Oversampled, -37.0, NAN), // -39.7
+            (Aliasing, Shipping, -70.0, NAN), // -72.5 — aliasing as it ships
             (Bla, Oversampled, 5.0, 20.0), // 1.44 / 5.86 — at 16 kHz, 66 dB down in the stopband
-            (Bla, Shipping, 200.0, 500.0), // 36.9 / 93.3 — FINDING: bilinear warping at 1× (no prewarp)
+            (Bla, Shipping, 0.5, 2.0), // 0.101 / 0.374 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (Compression, Oversampled, 1.0, 5.0), // 0.217 / 1.52
-            (Compression, Shipping, 20.0, 100.0), // 4.86 / 29.7 — FINDING: bilinear warping at 1× (no prewarp)
-            (Detection, Oversampled, 0.2, NAN), // 0.0557
-            (Detection, Shipping, 5.0, NAN), // 1.22
-            (Dynamics, Oversampled, 0.001, 0.05), // 0.00022 / 0.00817
-            (Dynamics, Shipping, 0.02, 0.5), // 0.00587 / 0.0716
-            (GroupDelay, Oversampled, 2e-4, NAN), // 6.31e-11
-            (GroupDelay, Shipping, 2e-4, NAN), // 4.67e-06
-            (Harmonics, Oversampled, 50.0, 100.0), // 16.2 / 16.9 — an 8 kHz tone's H-products near −105 dBc: aliasing at 4×
-            (Harmonics, Shipping, 100.0, 500.0), // 20 / 142 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Shipping, 0.05, 0.5), // 0.0149 / 0.107 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
+            (Detection, Oversampled, 0.2, NAN), // 0.0558
+            (Detection, Shipping, 0.02, NAN), // 0.00386
+            (Dynamics, Oversampled, 0.001, 0.05), // 0.00022 / 0.00818
+            (Dynamics, Shipping, 5e-4, 0.02), // 9.85e-05 / 0.00579
+            (GroupDelay, Oversampled, 2e-4, NAN), // 6.48e-11
+            (GroupDelay, Shipping, 2e-4, NAN), // 1.77e-08
+            (Harmonics, Oversampled, 50.0, 100.0), // 16.2 / 17 — an 8 kHz tone's H-products near −105 dBc: aliasing at 4×
+            (Harmonics, Shipping, 0.5, 2.0), // 0.13 / 0.395 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (Intermodulation, Oversampled, 100.0, 50.0), // 18.9 / 10.3 — CCIF products near −94 dBc: aliasing at 4×
-            (Intermodulation, Shipping, 500.0, 500.0), // 67.5 / 131 — aliasing at the host rate
-            (OperatingPoint, Oversampled, 5e-06, NAN), // 7.86e-07
-            (OperatingPoint, Shipping, 5e-06, NAN), // 7.86e-07
-            (Response, Oversampled, 0.0002, 0.001), // 4.41e-05 / 0.00032
-            (Response, Shipping, 200.0, 200.0), // 36.5 / 43.7 — FINDING: bilinear warping at 1× (no prewarp)
+            (Intermodulation, Shipping, 1.0, 2.0), // 0.183 / 0.341 — aliasing as it ships
+            (OperatingPoint, Oversampled, 1e-6, NAN), // 2.12e-07
+            (OperatingPoint, Shipping, 1e-6, NAN), // 2.12e-07
+            (Response, Oversampled, 2e-4, 0.001), // 4.45e-05 / 0.000321
+            (Response, Shipping, 0.5, 1.0), // 0.0913 / 0.181 — R12: shipped oversampled at 16× (at 1× the bilinear map left its stopband 28 dB shallow)
             (ThdN, Oversampled, 5.0, NAN), // 0.679
-            (ThdN, Shipping, 50.0, NAN), // 11.8 — aliasing at the host rate
+            (ThdN, Shipping, 0.2, NAN), // 0.047 — aliasing as it ships
         ],
         (case, tier) => panic!("no budgets for `{case}` at {tier:?}"),
     }

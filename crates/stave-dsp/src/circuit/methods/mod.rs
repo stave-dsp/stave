@@ -8,6 +8,8 @@
 //!   [`Netlist`](crate::circuit::netlist::Netlist), discretised into a
 //!   state space with its nonlinear subsystem separated
 //!   (`Circuit<Dk>`);
+//! - [`prewarp`] — the bilinear transform's frequency warping, and the
+//!   design step that prewarps every reactance to one frequency;
 //! - [`newton`] — damped Newton with device step limiting, and the
 //!   settings and statistics every iterative solve shares;
 //! - [`load_line`] — a device on a supply through a load, in equilibrium
@@ -23,6 +25,7 @@ pub mod adaa;
 pub mod dk;
 pub mod load_line;
 pub mod newton;
+pub mod prewarp;
 pub mod wdf;
 pub(crate) mod woodbury;
 pub mod wright_omega;
