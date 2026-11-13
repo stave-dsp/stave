@@ -31,23 +31,51 @@ shift
 
 source "$(dirname "$0")/lib/config.sh"
 stave_config_load "$(git rev-parse --show-toplevel)"
-# Load per core on a host (one-minute average), for `auto`.
+# Load per core on a host (one-minute average), for `auto`; `local` is
+# this machine.
 load_per_core() {
-  ssh "$1" 'l=$(uptime | sed -E "s/.*load averages?: *([0-9.]+).*/\1/"); \
-    n=$(nproc 2>/dev/null || sysctl -n hw.ncpu); awk -v l="$l" -v n="$n" "BEGIN{printf \"%.3f\", l/n}"' 2>/dev/null || echo 999
+  local probe='l=$(uptime | sed -E "s/.*load averages?: *([0-9.]+).*/\1/");
+    n=$(nproc 2>/dev/null || sysctl -n hw.ncpu); awk -v l="$l" -v n="$n" "BEGIN{printf \"%.3f\", l/n}"'
+  if [[ "$1" == local ]]; then
+    # Local builds fill this disk (a target directory per checkout): leave
+    # the pool below STAVE_AUTO_MIN_FREE_GB free (default 30).
+    local free_gb
+    free_gb="$(df -Pk "$(git rev-parse --show-toplevel)" | awk 'NR==2{printf "%d", $4/1048576}')"
+    if ((free_gb < ${STAVE_AUTO_MIN_FREE_GB:-30})); then echo 999; return; fi
+    bash -c "$probe" 2>/dev/null || echo 999
+  else ssh "$1" "$probe" 2>/dev/null || echo 999; fi
 }
 case "$HOST" in
   linux) HOST="$(stave_config_require STAVE_LINUX_HOST "offload.sh linux")" ;;
   macos) HOST="$(stave_config_require STAVE_MACOS_HOST "offload.sh macos")" ;;
   auto)
-    # Whichever configured host is less loaded per core right now; for work
-    # that runs on either (builds, tests, gates).
-    L="$(stave_config_require STAVE_LINUX_HOST "offload.sh auto")"
-    M="$(stave_config_require STAVE_MACOS_HOST "offload.sh auto")"
-    if awk -v a="$(load_per_core "$L")" -v b="$(load_per_core "$M")" 'BEGIN{exit !(a <= b)}'; then HOST="$L"; else HOST="$M"; fi
-    echo "offload: auto chose $HOST" >&2
+    # The least loaded (per core) of STAVE_AUTO_HOSTS — by default the
+    # configured Linux and macOS hosts; `local` adds this machine. When
+    # every host is above STAVE_AUTO_MAX_LOAD per core (default 1.5) the
+    # command waits for one to free up rather than piling on, so many
+    # parallel builds queue briefly instead of all slowing down.
+    POOL="${STAVE_AUTO_HOSTS:-${STAVE_LINUX_HOST:-} ${STAVE_MACOS_HOST:-}}"
+    [[ -n "${POOL// /}" ]] || { echo "offload.sh auto needs STAVE_AUTO_HOSTS or the linux/macos hosts (stave.env.example)" >&2; exit 2; }
+    MAX="${STAVE_AUTO_MAX_LOAD:-1.5}"
+    waited=0
+    while :; do
+      best="" best_load=999
+      for h in $POOL; do
+        l="$(load_per_core "$h")"
+        if awk -v a="$l" -v b="$best_load" 'BEGIN{exit !(a < b)}'; then best="$h"; best_load="$l"; fi
+      done
+      if awk -v a="$best_load" -v m="$MAX" 'BEGIN{exit !(a <= m)}' || ((waited >= 1800)); then break; fi
+      ((waited == 0)) && echo "offload: every host is above $MAX load per core; waiting" >&2
+      sleep 15; waited=$((waited + 15))
+    done
+    HOST="$best"
+    echo "offload: auto chose $HOST (load $best_load per core, waited ${waited}s)" >&2
     ;;
 esac
+if [[ "$HOST" == local ]]; then
+  # This machine: no sync, its own tree and target directory.
+  cd "$(git rev-parse --show-toplevel)" && exec nice -n 10 "$@"
+fi
 SYNC="${STAVE_OFFLOAD_SYNC:-rsync}"
 for tar_host in ${STAVE_TAR_HOSTS:-}; do
   [[ "$tar_host" == "$HOST" ]] && SYNC="${STAVE_OFFLOAD_SYNC:-tar}"

@@ -20,6 +20,9 @@ one says which, and how to set it.
 | `STAVE_LINUX_HOST` | `scripts/offload.sh linux` | an ssh destination to build and test on (Linux covers the whole workspace) |
 | `STAVE_MACOS_HOST` | `scripts/offload.sh macos` | an ssh destination for the Cocoa crates and macOS-only checks |
 | `STAVE_TAR_HOSTS` | `scripts/offload.sh` | hosts that get a tarball instead of rsync (space-separated) |
+| `STAVE_AUTO_HOSTS` | `scripts/offload.sh auto` | the pool `auto` picks from, least loaded per core (`local` = this machine) |
+| `STAVE_AUTO_MAX_LOAD` | `scripts/offload.sh auto` | load per core above which `auto` waits instead of piling on (default 1.5) |
+| `STAVE_AUTO_MIN_FREE_GB` | `scripts/offload.sh auto` | free disk below which `local` leaves the pool (default 30) |
 | `STAVE_REFERENCE_HOST` | `scripts/datasheet.sh` | the machine whose numbers are committed to `datasheet.json` |
 | `STAVE_REFERENCE_NAME` | `scripts/datasheet.sh` | how the Cost page describes it (the hardware, e.g. "Apple M1, 8 cores") |
 | `STAVE_SAMPLE_LIBRARY` | program-material tests | reference audio (never committed; tests skip when unset) |
