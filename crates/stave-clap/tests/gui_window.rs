@@ -151,7 +151,22 @@ mod x11 {
             eprintln!("no DISPLAY: the X11 gui test passes vacuously");
             return None;
         }
-        let (conn, screen) = x11rb::connect(None).expect("the X display");
+        let (conn, screen) = {
+            // Under parallel tests the shared Xvfb can reset a connection while
+            // it is busy: retry briefly before failing.
+            let mut tries = 0u64;
+            loop {
+                match x11rb::connect(None) {
+                    Ok(c) => break c,
+                    Err(e) if tries < 20 => {
+                        tries += 1;
+                        let _ = e;
+                        std::thread::sleep(std::time::Duration::from_millis(50 * tries));
+                    }
+                    Err(e) => panic!("the X display: {e:?}"),
+                }
+            }
+        };
         let root = conn.setup().roots[screen].root;
         let parent = conn.generate_id().unwrap();
         conn.create_window(

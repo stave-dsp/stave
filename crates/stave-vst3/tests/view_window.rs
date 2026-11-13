@@ -225,7 +225,22 @@ mod linux {
             eprintln!("no DISPLAY: the X11 view test passes vacuously");
             return;
         }
-        let (conn, screen) = x11rb::connect(None).expect("the X display");
+        let (conn, screen) = {
+            // Under parallel tests the shared Xvfb can reset a connection while
+            // it is busy: retry briefly before failing.
+            let mut tries = 0u64;
+            loop {
+                match x11rb::connect(None) {
+                    Ok(c) => break c,
+                    Err(e) if tries < 20 => {
+                        tries += 1;
+                        let _ = e;
+                        std::thread::sleep(std::time::Duration::from_millis(50 * tries));
+                    }
+                    Err(e) => panic!("the X display: {e:?}"),
+                }
+            }
+        };
         let root = conn.setup().roots[screen].root;
         let parent = conn.generate_id().unwrap();
         conn.create_window(x11rb::COPY_DEPTH_FROM_PARENT, parent, root, 0, 0, 400, 400, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::new())
@@ -284,7 +299,22 @@ mod linux {
         if std::env::var_os("DISPLAY").is_none() {
             return;
         }
-        let (conn, screen) = x11rb::connect(None).expect("the X display");
+        let (conn, screen) = {
+            // Under parallel tests the shared Xvfb can reset a connection while
+            // it is busy: retry briefly before failing.
+            let mut tries = 0u64;
+            loop {
+                match x11rb::connect(None) {
+                    Ok(c) => break c,
+                    Err(e) if tries < 20 => {
+                        tries += 1;
+                        let _ = e;
+                        std::thread::sleep(std::time::Duration::from_millis(50 * tries));
+                    }
+                    Err(e) => panic!("the X display: {e:?}"),
+                }
+            }
+        };
         let root = conn.setup().roots[screen].root;
         unsafe {
             let rig = Rig::new();
