@@ -1,0 +1,5 @@
+# The reference generators' Python dependencies (scripts/ja-reference.py),
+# pinned: CI installs exactly these to check the committed references.
+# scripts/ngspice-simulate.py needs only the standard library and libngspice.
+numpy==2.2.6
+scipy==1.15.3

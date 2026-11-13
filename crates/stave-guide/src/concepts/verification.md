@@ -46,6 +46,105 @@ only the packages the uncommitted change can reach.
 and every rustdoc link; `scripts/hygiene.sh advisories` checks the RustSec
 database.
 
+## Models against references
+
+A circuit model is held to ngspice on the same netlist; a model SPICE
+cannot express (a magnetic core) is held to a high-precision solution of
+its equations. Both go through one harness,
+[`stave_test::reference`](stave_test::reference): a
+[`Case`](stave_test::reference::Case) names its reference, a
+[`Stimulus`](stave_test::reference::Stimulus), a
+[`Metric`](stave_test::reference::Metric) and an explicit budget, and the
+model runs inside it — [`stage`](stave_test::reference::Case::stage) ticks
+a stage at a multiple of the reference's rate,
+[`pointwise`](stave_test::reference::Case::pointwise) evaluates a static
+transfer or a frequency response at each reference point. The cases live
+in `crates/stave-test/tests/matches_ngspice.rs` and `matches_reference.rs`,
+one test per model, named `<model>_matches_ngspice` or
+`<model>_matches_reference`; a model's rustdoc names that test.
+
+The metrics are sample errors (max or RMS absolute, normalized RMS, max
+relative to the peak), `MaxDb` for magnitude responses, and the spectral
+`Harmonics` and `ThdDelta`. Budgets are set a small factor above the
+measured error, so a model that drifts fails long before it sounds
+different; a budget is never loosened to make a change pass.
+
+### Adding a circuit
+
+1. Write `crates/stave-test/spice/<name>.cir`: the circuit, a `.tran`
+   at the 48 kHz step (`20.8333333u`), `.ac` or `.dc`, and a `.control`
+   block that ends `wrdata OUTFILE v(<node>)` (copy one beside it; the
+   options line pins ngspice's tolerances).
+2. Simulate it: `scripts/ngspice-simulate.py` (needs `brew install
+   libngspice` on macOS). It checks ngspice on the circuits with exact
+   answers first, then writes `<name>.ngspice.txt` beside every netlist.
+3. Add the case and commit the netlist and its waveform together:
+
+```rust
+use stave_dsp::{Coupler, Stage};
+use stave_test::reference::{Case, Drive, Metric, Stimulus};
+
+let mut coupler = Coupler::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32);
+coupler.prepare(48_000.0);
+Case::ngspice("coupler")
+    .stimulus(Stimulus::sine(1.0, 50.0)) // the netlist's source
+    .budget(Metric::NormalizedRms, 2e-6)
+    .stage(Drive::oversampled(1), |x| f64::from(coupler.tick(x as f32)))
+    .assert();
+```
+
+Run it with `cargo test -p stave-test --test matches_ngspice -- --nocapture`
+to see the measured error, then set the budget a small factor above it.
+`about_operating_point` compares swings around the bias point,
+`up_to_scale` allows one fitted level calibration, and
+`assert_converges` requires the error to fall as the step halves, so a
+model converges to the reference rather than to a model of its own. A
+reference that is not a netlist is `Case::generated("<name>",
+"scripts/<generator>.py")` over `crates/stave-test/reference/<name>.txt`.
+
+### Regenerating the references
+
+```text
+scripts/ngspice-simulate.py            # every spice/*.ngspice.txt (brew install libngspice, or apt install ngspice)
+scripts/ngspice-simulate.py --check    # compare instead of write
+pip install -r scripts/reference-requirements.txt
+scripts/ja-reference.py [--check]      # reference/*.txt (pinned NumPy, SciPy)
+```
+
+The `references` workflow installs a pinned ngspice (Ubuntu 24.04's
+package of ngspice 42) and the pinned NumPy and SciPy on Linux, and runs
+both scripts with `--check` whenever a netlist, a reference, a script,
+the circuit code or the harness changes. A regenerated file that differs
+from the committed one by more than print, platform and version noise
+fails: 2×10⁻⁵ of its peak for ngspice (the committed waveforms come from
+ngspice 47 on macOS, which 42 reproduces within 5×10⁻⁶), 10⁻⁸ for the
+solved references (macOS and Linux agree within 2×10⁻¹⁰). A 1% component
+change moves a waveform by 1.6×10⁻³ of its peak or more, and the workflow
+proves it every run: it perturbs a capacitor by 1%, and a solver
+parameter by 1%, and requires each check to fail. So a netlist edited
+without regenerating its waveform cannot pass. A changed fixture is
+committed with the change that caused it, and the model cases must still
+pass at their budgets.
+
+### Reading a failure
+
+```text
+reference case `coupler` FAILED: normalized RMS error 5.514e-7 > budget 1e-7
+  worst     at t = 8.291666653e-3 s (point 398 of 4801): reference 2.817963878e-1, model 2.817972600e-1, error 8.723e-7
+  reference crates/stave-test/spice/coupler.ngspice.txt (ngspice; regenerate with scripts/ngspice-simulate.py)
+  stimulus  sine, 1 peak at 50 Hz
+  model     1× the reference's 48000 Hz
+  dump      target/reference-diff/coupler.tsv (abscissa reference model error)
+```
+
+The first line is the metric against the budget; `worst` is where the
+error peaks, with both values there — an error at the first points is a
+start-up or alignment mismatch, at the peaks a nonlinearity, everywhere a
+level or a wrong component. The dump holds the whole comparison as
+columns for any plotter (`numpy.loadtxt`, gnuplot); CI uploads it as the
+`reference-diff` artifact. `STAVE_REFERENCE_DUMP=1` writes a dump for
+every case, passing or not.
+
 ## Validators
 
 `scripts/validate-formats.sh` builds every plugin in release, bundles it,
@@ -120,6 +219,7 @@ patches.
 | `ci.yml` | every push to main and release branches, every pull request | macOS: every test under nextest and the doctests; clippy, rustdoc and the MSRV check; both validators. Linux: the tree rules and hygiene; the portable crates' check and the Loom models; Miri in four shards |
 | `platforms.yml` | every push to main and release branches, every pull request | Linux and Windows: build and test the workspace (the X11 face in a real window on Xvfb), clippy and rustdoc, exported entry points, both validators, and stave-host opening the bundle |
 | `deep.yml` | nightly and on demand; semver checks on every push to a release branch | one Kani job per harness, both sanitizers, every fuzz target for four minutes, the simulated host over 3 000 seeds, RustSec advisories, and semver checks |
+| `references.yml` | pushes and pull requests that touch a netlist, a reference, their scripts, the circuit code or the harness; not a required check, since it is path-filtered | Linux: the pinned ngspice and NumPy/SciPy regenerate every reference, which must match the committed one (see [models against references](#models-against-references)) |
 | `docs.yml` | every push to main, every pull request; deployed from main | macOS: `scripts/docsite.sh` builds the documentation site — rustdoc with every warning an error; a guide module without an article, a face part without a picture, a binary whose `--help` fails or a link that goes nowhere fails it — and main deploys it to GitHub Pages |
 | `canary.yml` | weekly | the newest stable toolchain's build and clippy; a failure opens an issue instead of turning main red |
 

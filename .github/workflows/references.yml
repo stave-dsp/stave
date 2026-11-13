@@ -1,0 +1,99 @@
+# The references the circuit models are held to (DSP.md R2): regenerate
+# every committed ngspice waveform with a pinned ngspice, and every solved
+# reference with pinned NumPy/SciPy, and fail if any differs from the
+# committed file — a stale fixture can't pass. scripts/ngspice-simulate.py
+# first checks ngspice on circuits with exact answers.
+#
+# The fixtures are a function of the netlists, the scripts and the pinned
+# versions only, so the job runs when those change (and when the circuit
+# code or the harness that reads them does). It is path-filtered and so
+# NOT a required check: a required check that never reports blocks every
+# other pull request. The models themselves are held to the fixtures by
+# the test jobs in ci.yml and platforms.yml, on every change.
+#
+# About a minute: ngspice from apt, NumPy/SciPy wheels from a pip cache.
+name: references
+
+on:
+  push:
+    branches: [main, "release/**"]
+    paths:
+      - crates/stave-test/spice/**
+      - crates/stave-test/reference/**
+      - crates/stave-test/src/reference.rs
+      - crates/stave-test/tests/matches_*.rs
+      - crates/stave-dsp/src/circuit/**
+      - scripts/ngspice-simulate.py
+      - scripts/ja-reference.py
+      - scripts/reference-requirements.txt
+      - .github/workflows/references.yml
+  pull_request:
+    paths:
+      - crates/stave-test/spice/**
+      - crates/stave-test/reference/**
+      - crates/stave-test/src/reference.rs
+      - crates/stave-test/tests/matches_*.rs
+      - crates/stave-dsp/src/circuit/**
+      - scripts/ngspice-simulate.py
+      - scripts/ja-reference.py
+      - scripts/reference-requirements.txt
+      - .github/workflows/references.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # The pinned ngspice: Ubuntu 24.04's package, exactly this build (a new
+  # one fails the install, so a version change is a decision). The
+  # committed waveforms were written by ngspice 47 (Homebrew, macOS); 42
+  # reproduces them within 5e-6 of peak, inside --check's 2e-5, and the
+  # perturbation step below proves the check still catches a 1% change.
+  NGSPICE_PACKAGE: "42+ds-3build1"
+  NGSPICE_VERSION: "42"
+
+jobs:
+  references:
+    name: references (ngspice, SciPy)
+    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ngspice ${{ env.NGSPICE_PACKAGE }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends "ngspice=$NGSPICE_PACKAGE"
+      - name: ngspice's waveforms are current
+        run: python3 scripts/ngspice-simulate.py --check --expect-version "$NGSPICE_VERSION"
+      # The tolerance absorbs print and platform noise, not a real change:
+      # a netlist value 1% off (the coupling cap) must fail the check.
+      - name: A 1% netlist change fails the check
+        run: |
+          sed -i 's/^C1 i o 22n$/C1 i o 22.22n/' crates/stave-test/spice/coupler.cir
+          git diff --quiet crates/stave-test/spice/coupler.cir && { echo "::error::the perturbation changed nothing"; exit 1; }
+          if python3 scripts/ngspice-simulate.py --check; then
+            echo "::error::a 1% netlist change passed the check: the tolerance is too loose"
+            exit 1
+          fi
+          git checkout crates/stave-test/spice/coupler.cir
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/reference-requirements.txt
+      - run: pip install -r scripts/reference-requirements.txt
+      - name: The solved references are current
+        run: python3 scripts/ja-reference.py --check
+      - name: A 1% parameter change fails the check
+        run: |
+          sed -i 's/^MS, A, ALPHA, K, C = 1.6e6,/MS, A, ALPHA, K, C = 1.616e6,/' scripts/ja-reference.py
+          git diff --quiet scripts/ja-reference.py && { echo "::error::the perturbation changed nothing"; exit 1; }
+          if python3 scripts/ja-reference.py --check; then
+            echo "::error::a 1% parameter change passed the check: the tolerance is too loose"
+            exit 1
+          fi
+          git checkout scripts/ja-reference.py

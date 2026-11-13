@@ -262,7 +262,10 @@ The models are held to references outside the code:
 
 - `crates/stave-test/tests/matches_ngspice.rs` compares against ngspice
   waveforms that `scripts/ngspice-simulate.py` regenerates, after first
-  checking ngspice itself on circuits with exact answers.
+  checking ngspice itself on circuits with exact answers; CI regenerates
+  them with a pinned ngspice and fails on a stale one. Every case runs in
+  one harness, with its metric and budget (see
+  [models against references](crate::concepts::verification#models-against-references)).
 - `crates/stave-test/tests/matches_reference.rs` compares what SPICE
   has no model for (the magnetic core, and the transformer built on it)
   against SciPy solutions of their equations from `scripts/ja-reference.py`, and requires the error to

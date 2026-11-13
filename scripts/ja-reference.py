@@ -13,8 +13,19 @@ di/dt = e / (N A mu0 (N/le) (1 + chi)), dM/dt = chi (N/le) di/dt,
 e = v - Rs i; the branch direction is sign(e), restarted at each zero of
 e. Output: reference/transformer.txt, time and the primary EMF (V).
 Offline only; tests read the files.
+
+    scripts/ja-reference.py           regenerate both files
+    scripts/ja-reference.py --check   solve again and fail if either file
+        differs by more than --rtol of its peak (CI runs this)
+
+Dependencies, pinned in scripts/reference-requirements.txt (pip install -r
+it): NumPy and SciPy. Deterministic: the same versions write the same
+bytes; across platforms the solutions agree far inside --rtol.
 """
+import argparse
 import pathlib
+import sys
+
 import numpy as np
 from scipy.integrate import solve_ivp
 
@@ -47,7 +58,7 @@ def field_rate(t):
     return PEAK * 2 * np.pi * HZ * np.cos(2 * np.pi * HZ * t)
 
 
-def main():
+def jiles_atherton():
     end = CYCLES / HZ
     samples = np.arange(int(round(end * RATE)) + 1) / RATE
     # Turning points of the sine: quarter periods.
@@ -63,11 +74,7 @@ def main():
         for t in samples[(samples >= t0) & (samples <= t1)]:
             out[t] = sol.sol(t)[0]
         m = sol.y[0][-1]
-    path = pathlib.Path(__file__).resolve().parent.parent / "crates/stave-test/reference/jiles_atherton.txt"
-    with open(path, "w") as f:
-        for t in samples:
-            f.write(f"{t:.12e} {out[t]:.12e}\n")
-    print(f"wrote {path.name} ({len(samples)} points)")
+    return "jiles_atherton", samples, out
 
 
 MU0 = 1.25663706212e-6
@@ -105,12 +112,45 @@ def transformer():
         t0, y0, direction = t1, sol.y[:, -1], -direction
         if sol.status == 0:
             break
-    path = pathlib.Path(__file__).resolve().parent.parent / "crates/stave-test/reference/transformer.txt"
-    with open(path, "w") as f:
-        for t in samples:
-            f.write(f"{t:.12e} {out[t]:.12e}\n")
-    print(f"wrote {path.name} ({len(samples)} points)")
+    return "transformer", samples, out
 
 
-main()
-transformer()
+REFERENCE_DIR = pathlib.Path(__file__).resolve().parent.parent / "crates/stave-test/reference"
+
+
+def text(samples, out):
+    return "".join(f"{t:.12e} {out[t]:.12e}\n" for t in samples)
+
+
+def deviation(committed, fresh):
+    """The largest deviation of either column over its committed peak."""
+    a = np.loadtxt(committed.splitlines(), ndmin=2)
+    b = np.loadtxt(fresh.splitlines(), ndmin=2)
+    if a.shape != b.shape:
+        return np.inf
+    return float(np.max(np.abs(a - b) / np.maximum(np.max(np.abs(a), axis=0), 1e-300)))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true", help="compare, don't write")
+    parser.add_argument("--rtol", type=float, default=1e-8,
+                        help="--check: largest deviation, relative to a column's peak (default 1e-8: "
+                             "macOS arm64 and Linux x86_64 differ by 2e-10; a 1%% parameter change "
+                             "moves a solution by 1e-2)")
+    args = parser.parse_args()
+    stale = []
+    for name, samples, out in (jiles_atherton(), transformer()):
+        path = REFERENCE_DIR / f"{name}.txt"
+        if not args.check:
+            path.write_text(text(samples, out))
+            print(f"wrote {path.name} ({len(samples)} points)")
+            continue
+        worst = deviation(path.read_text(), text(samples, out))
+        verdict = "ok" if worst <= args.rtol else "STALE"
+        print(f"{path.name}: max deviation {worst:.3e} of peak {verdict}")
+        if worst > args.rtol:
+            stale.append(path.name)
+    if stale:
+        sys.exit(f"{', '.join(stale)} differ from a fresh solution by more than {args.rtol:g} "
+                 "of peak: regenerate with scripts/ja-reference.py and commit, or find what changed.")
