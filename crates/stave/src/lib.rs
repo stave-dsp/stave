@@ -106,11 +106,11 @@ pub mod route;
 mod voice;
 
 pub use stave_core::{
-    block, buffer, controller, cost_taps, diagnostics, environment, event, info, params, preset,
+    block, budget, buffer, controller, cost_taps, diagnostics, environment, event, info, params, preset,
     process, solver_taps, state, telemetry, units,
 };
 pub use stave_core::{
-    Aux, Block, Channels, Controller, CostTapIds, CostTaps, Environment, Event, EventCursor,
+    Aux, Block, Budget, Channels, Controller, CostTapIds, CostTaps, Environment, Event, EventCursor,
     EventKind, Feature, Info,
     InputBuffer, LaneFrame, Lanes, Layout, NoteEvent, NoteKind, Normalized, OutputBuffer, ParamId,
     Peaks, Preset, SolverTapIds, SolverTaps, Tail, Tap, TapId, Telemetry, Transport,
@@ -179,6 +179,10 @@ pub trait Plugin: Sized + Send + 'static {
     const LAYOUTS: &'static [Layout] = &[Layout::STEREO];
     /// Bumped when saved state changes shape; `migrations` maps old to new.
     const STATE_VERSION: u32 = 0;
+    /// What one channel may cost at 48 kHz in the worst parameter state
+    /// ([`Budget`]); `plugin_checks!`'s release perf check fails over it.
+    /// Undeclared, the check measures and reports and never fails.
+    const CPU_BUDGET: Budget = Budget::UNDECLARED;
     /// The parameter table (`#[derive(Params)]`), built by its `Default`.
     type Params: ParamTable + Default + 'static;
 
@@ -237,13 +241,13 @@ pub mod prelude {
     pub use std::sync::Arc;
 
     pub use crate::{
-        Aux, Block, Channels, Environment, Event, EventCursor, EventKind, Face, Feature, Info, Layout,
+        Aux, Block, Budget, Channels, CostTapIds, CostTaps, Environment, Event, EventCursor, EventKind, Face, Feature, Info, Layout,
         NoteEvent, NoteKind, Params, ParamId, Plugin, Preset, Smoothers, Tail, Tap, TapId, Taps,
         Telemetry, ToVoiceEvent, Transport,
     };
     /// The table trait (`table.by_name(..)`), beside the derive.
     pub use stave_core::params::Params;
-    pub use stave_core::param_enum;
+    pub use stave_core::{cost_tap_ids, param_enum};
     pub use stave_core::params::{
         AnyParam, BoolParam, EnumParam, FloatParam, ModalWatch, NoParams, ParamEnum, Ramp, Range,
         Smooth, Smoother, Step, Steps, Unit, Watch,

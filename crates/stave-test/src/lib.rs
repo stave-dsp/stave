@@ -14,7 +14,7 @@
 //!   - `instance`       the harness as a stave-host `Instance` (T1)
 //!   - `image`          golden pictures: compare a canvas within a tolerance
 //!   - `no_alloc`       no allocation on the audio thread
-//!   - `perf`           the perf report
+//!   - `perf`           the perf check against a plugin's CPU budget
 //!   - `reference`      a model against ngspice, a solved reference or a datasheet curve, within a budget
 //!   - `stability`      no pumping, no runaway energy
 

@@ -175,7 +175,8 @@ stave_test::plugin_checks!(stave_tilt_vst3::Tilt, {
 ```
 
 The [`Config`](stave_test::plugin_checks::Config) fields are all
-optional: `perf` (the perf report's cases; default, the default values),
+optional: `perf` (the perf check's cases; default, the default values;
+the searched worst parameter state is always added),
 `off_face` (parameters no grab on the face moves, such as host-only
 settings) and `seeds` (for random automation and face sessions; default
 `0..4`). Each check is its own test:
@@ -184,7 +185,7 @@ settings) and `seeds` (for random automation and face sessions; default
 |---|---|
 | `passes_validation` | stave-host's validation suite, through the plugin's own VST3 entry points, so the ABI is under test too |
 | `process_never_allocates` | the whole `process` loop under a guard that aborts on any allocation, while every parameter sweeps its range (debug builds) |
-| `perf_report_for_the_record` | the perf report (release builds; debug builds skip it) |
+| `perf_within_budget` | CPU ns a sample a channel at 48 kHz in each case and the searched worst parameter state, against the plugin's [`CPU_BUDGET`](stave::Plugin::CPU_BUDGET): fails over it, naming the hotspot stage; reports only when none is declared (release builds; debug builds skip it; see [Measure performance](crate::howto::performance)) |
 | `face_binds_resolve` | every bound param exists under the name the face was built with, and stepped gestures bind stepped params |
 | `face_grabs_land` | parts sit inside the face, and a press at each grab's centre grabs that part |
 | `face_keeps_the_interaction_laws` | the gesture, layout, overlay and random-session laws on every page and step |
@@ -227,11 +228,16 @@ and a judgment call is reported as `info` with its numbers:
 
 ## Performance
 
-The perf report documents rather than gates: a perf gate on desktop
-hardware cries wolf. It warms up, repeats the timed runs, takes the
-median, and prints nanoseconds per frame beside the realtime budget
-(20 833 ns per frame at 48 kHz) with the spread, so a noisy run
-discredits itself. Measure it in release when touching DSP:
+The perf check gates only what the plugin states: its
+[`CPU_BUDGET`](stave::Plugin::CPU_BUDGET), ns a sample a channel at
+48 kHz. There is no default threshold, because one the author did not
+choose cries wolf; undeclared, the check reports and never fails. It
+warms up, repeats the timed runs in CPU time, takes the median, searches
+the parameters for the costliest state, and prints each case per
+channel beside the budget (or real time, 20 833 ns a sample at 48 kHz)
+with the spread, so a noisy run discredits itself; over the budget it
+names the stage that took the time. Measure it in release when touching
+DSP:
 
 ```sh
 cargo test --release -p stave-tilt-vst3 --test checks perf -- --nocapture

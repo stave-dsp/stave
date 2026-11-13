@@ -1,17 +1,66 @@
 # Measure performance
 
-How fast a plugin runs is measured, recorded and watched, but its time
-is never gated: a timing threshold on desktop hardware fails at random.
-What is gated is deterministic: the DSP library's instruction counts.
-This page covers the perf report every plugin mounts, how to read a
-timing honestly, the live CPU tap, pricing a DSP stage, the instruction
+How fast a plugin runs is measured, recorded and watched. One timing is
+gated: a plugin's cost against the CPU budget it declares, in release
+builds, on CPU time with the median of repeated runs. Everything else a
+timing could say is reported, not gated, because a threshold nobody
+chose fails at random. What CI gates is deterministic: the DSP
+library's instruction counts. This page covers the budget and the perf
+check every plugin mounts, how to read a timing honestly, the live CPU
+tap and the stage cost taps, pricing a DSP stage, the instruction
 counts CI holds the library to, and how to profile.
 
-## The perf report
+## The CPU budget
+
+A plugin states what one channel may cost as
+[`Plugin::CPU_BUDGET`](stave::Plugin::CPU_BUDGET), beside its identity
+and layouts: CPU nanoseconds a sample at 48 kHz, in its worst parameter
+state, with its own oversampling paid inside it.
+
+```rust
+use stave::Budget;
+
+// Stave Tilt: two biquads a lane, about 6 ns measured.
+const TILT: Budget = Budget::per_channel(40.0);
+// Or as a share of one core's real time a channel (1 is the whole core).
+const AMP: Budget = Budget::share_per_channel(0.05);
+
+assert_eq!(Budget::REALTIME_NS.round(), 20_833.0); // one sample at 48 kHz
+assert!((AMP.ns_per_sample().unwrap() - 1_041.7).abs() < 0.1);
+assert!((TILT.share_of_realtime().unwrap() * 100.0 - 0.19).abs() < 0.01);
+```
+
+```text
+impl Plugin for Tilt {
+    const INFO: Info = Info { /* ... */ ..Info::EFFECT };
+    /// Two biquads a lane; ~6 ns a sample a channel at full tilt.
+    const CPU_BUDGET: Budget = Budget::per_channel(40.0);
+    // ...
+}
+```
+
+Per channel is the frame's cost over the larger of the main input and
+output channel counts, so a stereo effect's frame may cost twice the
+budget. The rate is 48 kHz whatever a host runs at: the number is a
+property of the plugin, comparable across plugins and machines of one
+kind.
+
+**There is no default budget.** A plugin that declares none
+([`Budget::UNDECLARED`](stave::Budget::UNDECLARED), the default) is
+measured and reported against real time, and the check says
+`NO BUDGET DECLARED ... reported, not checked`; nothing fails. A
+framework-chosen fraction of real time would be wrong for nearly every
+plugin: generous for an EQ, impossible for a circuit model oversampled
+16×. The number is the author's statement of what the design costs,
+with the reason beside it. Set it from the check's own report on your
+machine, with the room a slower machine needs, and raise it only with a
+reason.
+
+## The perf check
 
 [`plugin_checks!`](macro@stave_test::plugin_checks) mounts
-[`perf_report`](stave_test::perf::perf_report) as the test
-`perf_report_for_the_record`. A project declares its representative
+[`perf_check`](stave_test::perf::perf_check) as the test
+`perf_within_budget`. A project declares its representative
 configurations as [`PerfCase`](stave_test::perf::PerfCase)s (the
 default is one case at the default values):
 
@@ -21,22 +70,49 @@ stave_test::plugin_checks!(my_plugin::MyPlugin, {
 });
 ```
 
-The report skips debug builds, where optimisation levels misstate
+Each case is a fresh instance at 48 kHz with the case's values restored
+before `prepare`, so an oversampling choice is in force from the first
+sample. Effects are fed noise; instruments are timed sounding a held
+eight-note chord. After a warm-up, five timed runs of three seconds
+each are measured in the thread's CPU time (time spent preempted is not
+the plugin's), and the median is the case's cost. Where Linux's
+performance counters can be read, the instructions a sample a channel
+are printed too: the same on every run, so they see a change the clock
+cannot.
+
+The check adds a case of its own, `WORST KNOBS`: the worst parameter
+state, searched rather than guessed. Every parameter but the bypass is
+moved alone from its default to each candidate value (every step of a
+stepped parameter of up to 16 steps, else its ends and middle) in a
+short run; the costliest value of each parameter that cost more than
+the defaults joins the state, which is then measured in full. The
+report prints the values it chose.
+
+The check skips debug builds, where optimisation levels misstate
 release cost. Measure under release, and run it whenever you touch DSP:
 
 ```sh
 cargo test --release -p <crate> --test checks perf -- --nocapture
 ```
 
-It prints one row per case: the median nanoseconds per frame, that
-figure as a percentage of the realtime budget, and the spread between
-the fastest and slowest run. It asserts nothing; the printed table is
-the record, and a project keeps its baselines in the header of
-`tests/checks.rs` (Tilt's records about 4 ns/frame flat and 12 at full
-tilt), updated when they legitimately move.
+It prints one row per case: the median nanoseconds a frame and a sample
+a channel, that as a share of the budget (of real time when none is
+declared), the instructions a sample a channel where counted, the
+spread between the fastest and slowest run, and the costliest stage.
+With a budget, a release run fails when any case's median is over it,
+and the message names the case, its values and the hotspot:
 
-The measurement follows the noise doctrine below. These defaults are
-its contract:
+```text
+Stave Amp: over its CPU budget of 1041.7 ns a sample a channel at 48 kHz (5.00% of real time):
+  WORST KNOBS costs 1388.2 ns (133% of budget, spread 2%) at Drive=10, Oversampling=3
+    hotspot: preamp 2410 ns a sample (87% of the frame's 2776 ns over 2 channel(s)); then cab 302
+```
+
+The hotspot comes from the plugin's own stage cost taps (below): the
+check averages each `<stage>_ns_per_sample` tap over a further untimed
+run of the case. A plugin without cost taps is told to add them.
+
+The measurement's defaults are its contract:
 
 ```rust
 use stave_test::perf::PerfConfig;
@@ -45,10 +121,14 @@ let c = PerfConfig::default();
 assert_eq!((c.sample_rate, c.block_size), (48_000.0, 256));
 assert_eq!(c.warmup_blocks, 200);           // untimed, before the first run
 assert_eq!((c.repeats, c.seconds_per_repeat), (5, 3.0)); // median of five 3 s runs
+assert!(c.worst_case);                      // the WORST KNOBS search
+assert_eq!((c.scan_warmup_blocks, c.scan_seconds), (40, 0.25)); // a candidate's run
 assert_eq!(c.chord.len(), 8);               // instruments are timed sounding
-// The budget a row is a percentage of: one frame at 48 kHz.
-assert_eq!((1e9 / f64::from(c.sample_rate)).round(), 20_833.0);
 ```
+
+CI does not run the release check: a shared runner's timing is not the
+machine the budget was stated for. Run it on your machine before a
+change to a plugin's DSP lands.
 
 ## Read timings honestly
 
@@ -73,6 +153,13 @@ use stave_core::TapId;
 
 assert_eq!(WrapperTaps::CPU, TapId::new("cpu"));
 ```
+
+The `cpu` tap is the whole plugin. To see where inside it the time
+goes, wrap each stage's block in a [`CostTaps`](stave::CostTaps)
+(`<stage>_ns_per_sample` and `<stage>_load`; the
+[telemetry page](crate::concepts::telemetry) shows how). The perf check
+names the costliest of them when a plugin is over budget, and
+`stave-play` plots them live.
 
 
 ## Price a DSP stage
@@ -160,7 +247,7 @@ by the bundle scripts has its symbols stripped. Profile a stage
 through `stave-bench stage:NAME`, which builds it in, or build the
 plugin with `--profile profiling`.
 
-The release perf report is also a clean hot loop of exactly the plugin,
+The release perf check is also a clean hot loop of exactly the plugin,
 so you can record it the same way:
 
 ```sh

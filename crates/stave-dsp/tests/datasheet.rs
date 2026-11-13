@@ -1,7 +1,8 @@
 //! The primitive DATASHEET — ns/sample for every primitive, measured the
 //! way a benchmark should (warm-up, repeated runs, median,
-//! spread printed so a noisy run discredits itself). Like the
-//! project perf reports it DOCUMENTS, never blocks: the numbers
+//! spread printed so a noisy run discredits itself). Unlike a
+//! plugin's perf check against its declared CPU budget, it DOCUMENTS
+//! and never blocks: the numbers
 //! belong in front of eyes when composing an engine ("can I afford
 //! four of these per lane?"), not in a gate that cries wolf on
 //! desktop hardware.
@@ -179,7 +180,7 @@ use stave_dsp::{
     PassiveToneControlPositions, PassiveToneStack, PassiveToneStackComponents, Tube,
 };
 
-/// LCG noise in ±0.3 — the same stimulus family as the perf report.
+/// LCG noise in ±0.3 — the same stimulus family as the perf check.
 fn noise(buf: &mut [f32]) {
     let mut lcg: u32 = 7;
     for x in buf.iter_mut() {

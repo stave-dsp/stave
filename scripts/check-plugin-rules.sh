@@ -61,6 +61,16 @@ if grep -rnE '\.value\(\) as f32' examples/*/src --include="*.rs" >/dev/null 2>&
   fail=1
 fi
 
+# 5. A DECLARED CPU BUDGET (DSP.md P6): the release perf check holds a
+#    plugin only to a budget it states; there is no default to fall
+#    back on, so a plugin without one is never checked.
+for f in $(grep -rlE "^impl Plugin for " examples/*/src --include="*.rs" 2>/dev/null); do
+  if ! grep -qE "^\s*const CPU_BUDGET: Budget = " "$f"; then
+    echo "RULE: $f implements Plugin without 'const CPU_BUDGET: Budget = ...' (ns a sample a channel at 48 kHz; see the guide's Measure performance)"
+    fail=1
+  fi
+done
+
 if [ "$fail" -ne 0 ]; then
   exit 1
 fi

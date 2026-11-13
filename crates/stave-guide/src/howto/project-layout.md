@@ -66,6 +66,12 @@ that is a framework gap to close, not an import to add. In
   [glossary](crate::glossary).
 - **No history in comments.** Milestone tags and "step 3" notes are
   provenance; commits and the changelog own that.
+- **Every plugin declares its CPU budget.** `impl Plugin` states
+  [`CPU_BUDGET`](stave::Plugin::CPU_BUDGET), ns a sample a channel at
+  48 kHz in the worst parameter state, with the measured cost and the
+  reason beside it; `plugin_checks!`'s release perf check holds it (see
+  [Measure performance](crate::howto::performance)). There is no
+  default: undeclared, the check reports and never fails.
 
 **The growth rule.** The single-file plugin is a starting point, not a
 destination. When a second concept arrives (a modulator joins a delay,
@@ -105,6 +111,8 @@ The gates that bind a project's tree:
      any `.rs` file under `examples/`, `crates/` or `tools/`;
   3. `plain() as f32` in an example's source: a cast beside a read
      restates the declaration;
+  4. an `impl Plugin for` under `examples/` without a
+     `const CPU_BUDGET`;
 
   and prints, without failing, a note when a processing file under that
   same pre-`Plugin` name passes 200 lines.
