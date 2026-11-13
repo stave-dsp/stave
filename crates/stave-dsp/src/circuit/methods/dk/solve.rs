@@ -63,15 +63,68 @@ pub(crate) struct Prediction<'a> {
     pub k: &'a [f64],
 }
 
-/// What the solves did, accumulated: Newton work and cap hits, and how
-/// often the continuation fallback ran.
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+/// What the solves did, accumulated: Newton work and cap hits, how
+/// often the continuation fallback ran, and the worst residual a solve
+/// ended on — what a plugin publishes as telemetry taps (N8; stave-core's
+/// `SolverTaps`), so a circuit that struggles at some setting shows it.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Health {
+    /// Iterations (sweeps, under the scattering iterative method), cap
+    /// hits, the largest final step and the most iterations one sample
+    /// took.
     pub newton: NewtonStats,
     /// Samples whose warm-started Newton failed and fell back to
     /// continuation (converged or not; a final failure is also in
     /// `newton.capped`).
     pub continuations: u64,
+    /// The largest residual a solve ended on, in volts (the nonlinear
+    /// equations' `|p + K·q(v) − v|`; the waves' last change under the
+    /// scattering iterative method). NaN for a solver that does not
+    /// report one ([`From<NewtonStats>`](#impl-From<NewtonStats>-for-Health)).
+    pub max_residual: f64,
+}
+
+impl Default for Health {
+    fn default() -> Self {
+        Self {
+            newton: NewtonStats::default(),
+            continuations: 0,
+            max_residual: 0.0,
+        }
+    }
+}
+
+impl Health {
+    /// Account one sample's solve.
+    #[inline]
+    pub fn record(&mut self, iterations: u32, converged: bool, final_step: f64, residual: f64) {
+        self.newton.record(iterations, converged, final_step);
+        self.max_residual = self.max_residual.max(residual.abs());
+    }
+
+    /// Both accounts as one.
+    pub fn merge(&mut self, other: &Self) {
+        self.newton.merge(&other.newton);
+        self.continuations += other.continuations;
+        self.max_residual = self.max_residual.max(other.max_residual);
+    }
+
+    /// Mean iterations per solve (per sample, for a circuit).
+    pub fn iterations_per_sample(&self) -> f64 {
+        self.newton.mean_iterations()
+    }
+}
+
+/// A hand-derived topology's Newton account as a health report: no
+/// continuation, no residual reported (NaN).
+impl From<NewtonStats> for Health {
+    fn from(newton: NewtonStats) -> Self {
+        Self {
+            newton,
+            continuations: 0,
+            max_residual: f64::NAN,
+        }
+    }
 }
 
 /// One solve's outcome.
@@ -80,6 +133,8 @@ pub(crate) struct Outcome {
     pub iterations: u32,
     pub converged: bool,
     pub final_step: f64,
+    /// The largest `|r|` the solve ended on.
+    pub residual: f64,
 }
 
 /// The solve's buffers, sized once so a sample never allocates.
@@ -188,9 +243,7 @@ impl Workspace {
             }
             outcome.iterations = total;
         }
-        health
-            .newton
-            .record(outcome.iterations, outcome.converged, outcome.final_step);
+        health.record(outcome.iterations, outcome.converged, outcome.final_step, outcome.residual);
     }
 
     /// Damped Newton from the current `v`.
@@ -273,11 +326,18 @@ impl Workspace {
         // hold too: an ill-conditioned system can stall with a tiny step
         // and a residual of volts.
         let scale = 1.0 + self.v.iter().fold(0.0f64, |m, v| m.max(v.abs()));
-        let holds = self.r.iter().all(|r| r.abs() <= RESIDUAL * scale);
+        let residual = self.r.iter().fold(0.0f64, |m, r| {
+            if m.is_nan() || r.is_nan() {
+                f64::NAN
+            } else {
+                m.max(r.abs())
+            }
+        });
         Outcome {
             iterations,
-            converged: step < settings.tolerance && holds,
+            converged: step < settings.tolerance && residual <= RESIDUAL * scale,
             final_step: step,
+            residual,
         }
     }
 }

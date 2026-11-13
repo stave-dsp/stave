@@ -78,6 +78,7 @@ pub mod adaa;
 pub mod devices;
 pub mod matrix;
 pub mod solve;
+mod variable;
 
 pub use adaa::Mean;
 
@@ -174,9 +175,13 @@ pub struct Dk {
     samples: u64,
     output: f64,
     settings: Settings,
+    /// The solves since the last `take_health` (or prepare), and before.
     health: Health,
     antialiasing: Antialiasing,
     adaa: adaa::State,
+    earlier: Health,
+    /// Variable parts (N6).
+    pub(crate) varying: variable::Varying,
 }
 
 /// The conductance a DC solve adds from every node to ground when the
@@ -292,14 +297,26 @@ impl Dk {
         self.step * self.antialiasing.design_step_scale()
     }
 
-    /// Newton work, cap hits and continuation fallbacks since prepare.
+    /// Newton work, cap hits, continuation fallbacks and the worst
+    /// residual since prepare.
     pub fn health(&self) -> Health {
-        self.health
+        let mut all = self.earlier;
+        all.merge(&self.health);
+        all
+    }
+
+    /// The same account since the last call (or prepare), starting a new
+    /// one: what a plugin publishes once a block (N8). Realtime.
+    pub fn take_health(&mut self) -> Health {
+        let window = self.health;
+        self.earlier.merge(&window);
+        self.health = Health::default();
+        window
     }
 
     /// [`Health::newton`]: the counts every topology reports.
     pub fn stats(&self) -> NewtonStats {
-        self.health.newton
+        self.health().newton
     }
 
     /// The probe's voltage after the last sample (the operating point's
@@ -319,6 +336,13 @@ impl Dk {
         let previous = (self.sample_rate, self.step);
         self.sample_rate = sample_rate;
         self.step = 1.0 / f64::from(sample_rate);
+        self.varying.variables.prepare(sample_rate);
+        // Variable parts where they were set; a moved resistor moves the
+        // operating point (kept as it was if the new one cannot be found).
+        self.adopt_values();
+        if self.varying.stale && self.solve_operating_point().is_ok() {
+            self.varying.stale = false;
+        }
         if self.discretise().is_err() {
             // The build discretised this circuit, so only a pathological rate
             // gets here: keep the last good rate rather than a broken one.
@@ -328,10 +352,12 @@ impl Dk {
         }
         self.reset();
         self.health = Health::default();
+        self.earlier = Health::default();
     }
 
     /// Back to t = 0 at the operating point (or the initial conditions).
     pub fn reset(&mut self) {
+        self.settle();
         let t = self.design_step();
         self.samples = 0;
         for (s, c) in self.capacitors.iter().enumerate() {
@@ -378,6 +404,9 @@ impl Dk {
     /// One sample: the driven source takes `input`, every other source
     /// its value at the new time; returns the probe's voltage.
     pub fn step(&mut self, input: f64) -> f64 {
+        if self.varying.variables.moving() {
+            self.glide();
+        }
         self.samples += 1;
         let time = self.samples as f64 * self.step;
         self.inputs_at(time);

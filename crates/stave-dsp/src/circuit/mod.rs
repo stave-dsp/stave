@@ -53,11 +53,13 @@ pub mod devices;
 pub mod methods;
 pub mod netlist;
 pub mod topologies;
+pub mod variable;
 
 use crate::kernel::node::{Stage, Tail};
 use methods::dk::Dk;
 use methods::wdf::Wdf;
 pub use netlist::{Netlist, NetlistError};
+pub use variable::{Pot, Smoothing, VariableCapacitor, VariableResistor};
 
 /// A way of solving a [`Netlist`]: what `Circuit<M>` runs. Each method
 /// documents which netlists it accepts.
@@ -112,6 +114,14 @@ impl Method for Wdf {
 /// The method is a type parameter, never part of a name; `Circuit<M>`
 /// dereferences to it for the method's own controls ([`Dk::drive`],
 /// [`Dk::stats`], [`Dk::analog_response`], [`Wdf::structure`]).
+///
+/// Parts a netlist declares variable ([`netlist::Variable`]: pots,
+/// rheostats, variable resistors and capacitors) turn while it runs —
+/// [`Dk::pot`], [`Dk::set_position`], [`Dk::set_smoothing`] — by a
+/// low-rank update of the prepared matrices, never a rebuild
+/// ([`variable`] has the design and its measurements). Each block's
+/// solver account, [`Dk::take_health`], is what a plugin publishes as
+/// telemetry (stave-core's `SolverTaps`).
 ///
 /// # Models
 /// The netlist it is given ([`Netlist`]), whatever its elements: no

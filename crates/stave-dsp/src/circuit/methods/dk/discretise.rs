@@ -28,7 +28,7 @@ impl Dk {
 
     /// `S⁻¹·rhs`, with SPICE's `gmin` added if the bare matrix is
     /// singular (a node only capacitors reach).
-    fn solve_system(
+    pub(super) fn solve_system(
         &self,
         s: Vec<f64>,
         rhs: &[f64],
@@ -81,6 +81,7 @@ impl Dk {
                 rhs[r * cols + nx + nu + k] = self.bq[r * nq + k];
             }
         }
+        let kept = (!self.varying.stamps.is_empty()).then(|| s.clone());
         let m = self.solve_system(s, &rhs, cols, "transient")?;
         let mut row = vec![0.0; cols];
         let split = |row: &[f64], x: &mut [f64], u: &mut [f64], q: &mut [f64], i: usize| {
@@ -105,6 +106,9 @@ impl Dk {
         }
         difference_row(&m, cols, self.probe.0, self.probe.1, 1.0, &mut row);
         split(&row, &mut self.ex, &mut self.eu, &mut self.eq, 0);
+        if let Some(s) = kept {
+            self.prepare_variables(s, &m, cols)?;
+        }
         self.tail = self.estimate_tail();
         self.adaa.kernel.find_one_port(&self.bq, self.n, &self.k, &self.devices);
         Ok(())

@@ -21,6 +21,7 @@ pub mod latency;
 pub mod params;
 pub mod preset;
 pub mod process;
+pub mod solver_taps;
 #[doc(hidden)]
 pub mod runtime;
 pub mod state;
@@ -35,6 +36,7 @@ pub use info::{Aux, Channels, Feature, Info, Layout};
 pub use params::ParamId;
 pub use preset::Preset;
 pub use process::{Block, ParamBlock, ParamChange, ParamChangeKind, Transport};
+pub use solver_taps::{SolverTapIds, SolverTaps};
 pub use stave_dsp::Tail;
 /// `#[derive(Params)]`: the parameter table of a struct of params.
 pub use stave_macros::Params;

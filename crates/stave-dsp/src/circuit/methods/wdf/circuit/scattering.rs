@@ -203,7 +203,7 @@ impl Wdf {
             }
             sweeps += 1;
         }
-        self.health.newton.record(sweeps, solved && largest < s.tolerance, largest);
+        self.health.record(sweeps, solved && largest < s.tolerance, largest, largest);
         for (z, port) in self.z[from..].iter_mut().zip(&self.scattering) {
             *z = port.wave;
         }

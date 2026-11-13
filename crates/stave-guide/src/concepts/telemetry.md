@@ -102,6 +102,63 @@ process time over the block's realtime budget (0 to 1, and past 1 when a
 block runs late). Any face can show them by id:
 `Meter::unit(TapId::new("cpu"))` is a load meter.
 
+### A circuit's solver health
+
+A plugin that runs a circuit (`Circuit<Dk>`, `Circuit<Wdf>`, or a
+hand-derived topology with Newton counts) publishes how hard each
+block's solves worked through [`SolverTaps`](stave::SolverTaps): mean
+and peak iterations per sample, cap hits (a solve that ended at its
+iteration cap unconverged — anything but zero is a defect), continuation
+fallbacks, and the worst residual a solve ended on. Register them in
+`Plugin::new`, publish once a block from `process` with the circuit's
+`take_health()` (the account since the last call), and `stave-play` plots
+them beside the plugin's own taps, `stave-bench --describe` lists their
+minimum and maximum, and a face can light a [`Lamp`](stave_face::Lamp)
+on `solver_capped` — so a circuit that struggles at some knob setting, on
+some material, shows it in a DAW session instead of failing silently.
+
+```
+use stave::{SolverTapIds, SolverTaps, Telemetry};
+use stave_dsp::circuit::methods::dk::Dk;
+use stave_dsp::circuit::{Circuit, Netlist};
+use stave_dsp::Stage;
+
+let netlist = Netlist::parse_spice(
+    "* clipper
+     V1 in 0 0
+     R1 in out 2.2k
+     C1 out 0 10n
+     D1 out 0 DI
+     D2 0 out DI
+     .model DI D(Is=2.52n N=1.752)
+     .control
+     wrdata out v(out)
+     .endc",
+)
+.unwrap();
+let mut clipper = Circuit::<Dk>::new(&netlist).unwrap();
+clipper.drive("V1").unwrap();
+clipper.prepare(96_000.0);
+
+let telemetry = Telemetry::new();
+let solver = SolverTaps::new(&telemetry, SolverTapIds::DEFAULT); // in Plugin::new
+
+let mut block = [0.5f32; 64];                                    // in process
+clipper.process(&mut block);
+solver.publish(&clipper.take_health());
+
+assert_eq!(telemetry.value(SolverTapIds::DEFAULT.capped), Some(0.0));
+// Two circuits in one plugin: name each one's taps.
+const MUFF: SolverTapIds = stave::solver_tap_ids!("muff");
+assert_eq!(MUFF.iterations.name(), "muff_iterations");
+```
+
+A hand-derived topology's counts are cumulative, so publish the
+difference since the last block (`Health::from` takes the
+`NewtonStats`; it reports no residual). `crates/stave-test/tests/solver_taps.rs`
+drives every topology hot through exactly this path and holds every
+`capped` tap to zero.
+
 ## Capture and the curve
 
 The block also carries a **capture frame**: the latest block of output,

@@ -20,6 +20,8 @@ pub struct NewtonStats {
     pub capped: u64,
     /// The largest final step, in the solved variable's units.
     pub max_final_step: f64,
+    /// The most iterations one solve took.
+    pub peak_iterations: u32,
 }
 
 impl NewtonStats {
@@ -34,6 +36,7 @@ impl NewtonStats {
         self.iterations += u64::from(iterations);
         self.capped += u64::from(!converged);
         self.max_final_step = self.max_final_step.max(final_step.abs());
+        self.peak_iterations = self.peak_iterations.max(iterations);
     }
 
     pub fn mean_iterations(&self) -> f64 {
@@ -49,5 +52,6 @@ impl NewtonStats {
         self.iterations += other.iterations;
         self.capped += other.capped;
         self.max_final_step = self.max_final_step.max(other.max_final_step);
+        self.peak_iterations = self.peak_iterations.max(other.peak_iterations);
     }
 }

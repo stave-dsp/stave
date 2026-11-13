@@ -55,6 +55,13 @@
 //! (Tube Screamer 3817 at 1× with ADAA vs 3953 at plain 2×, which aliases
 //! 8 dB less).
 //!
+//! Knob moves (N6, `datasheet/knobs.rs`; the reference machine,
+//! 2026-11-12): a low-rank update of the prepared matrices costs the tone
+//! stack 133 ns a move (DK and WDF alike: 164 moving every sample against
+//! 31 untouched) where a rebuild costs 60 µs (DK) / 70 µs (WDF), ~450×;
+//! the Tube Screamer's drive 116 ns (DK) / 219 ns (WDF) a move against a
+//! 845 µs (DK) / 860 µs (WDF) rebuild, 4000–7000×.
+//!
 //! Learned anchors (M3, 2026-11-12): WaveNet at Neural Amp Modeler's
 //! standard size 2.2 µs/sample (12 + 6 channels 1.7), LSTM 1 x 16 0.32,
 //! GRU 1 x 16 0.23 — a different scale: a capture network is the whole
@@ -75,6 +82,8 @@ use stave_dsp::circuit::Circuit;
 use stave_dsp::learned::{nam, Gru, LoadError};
 #[path = "datasheet/sheet.rs"]
 mod sheet;
+#[path = "datasheet/knobs.rs"]
+mod knobs;
 
 use sheet::{bench, bench_points, N, RATE};
 use stave_dsp::FilterSpec;
@@ -227,6 +236,7 @@ fn primitive_datasheet() {
 
     circuit_datasheet(sr, &input);
     adaa_datasheet(sr, &input);
+    knobs::datasheet(sr, &input);
 
     let mut line = DelayLine::new();
     line.allocate(4_800);

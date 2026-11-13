@@ -13,6 +13,7 @@ use crate::kernel::node::Tail;
 
 mod adaa;
 mod scattering;
+mod variable;
 
 pub use scattering::NonlinearRoot;
 
@@ -223,9 +224,13 @@ pub struct Wdf {
     samples: u64,
     output: f64,
     settings: Settings,
+    /// The solves since the last `take_health` (or prepare), and before.
     health: Health,
     antialiasing: Antialiasing,
     adaa: adaa::State,
+    earlier: Health,
+    /// Variable parts (N6).
+    pub(crate) varying: variable::Varying,
 }
 
 fn unsupported(name: &str, reason: &str) -> NetlistError {
@@ -387,8 +392,10 @@ impl Wdf {
             .map(|r| r.cell)
             .collect();
         forest.roots.retain(|r| !alone.contains(&r.cell));
+        let varying = variable::Varying::new(netlist, &leaf_of)?;
         // The root: the netlist less its leaves, stamped by the DK builder.
         let mut root = netlist.clone();
+        root.variables.clear();
         let mut slots = Vec::new();
         for &(i, cell) in &leaf_of {
             let e = &elements[i];
@@ -496,6 +503,8 @@ impl Wdf {
             health: Health::default(),
             antialiasing: Antialiasing::None,
             adaa: adaa::State::new(nu, nv, nq),
+            earlier: Health::default(),
+            varying,
         };
         wdf.values = vec![0.0; wdf.slots.len()];
         if wdf.operating.dc_v.len() != nv {
@@ -525,14 +534,26 @@ impl Wdf {
         self.settings = settings;
     }
 
-    /// Newton work, cap hits and continuation fallbacks since prepare.
+    /// Newton work, cap hits, continuation fallbacks and the worst
+    /// residual since prepare.
     pub fn health(&self) -> Health {
-        self.health
+        let mut all = self.earlier;
+        all.merge(&self.health);
+        all
+    }
+
+    /// The same account since the last call (or prepare), starting a new
+    /// one: what a plugin publishes once a block (N8). Realtime.
+    pub fn take_health(&mut self) -> Health {
+        let window = self.health;
+        self.earlier.merge(&window);
+        self.health = Health::default();
+        window
     }
 
     /// [`Health::newton`]: the counts every topology reports.
     pub fn stats(&self) -> NewtonStats {
-        self.health.newton
+        self.health().newton
     }
 
     /// The probe's voltage after the last sample.
@@ -562,6 +583,8 @@ impl Wdf {
         let previous = self.sample_rate;
         self.sample_rate = sample_rate;
         self.step = 1.0 / f64::from(sample_rate);
+        self.varying.variables.prepare(sample_rate);
+        self.adopt_values();
         if self.discretise().is_err() {
             debug_assert!(false, "circuit singular at {sample_rate} Hz");
             self.sample_rate = previous;
@@ -571,10 +594,12 @@ impl Wdf {
         self.operating.prepare(self.sample_rate);
         self.reset();
         self.health = Health::default();
+        self.earlier = Health::default();
     }
 
     /// Back to t = 0 at the operating point (or the initial conditions).
     pub fn reset(&mut self) {
+        self.settle();
         self.samples = 0;
         let uic = self.uic;
         let dc = &self.operating.dc_w;
@@ -615,6 +640,9 @@ impl Wdf {
     /// One sample: the driven source takes `input`, every other source
     /// its value at the new time; returns the probe's voltage.
     pub fn step(&mut self, input: f64) -> f64 {
+        if self.varying.variables.moving() {
+            self.glide();
+        }
         self.samples += 1;
         let time = self.samples as f64 * self.step;
         for (k, slot) in self.slots.iter_mut().enumerate() {
@@ -735,7 +763,7 @@ impl Wdf {
         if converged {
             self.work.v[0] = v;
             self.work.q.copy_from_slice(&self.q1);
-            self.health.newton.record(iterations, true, step);
+            self.health.record(iterations, true, step, r);
         }
         converged
     }
@@ -862,6 +890,26 @@ impl Wdf {
         self.z = vec![0.0; width];
         if diode_columns.is_none() {
             self.adaa.kernel.find_one_port(&self.bq, n, &self.k, &self.devices);
+        }
+        if !self.varying.leaves.is_empty() {
+            let outputs: Vec<variable::Row> = self
+                .stateful
+                .iter()
+                .map(|&i| variable::Row {
+                    a: self.ports[i].plus,
+                    b: self.ports[i].minus,
+                    scale: 2.0,
+                    own: Some(i),
+                })
+                .chain(std::iter::once(variable::Row {
+                    a: self.probe.0,
+                    b: self.probe.1,
+                    scale: 1.0,
+                    own: None,
+                }))
+                .chain(rows.iter().map(|&(a, b, scale, own)| variable::Row { a, b, scale, own }))
+                .collect();
+            self.prepare_variables(&x, &m, cols, &kept, &outputs)?;
         }
         Ok(())
     }

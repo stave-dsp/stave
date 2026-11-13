@@ -206,6 +206,16 @@ impl Forest {
     /// Port resistances bottom-up, for capacitors and inductors at
     /// `sample_rate`.
     pub fn adapt(&mut self, sample_rate: f64) {
+        self.resize(sample_rate);
+        let cells = &self.cells;
+        self.up_order = (0..cells.len()).filter(|&i| cells[i].reflective).collect();
+        self.down_order = (0..cells.len()).rev().filter(|&i| cells[i].stateful).collect();
+    }
+
+    /// Port resistances and parallel shares bottom-up from the leaves'
+    /// values, the visiting orders kept: a knob move's re-adaptation
+    /// (N6), realtime.
+    pub fn resize(&mut self, sample_rate: f64) {
         for i in 0..self.cells.len() {
             let c = &self.cells[i];
             let (ohms, share) = match c.kind {
@@ -223,9 +233,21 @@ impl Forest {
             self.cells[i].ohms = ohms;
             self.cells[i].share = share;
         }
-        let cells = &self.cells;
-        self.up_order = (0..cells.len()).filter(|&i| cells[i].reflective).collect();
-        self.down_order = (0..cells.len()).rev().filter(|&i| cells[i].stateful).collect();
+    }
+
+    /// The cells under `cell`, itself included.
+    pub fn subtree(&self, cell: usize) -> Vec<usize> {
+        let mut out = vec![cell];
+        let mut i = 0;
+        while i < out.len() {
+            match self.cells[out[i]].kind {
+                Kind::Series(l, r) | Kind::Parallel(l, r) => out.extend([l, r]),
+                Kind::Inverter(c) => out.push(c),
+                _ => {}
+            }
+            i += 1;
+        }
+        out
     }
 
     /// The pass up: every reflective cell's β from its children's.

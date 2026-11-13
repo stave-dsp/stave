@@ -1,0 +1,36 @@
+* The Tube Screamer's clipping stage (TS808 values) with its drive pot
+* at 0.1: the 500k audio-taper pot wired as a rheostat in series with
+* 51k, written as stave's Variable::rheostat("rd", 500k, Taper::AUDIO)
+* with 50 ohms of end resistance computes it (b = 81: 10 % at half
+* rotation). One deck per position (N6: tube_screamer_drive_10/50/90);
+* otherwise tube_screamer.cir: the JRC4558 macromodel as behavioural
+* sources between rails 0 and 9 V, the input on 4.5 V at 0.3 V peak,
+* 1 kHz, the feedback || 51p || an antiparallel 1N914 pair. Output: out.
+.param pos=0.1 track=500k rend=50
+.param cc=1e-9 vos=0.5e-3 vhi=8 vlo=1 vmid=4.5 vk=0.02 kc=10
+.param gm={6.283185307179586*3e6*1e-9} isl={1e6*1e-9} g0={gm/100e3}
+V1 in 0 SIN(4.5 0.3 1k)
+BG 0 n I = {isl*tanh(gm*(V(in,fb)+vos)/isl) + g0*vmid - kc*isl*(max((V(n)-vhi)/vk,0) + ln(1+exp(-abs((V(n)-vhi)/vk))) - max((vlo-V(n))/vk,0) - ln(1+exp(-abs((vlo-V(n))/vk))))}
+RG n 0 {1/g0}
+CC n 0 {cc}
+EO out 0 n 0 1
+R1 fb s 4.7k
+C1 s 0 47n
+RF out x 51k
+RD x fb {rend + track*(pow(81, pos) - 1)/80}
+CF out fb 51p
+D1 out fb D1N914
+D2 fb out D1N914
+.model D1N914 D(Is=2.52n Rs=.568 N=1.752)
+* ngspice's starting guess for the operating point (a follower at 4.5 V);
+* stave ignores it.
+.nodeset v(n)=4.5 v(out)=4.5 v(fb)=4.5 v(s)=4.5
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 1.30208333u 2m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

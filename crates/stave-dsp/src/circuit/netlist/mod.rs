@@ -23,6 +23,7 @@
 
 pub mod expr;
 pub mod spice;
+pub mod variable;
 
 use std::fmt;
 
@@ -33,6 +34,7 @@ use crate::circuit::devices::pentode::koren::Koren as PentodeKoren;
 use crate::circuit::devices::triode::Tube;
 use crate::circuit::devices::{bjt, jfet, mosfet};
 pub use expr::Expr;
+pub use variable::{Taper, Variable};
 
 /// A node of a [`Netlist`]; [`Node::GROUND`] is SPICE's `0`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -336,6 +338,8 @@ pub struct Netlist {
     /// as `model: parameter` — so what a comparison leaves out is on
     /// record.
     pub unmodelled: Vec<String>,
+    /// Elements declared variable ([`Netlist::add_variable`]).
+    pub(crate) variables: Vec<Variable>,
 }
 
 impl Netlist {

@@ -5,7 +5,9 @@ use super::devices::{Device, Nonlinear, SHUNT};
 use super::adaa;
 use super::solve::{Health, Settings, Workspace};
 use crate::circuit::methods::adaa::Antialiasing;
+use super::variable::{Stamp, Varying};
 use super::{pin, Capacitor, Dk, Inductor, Input, Pin};
+use crate::circuit::variable::{BranchKind, Variables};
 use crate::circuit::devices::opamp::{Amp, Macromodel};
 use crate::circuit::netlist::expr::{Dual, Tape};
 use crate::circuit::netlist::{ElementKind, Netlist, NetlistError, Probe};
@@ -147,9 +149,18 @@ impl<'a> Builder<'a> {
             }
         }
         let node_total = next;
+        // A variable resistor is a branch, so its resistance is one entry.
+        let variables = Variables::new(netlist)?;
+        let varies = |name: &str, kind: BranchKind| {
+            variables.branch(name).filter(|&j| variables.branches[j].kind == kind)
+        };
+        let mut stamps = vec![None; variables.branches.len()];
         let mut row = vec![0; elements.len()];
         for (i, e) in elements.iter().enumerate() {
-            if matches!(
+            let variable_resistor =
+                matches!(e.kind, ElementKind::Resistor { .. }) && varies(&e.name, BranchKind::Resistor).is_some();
+            if variable_resistor
+                || matches!(
                 e.kind,
                 ElementKind::VoltageSource { .. }
                     | ElementKind::VoltageControlledVoltage { .. }
@@ -165,6 +176,14 @@ impl<'a> Builder<'a> {
         for (i, e) in elements.iter().enumerate() {
             let name = e.name.as_str();
             match &e.kind {
+                ElementKind::Resistor { a, b, ohms } if varies(name, BranchKind::Resistor).is_some() => {
+                    if *ohms < 0.0 || !ohms.is_finite() {
+                        return Err(unsupported(name, "a variable resistor needs finite, non-negative ohms"));
+                    }
+                    self.branch(pin(*a), pin(*b), row[i]);
+                    self.add(Some(row[i]), Some(row[i]), -ohms);
+                    stamps[varies(name, BranchKind::Resistor).unwrap_or(0)] = Some(Stamp::Row(row[i]));
+                }
                 ElementKind::Resistor { a, b, ohms } => {
                     if *ohms == 0.0 || !ohms.is_finite() {
                         return Err(unsupported(name, "a resistor needs finite, nonzero ohms"));
@@ -176,12 +195,17 @@ impl<'a> Builder<'a> {
                     b,
                     farads,
                     initial_volts,
-                } => self.capacitors.push(Capacitor {
-                    a: pin(*a),
-                    b: pin(*b),
-                    farads: *farads,
-                    initial_volts: initial_volts.unwrap_or(0.0),
-                }),
+                } => {
+                    if let Some(j) = varies(name, BranchKind::Capacitor) {
+                        stamps[j] = Some(Stamp::Capacitor(self.capacitors.len()));
+                    }
+                    self.capacitors.push(Capacitor {
+                        a: pin(*a),
+                        b: pin(*b),
+                        farads: *farads,
+                        initial_volts: initial_volts.unwrap_or(0.0),
+                    });
+                }
                 ElementKind::Inductor {
                     a,
                     b,
@@ -418,6 +442,10 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        let stamps = stamps
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| unsupported("netlist", "a variable names an element the netlist lacks"))?;
         let n = self.n;
         let (nu, nq, nv) = (self.inputs.len(), self.nq, self.controls.len());
         let dense = |triplets: &[(usize, usize, f64)], cols: usize| {
@@ -470,6 +498,8 @@ impl<'a> Builder<'a> {
             health: Health::default(),
             antialiasing: Antialiasing::None,
             adaa: adaa::State::new(nx, nu, nv, nq),
+            earlier: Health::default(),
+            varying: Varying::new(variables, stamps),
         })
     }
 }
