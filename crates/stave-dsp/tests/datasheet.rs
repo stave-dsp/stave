@@ -57,7 +57,15 @@ use stave_dsp::{AdaaOrder, AdsrConfig};
 use stave_dsp::effects::dynamics::{
     Compressor, GainComputer, Limiter, Peak, Peaks, ProgramDependent, Rms, Sidechain, Topology,
 };
+use stave_dsp::effects::modulation::{FrequencyShifter, Sideband, SingleSideband};
 use stave_dsp::effects::reverb::{Dattorro, Fdn, Mixing, Schroeder};
+use stave_dsp::circuit::topologies::diode_ladder::DiodeLadder;
+use stave_dsp::circuit::topologies::transistor_ladder::TransistorLadder;
+use stave_dsp::primitives::filters::hilbert::Hilbert;
+use stave_dsp::primitives::filters::korg35::Korg35;
+use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
+use stave_dsp::primitives::filters::sallen_key::SallenKey;
+use stave_dsp::units::hz;
 use stave_dsp::primitives::time::delay::Delay;
 use stave_dsp::primitives::time::interpolators::{
     Interpolator, Lagrange3, Lagrange5, Linear, Sinc, Thiran,
@@ -226,6 +234,41 @@ fn primitive_datasheet() {
     moorer.set_t60_s(2.0);
     moorer.prepare(sr);
     bench("Schroeder::moorer (6 combs)", &input, |x| moorer.tick(x));
+
+    // S1: the nonlinear filters at 1 kHz, resonance 0.5, drive 0 dB
+    // (Newton's iterations per sample printed); S4: the Hilbert pair at
+    // its default design, the shifter and single sideband on it.
+    let mut huovilainen = Huovilainen::new(hz(1_000.0), 0.5);
+    huovilainen.prepare(sr);
+    bench("Ladder (Huovilainen)", &input, |x| huovilainen.tick(x));
+    println!("    {:.2} iterations/sample", huovilainen.stats().mean_iterations());
+    let mut stinchcombe = Stinchcombe::new(hz(1_000.0), 0.5);
+    stinchcombe.prepare(sr);
+    bench("Ladder (Stinchcombe)", &input, |x| stinchcombe.tick(x));
+    println!("    {:.2} iterations/sample", stinchcombe.stats().mean_iterations());
+    let mut sallen_key = SallenKey::new(hz(1_000.0), 0.5);
+    sallen_key.prepare(sr);
+    bench("SallenKey", &input, |x| sallen_key.tick(x));
+    println!("    {:.2} iterations/sample", sallen_key.stats().mean_iterations());
+    let mut korg35 = Korg35::new(hz(1_000.0), 0.5);
+    korg35.prepare(sr);
+    bench("Korg35", &input, |x| korg35.tick(x));
+    println!("    {:.2} iterations/sample", korg35.stats().mean_iterations());
+    let mut hilbert = Hilbert::default();
+    hilbert.prepare(sr);
+    bench("Hilbert", &input, |x| {
+        let (re, im) = hilbert.analytic(x);
+        re + im
+    });
+    let mut shifter = FrequencyShifter::new(hz(100.0));
+    shifter.prepare(sr);
+    bench("FrequencyShifter", &input, |x| shifter.tick(x));
+    let mut ssb = SingleSideband::new(Sideband::Upper);
+    ssb.prepare(sr);
+    let mut carrier = Osc::new(Waveform::Sine);
+    carrier.set_hz(440.0);
+    carrier.prepare(sr);
+    bench("SingleSideband", &input, |x| ssb.modulate(x, carrier.tick(0.0)));
 
     // D1–D3: dynamics.
     let mut peak = Peak::new(5.0, 50.0);
@@ -644,6 +687,24 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut vca = circuit_from(ota_vca_netlist(), sr);
     bench("Circuit<Dk> OTA VCA (LM13700) x15", input, |x| vca.tick(15.0 * x));
     solve_health(&vca);
+
+    // S1: the ladder circuits at resonance 2 and 10, ±30 mV in.
+    let mut transistor_ladder =
+        driven(TransistorLadder { resonance: 2.0, ..TransistorLadder::DEFAULT }.netlist(), sr);
+    bench("Circuit<Dk> transistor ladder", input, |x| transistor_ladder.tick(0.1 * x));
+    solve_health(&transistor_ladder);
+    let mut diode_ladder =
+        driven(DiodeLadder { resonance: 10.0, ..DiodeLadder::DEFAULT }.netlist(), sr);
+    bench("Circuit<Dk> diode ladder", input, |x| diode_ladder.tick(0.1 * x));
+    solve_health(&diode_ladder);
+}
+
+/// A topology's netlist as `Circuit<Dk>`, its `vin` driven by the input.
+fn driven(netlist: Netlist, sr: f32) -> Circuit<Dk> {
+    let mut c = Circuit::<Dk>::new(&netlist).unwrap();
+    c.drive("vin").unwrap();
+    c.prepare(sr);
+    c
 }
 
 /// An ngspice deck as `Circuit<Dk>`, its `VIN` driven by the input.

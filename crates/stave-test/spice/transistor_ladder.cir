@@ -1,0 +1,41 @@
+* Transistor ladder (Moog, US 3,475,623): a 2N3904 driven pair on a
+* 100 uA tail and four rungs of 2N3904 pairs, their bases on 1.5 V
+* steps, a 150 nF capacitor across each rung's emitters (ideal cutoff
+* I/(8 pi Vt C) = 1026 Hz). Resonance: the output pair's difference fed
+* back to the driven pair's second base, gain 3 (an ideal buffer, as
+* stave's circuit::topologies::transistor_ladder builds it). The input,
+* 40 mV at 300 Hz (about 1.5 Vt peak), bends the pair's tanh.
+* Output: v(c4r, c4l).
+VIN in 0 SIN(0 40m 300)
+Q1 c1l in tail Q2N3904
+Q2 c1r fb tail Q2N3904
+ITAIL tail vee 100u
+C1 c1l c1r 150n
+Q3 c2l b1 c1l Q2N3904
+Q4 c2r b1 c1r Q2N3904
+C2 c2l c2r 150n
+Q5 c3l b2 c2l Q2N3904
+Q6 c3r b2 c2r Q2N3904
+C3 c3l c3r 150n
+Q7 c4l b3 c3l Q2N3904
+Q8 c4r b3 c3r Q2N3904
+C4 c4l c4r 150n
+Q9 vcc b4 c4l Q2N3904
+Q10 vcc b4 c4r Q2N3904
+VB1 b1 0 1.5
+VB2 b2 0 3
+VB3 b3 0 4.5
+VB4 b4 0 6
+VCC vcc 0 15
+VEE vee 0 -15
+EFB fb 0 c4r c4l 3
+.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Rb=10 Vaf=74.03)
+.options interp reltol=1e-9 abstol=1e-12 vntol=1e-9
+.tran 20.8333333u 15m 0 0.5u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(c4r,c4l)
+.endc
+.end

@@ -1,0 +1,38 @@
+* The transistor ladder of transistor_ladder.cir without resonance,
+* small-signal: |v(c4r, c4l) / v(in)| from 10 Hz to 100 kHz about its
+* operating point (first column = frequency). Four poles at the
+* rungs' cutoff, I/(8 pi Vt C) = 1026 Hz ideally; beta and the
+* base currents move it.
+VIN in 0 DC 0 AC 1
+Q1 c1l in tail Q2N3904
+Q2 c1r fb tail Q2N3904
+ITAIL tail vee 100u
+C1 c1l c1r 150n
+Q3 c2l b1 c1l Q2N3904
+Q4 c2r b1 c1r Q2N3904
+C2 c2l c2r 150n
+Q5 c3l b2 c2l Q2N3904
+Q6 c3r b2 c2r Q2N3904
+C3 c3l c3r 150n
+Q7 c4l b3 c3l Q2N3904
+Q8 c4r b3 c3r Q2N3904
+C4 c4l c4r 150n
+Q9 vcc b4 c4l Q2N3904
+Q10 vcc b4 c4r Q2N3904
+VB1 b1 0 1.5
+VB2 b2 0 3
+VB3 b3 0 4.5
+VB4 b4 0 6
+VCC vcc 0 15
+VEE vee 0 -15
+EFB fb 0 c4r c4l 0
+.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Rb=10 Vaf=74.03)
+.options reltol=1e-9 abstol=1e-15 vntol=1e-12
+.ac dec 20 10 100k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(c4r,c4l)
+.endc
+.end

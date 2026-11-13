@@ -1,9 +1,11 @@
 pub mod common_cathode;
 pub mod coupler;
 pub mod diode_clipper;
+pub mod diode_ladder;
 pub mod opamp_clipper;
 pub mod power_supply;
 pub mod push_pull;
 pub mod tone_stack;
 pub mod transformer;
+pub mod transistor_ladder;
 pub mod triode_stage;

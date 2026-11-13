@@ -68,13 +68,20 @@ verification. Each layer depends only on the ones above it
 |---|---|---|
 | `units` | quantities as types (`Hz`, `Db`, `Seconds`, `Ohms` …) | unit tests, Kani |
 | `kernel` | the `Stage` contract and graph forms (serial, parallel, loop, oversampling, voices, lanes) | property tests, loom, Kani |
-| `primitives` | textbook linear DSP: filters, delays and interpolation, spectral (FFT, convolution, STFT, FIR design), oscillators, control | naive references (direct DFT, direct convolution, analytic responses) |
+| `primitives` | textbook DSP: filters (linear, the Hilbert pair, and the published nonlinear filter structures — ladders, Sallen–Key, Korg35 — with their saturators), delays and interpolation, spectral (FFT, convolution, STFT, FIR design), oscillators, control | naive references (direct DFT, direct convolution, analytic responses); a structure that reduces a circuit, also that circuit's netlist through `Circuit<Dk>` |
 | `behavioral` | a shape chosen or fitted, with **no hardware claim**: named by its maths (`Tanh`, `Knee`, `Fold`) and its anti-aliasing | analytic antiderivatives, aliasing budgets |
 | `circuit` | derived from a schematic | ngspice on the same netlist (R1–R4) |
 | `physical` | derived from mechanics or acoustics: springs, plates, rotors, tape transport, speakers, rooms, instruments | published modes, high-precision solutions, captures |
 | `learned` | trained from captures: WaveNet, LSTM, Wiener–Hammerstein | parity with the reference implementation, capture error |
 | `effects` | algorithmic designs that model no hardware: reverbs (FDN, Dattorro), pitch, granular, dynamics, EQ | analytic properties, golden audio |
 | `structures` | compositions: `Chain`, `ModMatrix` | property tests |
+
+A circuit and the structure it reduces to are two claims, so two
+places: the Moog transistor ladder's netlist
+(`circuit::topologies::transistor_ladder`, held to ngspice) is the
+truth, and Huovilainen's four-`tanh` model of it
+(`primitives::filters::ladder::Huovilainen`, a published structure,
+held to the netlist's ngspice run) is the cost.
 
 So a "diode" can appear three ways, and each is obvious from its path:
 

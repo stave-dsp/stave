@@ -89,6 +89,40 @@ fn load_capture(text: &str) -> Result<nam::Nam, LoadError> {
 let _ = load_capture;
 ```
 
+## A circuit and its structure
+
+Some hardware deserves two models: the circuit for truth and a
+published structure for cost. They make different claims, so they live
+in different places and are verified differently — the structure
+against the circuit. The Moog transistor ladder is the example: its
+netlist (ten transistors) is a [topology](stave_dsp::circuit::topologies::transistor_ladder)
+held to ngspice; Huovilainen's four-`tanh` model is a primitive filter,
+[`ladder::Huovilainen`](stave_dsp::primitives::filters::ladder::Huovilainen),
+held to the same ngspice run (`stave-test/tests/filters_match_ngspice.rs`).
+
+```rust
+use stave_dsp::circuit::methods::dk::Dk;
+use stave_dsp::circuit::topologies::transistor_ladder::TransistorLadder;
+use stave_dsp::circuit::Circuit;
+use stave_dsp::primitives::filters::ladder::Huovilainen;
+use stave_dsp::units::hz;
+use stave_dsp::Stage;
+
+// The truth: the schematic as a netlist, solved by the DK method.
+let parts = TransistorLadder::DEFAULT; // 100 µA, 150 nF, 2N3904s
+let circuit = Circuit::<Dk>::new(&parts.netlist()).unwrap();
+let at_cutoff = circuit.analog_response(parts.ideal_cutoff_hz()).unwrap();
+// Four poles at the cutoff: −12 dB, give or take what β moves.
+let db = 20.0 * at_cutoff.magnitude().log10();
+assert!((db + 12.0).abs() < 1.0, "{db}");
+
+// The cost: the published structure, its cutoff in hertz.
+let mut ladder = Huovilainen::new(hz(parts.ideal_cutoff_hz() as f32), 0.0);
+ladder.prepare(48_000.0);
+let settled = (0..48_000).map(|_| ladder.tick(0.01)).last().unwrap();
+assert!((settled - 0.01).abs() < 1e-6); // unity in the passband
+```
+
 ## Naming
 
 Name the thing, not how it is built. These rules come from `DSP.md`;

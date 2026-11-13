@@ -1,0 +1,39 @@
+* Diode ladder (the TB-303's core, as Stinchcombe analyses it): a 2N3904
+* driven pair on a 100 uA tail, three rungs of junction pairs and a
+* top pair of 2N3904s with their bases on 4 V; 150 nF across each rung,
+* half that across the driven pair's collectors. The junctions are the
+* 2N3904's base-emitter law (IS, N = 1) as diodes; the 303's own diodes
+* are not modelled. Resonance: the output fed back to the driven pair's
+* second base, gain 10 (oscillation at 17). Input 40 mV at 300 Hz.
+* Output: v(r3, l3).
+VIN in 0 SIN(0 40m 300)
+Q1 l0 in tail Q2N3904
+Q2 r0 fb tail Q2N3904
+ITAIL tail vee 100u
+C0 l0 r0 75n
+D1 l1 l0 DQ
+D2 r1 r0 DQ
+C1 l1 r1 150n
+D3 l2 l1 DQ
+D4 r2 r1 DQ
+C2 l2 r2 150n
+D5 l3 l2 DQ
+D6 r3 r2 DQ
+C3 l3 r3 150n
+Q3 vcc bt l3 Q2N3904
+Q4 vcc bt r3 Q2N3904
+VBT bt 0 4
+VCC vcc 0 15
+VEE vee 0 -15
+EFB fb 0 r3 l3 10
+.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Rb=10 Vaf=74.03)
+.model DQ D(Is=6.734f N=1)
+.options interp reltol=1e-9 abstol=1e-12 vntol=1e-9
+.tran 20.8333333u 15m 0 0.5u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(r3,l3)
+.endc
+.end

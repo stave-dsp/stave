@@ -1,5 +1,6 @@
-//! **Layer 2 — primitives.** Linear, stateful building blocks grouped by
-//! family: filters, time (delay lines and recirculating delays),
+//! **Layer 2 — primitives.** Textbook stateful building blocks grouped by
+//! family: filters (linear, the Hilbert pair, and the published nonlinear
+//! filter structures with their saturators), time (delay lines and recirculating delays),
 //! control (generators, followers, smoothers), oscillators, gain and
 //! pitch helpers, randomness, and the spectral family (FFT and
 //! convolution). Depends on the kernel only.

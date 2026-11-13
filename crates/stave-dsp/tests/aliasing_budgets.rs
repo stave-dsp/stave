@@ -15,9 +15,14 @@
 //! Defaults, as each stage documents them: the triode stage and the
 //! curves run first-order ADAA (or second, as named) at the host rate,
 //! with no oversampler; the diode clipper and the smooth saturator run
-//! in a 4x region (`Oversampled2x::front(nested(..))`).
+//! in a 4x region (`Oversampled2x::front(nested(..))`); the nonlinear
+//! filters (S1) in the region each documents: the ladders and the
+//! Sallen–Key at 4x, the Korg35 at 2x (`Oversampled2x::front`).
 
-use stave_dsp::units::Hz;
+use stave_dsp::primitives::filters::korg35::Korg35;
+use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
+use stave_dsp::primitives::filters::sallen_key::SallenKey;
+use stave_dsp::units::{db, hz, Db, Hz};
 use stave_dsp::{
     Adaa, AdaaOrder, CurveStage, DiodeClipper, DiodeClipperConfig, Osc, Oversampled2x, PairSolver,
     Shockley, SmoothSat, Stage, Triode, Waveform, Wavetable,
@@ -107,6 +112,14 @@ const STAGES: &[Budget] = &[
         -32.9,
         -32.9,
     ),
+    row("Ladder (Huovilainen, +12 dB, 4x)", 44_100.0, -66.0, -68.9, -68.9),
+    row("Ladder (Huovilainen, +12 dB, 4x)", 48_000.0, -85.0, -87.5, -87.5),
+    row("Ladder (Stinchcombe, +12 dB, 4x)", 44_100.0, -62.0, -64.4, -64.3),
+    row("Ladder (Stinchcombe, +12 dB, 4x)", 48_000.0, -82.0, -84.9, -84.9),
+    row("SallenKey (+12 dB, 4x)", 44_100.0, -93.0, -95.9, -61.9),
+    row("SallenKey (+12 dB, 4x)", 48_000.0, -98.0, -100.6, -89.3),
+    row("Korg35 (+12 dB, 2x)", 44_100.0, -77.0, -79.6, -79.6),
+    row("Korg35 (+12 dB, 2x)", 48_000.0, -80.0, -82.9, -82.9),
 ];
 
 /// The oscillators, stepped from 110 Hz to 5 kHz.
@@ -217,9 +230,55 @@ fn measure_stage(name: &str, rate: f64) -> Aliasing {
                 adaa.tick(&framed, f64::from(x)) as f32
             }
         }),
+        "Ladder (Huovilainen, +12 dB, 4x)" => {
+            filter(sweep, fs, 4, Huovilainen::new(hz(8_000.0), 0.5))
+        }
+        "Ladder (Stinchcombe, +12 dB, 4x)" => {
+            filter(sweep, fs, 4, Stinchcombe::new(hz(8_000.0), 0.5))
+        }
+        "SallenKey (+12 dB, 4x)" => filter(sweep, fs, 4, SallenKey::new(hz(8_000.0), 0.5)),
+        "Korg35 (+12 dB, 2x)" => filter(sweep, fs, 2, Korg35::new(hz(8_000.0), 0.5)),
         other => panic!("no stage {other}"),
     }
 }
+
+/// A nonlinear filter (S1) at cutoff 8 kHz, resonance 0.5, +12 dB of
+/// drive, in its documented default region: `Oversampled2x::front` at
+/// `factor` 2, `front(nested(..))` at 4.
+fn filter<F: Stage + Clone + Drive + 'static>(
+    sweep: SteppedTone,
+    fs: f32,
+    factor: u32,
+    f: F,
+) -> Aliasing {
+    sweep.through(move || {
+        let mut f = f.clone();
+        f.drive(db(12.0));
+        let mut region: Box<dyn Stage> = if factor == 4 {
+            Box::new(Oversampled2x::front(Oversampled2x::nested(f)))
+        } else {
+            Box::new(Oversampled2x::front(f))
+        };
+        region.prepare(fs);
+        move |x: f32| region.tick(x)
+    })
+}
+
+/// The filters' drive setter, for [`filter`].
+trait Drive {
+    fn drive(&mut self, drive: Db);
+}
+
+macro_rules! drive {
+    ($($t:ty),*) => {$(
+        impl Drive for $t {
+            fn drive(&mut self, drive: Db) {
+                self.set_drive(drive);
+            }
+        }
+    )*};
+}
+drive!(Huovilainen, Stinchcombe, SallenKey, Korg35);
 
 fn measure_oscillator(name: &str, rate: f64) -> Aliasing {
     let sweep = oscillator_sweep(rate);

@@ -1,0 +1,35 @@
+* The diode ladder of diode_ladder.cir without resonance, small-signal:
+* |v(r3, l3) / v(in)| from 10 Hz to 100 kHz (first column = frequency).
+* Ideally Stinchcombe's 1 / (s^4 + 8 s^3 + 20 s^2 + 16 s + 2), times 2,
+* with s in units of I / (4 Vt C).
+VIN in 0 DC 0 AC 1
+Q1 l0 in tail Q2N3904
+Q2 r0 fb tail Q2N3904
+ITAIL tail vee 100u
+C0 l0 r0 75n
+D1 l1 l0 DQ
+D2 r1 r0 DQ
+C1 l1 r1 150n
+D3 l2 l1 DQ
+D4 r2 r1 DQ
+C2 l2 r2 150n
+D5 l3 l2 DQ
+D6 r3 r2 DQ
+C3 l3 r3 150n
+Q3 vcc bt l3 Q2N3904
+Q4 vcc bt r3 Q2N3904
+VBT bt 0 4
+VCC vcc 0 15
+VEE vee 0 -15
+EFB fb 0 r3 l3 0
+.model Q2N3904 NPN(Is=6.734f Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Rb=10 Vaf=74.03)
+.model DQ D(Is=6.734f N=1)
+.options reltol=1e-9 abstol=1e-15 vntol=1e-12
+.ac dec 20 10 100k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(r3,l3)
+.endc
+.end
