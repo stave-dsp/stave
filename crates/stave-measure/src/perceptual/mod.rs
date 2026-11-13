@@ -8,6 +8,7 @@
 //! erb       ERB-band spectral error (Glasberg & Moore's ERB_N scale)
 //! rnonlin   Tan & Moore's Rnonlin: gammatone-band cross-correlation, original vs distorted
 //! gedlee    Geddes & Lee's Gm on a static transfer curve
+//! null      the null test by audibility: the aligned residual's NMR under the reference (R16)
 //! ```
 //!
 //! Each metric names its source and its implementation version
@@ -45,6 +46,7 @@ pub mod ear;
 pub mod erb;
 pub mod gedlee;
 pub mod nmr;
+pub mod null;
 pub mod rnonlin;
 
 use stave_dsp::primitives::spectral::Complex;
@@ -56,12 +58,13 @@ pub const PLAYBACK_DB_SPL: f64 = 92.0;
 /// Each metric's implementation, `(name, version)`. A version moves
 /// whenever the metric's numbers would (a constant, a band edge, a
 /// floor); fingerprints record them.
-pub const VERSIONS: [(&str, u32); 5] = [
+pub const VERSIONS: [(&str, u32); 6] = [
     ("nmr-bs1387-basic", nmr::VERSION),
     ("anmr-kahles2019", nmr::ANMR_VERSION),
     ("erb-band-error", erb::VERSION),
     ("rnonlin-tan2004", rnonlin::VERSION),
     ("gedlee-2003", gedlee::VERSION),
+    ("null-nmr", null::VERSION),
 ];
 
 /// [`VERSIONS`] as one line: `name/version name/version …`.
@@ -164,6 +167,6 @@ mod tests {
     #[test]
     fn versions_name_every_metric() {
         let v = versions();
-        assert_eq!(v.split(' ').count(), 5, "{v}");
+        assert_eq!(v.split(' ').count(), 6, "{v}");
     }
 }

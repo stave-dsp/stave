@@ -4,7 +4,7 @@ model Circuit<Dk> on spice/power_supply.cir
 tier t0
 reference ngspice 42, spice/power_supply.cir through spice/power_supply.plan (scripts/ngspice-simulate.py)
 playback 92 1.5546848e0
-versions nmr-bs1387-basic/1 anmr-kahles2019/1 erb-band-error/1 rnonlin-tan2004/1 gedlee-2003/1
+versions nmr-bs1387-basic/1 anmr-kahles2019/1 erb-band-error/1 rnonlin-tan2004/1 gedlee-2003/1 null-nmr/1
 metric 192000 load/+0mA nmr_total_db -6.72954068e1
 metric 192000 load/+0mA nmr_max_db -5.89924205e1
 metric 192000 load/+0mA nmr_disturbed 0e0

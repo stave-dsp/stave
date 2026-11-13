@@ -18,7 +18,7 @@ use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
 use stave_dsp::primitives::filters::sallen_key::SallenKey;
 use stave_dsp::units::{db, hz};
 use stave_dsp::{CurveStage, Oversampled2x, SmoothSat, Stage, Triode};
-use stave_test::characterise::fingerprint::{path, pin_stage, pin_stage_with, stage_plan, Fingerprint};
+use stave_test::characterise::fingerprint::{blessing, path, pin_stage, pin_stage_with, stage_plan, Fingerprint};
 use stave_test::characterise::kernels::KernelPlan;
 use stave_test::characterise::model::Ticker;
 use stave_test::characterise::{Plan, Table};
@@ -152,7 +152,8 @@ fn korg35() {
 /// Every committed fingerprint's metrics and plots are the ones its own
 /// tables give with today's metric implementations (DSP.md R19's
 /// versions): a metric that changes shows here as a stale fingerprint,
-/// to re-bless — never as a model that moved.
+/// to re-bless — never as a model that moved. `STAVE_BLESS=1` rewrites
+/// them from the committed tables.
 #[test]
 fn fingerprints_are_current() {
     let root = path("x").parent().unwrap().to_path_buf();
@@ -188,6 +189,12 @@ fn fingerprints_are_current() {
                         let read = |ext: &str| std::fs::read_to_string(spice.join(format!("{circuit}.{ext}"))).unwrap();
                         (Plan::parse(&read("plan")).unwrap(), Some(Table::parse(&read("table")).unwrap()))
                     };
+                    if blessing() {
+                        // Re-derive the metrics and plots from the committed
+                        // tables (the tables themselves stay as measured).
+                        fp.derived(&plan, reference.as_ref()).write();
+                        return Vec::new();
+                    }
                     fp.stale(&plan, reference.as_ref())
                         .into_iter()
                         .map(|s| format!("{}: {s}", fp.case))

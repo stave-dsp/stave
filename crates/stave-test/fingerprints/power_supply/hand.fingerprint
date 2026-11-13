@@ -5,7 +5,7 @@ catalogue stave_dsp::circuit::topologies::power_supply::PowerSupply
 tier t0
 reference ngspice 42, spice/power_supply.cir through spice/power_supply.plan (scripts/ngspice-simulate.py)
 playback 92 1.5546848e0
-versions nmr-bs1387-basic/1 anmr-kahles2019/1 erb-band-error/1 rnonlin-tan2004/1 gedlee-2003/1
+versions nmr-bs1387-basic/1 anmr-kahles2019/1 erb-band-error/1 rnonlin-tan2004/1 gedlee-2003/1 null-nmr/1
 metric 192000 load/+0mA nmr_total_db -6.72971945e1
 metric 192000 load/+0mA nmr_max_db -5.899416e1
 metric 192000 load/+0mA nmr_disturbed 0e0

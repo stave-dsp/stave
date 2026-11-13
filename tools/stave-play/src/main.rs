@@ -165,6 +165,10 @@ fn verify_blessed(path: &std::path::Path, tolerance_db: f64) -> std::process::Ex
                 } else {
                     format!("residual {:.1} dB", v.residual_db)
                 };
+                if let Some((total, band)) = v.null_nmr {
+                    let verdict = stave_measure::perceptual::null::verdict(total, band);
+                    what.push_str(&format!(" ({verdict}: null NMR {total:.1} dB, worst band {band:.1} dB)"));
+                }
                 match &v.fingerprint_moved {
                     Some(m) if m.is_empty() => what.push_str(", fingerprint holds"),
                     Some(m) => what.push_str(&format!(", fingerprint moved in {} characteristics", m.len())),

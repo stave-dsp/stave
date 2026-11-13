@@ -23,7 +23,8 @@ Each assumes you know the [concepts](crate::concepts).
   blessing a sound.
 - [Fingerprints and perceptual metrics](crate::howto::fingerprints):
   pinning a model's measured character in CI, re-blessing it, and the
-  NMR, ANMR, ERB-band error, Rnonlin and GedLee.
+  NMR, ANMR, ERB-band error, Rnonlin and GedLee, and budgets stated as
+  the null test's audibility.
 - [Place a new DSP model](crate::howto::model_placement): where a model
   goes in stave-dsp, what it is called, and how it is verified.
 - [Capture and fit a block model](crate::howto::block_models): the

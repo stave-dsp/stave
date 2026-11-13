@@ -45,6 +45,7 @@
 //!     .assert();
 //! ```
 
+pub mod audibility;
 pub mod black_box;
 pub mod compare;
 pub mod fingerprint;
@@ -58,6 +59,7 @@ use std::fmt;
 use stave_dsp::circuit::netlist::Netlist;
 use stave_measure::suite::period::SHIPPING_RATES;
 
+pub use audibility::Audibility;
 pub use compare::{Check, Measurement};
 pub use fingerprint::Fingerprint;
 pub use model::Model;

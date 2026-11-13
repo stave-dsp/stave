@@ -61,6 +61,72 @@ impl Fingerprint {
     fn shipping(&self) -> Option<&str> {
         self.tables.iter().find(|(_, role)| role != "oversampled").map(|(r, _)| r.as_str())
     }
+
+    /// The R16 verdict at a table's rate, from its `null_*` metrics:
+    /// the worst run's total NMR and the worst band over the runs, and
+    /// the alignment. `None` without a reference (a black box).
+    pub fn audibility(&self, rate: &str) -> Option<Audibility> {
+        let worst = |name: &str| {
+            self.metrics
+                .iter()
+                .filter(|((r, _, n), _)| r == rate && n == name)
+                .map(|((_, run, _), v)| (*v, run.clone()))
+                .fold(None, |a: Option<(f64, String)>, b| if a.as_ref().is_some_and(|a| a.0 >= b.0) { a } else { Some(b) })
+        };
+        let (total, total_run) = worst("null_nmr_total_db")?;
+        let (band, band_run) = worst("null_nmr_max_db")?;
+        let get = |name: &str| self.metrics.get(&(rate.to_string(), ALIGNMENT_RUN.to_string(), name.to_string())).copied().unwrap_or(f64::NAN);
+        Some(Audibility {
+            total,
+            total_run,
+            band,
+            band_run,
+            gain_db: get("null_gain_db"),
+            delay_s: get("null_delay_s"),
+        })
+    }
+
+    /// The verdict at the shipping rate, in a few words with its figures
+    /// (the model table's cell), or `None` without a reference.
+    pub fn verdict(&self) -> Option<String> {
+        let rate = self.shipping()?;
+        let a = self.audibility(rate)?;
+        Some(format!("{} at {} kHz (null NMR {:.1} dB, worst band {:.1} dB)", a.word(), khz(rate), a.total, a.band))
+    }
+}
+
+/// The run name the alignment metrics are filed under (the
+/// characterise tests' `fingerprint::ALIGNMENT_RUN`).
+const ALIGNMENT_RUN: &str = "alignment";
+/// R16's inaudible budget, dB NMR (`stave_measure::perceptual::null::INAUDIBLE_DB`).
+const INAUDIBLE_DB: f64 = -10.0;
+
+/// A fingerprint's audibility at one rate (DSP.md R16).
+pub struct Audibility {
+    pub total: f64,
+    pub total_run: String,
+    pub band: f64,
+    pub band_run: String,
+    pub gain_db: f64,
+    pub delay_s: f64,
+}
+
+impl Audibility {
+    pub fn inaudible(&self) -> bool {
+        self.total <= INAUDIBLE_DB && self.band <= INAUDIBLE_DB
+    }
+
+    fn word(&self) -> &'static str {
+        if self.inaudible() {
+            "inaudible"
+        } else {
+            "audible"
+        }
+    }
+}
+
+fn khz(rate: &str) -> String {
+    rate.parse::<f64>().map_or_else(|_| rate.to_string(), |r| format!("{}", r / 1e3))
 }
 
 fn files(dir: &Path) -> Vec<PathBuf> {
@@ -424,9 +490,38 @@ pub fn section(fp: &Fingerprint) -> String {
     s.push_str(&kernel_plots(fp));
     s.push_str("</div>");
     s.push_str(&kernel_caption(fp));
+    // The audibility verdict (R16) at each rate, beside the numbers.
+    let verdicts: Vec<String> = fp
+        .tables
+        .iter()
+        .filter_map(|(rate, role)| {
+            let a = fp.audibility(rate)?;
+            Some(format!(
+                "<strong>{}</strong> at {} kHz ({}): the null residual reads {:.1} dB NMR in total (<code>{}</code>) and {:.1} dB in its worst band (<code>{}</code>), after aligning {:+.4} dB and {:+.3} µs",
+                a.word(),
+                khz(rate),
+                esc(role),
+                a.total,
+                esc(&a.total_run),
+                a.band,
+                esc(&a.band_run),
+                a.gain_db,
+                a.delay_s * 1e6
+            ))
+        })
+        .collect();
+    if !verdicts.is_empty() {
+        let _ = write!(
+            s,
+            r#"<p class="fp-verdict">Audibility against the reference (DSP.md R16; inaudible at ≤ −10 dB NMR in total and worst band): {}.</p>"#,
+            verdicts.join("; ")
+        );
+    }
     // The metrics at the shipping rate, a row per run.
     if let Some(rate) = fp.shipping() {
         let names = [
+            ("null_nmr_total_db", "null NMR total"),
+            ("null_nmr_max_db", "null NMR worst band"),
             ("nmr_total_db", "NMR total"),
             ("nmr_max_db", "NMR worst band"),
             ("erb_max_db", "ERB error max"),
@@ -434,7 +529,7 @@ pub fn section(fp: &Fingerprint) -> String {
             ("gedlee", "GedLee G<sub>m</sub>"),
         ];
         let runs: Vec<&String> = {
-            let mut r: Vec<&String> = fp.metrics.keys().filter(|k| k.0 == rate).map(|k| &k.1).collect();
+            let mut r: Vec<&String> = fp.metrics.keys().filter(|k| k.0 == rate && k.1 != ALIGNMENT_RUN).map(|k| &k.1).collect();
             r.dedup();
             r
         };

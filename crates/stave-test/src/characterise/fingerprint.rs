@@ -54,6 +54,7 @@ use stave_measure::suite::analysis::{gain, phasor, waveform, Harmonics, Spectrum
 use stave_measure::suite::levels::{Criterion, Knee};
 use stave_measure::suite::{db, Complex};
 
+use super::audibility::Audibility;
 use super::compare::{compare, Check};
 use super::kernels::{KernelKind, KernelRecord, KernelRow};
 use super::plan::{Kind, Plan, Run, Tier, HARMONICS};
@@ -83,6 +84,11 @@ pub const TOLERANCES: [(Check, f64, f64); 12] = [
     (Check::Aliasing, 0.5, f64::NAN),
     (Check::Anmr, 0.5, f64::NAN),
 ];
+
+/// The run name a fingerprint's alignment metrics (`null_gain_db`,
+/// `null_delay_s`: the level and latency match of its R16 null) are
+/// filed under.
+pub const ALIGNMENT_RUN: &str = "alignment";
 
 /// Below these, a level is the floor: two floors agree.
 const ALIAS_FLOOR_DB: f64 = -110.0;
@@ -242,22 +248,28 @@ impl Fingerprint {
         // One playback scale for the whole fingerprint: the largest peak
         // (about its mean) of the reference's T0 runs at the shipping
         // rate — or the model's, with no reference — plays at 92 dB SPL.
-        let scale_table = reference.or(self.shipping());
         let ship_rate = self.tables.iter().find(|t| t.1.shipping()).map_or(48_000.0, |t| t.0);
-        let mut full_scale = 0.0f64;
-        if let Some(t) = scale_table {
-            for run in &runs {
-                if let Some(m) = t.runs.get(&run.id) {
-                    let x = ac(&waveform(&clip(&m.periods[0], run, ship_rate), run.period(), ship_rate));
-                    full_scale = full_scale.max(x.iter().fold(0.0f64, |p, v| p.max(v.abs())));
-                }
-            }
-        }
-        self.playback = Playback {
-            full_scale: significant(if full_scale > 0.0 { full_scale } else { 1.0 }),
-            db_spl: PLAYBACK_DB_SPL,
+        self.playback = match reference.or(self.shipping()) {
+            Some(t) => super::audibility::playback(plan, t, ship_rate),
+            None => Playback {
+                full_scale: 1.0,
+                db_spl: PLAYBACK_DB_SPL,
+            },
         };
         for (rate, role, table) in self.tables.clone() {
+            // R16: the null by audibility, one level and latency match over
+            // the T0 runs, each run's residual NMR under the reference.
+            let nulls = reference.and_then(|r| Audibility::of(plan, Tier::T0, r, &table, self.playback));
+            if let Some(a) = &nulls {
+                for (name, value) in [("null_gain_db", a.alignment.gain_db()), ("null_delay_s", a.alignment.delay)] {
+                    self.metrics.push(Metric {
+                        rate,
+                        run: ALIGNMENT_RUN.into(),
+                        name: name.into(),
+                        value: significant(value),
+                    });
+                }
+            }
             for run in &runs {
                 let Some(m) = table.runs.get(&run.id) else { continue };
                 let spectrum = &m.periods[0];
@@ -290,6 +302,10 @@ impl Fingerprint {
                     let e = ErbError::of(&bands, &lines(&shared), &lines(&mine));
                     put("erb_max_db", e.max_db);
                     put("erb_rms_db", e.rms_db);
+                }
+                if let Some(n) = nulls.as_ref().and_then(|a| a.runs.iter().find(|n| n.run == run.id)) {
+                    put("null_nmr_total_db", n.nmr.total_db);
+                    put("null_nmr_max_db", n.nmr.max_db);
                 }
                 match run.kind {
                     Kind::Tone { bin, .. } => {
@@ -504,7 +520,10 @@ impl Fingerprint {
                 path(&self.case).display()
             ),
         };
-        let moved = diff(&committed, &self, plan);
+        let mut moved = diff(&committed, &self, plan);
+        if !moved.is_empty() {
+            moved.extend(audibility_of_move(&committed, &self, plan));
+        }
         assert!(
             moved.is_empty(),
             "fingerprint `{}` moved — the model sounds different from the one pinned. \
@@ -531,7 +550,7 @@ impl Fingerprint {
             out.push(format!("{} metrics committed, {} now", self.metrics.len(), fresh.metrics.len()));
         }
         for (a, b) in self.metrics.iter().zip(&fresh.metrics) {
-            let close = if a.name.starts_with("nmr_") && a.name.ends_with("_db") {
+            let close = if a.name.contains("nmr_") && a.name.ends_with("_db") {
                 (a.value.max(NMR_FLOOR_DB) - b.value.max(NMR_FLOOR_DB)).abs() <= NMR_TOLERANCE_DB
             } else {
                 (a.value - b.value).abs() <= METRIC_TOLERANCE * (1.0 + a.value.abs()) || (a.value.is_infinite() && a.value == b.value)
@@ -636,6 +655,20 @@ pub fn pin_stage_with(
             .record()
     });
     fp.with_kernels(record).pin(&plan, None);
+}
+
+/// How audible a move is (DSP.md R16): each rate's re-measured table
+/// nulled against the committed one as the reference, heard at the
+/// committed playback level.
+pub fn audibility_of_move(committed: &Fingerprint, now: &Fingerprint, plan: &Plan) -> Vec<String> {
+    now.tables
+        .iter()
+        .filter_map(|(rate, role, table)| {
+            let (_, _, old) = committed.tables.iter().find(|t| t.0 == *rate)?;
+            let a = Audibility::of(plan, Tier::T0, old, table, committed.playback)?;
+            Some(format!("{:.1} kHz {}: the move is {}", rate / 1e3, role.word(), a.summary()))
+        })
+        .collect()
 }
 
 /// Every characteristic of `now` that moved from `committed` beyond
