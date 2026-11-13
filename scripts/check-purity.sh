@@ -26,6 +26,10 @@ ALLOWED=(
   # Data-parallel bake: every pixel is a pure function of its position;
   # threads split rows, so the image is the same on any schedule.
   'crates/stave-face/src/material.rs:std::thread'
+  # Design studies (DSP.md G2, G3): each evaluation a pure function of
+  # its values, split over the caller's thread count and gathered by
+  # index, so the numbers are the same on any schedule.
+  'crates/stave-measure/src/design/mod.rs:std::thread'
   # Memoised bakes: a cache hit returns the image a miss would compute.
   'crates/stave-face/src/part.rs:RefCell'
   # Trace's scrolling history: one sample per frame time (6e07cd1), so a

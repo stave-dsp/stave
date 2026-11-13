@@ -138,11 +138,11 @@ const T: f64 = 22.0;
 const B: f64 = 30.0;
 
 /// A series: its legend label, CSS class, dashed or not, points.
-struct Series {
-    label: String,
-    class: &'static str,
-    dashed: bool,
-    points: Vec<(f64, f64)>,
+pub(crate) struct Series {
+    pub(crate) label: String,
+    pub(crate) class: &'static str,
+    pub(crate) dashed: bool,
+    pub(crate) points: Vec<(f64, f64)>,
 }
 
 fn nice_step(span: f64) -> f64 {
@@ -152,7 +152,7 @@ fn nice_step(span: f64) -> f64 {
 }
 
 /// A line plot: `x_log` for frequency axes; `hline` a reference level.
-fn plot(title: &str, x_label: &str, y_label: &str, x_log: bool, series: &[Series], hline: Option<(f64, &str)>) -> String {
+pub(crate) fn plot(title: &str, x_label: &str, y_label: &str, x_log: bool, series: &[Series], hline: Option<(f64, &str)>) -> String {
     let pts = series.iter().flat_map(|s| s.points.iter());
     let (mut x0, mut x1, mut y0, mut y1) = (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
     for &(x, y) in pts {

@@ -248,6 +248,19 @@ section.fingerprint p { color: var(--ink-2); font-size: 13.5px; }
 .fp-plot .ref { stroke: var(--ink); fill: var(--ink); }
 .fp-plot .faint { opacity: 0.4; }
 .fp-plot polyline.ship, .fp-plot polyline.os, .fp-plot polyline.ref { fill: none; }
+/* Design studies: one hue per part, mid-lightness so both themes read. */
+.fp-plot .p0, .design-legend .p0 { stroke: #c63d25; fill: #c63d25; }
+.fp-plot .p1, .design-legend .p1 { stroke: #2f7fb8; fill: #2f7fb8; }
+.fp-plot .p2, .design-legend .p2 { stroke: #3c9a5f; fill: #3c9a5f; }
+.fp-plot .p3, .design-legend .p3 { stroke: #b07d1a; fill: #b07d1a; }
+.fp-plot .p4, .design-legend .p4 { stroke: #8a5bb5; fill: #8a5bb5; }
+.fp-plot .p5, .design-legend .p5 { stroke: #1f9c9c; fill: #1f9c9c; }
+.fp-plot .p6, .design-legend .p6 { stroke: #c2577f; fill: #c2577f; }
+.fp-plot .p7, .design-legend .p7 { stroke: var(--ink-2); fill: var(--ink-2); }
+.fp-plot polyline.p0, .fp-plot polyline.p1, .fp-plot polyline.p2, .fp-plot polyline.p3,
+.fp-plot polyline.p4, .fp-plot polyline.p5, .fp-plot polyline.p6, .fp-plot polyline.p7 { fill: none; }
+.design-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 500 12px var(--mono); color: var(--ink-2); }
+.design-legend line { stroke-width: 2.5; }
 table.fp-metrics td, table.fp-metrics th { font-size: 12.5px; }
 .fp-versions { font-size: 12px; }
 table.models td:first-child { min-width: 0; white-space: nowrap; }

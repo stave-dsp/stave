@@ -42,6 +42,16 @@ pub use stave as __stave;
 #[doc(hidden)]
 pub use stave_host as __host;
 pub use harness::{change, HarnessBuilder, PluginHarness};
+
+/// The threads a test's data-parallel work may use: `RAYON_NUM_THREADS`,
+/// else `STAVE_OFFLOAD_JOBS` (a build host's per-job share), else the
+/// machine's parallelism — what a design study's `Bench::threads` takes.
+pub fn threads() -> usize {
+    ["RAYON_NUM_THREADS", "STAVE_OFFLOAD_JOBS"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok()?.parse::<usize>().ok().filter(|&n| n > 0))
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
+}
 pub use stability::{
     assert_no_pump, energy_trend, resonant_tone, StabilityConfig, StabilityReport,
 };

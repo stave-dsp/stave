@@ -60,6 +60,8 @@ pub mod howto {
     pub mod model_placement {}
     #[doc = include_str!("howto/block-models.md")]
     pub mod block_models {}
+    #[doc = include_str!("howto/design-tools.md")]
+    pub mod design_tools {}
     #[doc = include_str!("howto/release.md")]
     pub mod release {}
     #[doc = include_str!("howto/local-config.md")]

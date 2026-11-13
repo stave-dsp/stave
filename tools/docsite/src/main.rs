@@ -26,6 +26,7 @@
 
 mod check;
 mod cost;
+mod design;
 mod fingerprints;
 mod guide;
 mod home;
@@ -119,6 +120,7 @@ fn build(doc: &Path, out: &Path) -> Result<usize> {
         reference::themes(&cx)?,
         reference::units(&cx)?,
         cost::page(&cx)?,
+        design::page(&cx)?,
         checks,
         reference::cli(&cx)?,
         reference::changelog(&cx)?,

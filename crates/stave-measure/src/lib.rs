@@ -18,6 +18,7 @@
 //! latency     onset + peak of an impulse response
 //! transfer    H(f) from input/output (H1, Welch-averaged)
 //! compare     bitwise divergence; null-test residuals
+//! design      sweeps, sensitivities and Monte Carlo over a model's parts
 //! tone_window   a bin-centred tone (or two) through a system: alias, gain, IMD
 //! suite       the measurement design: coherent stimuli and their analysers
 //! nonlinear   alias floor, gain surfaces, hysteresis
@@ -63,6 +64,7 @@ pub const AUDIBLE_MAX_HZ: f64 = 20_000.0;
 
 pub mod aliasing;
 pub mod compare;
+pub mod design;
 pub mod dynamics;
 pub mod identify;
 pub mod latency;
