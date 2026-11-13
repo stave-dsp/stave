@@ -202,6 +202,59 @@ against captures.
    residuals by noise-to-mask ratio (NMR) against a psychoacoustic masking
    model, never only by waveform RMS.
 
+### Refinements from the literature
+
+From the measurement survey (sources cited in the local research index):
+
+- **Multisine phases by purpose.** The best linear approximation depends on
+  the stimulus's amplitude distribution, so random-phase and Schroeder
+  multisines are not interchangeable (Schoukens, Vaes & Pintelon 2016). C3
+  uses random phases; Schroeder only to cross-check C4. Fingerprints record
+  the phase law and seed.
+- **Realisations, not one run.** Distortion that varies with the random-phase
+  draw cannot be separated from the BLA in one run: T1 averages M ≥ 4
+  realisations of one period each (M = 8 at T2); a T0 single run is labelled a
+  single-realisation response.
+- **Grids.** Random-odd quasi-logarithmic excitation (Vanhoenacker et al.
+  2001) with detection lines between consecutive excited lines and at least 3
+  excited lines per octave. Coherent tones use cycle counts coprime with the
+  record length (IEEE 1241).
+- **Levels by RMS.** "Re knee" is defined by RMS, and each stimulus's crest
+  factor is stored (random-phase multisines run ~10–12 dB against a sine's 3).
+- **Synchronized swept sine** (Novak et al. 2015), with its length rule, so
+  harmonic phases are right; sized from the stage's memory (≈0.6 s for order 5,
+  ≈2 s for order 15 at a 20 ms response; longer for tape, reverb, magnetics),
+  run at ≥ 3 levels with kernels checked for consistency.
+- **IMD details.** SMPTE tones moved onto coherent bins within RP120's ±3 %,
+  sidebands 7 kHz ± n·60 Hz (n = 1…6) summed. CCIF 19 + 20 kHz doubles as an
+  alias detector at 44.1/48 kHz (the sum product folds in-band), reported
+  separately.
+- **Weighting stated.** Every THD+N and noise figure states its bandwidth
+  (AES17 20 kHz) and weighting (A, ITU-R 468).
+- **Aliasing budget by audibility:** A-weighted noise-to-mask ratio ≤ −10 dB
+  (Lehtonen et al. 2012; Kahles et al. 2019), swept every semitone from
+  27.5 Hz to 4186 Hz at +12 and +20 dB re knee at T1.
+- **Perceptual distortion metric.** THD/IMD correlate with perceived
+  distortion only at |r| ≈ 0.45; Rnonlin reaches ≈ 0.95 (Moore 2020): add it,
+  and the GedLee metric on static transfer curves. NMR per BS.1387 (as
+  implemented by Kabal), not the PEAQ quality score; playback level recorded
+  (default 92 dB SPL).
+- **Phase budgets.** Group delay |Δ| ≤ 0.2 ms from 500 Hz to 4 kHz (threshold
+  ≈ 0.6 ms, Liski et al. 2021); interchannel delay ≤ 10 µs (image shifts at
+  ≈ 35 µs, Møller et al. 2007).
+- **Listening statistics.** ABX defaults to ≥ 40 trials (16 trials at a true
+  hit rate of 0.7 detect only 45 % of the time; Leventhal 1986), logs p, power
+  and d′, and never records "inaudible" from a short run. Voicing matches
+  loudness to ≤ 0.1 LU, with anchors and bias controls (BS.1534, Zielinski et
+  al. 2008); BS.1116 for near-threshold questions.
+- **Reproducible metrics.** Metric implementations are versioned in
+  fingerprints; the BS.1387 conformance items and EBU Tech 3341 loudness
+  vectors run as T0 tests.
+- **Model error.** ESR is reported only with A-weighted pre-emphasis and
+  beside perceptual metrics (Wright & Välimäki 2020).
+- **Corpus.** Edge-of-breakup DI exposes model differences best: the DI set
+  includes it.
+
 ### Characteristics
 
 | # | Characteristic | Stimulus | Reveals |
