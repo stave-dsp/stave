@@ -24,10 +24,16 @@
 //! B-source Koren law; 2062 with the Koren device), tone stack 9.7 vs
 //! 29. The general method costs 2–3× the hand derivation; a topology
 //! stays its own type where that matters.
+//!
+//! Learned anchors (M3, 2026-11-12): WaveNet at Neural Amp Modeler's
+//! standard size 2.2 µs/sample (12 + 6 channels 1.7), LSTM 1 x 16 0.32,
+//! GRU 1 x 16 0.23 — a different scale: a capture network is the whole
+//! amp, and costs like one.
 
 use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
+use stave_dsp::learned::{nam, Gru, LoadError};
 use stave_dsp::FilterSpec;
 use stave_dsp::RcClipperConfig;
 use stave_dsp::{AdaaOrder, AdsrConfig};
@@ -55,6 +61,30 @@ fn noise(buf: &mut [f32]) {
         lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
         *x = ((lcg >> 8) as f32 / (1u32 << 23) as f32 - 1.0) * 0.3;
     }
+}
+
+/// Weights in ±0.5 from an LCG, rounded so the JSON stays short.
+fn weights(n: usize) -> String {
+    let mut lcg: u32 = 11;
+    let w: Vec<String> = (0..n)
+        .map(|_| {
+            lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
+            format!("{:.3}", (lcg >> 8) as f32 / (1u32 << 24) as f32 - 0.5)
+        })
+        .collect();
+    format!("[{}]", w.join(","))
+}
+
+/// A network file with `{w}` standing for the weights, filled with as
+/// many as the loader says the architecture needs.
+fn network(template: &str) -> nam::Network {
+    let expected = match nam::parse(&template.replace("{w}", "[]")) {
+        Err(LoadError::Weights { expected, .. }) => expected,
+        other => panic!("{other:?}"),
+    };
+    nam::parse(&template.replace("{w}", &weights(expected)))
+        .unwrap()
+        .network
 }
 
 /// Median ns/sample over `REPEATS` timed passes (one warm-up pass),
@@ -256,6 +286,51 @@ fn primitive_datasheet() {
         bench(&name, &input, |x| conv.tick(x));
         worst_block(&name, &input, 64, |b| conv.process(b));
     }
+
+    // Learned: Neural Amp Modeler's standard WaveNet (16 + 8 channels,
+    // 2 x 10 layers, kernel 3, dilations 1..512), a lighter one (12 + 6
+    // channels, 7 + 13 layers), and one-layer 16-unit LSTM and GRU.
+    let array = |input: u32, channels: u32, head: u32, dilations: &str, bias: bool| {
+        format!(
+            r#"{{"input_size":{input},"condition_size":1,"channels":{channels},"head_size":{head},
+            "kernel_size":3,"dilations":{dilations},"activation":"Tanh","gated":false,"head_bias":{bias}}}"#
+        )
+    };
+    let wavenet = |layers: Vec<String>| {
+        format!(
+            r#"{{"version":"0.5.4","architecture":"WaveNet","sample_rate":48000,
+            "config":{{"layers":[{}],"head":null,"head_scale":0.02}},"weights":{{w}}}}"#,
+            layers.join(",")
+        )
+    };
+    let decade = "[1,2,4,8,16,32,64,128,256,512]";
+    let mut standard = network(&wavenet(vec![
+        array(1, 16, 8, decade, false),
+        array(16, 8, 1, decade, true),
+    ]));
+    standard.prepare(sr);
+    bench("WaveNet (NAM standard)", &input, |x| standard.tick(x));
+    let mut lite = network(&wavenet(vec![
+        array(1, 12, 6, "[1,2,4,8,16,32,64]", false),
+        array(12, 6, 1, "[128,256,512,1,2,4,8,16,32,64,128,256,512]", true),
+    ]));
+    lite.prepare(sr);
+    bench("WaveNet (12 + 6 channels)", &input, |x| lite.tick(x));
+
+    let mut lstm = network(
+        r#"{"version":"0.5.4","architecture":"LSTM","sample_rate":48000,
+        "config":{"input_size":1,"hidden_size":16,"num_layers":1},"weights":{w}}"#,
+    );
+    lstm.prepare(sr);
+    bench("LSTM (1 x 16)", &input, |x| lstm.tick(x));
+
+    let gru_weights = weights(3 * 16 * 17 + 6 * 16 + 17);
+    let mut gru = Gru::parse(&format!(
+        r#"{{"input_size":1,"hidden_size":16,"num_layers":1,"sample_rate":48000,"weights":{gru_weights}}}"#
+    ))
+    .unwrap();
+    gru.prepare(sr);
+    bench("GRU (1 x 16)", &input, |x| gru.tick(x));
 }
 
 /// The slowest `block`-sample call of `process` over the input, after a
