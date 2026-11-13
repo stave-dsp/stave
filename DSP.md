@@ -172,14 +172,14 @@ circuit/
 
 ### U — units as types
 
-- [ ] **U1** `Hz`, `Db`, `Seconds`, `Samples` (and `Ms` as a constructor,
+- [x] **U1** (2f061f4) `Hz`, `Db`, `Seconds`, `Samples` (and `Ms` as a constructor,
   not a type) as `Copy` newtypes over `f32`/`f64` with explicit
   conversions (`Db::to_gain`, `Seconds::samples(rate)`). They are taken over from
   OVERHAUL.md V1, which deferred them to after the plugin migration.
-- [ ] **U2** `Gain` (linear amplitude) distinct from `Db`; `Ratio` for
+- [x] **U2** (2f061f4) `Gain` (linear amplitude) distinct from `Db`; `Ratio` for
   compressors; `Semitones`/`Cents` for pitch; `SampleRate` as the one
   prepared-rate type.
-- [ ] **U3** Circuit units for netlists and devices: `Volts`, `Amps`,
+- [x] **U3** (2f061f4) Circuit units for netlists and devices: `Volts`, `Amps`,
   `Ohms`, `Farads`, `Henries`, with SI-prefix constructors (`kohm(4.7)`,
   `nf(22.0)`). Datasheet values read as written.
 - [ ] **U4** Every stave-dsp setter and `FilterSpec` takes the typed unit; `FloatParam`
