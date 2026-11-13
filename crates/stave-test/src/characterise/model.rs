@@ -340,6 +340,33 @@ impl Model {
     }
 }
 
+impl Model {
+    /// The model's response at `rate` to `input`, sample for sample
+    /// (output `i` answers input `i`): a circuit from its operating point
+    /// with `plan`'s input split, a stage or black box fresh from `make`,
+    /// a delayed one fed its delay further. For stimuli that are not a
+    /// plan's runs (C12's sweeps, [`super::kernels`]).
+    pub fn respond(&self, plan: &Plan, rate: f64, input: &[f64]) -> Vec<f64> {
+        fn through<S: Solver>(netlist: &Netlist, plan: &Plan, rate: f64, input: &[f64]) -> Vec<f64> {
+            let mut c = S::on(netlist, &plan.input, rate);
+            input.iter().map(|&x| c.tick(x)).collect()
+        }
+        match self {
+            Model::Circuit(netlist) => through::<Circuit<Dk>>(netlist, plan, rate, input),
+            Model::Wdf(netlist) => through::<Circuit<Wdf>>(netlist, plan, rate, input),
+            Model::Stage { make, .. } => {
+                let mut tick = make(rate);
+                input.iter().map(|&x| tick(x)).collect()
+            }
+            Model::Delayed { make } => {
+                let (tick, delay) = make(rate);
+                let fed = input.iter().copied().chain(std::iter::repeat_n(0.0, delay));
+                fed.map(tick).skip(delay).collect()
+            }
+        }
+    }
+}
+
 /// C2 of a black box: the −40 dB multisine's BLA (averaged over its
 /// realisations) at the response points.
 fn black_box_response(plan: &Plan, tier: Tier, table: &mut Table) {

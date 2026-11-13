@@ -22,6 +22,7 @@
 mod circuits;
 
 use circuits::{budgets, CIRCUITS};
+use stave_test::characterise::kernels::KernelPlan;
 use stave_test::characterise::model::{knee, settle_seconds};
 use stave_test::characterise::{deck, Characterise, Plan, Tier};
 
@@ -76,13 +77,17 @@ fn plans_are_current() {
     );
 }
 
+/// The circuits whose fingerprints keep their nonlinear kernels too (C12,
+/// DSP.md M6): drawn on the model catalogue, and held to their R17 tones
+/// by `kernels.rs`.
+const KERNELS: [&str; 3] = ["common_cathode", "diode_clipper", "tube_screamer"];
+
 /// `name`'s T0 matrix on `Circuit<Dk>`, with its budgets, held to its
 /// fingerprint (`fingerprints/<name>.fingerprint`, DSP.md R18).
 fn circuit(name: &str) {
-    budgets(name, Tier::T0, Characterise::ngspice(name).tier(Tier::T0).circuit())
-        .run()
-        .pinned()
-        .assert();
+    let c = Characterise::ngspice(name).tier(Tier::T0).circuit();
+    let c = if KERNELS.contains(&name) { c.kernels(KernelPlan::default()) } else { c };
+    budgets(name, Tier::T0, c).run().pinned().assert();
 }
 
 #[test]
