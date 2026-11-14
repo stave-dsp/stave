@@ -1,8 +1,9 @@
 //! Listen mode's queue: auditions agents asked a person to hear
 //! (`stave listen queue add`, see `stave_tools::listen`), listed in a
 //! side bar. Clicking one loads its comparison into the Voicing view
-//! with what to listen for above it; an answer marks it done in the
-//! queue file, where the agent reads it back.
+//! with what to listen for above it; the answer given there ("Which
+//! sounds better?": A, B, tie, unclear, and its notes) marks it done in
+//! the queue file, where the agent reads it back.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -24,13 +25,14 @@ pub struct Auditions {
     read_at: Option<Instant>,
     /// The audition loaded into the Voicing view.
     pub current: Option<String>,
-    pub notes: String,
+    /// What was last written for it (answer, notes).
+    pub recorded: Option<(Answer, String)>,
     pub error: Option<String>,
 }
 
 impl Auditions {
     pub fn new(path: PathBuf) -> Self {
-        Self { path, queue: Queue::default(), read_at: None, current: None, notes: String::new(), error: None }
+        Self { path, queue: Queue::default(), read_at: None, current: None, recorded: None, error: None }
     }
 
     /// Re-read the file when it is due.
@@ -52,19 +54,29 @@ impl Auditions {
         self.current.as_deref().and_then(|id| self.queue.get(id))
     }
 
-    /// Record `answer` on the current audition; the next one waiting.
-    pub fn answer(&mut self, answer: Answer) -> Result<Option<Item>, String> {
-        let id = self.current.clone().ok_or("no audition loaded")?;
-        let notes = std::mem::take(&mut self.notes);
+    /// Write `answer` and `notes` for the current audition, unless that
+    /// is what was last written. Whether it wrote.
+    pub fn record(&mut self, answer: Answer, notes: &str) -> Result<bool, String> {
+        let Some(id) = self.current.clone() else { return Ok(false) };
+        if self.recorded.as_ref().is_some_and(|(a, n)| *a == answer && n == notes) {
+            return Ok(false);
+        }
         let q = listen::update(&self.path, |q| {
-            q.answer(&id, answer, &notes);
+            q.answer(&id, answer, notes);
             q.clone()
         })
         .map_err(|e| format!("{}: {e}", self.path.display()))?;
         self.queue = q;
         self.read_at = Some(Instant::now());
-        Ok(self.queue.next().cloned())
+        self.recorded = Some((answer, notes.to_string()));
+        Ok(true)
     }
+}
+
+/// The queue's answer for the Voicing view's ("other": a third
+/// candidate's letter, which the queue doesn't name).
+pub fn answer_of(word: &str) -> Option<Answer> {
+    Answer::parse(word)
 }
 
 /// The Voicing view's launch for an audition (its log goes where the
@@ -81,13 +93,14 @@ pub fn launch_for(item: &Item, dir: PathBuf) -> voicing::Launch {
 impl HostApp {
     /// Load `item` into the Voicing view and go there.
     pub(super) fn load_audition(&mut self, item: &Item) {
+        self.sync_audition(true);
         let launch = launch_for(item, self.voicing.dir.clone());
         match Voicing::new(&launch) {
             Ok(v) => {
                 self.voicing.release_device();
                 self.voicing = v;
                 self.auditions.current = Some(item.id.clone());
-                self.auditions.notes.clear();
+                self.auditions.recorded = None;
                 self.open_mode(Mode::Listen);
                 self.say(format!("{}: {}", item.id, item.title));
             }
@@ -103,17 +116,26 @@ impl HostApp {
         }
     }
 
-    pub(super) fn answer_audition(&mut self, answer: Answer) {
-        match self.auditions.answer(answer) {
-            Ok(next) => {
+    /// Copy the Voicing view's latest answer into the queue: a new
+    /// answer at once; edited notes only when `settle` (leaving the
+    /// audition), so typing doesn't write the file per keystroke.
+    pub(super) fn sync_audition(&mut self, settle: bool) {
+        if self.auditions.current.is_none() {
+            return;
+        }
+        let Some((answer, notes)) = self.voicing.answers().pop().and_then(|(w, n)| answer_of(w).map(|a| (a, n))) else {
+            return;
+        };
+        let changed_answer = self.auditions.recorded.as_ref().map(|(a, _)| *a) != Some(answer);
+        if !(changed_answer || settle) {
+            return;
+        }
+        match self.auditions.record(answer, &notes) {
+            Ok(true) => {
                 let left = self.auditions.queue.pending().count();
-                self.say(format!("answered {} · {left} waiting", answer.word()));
-                if let Some(item) = next {
-                    self.load_audition(&item);
-                } else {
-                    self.auditions.current = None;
-                }
+                self.say(format!("recorded {} · {left} waiting", answer.word()));
             }
+            Ok(false) => {}
             Err(e) => self.fail(e),
         }
     }
@@ -168,11 +190,13 @@ impl HostApp {
     }
 
     /// Above the Voicing view while an audition is loaded: what to
-    /// listen for, and the answer that marks it done.
+    /// listen for, and whether the answer has been recorded.
     pub(super) fn draw_audition_banner(&mut self, ui: &mut egui::Ui) {
+        self.sync_audition(false);
         let t = self.tokens;
         let Some(item) = self.auditions.current_item().cloned() else { return };
-        let mut answered = None;
+        let waiting = self.auditions.queue.pending().filter(|i| i.id != item.id).count();
+        let mut next = false;
         egui::Frame::none()
             .fill(t.accent.gamma_multiply(0.12))
             .rounding(6.0)
@@ -184,28 +208,35 @@ impl HostApp {
                     ui.label(RichText::new(&item.listen_for).strong());
                 });
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Your answer").small().color(t.ink_soft));
-                    for a in [Answer::A, Answer::B, Answer::Tie, Answer::Unclear] {
-                        let label = match a {
-                            Answer::A => "A is better",
-                            Answer::B => "B is better",
-                            Answer::Tie => "Tie",
-                            Answer::Unclear => "Unclear",
-                        };
-                        if ui.button(label).clicked() {
-                            answered = Some(a);
+                    match &self.auditions.recorded {
+                        Some((a, _)) => {
+                            ui.label(RichText::new(format!("Recorded: {}", a.word())).small().strong().color(t.good));
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new("Answer \"Which sounds better?\" below: it goes back to whoever asked.")
+                                    .small()
+                                    .color(t.ink_soft),
+                            );
                         }
                     }
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.auditions.notes)
-                            .hint_text("notes (what you heard)")
-                            .desired_width(f32::INFINITY),
-                    );
+                    if waiting > 0 && ui.small_button(format!("Next audition ({waiting} waiting)")).clicked() {
+                        next = true;
+                    }
                 });
             });
         ui.add_space(8.0);
-        if let Some(a) = answered {
-            self.answer_audition(a);
+        if next {
+            self.next_other_audition();
+        }
+    }
+
+    /// The oldest audition waiting that isn't the current one.
+    fn next_other_audition(&mut self) {
+        let current = self.auditions.current.clone();
+        let item = self.auditions.queue.pending().find(|i| Some(&i.id) != current.as_ref()).cloned();
+        if let Some(item) = item {
+            self.load_audition(&item);
         }
     }
 }
@@ -235,9 +266,12 @@ mod tests {
         let mut a = Auditions::new(path.clone());
         a.refresh();
         a.current = Some("L1".into());
-        a.notes = "brighter".into();
-        let next = a.answer(Answer::A).unwrap().unwrap();
+        assert!(a.record(Answer::A, "brighter").unwrap());
+        assert!(!a.record(Answer::A, "brighter").unwrap(), "unchanged: not rewritten");
+        let next = a.queue.next().cloned().unwrap();
         assert_eq!(next.id, "L2");
+        assert_eq!(answer_of("tie"), Some(Answer::Tie));
+        assert_eq!(answer_of("other"), None);
         let q = Queue::load(&path).unwrap();
         assert_eq!((q.items[0].answer, q.items[0].notes.as_str()), (Some(Answer::A), "brighter"));
         let launch = launch_for(&next, PathBuf::from("/v"));

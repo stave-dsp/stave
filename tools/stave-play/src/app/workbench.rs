@@ -168,6 +168,7 @@ impl HostApp {
             return;
         }
         if from == ViewId::Voicing {
+            self.sync_audition(true); // notes typed since the answer
             self.leave_voicing();
         }
         self.project.active_view = view;

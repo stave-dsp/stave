@@ -282,6 +282,15 @@ impl Voicing {
         self.preparing.is_some() || self.autostart
     }
 
+    /// The answers to "Which sounds better?" this session, oldest first,
+    /// as (`a` / `b` / `other` / `tie` / `unclear`, notes): what the
+    /// app's listening queue records.
+    pub fn answers(&self) -> Vec<(&'static str, String)> {
+        self.live.as_ref().map_or_else(Vec::new, |l| {
+            l.history.preferences.iter().map(|p| (p.choice.word(), p.notes.clone())).collect()
+        })
+    }
+
     /// Whether a comparison holds the audio device.
     pub fn is_playing_device(&self) -> bool {
         self.live.as_ref().is_some_and(|l| l.stream.is_some())

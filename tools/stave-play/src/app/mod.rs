@@ -409,6 +409,10 @@ impl HostApp {
 }
 
 impl eframe::App for HostApp {
+    fn on_exit(&mut self) {
+        self.sync_audition(true);
+    }
+
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let now = Instant::now();
         let dt = now
