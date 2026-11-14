@@ -2985,6 +2985,7 @@ dependencies = [
  "stave-dsp",
  "stave-face",
  "stave-macros",
+ "stave-standalone",
  "stave-vst3",
 ]
 
@@ -3162,6 +3163,19 @@ name = "stave-raster"
 version = "0.5.0"
 dependencies = [
  "stave-ui",
+]
+
+[[package]]
+name = "stave-standalone"
+version = "0.5.0"
+dependencies = [
+ "alsa",
+ "cpal",
+ "stave-core",
+ "stave-face",
+ "stave-ui-cocoa",
+ "stave-ui-win32",
+ "stave-ui-x11",
 ]
 
 [[package]]

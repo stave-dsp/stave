@@ -84,6 +84,8 @@ jobs:
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
       - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+      # The standalone (a feature, so the workspace build skips its bin).
+      - run: cargo clippy -p stave-tilt-vst3 --features standalone --all-targets --no-deps --locked -- -D warnings
       # Docs of code that only compiles here (the shells, the loaders).
       - run: cargo doc --workspace --no-deps --document-private-items --locked
         env:

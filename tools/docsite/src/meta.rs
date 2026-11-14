@@ -21,6 +21,8 @@ pub struct Package {
     pub kinds: BTreeSet<String>,
     /// Binary names.
     pub bins: Vec<String>,
+    /// Each binary's required features (`bins`' order), for `--features`.
+    pub bin_features: Vec<Vec<String>>,
     /// Directory relative to the workspace root.
     pub dir: String,
     /// Normal dependencies on other workspace packages: `(name, cfg)`,
@@ -53,12 +55,15 @@ pub fn workspace(repo: &Path) -> Result<Workspace> {
         let dir = Path::new(manifest).parent().and_then(|d| d.strip_prefix(&root).ok()).map(|d| d.display().to_string()).unwrap_or_default();
         let mut kinds = BTreeSet::new();
         let mut bins = Vec::new();
+        let mut bin_features = Vec::new();
         let mut lib = None;
         for t in p["targets"].as_array().into_iter().flatten() {
             for k in t["kind"].as_array().into_iter().flatten().filter_map(Value::as_str) {
                 match k {
                     "bin" => {
                         bins.push(t["name"].as_str().unwrap_or_default().to_string());
+                        let features = t["required-features"].as_array().into_iter().flatten().filter_map(Value::as_str);
+                        bin_features.push(features.map(str::to_string).collect());
                         kinds.insert("bin".to_string());
                     }
                     "lib" | "rlib" | "cdylib" | "proc-macro" => {
@@ -81,7 +86,7 @@ pub fn workspace(repo: &Path) -> Result<Workspace> {
             }
         }
         let publish = !matches!(&p["publish"], Value::Array(a) if a.is_empty());
-        packages.push(Package { name, description: p["description"].as_str().unwrap_or_default().to_string(), lib, kinds, bins, dir, deps, publish });
+        packages.push(Package { name, description: p["description"].as_str().unwrap_or_default().to_string(), lib, kinds, bins, bin_features, dir, deps, publish });
     }
     packages.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(Workspace { packages, version })

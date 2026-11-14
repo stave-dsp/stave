@@ -1,12 +1,40 @@
 //! A stand-alone app around one [`FaceView`]: a regular application with
-//! a Quit menu (⌘Q) and one window the size of the face. The storybook
-//! runs its faces here.
+//! a Quit menu (⌘Q) and one window the size of the face, which quits
+//! the app when it closes. The storybook and the standalone run their
+//! faces here. Quitting drops the view (and its controller) before the
+//! process exits, so a controller's destructor can save what it holds.
 
+use std::cell::RefCell;
 use std::ffi::CString;
 
 use crate::cf::CGRect;
-use crate::objc::{class, send, sel, MainThread, Obj, Retained};
+use crate::objc::{class, define_class, guard, send, sel, MainThread, Obj, ObjcBool, Retained, Sel, YES};
 use crate::view::FaceView;
+
+thread_local! {
+    /// The running app's view, until `applicationWillTerminate:` drops
+    /// it (`terminate:` exits the process without returning from `run`).
+    static VIEW: RefCell<Option<FaceView>> = const { RefCell::new(None) };
+}
+
+extern "C" fn quit_after_last_window(_this: Obj, _cmd: Sel, _app: Option<Obj>) -> ObjcBool {
+    YES
+}
+
+extern "C" fn will_terminate(_this: Obj, _cmd: Sel, _note: Option<Obj>) {
+    guard((), || VIEW.with(|v| drop(v.borrow_mut().take())));
+}
+
+/// The app delegate: quit with the last window, drop the view on quit.
+fn delegate_class() -> Obj {
+    define_class("StaveAppDelegate", c"NSObject", |decl| {
+        decl.method(
+            sel!(c"applicationShouldTerminateAfterLastWindowClosed:"),
+            quit_after_last_window as extern "C" fn(Obj, Sel, Option<Obj>) -> ObjcBool,
+        );
+        decl.method(sel!(c"applicationWillTerminate:"), will_terminate as extern "C" fn(Obj, Sel, Option<Obj>));
+    })
+}
 
 /// Show `view` in a window titled `title` and run the app until it quits.
 ///
@@ -59,8 +87,15 @@ pub fn run_app(title: &str, mut view: FaceView) {
         }
         send::<_, ()>(window.get(), sel!(c"makeKeyAndOrderFront:"), (None::<Obj>,));
         send::<_, ()>(app, sel!(c"activateIgnoringOtherApps:"), (true,));
+        // The delegate lives as long as the app (NSApp holds it weakly).
+        let raw: Option<Obj> = send(delegate_class(), sel!(c"alloc"), ());
+        let delegate: Option<Obj> = send(raw.expect("alloc"), sel!(c"init"), ());
+        let delegate = Retained::from_owned(delegate.expect("an app delegate"));
+        send::<_, ()>(app, sel!(c"setDelegate:"), (delegate.get(),));
+        VIEW.with(|v| *v.borrow_mut() = Some(view));
         send::<_, ()>(app, sel!(c"run"), ());
-        drop(view);
+        VIEW.with(|v| drop(v.borrow_mut().take()));
+        drop(delegate);
     }
 }
 

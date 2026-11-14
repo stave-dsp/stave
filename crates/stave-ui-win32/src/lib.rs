@@ -26,4 +26,5 @@ pub mod keys {
     pub const ESCAPE: u16 = crate::sys::VK_ESCAPE;
     pub const LEFT: u16 = crate::sys::VK_LEFT;
     pub const RIGHT: u16 = crate::sys::VK_RIGHT;
+    pub const TAB: u16 = 0x09;
 }

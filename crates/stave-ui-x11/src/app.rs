@@ -11,7 +11,8 @@ use x11rb::wrapper::ConnectionExt as _;
 
 use crate::FaceView;
 
-/// Show `view` in a window titled `title` until the window is closed.
+/// Show `view` in a window titled `title` until the window is closed;
+/// then drop it and exit.
 ///
 /// # Panics
 /// When there is no X display.
@@ -44,11 +45,11 @@ pub fn run_app(title: &str, mut view: FaceView) -> ! {
     conn.flush().expect("flush");
     view.attach(window).expect("the face attaches");
     let mut size = (w, h);
-    loop {
+    'run: loop {
         while let Ok(Some(event)) = conn.poll_for_event() {
             match event {
-                Event::ClientMessage(e) if Some(e.data.as_data32()[0]) == delete => std::process::exit(0),
-                Event::DestroyNotify(_) => std::process::exit(0),
+                Event::ClientMessage(e) if Some(e.data.as_data32()[0]) == delete => break 'run,
+                Event::DestroyNotify(_) => break 'run,
                 _ => {}
             }
         }
@@ -64,4 +65,7 @@ pub fn run_app(title: &str, mut view: FaceView) -> ! {
         }
         std::thread::sleep(Duration::from_millis(8));
     }
+    // The controller's destructor runs (it may save) before the exit.
+    drop(view);
+    std::process::exit(0)
 }
