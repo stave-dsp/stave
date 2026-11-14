@@ -1,0 +1,26 @@
+# title: NE570 gain cell's maximum signal level against VCA gain, the output level before the cell clips.
+# document: onsemi, NE570 Compandor, NE570/D Rev. 4 (May 2006)
+# url: https://www.onsemi.com/pdf/datasheet/ne570-d.pdf
+# figure: Figure 15, "Dynamic Range" (the MAXIMUM SIGNAL LEVEL line), page 8
+# method: page rasterised at 600 dpi (pdftoppm); output axis calibrated on its seven tick marks (+20 to -100 dBm, 234 px per 20 dB, fitted to 0.5 px), gain axis on its six ticks (-30 to +10 dB, 234 px per 10 dB); the line's 9 px stroke read at its centre in the column of each 5 dB of gain (the -30 dB column moved 8 px right, off the 110 dB arrow, and read back along the line's unit slope).
+# x: VCA gain (dB)
+# y: maximum output level (dBm, 0 dBm = 775 mV RMS)
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 50
+# full-scale-y: 120
+# uncertainty-x: 0.1
+# uncertainty-y: 0.3
+# conditions: none
+# notes: The sheet states no supply or load for this figure (its tables are at VCC = 15 V). The line has unit slope: the cell's input saturates at a fixed level, +7.75 dBm read here at 0 dB of gain, where the text (page 7) says "Saturation of the gain cell occurs at a +8.0 dBm level". The +10 dB end (+17.75 dBm, 8.5 V peak) is not transcribed: on a 15 V single supply a 741-class output stage cannot swing 17 V peak to peak, so it is the cell alone or another supply. Uncertainty-y: the stroke's centre (about 0.1 dB) and the calibration (0.2 dB).
+# curve line=1
+-40 -32.26
+-35 -27.22
+-30 -22.26
+-25 -17.22
+-20 -12.26
+-15 -7.22
+-10 -2.26
+-5 2.78
+0 7.74
+5 12.78

@@ -305,24 +305,23 @@ fn circuits(out: &mut Vec<Entry>) {
             l.set_clock(hz(40_000.0));
             l
         }));
-        // Known gap (R6's sweep): the NE570 compressor closes its loop on
-        // the last sample's rectifier, with no output swing modelled, so a
-        // hot onset after silence passes its full 80 dB of range for a
-        // sample (2 V DC: 2e4 V), and the compandored line expands that
-        // spike again (to 1.7e6 at 16 kHz, 5e2 at 768 kHz). The bounds
-        // pin it, twice the worst seen, until the chip's output stage is
-        // modelled.
+        // The NE570's output swing (±6.5 V about its operating point on
+        // 15 V): a hot onset after silence, with the compressor's gain at
+        // its 80 dB maximum, opens its loop and rides the rail until the
+        // rectifier catches up; the compandored line ends in the
+        // expander's amplifier, so it is held to the same swing.
+        let swing = compander::Chip::NE570.swing.get() as f32;
         out.push(
             stage(F, "BucketBrigade (MN3007, NE570)", Measure::Response, || {
                 let mut l = BucketBrigade::new(Chip::MN3007);
                 l.set_clock(hz(40_000.0));
                 l
             })
-            .bound(4e6),
+            .bound(swing),
         );
         out.push(
             stage(F, "Compander (NE570)", Measure::Response, || Compander::new(compander::Chip::NE570, Mode::Compress))
-                .bound(4e4),
+                .bound(swing),
         );
         out.push(stage(F, "OptoCompressor (VTL5C3)", Measure::Level, || OptoCompressor::new(Najnudel::VTL5C3)).drive(0.0, 0.1, 10.0));
         out.push(stage(F, "Converter (SP-1200)", Measure::Response, || Converter::new(converter::Machine::SP1200)));
