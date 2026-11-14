@@ -105,7 +105,7 @@ matches() { # FILE PATTERN... — a root file matches itself; a path with a slas
 why="" site=0
 ((full)) && why="--full"
 for f in ${changed[@]+"${changed[@]}"}; do
-  if [[ -z "$why" ]] && matches "$f" "${FULL[@]}"; then why="$f changed"; fi
+  if [[ -z "$why" ]] && { [[ "$f" != */* ]] || matches "$f" "${FULL[@]}"; }; then why="$f changed"; fi
   if matches "$f" "${SITE[@]}" || [[ "$f" == */src/main.rs || "$f" == */src/bin/* ]]; then site=1; fi
 done
 meta="$(cargo metadata --format-version 1 --no-deps --locked)"
@@ -114,7 +114,8 @@ pkgs=()
 if [[ -n "$why" ]]; then
   scope="whole workspace ($why)" site=1
 else
-  while IFS= read -r p; do [[ -n "$p" ]] && pkgs+=("$p"); done < <(python3 scripts/test-affected.py --list "$base")
+  selected="$(python3 scripts/test-affected.py --list "$base")"
+  while IFS= read -r p; do [[ -n "$p" ]] && pkgs+=("$p"); done <<<"$selected"
   if ((${#pkgs[@]} * 3 >= total * 2)); then
     scope="whole workspace (${#pkgs[@]} of $total packages affected)"
     pkgs=()

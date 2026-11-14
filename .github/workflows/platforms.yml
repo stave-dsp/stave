@@ -3,13 +3,14 @@
 # platform's entry points, pass clap-validator and Steinberg's
 # validator, and stave-host opens them; the face shells are driven in a
 # real window (Xvfb on Linux, window messages on Windows). macOS is
-# ci.yml's. Every job fits five minutes warm.
+# ci.yml's. Run facts track execution and runner wait separately.
 #
 # A pull request gates what it changes, and only that: `changes` asks
 # scripts/affected.sh which packages the change reaches (as ci.yml's
 # jobs do), the build, test and lint jobs work on those, and a change
 # that reaches no package (documentation, another workflow's file)
-# skips them. Not a required check, so a skipped job blocks nothing.
+# skips them. The aggregate gate verifies this intentional skip and fails
+# if selection failed or any affected job did not succeed.
 # Main, release branches and a dispatched run gate everything.
 name: platforms
 
@@ -17,6 +18,7 @@ on:
   push:
     branches: [main, "release/**"]
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -31,6 +33,7 @@ env:
   # scripts/affected.sh's base: the pull request's.
   AFFECTED_ARGS: >-
     ${{ github.event_name == 'pull_request' && format('--base origin/{0}', github.base_ref)
+    || github.event_name == 'merge_group' && format('--base {0}', github.event.merge_group.base_sha)
     || '--full' }}
 
 defaults:
@@ -47,11 +50,12 @@ jobs:
       packages: ${{ steps.affected.outputs.packages }}
       lib-packages: ${{ steps.affected.outputs.lib-packages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - id: affected
         run: |
+          # shellcheck disable=SC2086
           out="$(scripts/affected.sh --outputs $AFFECTED_ARGS)"
           echo "$out"
           sed -n 's/^AFFECTED_SCOPE=/scope=/p; s/^AFFECTED_PACKAGES=/packages=/p; s/^AFFECTED_LIB_PACKAGES=/lib-packages=/p' <<<"$out" >> "$GITHUB_OUTPUT"
@@ -72,30 +76,36 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libasound2-dev xvfb
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
-      - uses: taiki-e/install-action@v2.90.3
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: nextest@0.9.148 }
-      - run: cargo build --all-targets --locked $PACKAGES
+      - run: |
+          # shellcheck disable=SC2086
+          cargo build --all-targets --locked $PACKAGES
       - name: cargo nextest run
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then
             export STAVE_REQUIRE_DISPLAY=1
+            # shellcheck disable=SC2086
             xvfb-run -a -s "-screen 0 1280x1024x24" cargo nextest run --locked --profile ci --no-tests=pass $PACKAGES
           else
+            # shellcheck disable=SC2086
             cargo nextest run --locked --profile ci --no-tests=pass $PACKAGES
           fi
       - if: env.LIB_PACKAGES != ''
-        run: cargo test --doc --locked $LIB_PACKAGES
+        run: |
+          # shellcheck disable=SC2086
+          cargo test --doc --locked $LIB_PACKAGES
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: golden-diff-${{ matrix.os }}
           path: target/golden-diff
@@ -113,20 +123,24 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libasound2-dev
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
-      - run: cargo clippy --all-targets --no-deps --locked $PACKAGES -- -D warnings
+      - run: |
+          # shellcheck disable=SC2086
+          cargo clippy --all-targets --no-deps --locked $PACKAGES -- -D warnings
       # The standalone (a feature, so the workspace build skips its bin).
       - run: cargo clippy -p stave-tilt-vst3 --features standalone --all-targets --no-deps --locked -- -D warnings
       # Docs of code that only compiles here (the shells, the loaders).
-      - run: cargo doc --no-deps --document-private-items --locked $PACKAGES
+      - run: |
+          # shellcheck disable=SC2086
+          cargo doc --no-deps --document-private-items --locked $PACKAGES
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -143,16 +157,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
       - name: Cache the validators
         id: tools-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             vst3sdk/build/bin/Release/validator*
@@ -178,3 +192,23 @@ jobs:
           VALIDATOR: vst3sdk/build/bin/Release/validator
       - name: stave-host opens the bundle
         run: target/release/stave validate target/validate/StaveTilt.vst3 --json > /dev/null
+
+  gate:
+    name: platforms gate
+    needs: [changes, test, clippy, validators]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require selection and every affected platform check
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          needs = json.loads(os.environ['NEEDS'])
+          assert needs['changes']['result'] == 'success', 'affected selection failed'
+          scope = needs['changes']['outputs']['scope']
+          assert scope in ('none', 'packages', 'workspace'), 'invalid affected scope'
+          expected = 'skipped' if scope == 'none' else 'success'
+          assert all(job['result'] == expected for name, job in needs.items() if name != 'changes'), needs
+          PYTHON

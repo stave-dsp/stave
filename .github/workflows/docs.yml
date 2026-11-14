@@ -48,22 +48,24 @@ jobs:
     # build of the docs target dir takes longer.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # The changelog is read from the release tags.
           fetch-depth: 0
       - run: rustup toolchain install
       - name: What the change affects
-        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SITE == '1'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: docsite
           save-if: "${{ github.ref == 'refs/heads/main' }}"
       - if: env.AFFECTED_SITE == '1'
         run: scripts/docsite.sh target/site
       - if: env.AFFECTED_SITE == '1'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: target/site
 
@@ -81,4 +83,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

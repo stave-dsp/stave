@@ -3,8 +3,7 @@
 # with a pinned ngspice, and every solved reference with pinned
 # NumPy/SciPy, and fail if any differs from the committed file — a stale
 # fixture can't pass. scripts/ngspice-simulate.py first checks ngspice on
-# circuits with exact answers. Beside it, T1 of the characterisation
-# matrix: every circuit's whole grid held to those tables.
+# circuits with exact answers. T1 characterisation runs in main-postmerge.yml.
 #
 # The fixtures are a function of the netlists, the scripts and the pinned
 # versions only, so the workflow runs when those change (and when the
@@ -20,14 +19,12 @@
 # `cat */costs.tsv | sort > crates/stave-test/spice/costs.tsv`). On a pull
 # request, `changes` picks the shards holding a changed deck (all of them
 # when the script, its requirements, the costs, the DC sweeps or this file
-# change), and T1 only when something it reads changed. The shards keep
+# change). The shards keep
 # stamps of the checks that passed (ngspice-simulate.py --stamps: keyed by the script,
 # the ngspice and NumPy versions, the deck, its plan and its committed
 # files) in the Actions cache, and a pull request skips a deck whose stamp
 # is there — unchanged since a passing check. A push to main or a release
 # branch, or a dispatch, checks every deck afresh and records the stamps.
-# T1 is split into four nextest partitions and the piano sweep; the
-# classics' T1 (their knees and piano sweep) is a job of its own.
 #
 # Every job runs on a self-hosted Linux runner for trusted
 # events and on GitHub's ubuntu-24.04 for a fork's pull request (`changes`
@@ -118,16 +115,15 @@ jobs:
                    || 'ubuntu-24.04') }}
       shards: ${{ steps.pick.outputs.shards }}
       total: ${{ steps.pick.outputs.total }}
-      t1: ${{ steps.pick.outputs.t1 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 2 }   # a pull request's merge commit and its base
       - id: pick
         run: |
           groups="$(python3 scripts/ngspice-simulate.py --shard-of "$NGSPICE_SHARDS")"
           every="$(seq -s, 1 "$NGSPICE_SHARDS")"
           if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
-            shards="[$every]" t1=true
+            shards="[$every]"
           else
             changed="$(git diff --name-only HEAD^1 HEAD)"
             echo "$changed"
@@ -143,16 +139,9 @@ jobs:
               done
               shards="[$(sort -nu <<<"$picked" | sed '/^$/d' | paste -sd, -)]"
             fi
-            # T1 reads the tables and the Rust: anything but the scripts
-            # that only write fixtures, and the shards' costs.
-            if grep -qvxE 'scripts/ngspice-simulate\.py|scripts/ja-reference\.py|scripts/reference-requirements\.txt|crates/stave-test/spice/costs\.tsv' <<<"$changed"; then
-              t1=true
-            else
-              t1=false
-            fi
           fi
-          echo "ngspice shards: $shards of $NGSPICE_SHARDS; T1: $t1"
-          { echo "shards=$shards"; echo "total=$NGSPICE_SHARDS"; echo "t1=$t1"; } >> "$GITHUB_OUTPUT"
+          echo "ngspice shards: $shards of $NGSPICE_SHARDS"
+          { echo "shards=$shards"; echo "total=$NGSPICE_SHARDS"; } >> "$GITHUB_OUTPUT"
 
   ngspice:
     name: references (ngspice ${{ matrix.shard }}/${{ needs.changes.outputs.total }})
@@ -165,11 +154,11 @@ jobs:
       matrix:
         shard: ${{ fromJSON(needs.changes.outputs.shards) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/reference-tools
         with: { ngspice-package: "${{ env.NGSPICE_PACKAGE }}" }
       # Every deck's stamps, as the last run's `stamps` job saved them.
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: target/ngspice-stamps
           key: ngspice-stamps-${{ env.NGSPICE_PACKAGE }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -183,7 +172,7 @@ jobs:
           --keep target/fresh-tables --costs-out target/ngspice-costs/costs.tsv
       # The restored stamps and this shard's new ones, for `stamps`.
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ngspice-stamps-${{ matrix.shard }}
           path: target/ngspice-stamps
@@ -193,14 +182,14 @@ jobs:
       # A stale table's fresh simulation under the pinned ngspice: download
       # it to commit (DSP.md R16: fixtures regenerated under ngspice 42).
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fresh-tables-${{ matrix.shard }}
           path: target/fresh-tables
           if-no-files-found: ignore
       # What each deck cost, to rebalance the shards (costs.tsv).
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ngspice-costs-${{ matrix.shard }}
           path: target/ngspice-costs
@@ -217,13 +206,13 @@ jobs:
     timeout-minutes: 5
     runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: ngspice-stamps-*
           path: target/ngspice-stamps
           merge-multiple: true
       - run: echo "$(find target/ngspice-stamps -type f 2>/dev/null | wc -l) stamps"
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: target/ngspice-stamps
           key: ngspice-stamps-${{ env.NGSPICE_PACKAGE }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -236,7 +225,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/reference-tools
         with: { ngspice-package: "${{ env.NGSPICE_PACKAGE }}" }
       # The tolerance absorbs print and platform noise, not a real change:
@@ -262,54 +251,3 @@ jobs:
             exit 1
           fi
           git checkout scripts/ja-reference.py
-
-  characterise:
-    # T1 (DSP.md R17): every circuit's whole matrix against the committed
-    # tables — the grid of levels and frequencies, IMD, bursts —
-    # oversampled and at 44.1, 48 and 96 kHz, in four nextest partitions,
-    # and the piano's ANMR sweep (one test, about seven minutes, its
-    # circuits on par_map) in a job of its own.
-    # The tables' freshness is the shards' above.
-    name: characterise (T1 ${{ matrix.part }})
-    needs: changes
-    if: needs.changes.outputs.t1 == 'true'
-    timeout-minutes: 15
-    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
-    strategy:
-      fail-fast: false
-      matrix:
-        part: [1/4, 2/4, 3/4, 4/4, piano]
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: characterise
-          save-if: "${{ github.ref == 'refs/heads/main' && matrix.part == '1/4' }}"
-      - uses: taiki-e/install-action@v2.90.3
-        with: { tool: nextest@0.9.148 }
-      - env:
-          PART: ${{ matrix.part }}
-        run: |
-          if [[ "$PART" == piano ]]; then
-            select=(-E 'test(=anmr_over_the_piano)')
-          else
-            select=(--partition "count:$PART" -E 'not test(/^classics::/) and not test(=anmr_over_the_piano)')
-          fi
-          cargo nextest run -p stave-test --locked --profile t1 --test characterise_t1 --run-ignored only "${select[@]}"
-
-  characterise-classics:
-    # The classics' T1 (`classics::` in characterise_t1.rs).
-    name: characterise classics (T1)
-    needs: changes
-    if: needs.changes.outputs.t1 == 'true'
-    timeout-minutes: 30
-    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
-    steps:
-      - uses: actions/checkout@v4
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: characterise
-          save-if: false
-      - run: "cargo test -p stave-test --locked --test characterise_t1 -- --ignored classics::"

@@ -45,3 +45,5 @@ Each assumes you know the [concepts](crate::concepts).
 - [Ship your plugin](crate::howto::ship): the standalone app, one
   download per OS, Developer ID signing and notarisation, and the release
   workflow.
+
+- [Operating the merge queue](crate::howto::merge_queue): gates, recovery and queue operations.
