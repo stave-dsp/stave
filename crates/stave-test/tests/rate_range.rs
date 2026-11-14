@@ -515,6 +515,16 @@ const BUDGETS: &[(&str, f64, f64, f64)] = &[
     ("Adsr (held)", 0.05, 1.0, 0.005),
     ("OrnsteinUhlenbeck", 2.592, 1.0, 0.005),
     ("Wiener", 3.308, 1.0, 0.005),
+    // H10, E9, H7 (measured after they landed)
+    ("String (110 Hz, driven)", 0.052, 1.0, 0.005),
+    ("Membrane (110 Hz tom)", 0.054, 1.0, 0.005),
+    ("Bar (880 Hz, free)", 0.054, 1.0, 0.005),
+    ("Tube (clarinet, reed, blown)", 1.101, 1.0, 0.005),
+    ("Driver (Jensen C12N, linear)", 0.194, 1.0, 0.005),
+    ("Driver (Jensen C12N, large signal)", 0.194, 1.0, 0.005),
+    ("Captured (one position)", 0.2, 1.0, 0.005),
+    ("CloseMic (cardioid, 2.5 cm)", 0.39, 1.0, 0.005),
+    ("Room (live room)", 1.298, 1.0, 0.005),
 ];
 
 fn budget(name: &str) -> Option<Spread> {

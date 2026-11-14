@@ -456,6 +456,68 @@ fn physical(out: &mut Vec<Entry>) {
         Playback::new(Machine::TC260.play, Formulation::FERRIC.thickness, Machine::ips(7.5), Phase::Linear)
     }));
     out.push(stage(F, "Flutter (Akai 4000D)", Measure::Level, || Flutter::new(Transport::AKAI_4000D)));
+    {
+        // H10's instruments: a string and a membrane and a bar driven by
+        // their input (a velocity, a force), a reed tube blowing itself.
+        use stave_dsp::physical::bar::{Bar, Beam, Boundary, Material};
+        use stave_dsp::physical::membrane::{Drumhead, Membrane};
+        use stave_dsp::physical::plate::Loss;
+        use stave_dsp::physical::string::Waveguide as StringGuide;
+        use stave_dsp::physical::tube::{Bore, Shape, Valve, Waveguide as TubeGuide};
+        out.push(stage(F, "String (110 Hz, driven)", Measure::Energy, || {
+            let s: StringGuide = StringGuide::new(hz(40.0), hz(110.0));
+            s
+        }));
+        out.push(stage(F, "Membrane (110 Hz tom)", Measure::Energy, || {
+            let head = Drumhead::tuned(0.18, 0.26, hz(110.0));
+            Membrane::new(head, Loss::two_point(hz(110.0), seconds(1.2), hz(2_000.0), seconds(0.3)).unwrap())
+        }));
+        out.push(stage(F, "Bar (880 Hz, free)", Measure::Energy, || {
+            let key = Beam::tuned(Material::ALUMINIUM, 0.008, Boundary::Free, hz(880.0));
+            Bar::new(key, Boundary::Free, Loss::two_point(hz(880.0), seconds(2.0), hz(8_000.0), seconds(0.4)).unwrap())
+        }));
+        out.push(
+            stage(F, "Tube (clarinet, reed, blown)", Measure::Generator, || {
+                let bore = Bore { length: 0.6, radius: 0.0075, shape: Shape::Cylinder };
+                let mut t: TubeGuide = TubeGuide::new(bore, Valve::Reed);
+                t.set_blow(0.5);
+                t.set_embouchure(0.3);
+                t
+            })
+            .drive(0.0, 0.0, 0.0),
+        );
+    }
+    {
+        // E9 and H7: the loudspeaker, a capture's cabinet, the close mic.
+        use stave_dsp::physical::cabinet::{Breakup, Captured, CloseMic, Placement, Position};
+        use stave_dsp::physical::speaker::{Driver, LargeSignal, ThieleSmall};
+        use stave_dsp::units::SampleRate;
+        out.push(stage(F, "Driver (Jensen C12N, linear)", Measure::Response, || {
+            Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::LINEAR)
+        }));
+        out.push(stage(F, "Driver (Jensen C12N, large signal)", Measure::Response, || {
+            let mut d = Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::from_limits(1.0e-3, 1.2e-3, 6e-3));
+            d.set_volts(20.0);
+            d
+        }));
+        out.push(stage(F, "Captured (one position)", Measure::Response, || {
+            let ir: Vec<f32> = (0..4_096u64)
+                .map(|n| {
+                    let u = (stave_dsp::primitives::random::splitmix64(n ^ 0xCAB) >> 40) as f32 / (1u32 << 24) as f32;
+                    (u - 0.5) * (-(n as f32) / 600.0).exp()
+                })
+                .collect();
+            let ir = stave_dsp::ImpulseResponse::mono(&ir).recorded_at(SampleRate::new(48_000.0));
+            Captured::new(vec![vec![Position::new(0.0, ir)]])
+        }));
+        out.push(stage(F, "CloseMic (cardioid, 2.5 cm)", Measure::Response, || {
+            CloseMic::new(
+                Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::LINEAR),
+                Placement::CLOSE,
+                Breakup::PAPER_12,
+            )
+        }));
+    }
 }
 
 fn effects(out: &mut Vec<Entry>) {
@@ -565,6 +627,9 @@ fn effects(out: &mut Vec<Entry>) {
         let mut s = Schroeder::moorer();
         s.set_t60_s(2.0);
         s
+    }));
+    out.push(stage(F, "Room (live room)", Measure::Energy, || {
+        stave_dsp::effects::reverb::Room::new(stave_dsp::effects::reverb::Shoebox::LIVE_ROOM)
     }));
 }
 
