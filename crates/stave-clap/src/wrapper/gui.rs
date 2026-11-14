@@ -4,7 +4,10 @@
 //! the platform's `FaceView` over the instance's `controller`;
 //! `set_parent` attaches it; `destroy` drops it. The face has its
 //! natural size and does not resize. Every call is [main-thread] (clap
-//! gui.h), which is what lets the instance keep the view in a `RefCell`.
+//! gui.h), which is what lets the instance keep the view in a
+//! [`MainThreadCell`]. A host that calls back into `clap.gui` from inside
+//! another gui call (say while the view attaches to its parent) is
+//! refused — logged, `false` — rather than panicking on the cell.
 //!
 //! On X11 the view joins the host's run loop: `set_parent` registers
 //! the display connection's descriptor (`clap.posix-fd-support`) and a
@@ -38,6 +41,18 @@ fn host_size(view: &FaceView) -> (u32, u32) {
 #[cfg(not(target_os = "macos"))]
 fn host_size(view: &FaceView) -> (u32, u32) {
     view.host_size()
+}
+
+/// The open editor, exclusively, for a gui call; `None` (the refusal
+/// logged) while another gui call holds it.
+fn editor_mut<'a, P: ClapExport>(inst: &'a Instance<P>, call: &str) -> Option<core::cell::RefMut<'a, Option<FaceView>>> {
+    inst.editor.try_borrow_mut().inspect_err(|error| inst.report(call, error)).ok()
+}
+
+/// The open editor, shared, for a gui call; `None` (the refusal logged)
+/// while another gui call holds it exclusively.
+fn editor<'a, P: ClapExport>(inst: &'a Instance<P>, call: &str) -> Option<core::cell::Ref<'a, Option<FaceView>>> {
+    inst.editor.try_borrow().inspect_err(|error| inst.report(call, error)).ok()
 }
 
 /// The one window API a face supports here, embedded.
@@ -94,7 +109,13 @@ pub(super) unsafe extern "C" fn gui_create<P: ClapExport>(
                 return false;
             };
             let view = FaceView::new(face, Box::new(controller_of(inst)));
-            *inst.editor.borrow_mut() = Some(view);
+            let Some(mut editor) = editor_mut(inst, "gui.create") else {
+                return false;
+            };
+            // A view the host never destroyed drops after the borrow ends.
+            let stale = editor.replace(view);
+            drop(editor);
+            drop(stale);
             true
         },
     )
@@ -108,9 +129,14 @@ pub(super) unsafe extern "C" fn gui_destroy<P: ClapExport>(plugin: *const sys::C
     ffi_entry::<P, _>(
         || (),
         || {
+            // Taken under the borrow, dropped after it: the view's
+            // destructor may call back into the host.
+            let Some(view) = editor_mut(inst, "gui.destroy").map(|mut editor| editor.take()) else {
+                return;
+            };
             #[cfg(all(unix, not(target_os = "macos")))]
             run_loop::leave(inst);
-            drop(inst.editor.borrow_mut().take())
+            drop(view)
         },
     );
 }
@@ -131,7 +157,7 @@ pub(super) unsafe extern "C" fn gui_set_scale<P: ClapExport>(plugin: *const sys:
     inst.guarded(
         "gui.set_scale",
         || false,
-        || match inst.editor.borrow_mut().as_mut() {
+        || match editor_mut(inst, "gui.set_scale").as_deref_mut().and_then(Option::as_mut) {
             Some(view) if scale.is_finite() && scale > 0.0 => {
                 view.set_scale(scale);
                 true
@@ -159,7 +185,7 @@ pub(super) unsafe extern "C" fn gui_get_size<P: ClapExport>(
         "gui.get_size",
         || false,
         || {
-            let Some((w, h)) = inst.editor.borrow().as_ref().map(host_size) else {
+            let Some((w, h)) = editor(inst, "gui.get_size").and_then(|editor| editor.as_ref().map(host_size)) else {
                 return false;
             };
             let write = || -> Result<(), CallError> {
@@ -202,7 +228,9 @@ pub(super) unsafe extern "C" fn gui_set_size<P: ClapExport>(
     inst.guarded(
         "gui.set_size",
         || false,
-        || inst.editor.borrow().as_ref().map(host_size) == Some((width, height)),
+        || {
+            editor(inst, "gui.set_size").and_then(|editor| editor.as_ref().map(host_size)) == Some((width, height))
+        },
     )
 }
 
@@ -225,7 +253,13 @@ pub(super) unsafe extern "C" fn gui_set_parent<P: ClapExport>(
             if !api.is_ok_and(|api| api == API) {
                 return false;
             }
-            let mut editor = inst.editor.borrow_mut();
+            // Held across `attach` (which needs the view exclusively): a
+            // gui call the host makes from inside it is refused, not a
+            // panic. Released before anything else calls the host (the
+            // X11 run-loop registration below).
+            let Some(mut editor) = editor_mut(inst, "gui.set_parent") else {
+                return false;
+            };
             let Some(view) = editor.as_mut() else {
                 return false;
             };
@@ -271,13 +305,13 @@ pub(super) unsafe extern "C" fn gui_show<P: ClapExport>(plugin: *const sys::Clap
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
     // Embedded: the view shows with its parent.
-    inst.editor.borrow().is_some()
+    inst.guarded("gui.show", || false, || editor(inst, "gui.show").is_some_and(|editor| editor.is_some()))
 }
 
 pub(super) unsafe extern "C" fn gui_hide<P: ClapExport>(plugin: *const sys::ClapPlugin) -> bool {
     // SAFETY: host contract (see `host`).
     let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
-    inst.editor.borrow().is_some()
+    inst.guarded("gui.hide", || false, || editor(inst, "gui.hide").is_some_and(|editor| editor.is_some()))
 }
 
 pub(super) const fn gui_vtable<P: ClapExport>() -> sys::ClapPluginGui {
@@ -319,7 +353,7 @@ pub(super) mod run_loop {
         let Some(timer) = host.register_timer(PERIOD_MS) else {
             return inst.answer("gui.set_parent", Err(CallError::WindowRefused("the host has no clap.timer-support".into())));
         };
-        let fd = inst.editor.borrow().as_ref().and_then(FaceView::fd);
+        let fd = editor(inst, "gui.set_parent").and_then(|editor| editor.as_ref().and_then(FaceView::fd));
         let fd = fd.filter(|&fd| host.register_fd(fd, sys::CLAP_POSIX_FD_READ));
         inst.run_loop.set(Some((timer, fd)));
         true
@@ -335,8 +369,8 @@ pub(super) mod run_loop {
     }
 
     fn pump<P: ClapExport>(inst: &Instance<P>) {
-        // A reentrant callback (from inside the view's own pump) waits
-        // for the next one.
+        // A reentrant callback (from inside the view's own pump, or while
+        // a gui call holds the editor) waits for the next one, unlogged.
         if let Ok(editor) = inst.editor.try_borrow() {
             if let Some(view) = editor.as_ref() {
                 view.pump();
@@ -358,5 +392,59 @@ pub(super) mod run_loop {
         // SAFETY: host contract (see `host`).
         let inst = unsafe { Instance::<P>::from_plugin_ptr(plugin) };
         inst.guarded("posix-fd-support.on_fd", || (), || pump(inst));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use stave_core::{Block, Info, Telemetry};
+
+    use super::*;
+
+    struct Faceless;
+    impl Erased for Faceless {
+        const INFO: Info = Info {
+            id: "com.stave.test.gui-reentry",
+            name: "GUI re-entry",
+            vendor: "stave tests",
+            ..Info::EFFECT
+        };
+        fn new(_: &Telemetry) -> Self {
+            Faceless
+        }
+        fn process(&mut self, _block: &mut Block<'_>) {}
+    }
+    impl ClapExport for Faceless {}
+
+    /// A host that calls back into `clap.gui` while another gui call
+    /// holds the editor (here: the view attaching to its parent) is
+    /// refused; the instance is not disabled and nothing unwinds into
+    /// the host.
+    #[test]
+    fn a_reentrant_gui_call_is_refused_and_leaves_the_instance_alive() {
+        let factory = factory::<Faceless>();
+        // SAFETY: plays the host under clap.h: a live factory, a null
+        // host, the plugin's own id; `plugin` lives until `destroy`.
+        unsafe {
+            let plugin = (factory.create_plugin.unwrap())(factory, ptr::null(), c"com.stave.test.gui-reentry".as_ptr());
+            assert!(((*plugin).init.unwrap())(plugin));
+            let inst = Instance::<Faceless>::from_plugin_ptr(plugin);
+            let gui = gui_vtable::<Faceless>();
+            let window = sys::ClapWindow { api: API.as_ptr(), handle: core::mem::zeroed() };
+            let (mut w, mut h) = (0, 0);
+            {
+                // What `set_parent` holds while the view attaches.
+                let _attaching = inst.editor.try_borrow_mut().unwrap();
+                assert!(!(gui.show.unwrap())(plugin));
+                assert!(!(gui.hide.unwrap())(plugin));
+                assert!(!(gui.get_size.unwrap())(plugin, &mut w, &mut h));
+                assert!(!(gui.set_size.unwrap())(plugin, 1, 1));
+                assert!(!(gui.set_scale.unwrap())(plugin, 2.0));
+                assert!(!(gui.set_parent.unwrap())(plugin, &window));
+                (gui.destroy.unwrap())(plugin);
+            }
+            assert!(!inst.guard.disabled(), "a re-entrant gui call disabled the instance");
+            ((*plugin).destroy.unwrap())(plugin);
+        }
     }
 }

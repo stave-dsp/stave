@@ -160,6 +160,7 @@ mod entry;
 mod gesture;
 mod gui;
 mod host;
+mod main_thread;
 mod params;
 mod plugin;
 mod process;
@@ -170,6 +171,7 @@ pub(crate) use gesture::*;
 pub use gesture::controller;
 use gui::*;
 pub(crate) use host::{in_text, out_param};
+use main_thread::MainThreadCell;
 use host::{
     out_text, CoreEvent, Host, InputEvents, InputStream, OutputEvents, OutputStream, Process,
 };
@@ -227,8 +229,9 @@ pub(crate) struct Instance<P: ClapExport> {
     /// Factory presets (one list, shared with every face).
     presets: Arc<[Preset]>,
     /// The open face, between `gui.create` and `gui.destroy`. Only the
-    /// [main-thread] gui calls touch it (clap gui.h).
-    editor: core::cell::RefCell<Option<FaceView>>,
+    /// [main-thread] gui calls touch it (clap gui.h); a re-entrant one is
+    /// refused.
+    editor: MainThreadCell<Option<FaceView>>,
     /// The instance's telemetry: the plugin's taps, and the wrapper's
     /// I/O peaks, CPU load and capture for its face.
     telemetry: Arc<Telemetry>,

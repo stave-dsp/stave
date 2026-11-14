@@ -169,7 +169,7 @@ unsafe fn create_plugin<P: ClapExport>(host: *const sys::ClapHost) -> *const sys
         },
         face,
         presets,
-        editor: core::cell::RefCell::new(None),
+        editor: MainThreadCell::new(None),
         telemetry,
         taps,
         // SAFETY: clap.h: the host outlives the instances it creates.

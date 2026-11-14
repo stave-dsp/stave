@@ -418,7 +418,9 @@ impl<'a> InputStream<'a> {
                 unsafe { (self.read)(self.stream, chunk.as_mut_ptr().cast(), chunk.len() as u64) };
             match n {
                 0 => return Ok(bytes),
-                n if n < 0 => return Err(CallError::StreamRead),
+                // A host claiming more than it was asked for (or a
+                // failure) is a refused load, never a slice past `chunk`.
+                n if n < 0 || n as u64 > chunk.len() as u64 => return Err(CallError::StreamRead),
                 n => bytes.extend_from_slice(&chunk[..n as usize]),
             }
             if bytes.len() > limit {
