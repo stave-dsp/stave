@@ -11,10 +11,9 @@
 //! regeneration) is built with the stage, so a param change only picks
 //! another one — no allocation at the block boundary.
 
-use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::netlist::Netlist;
-use stave_dsp::circuit::topologies::{marshall_jcm800_2203, moog_ladder_904a, tube_screamer_ts808};
-use stave_dsp::circuit::Circuit;
+use stave_dsp::circuit::topologies::{marshall_jcm800_2203, moog_ladder_904a};
+use super::volts::Volts;
 use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
 use stave_dsp::units::{db, hz};
 use stave_dsp::{NewtonStats, Oversampled, Stage, Tail};
@@ -31,49 +30,6 @@ options_list!(
     Factor = ["1x", "2x", "4x", "8x"]
 );
 
-/// A netlist in volts: audio × `full_scale_in` drives its input source,
-/// the probe's departure from its resting value ÷ `full_scale_out` comes
-/// out.
-#[derive(Clone)]
-pub struct Volts {
-    circuit: Circuit<Dk>,
-    rest: f64,
-    pub full_scale_in: f64,
-    pub full_scale_out: f64,
-}
-
-impl Volts {
-    fn new(netlist: &Netlist, source: &str) -> Self {
-        let mut circuit = Circuit::<Dk>::new(netlist).unwrap_or_else(|e| panic!("a topology does not build: {e:?}"));
-        circuit.drive(source).unwrap_or_else(|e| panic!("a topology has no source {source}: {e:?}"));
-        let rest = circuit.output();
-        Self {
-            circuit,
-            rest,
-            full_scale_in: 1.0,
-            full_scale_out: 1.0,
-        }
-    }
-}
-
-impl Stage for Volts {
-    fn prepare(&mut self, sample_rate: f32) {
-        self.circuit.prepare(sample_rate);
-        self.rest = self.circuit.output();
-    }
-    fn reset(&mut self) {
-        self.circuit.reset();
-        self.rest = self.circuit.output();
-    }
-    fn tick(&mut self, x: f32) -> f32 {
-        let v = self.circuit.tick_f64(f64::from(x) * self.full_scale_in);
-        ((v - self.rest) / self.full_scale_out) as f32
-    }
-    fn tail(&self) -> Tail {
-        self.circuit.tail()
-    }
-}
-
 /// Every prebuilt variant of one circuit, the selected one running.
 pub struct Variants<S: Stage> {
     variants: Vec<Oversampled<S>>,
@@ -82,7 +38,7 @@ pub struct Variants<S: Stage> {
 
 impl<S: Stage + Clone> Variants<S> {
     /// `bases[i]` at every factor of [`FACTORS`]: variant `i * 4 + f`.
-    fn new(bases: Vec<S>) -> Self {
+    pub(super) fn new(bases: Vec<S>) -> Self {
         let variants = bases
             .into_iter()
             .flat_map(|b| FACTORS.map(|f| Oversampled::linear(b.clone(), f)))
@@ -90,7 +46,7 @@ impl<S: Stage + Clone> Variants<S> {
         Self { variants, selected: 0 }
     }
 
-    fn select(&mut self, index: usize) {
+    pub(super) fn select(&mut self, index: usize) {
         let index = index.min(self.variants.len() - 1);
         if index != self.selected {
             self.selected = index;
@@ -98,13 +54,13 @@ impl<S: Stage + Clone> Variants<S> {
         }
     }
 
-    fn each(&mut self, f: impl Fn(&mut S)) {
+    pub(super) fn each(&mut self, mut f: impl FnMut(&mut S)) {
         for v in &mut self.variants {
             f(&mut v.inner);
         }
     }
 
-    fn current(&self) -> &Oversampled<S> {
+    pub(super) fn current(&self) -> &Oversampled<S> {
         &self.variants[self.selected]
     }
 }
@@ -132,7 +88,7 @@ impl<S: Stage + Clone> Stage for Variants<S> {
 /// The factor, and the volts at full scale in and out: `(default,
 /// most)` each, the most being the circuit's documented valid input
 /// range (past it the solver is outside what the topology claims).
-fn volts_params(fs_in: (f64, f64), fs_out: (f64, f64)) -> Vec<Box<dyn stave_core::params::AnyParam>> {
+pub(super) fn volts_params(fs_in: (f64, f64), fs_out: (f64, f64)) -> Vec<Box<dyn stave_core::params::AnyParam>> {
     vec![
         choice::<Factor>(0, "oversample"),
         float(1, "full_scale_in", 0.001, fs_in.1, fs_in.0, Unit::Custom { label: "V/FS", decimals: 3 }),
@@ -140,7 +96,7 @@ fn volts_params(fs_in: (f64, f64), fs_out: (f64, f64)) -> Vec<Box<dyn stave_core
     ]
 }
 
-fn configure_volts(c: &mut Variants<Volts>, v: &StageParams, base: usize) {
+pub(super) fn configure_volts(c: &mut Variants<Volts>, v: &StageParams, base: usize) {
     let (fin, fout) = (v.get("full_scale_in"), v.get("full_scale_out"));
     c.each(|s| {
         s.full_scale_in = fin;
@@ -149,24 +105,18 @@ fn configure_volts(c: &mut Variants<Volts>, v: &StageParams, base: usize) {
     c.select(base * FACTORS.len() + v.choice("oversample"));
 }
 
-fn volts_stats(c: &Variants<Volts>) -> NewtonStats {
-    c.current().inner.circuit.stats()
+pub(super) fn volts_stats(c: &Variants<Volts>) -> NewtonStats {
+    c.current().inner.stats()
 }
 
 /// One circuit, its scale and factor from the params.
 pub fn netlist_stage(netlist: Netlist, v: &StageParams) -> BoxedStage {
-    let mut s = Variants::new(vec![Volts::new(&netlist, "vin")]);
+    let mut s = Variants::new(vec![Volts::new(&netlist, "vin", &[])]);
     configure_volts(&mut s, v, 0);
     stage_with_solver(s, |c, v| configure_volts(c, v, 0), volts_stats)
 }
 
-pub fn ts808_params() -> StageParams {
-    StageParams::new(volts_params((1.0, 4.5), (1.0, 10.0)))
-}
 
-pub fn ts808(v: &StageParams) -> BoxedStage {
-    netlist_stage(tube_screamer_ts808(), v)
-}
 
 pub fn jcm800_params() -> StageParams {
     StageParams::new(volts_params((1.0, 5.0), (50.0, 300.0)))
@@ -195,7 +145,7 @@ fn configure_moog(c: &mut Variants<Volts>, v: &StageParams) {
 }
 
 pub fn moog(v: &StageParams) -> BoxedStage {
-    let bases = MOOG_K.iter().map(|&k| Volts::new(&moog_ladder_904a(k), "vin")).collect();
+    let bases = MOOG_K.iter().map(|&k| Volts::new(&moog_ladder_904a(k), "vin", &[])).collect();
     let mut s = Variants::new(bases);
     configure_moog(&mut s, v);
     stage_with_solver(s, configure_moog, volts_stats)

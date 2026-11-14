@@ -7,6 +7,7 @@ use stave_dsp::{
     NonlinearRc, OpAmpClipper, OpAmpClipperConfig, PairSolver, RcClipperConfig, Shockley, Slew,
     Stage, Transformer, TransformerConfig, Tube,
 };
+use stave_dsp::circuit::devices::triode::koren::Koren;
 use stave_core::params::{AnyParam, EnumParam, FloatParam, ParamEnum, ParamId, Range, Unit};
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
 
@@ -114,7 +115,7 @@ fn transformer(v: &StageParams) -> TransformerConfig {
 
 fn common_cathode(v: &StageParams) -> CommonCathodeConfig<Tube> {
     CommonCathodeConfig {
-        tube: Tube::ALL[v.choice("tube")],
+        tube: TUBES[v.choice("tube")],
         source_ohms: v.get("source") * 1e3,
         supply_volts: v.get("supply"),
         plate_load_ohms: v.get("plate_load") * 1e3,
@@ -177,9 +178,32 @@ options_list!(
     /// The diode pair's solver.
     Solver = PairSolver::NAMES
 );
+/// The triodes a common cathode offers: [`Tube::ALL`], then Koren's
+/// law fitted to Philips' ECC83 sheet (DSP.md E11) beside index 0's
+/// published 12AX7, for the A/B.
+const TUBES: [Tube; 9] = {
+    let mut out = [Tube::Koren(Koren::ECC83_PHILIPS); 9];
+    let mut i = 0;
+    while i < Tube::ALL.len() {
+        out[i] = Tube::ALL[i];
+        i += 1;
+    }
+    out
+};
+
+const TUBE_NAMES: [&str; 9] = {
+    let mut out = [""; 9];
+    let mut i = 0;
+    while i < out.len() {
+        out[i] = TUBES[i].name();
+        i += 1;
+    }
+    out
+};
+
 options_list!(
     /// The triode model.
-    TubeChoice = Tube::NAMES
+    TubeChoice = TUBE_NAMES
 );
 
 pub const CATALOG: &[StageSpec] = &[
@@ -352,8 +376,53 @@ pub const CATALOG: &[StageSpec] = &[
 pub const REFERENCES: &[StageSpec] = &[
     StageSpec {
         name: "circuit/ts808",
-        params: super::classics::ts808_params,
-        build: super::classics::ts808,
+        params: super::pedals::ts808_params,
+        build: super::pedals::ts808,
+    },
+    StageSpec {
+        name: "circuit/ts808_lfo",
+        params: super::pedals::ts808_lfo_params,
+        build: super::pedals::ts808_lfo,
+    },
+    StageSpec {
+        name: "circuit/klon_centaur",
+        params: super::pedals::klon_params,
+        build: super::pedals::klon,
+    },
+    StageSpec {
+        name: "circuit/mxr_distortion_plus",
+        params: super::pedals::distortion_plus_params,
+        build: super::pedals::distortion_plus,
+    },
+    StageSpec {
+        name: "circuit/boss_ds1",
+        params: super::pedals::ds1_params,
+        build: super::pedals::ds1,
+    },
+    StageSpec {
+        name: "circuit/proco_rat",
+        params: super::pedals::rat_params,
+        build: super::pedals::rat,
+    },
+    StageSpec {
+        name: "circuit/big_muff",
+        params: super::pedals::big_muff_params,
+        build: super::pedals::big_muff,
+    },
+    StageSpec {
+        name: "circuit/fuzz_face",
+        params: super::pedals::fuzz_face_params,
+        build: super::pedals::fuzz_face,
+    },
+    StageSpec {
+        name: "circuit/rangemaster",
+        params: super::pedals::rangemaster_params,
+        build: super::pedals::rangemaster,
+    },
+    StageSpec {
+        name: "circuit/phase90",
+        params: super::pedals::phase90_params,
+        build: super::pedals::phase90,
     },
     StageSpec {
         name: "circuit/jcm800_2203",

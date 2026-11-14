@@ -189,10 +189,19 @@ CPU per sample, the small-signal response, compression and H2/H3/H5,
 THD and the even/odd balance at each level re knee, the aliasing floor
 and ANMR, and Rnonlin. A candidate is the Voicing tab's spec; the
 classic circuits open the same way as reference models
-([`REFERENCES`](stave_host::stages::REFERENCES): `circuit/ts808`,
-`circuit/jcm800_2203`, `circuit/moog_904a`, `filter/ladder`, each with
-an `oversample` choice: 0 = 1×, 1 = 2×, 2 = 4×, 3 = 8×), whole
-netlists run offline and not held to the realtime catalog's validation.
+([`REFERENCES`](stave_host::stages::REFERENCES): `circuit/jcm800_2203`,
+`circuit/moog_904a`, `filter/ladder` and the pedals with their knobs —
+`circuit/ts808` (drive, tone, `opamp` JRC4558 or JRC4558 (table)),
+`circuit/ts808_lfo` (the same with an automation LFO on drive or tone
+and a `glide_ms`, to hear zipper noise against glide),
+`circuit/klon_centaur`, `circuit/mxr_distortion_plus`,
+`circuit/boss_ds1`, `circuit/proco_rat`, `circuit/big_muff`,
+`circuit/fuzz_face`, `circuit/rangemaster`, `circuit/phase90` (its gate
+swept by its LFO or frozen) — each with an `oversample` choice: 0 = 1×,
+1 = 2×, 2 = 4×, 3 = 8×), whole netlists run offline and not held to the
+realtime catalog's validation. A choice takes its option's label as
+well as its index (`oversample=4x`, `opamp=JRC4558_TABLE`,
+`tube=ECC83_PHILIPS` on `circuit/common_cathode`).
 
 ```sh
 stave-play \

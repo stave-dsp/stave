@@ -14,7 +14,8 @@
 //! ```
 //!
 //! Pieces after the first `;` are `name=value` param settings (plain
-//! units, as `--set` takes them), `preset=NAME`, `label=TEXT`, or `ref`
+//! units, as `--set` takes them; a catalog stage's choice also by its
+//! option's label, `oversample=4x`), `preset=NAME`, `label=TEXT`, or `ref`
 //! (this candidate is the session's reference).
 
 use std::path::{Path, PathBuf};
@@ -174,16 +175,50 @@ impl Candidate {
                 }
                 "preset" => c.preset = Some(v.to_string()),
                 _ => {
-                    let value = v.parse().map_err(|_| SpecError::Number {
-                        piece: piece.into(),
-                        value: v.into(),
-                    })?;
+                    let value = v
+                        .parse()
+                        .ok()
+                        .or_else(|| stage_option(head, k, v))
+                        .ok_or_else(|| SpecError::Number {
+                            piece: piece.into(),
+                            value: v.into(),
+                        })?;
                     c.set(k, value);
                 }
             }
         }
         c.label = label.unwrap_or_else(|| c.default_label());
         Ok((c, is_ref))
+    }
+}
+
+/// A catalog stage's choice setting `name` given by an option's label:
+/// its index. Labels match ignoring case and everything but letters and
+/// digits (`4x`, `ECC83_PHILIPS` for "ECC83 (Philips)", `jrc4558 table`);
+/// failing an exact match, the one option whose label holds the text or
+/// is held in it (`T12AX7` for "12AX7"), if only one does.
+fn stage_option(head: &str, name: &str, label: &str) -> Option<f64> {
+    use stave_core::params::Params;
+    let spec = stave_host::stages::find(head.strip_prefix(stave_host::stages::PREFIX)?)?;
+    let params = (spec.params)();
+    let param = (0..params.count())
+        .filter_map(|i| params.by_index(i))
+        .find(|p| p.meta().name == name)?;
+    let key = |s: &str| -> String { s.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect() };
+    let want = key(label);
+    if want.is_empty() {
+        return None;
+    }
+    let options: Vec<(u32, String)> = (0..param.step_count())
+        .filter_map(|i| param.step_name(i).map(|n| (i, key(n))))
+        .collect();
+    if let Some((i, _)) = options.iter().find(|(_, n)| *n == want) {
+        return Some(f64::from(*i));
+    }
+    let mut near = options.iter().filter(|(_, n)| !n.is_empty() && (n.contains(&want) || want.contains(n.as_str())));
+    match (near.next(), near.next()) {
+        (Some((i, _)), None) => Some(f64::from(*i)),
+        _ => None,
     }
 }
 
@@ -249,6 +284,28 @@ mod tests {
         assert_eq!(Candidate::parse("x.vst3;drive"), Err(SpecError::Piece("drive".into())));
         assert!(matches!(Candidate::parse("x.vst3;drive=hot"), Err(SpecError::Number { .. })));
         assert_eq!(Candidate::parse("dry;drive=1"), Err(SpecError::NotAPlugin("dry")));
+    }
+
+    #[test]
+    fn choices_take_their_labels() {
+        let value = |spec: &str| Candidate::parse(spec).unwrap().0.settings[0].value;
+        assert_eq!(value("stage:circuit/ts808;oversample=4x"), 2.0);
+        assert_eq!(value("stage:circuit/ts808;oversample=2"), 2.0);
+        assert_eq!(value("stage:circuit/ts808;oversample=8X"), 3.0);
+        assert_eq!(value("stage:circuit/ts808;opamp=JRC4558"), 0.0);
+        assert_eq!(value("stage:circuit/ts808;opamp=JRC4558_TABLE"), 1.0);
+        assert_eq!(value("stage:circuit/common_cathode;tube=ECC83_PHILIPS"), 8.0);
+        assert_eq!(value("stage:circuit/common_cathode;tube=T12AX7"), 0.0);
+        assert_eq!(value("stage:circuit/phase90;mode=frozen"), 1.0);
+        // An unknown label, a float setting, an ambiguous label, a plugin.
+        for spec in [
+            "stage:circuit/ts808;oversample=3x",
+            "stage:circuit/ts808;drive=hot",
+            "stage:circuit/common_cathode;tube=12a",
+            "x.vst3;oversample=4x",
+        ] {
+            assert!(matches!(Candidate::parse(spec), Err(SpecError::Number { .. })), "{spec}");
+        }
     }
 
     #[test]
