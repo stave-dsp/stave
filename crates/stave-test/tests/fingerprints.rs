@@ -18,7 +18,7 @@ use stave_dsp::primitives::filters::ladder::{Huovilainen, Stinchcombe};
 use stave_dsp::primitives::filters::sallen_key::SallenKey;
 use stave_dsp::units::{db, hz};
 use stave_dsp::{CurveStage, Oversampled2x, SmoothSat, Stage, Triode};
-use stave_test::characterise::fingerprint::{blessing, path, pin_stage, pin_stage_with, stage_plan, Fingerprint};
+use stave_test::characterise::fingerprint::{blessing, path, pin_stage, pin_stage_from, pin_stage_with, stage_plan, Fingerprint};
 use stave_test::characterise::kernels::KernelPlan;
 use stave_test::characterise::model::Ticker;
 use stave_test::characterise::{Plan, Table};
@@ -208,5 +208,146 @@ fn fingerprints_are_current() {
         stale.is_empty(),
         "stale fingerprints (re-bless with STAVE_BLESS=1 cargo test -p stave-test --test characterise --test fingerprints):\n  {}",
         stale.join("\n  ")
+    );
+}
+
+// ---- R9: the nonlinear, level-dependent learned and physical stages ----
+//
+// Each runs as it ships at 48 kHz (no oversampling region of its own:
+// the networks and block models run at their trained rate, the tape
+// machine and the driver oversample inside where they need to).
+
+/// A Neural Amp Modeler fixture exported by the trainer (the same files
+/// `stave-dsp/tests/nam_parity.rs` holds to the trainer's outputs).
+fn nam_fixture(text: &str) -> Ticker {
+    let mut net = stave_dsp::learned::nam::parse(text).unwrap().network;
+    net.prepare(48_000.0);
+    ticker(net)
+}
+
+/// Where a network's knee search starts: −60 dBFS. Each network's output
+/// sits on a DC offset whose `f32` rounding reads, under a 10 µ tone,
+/// as 1 % THD — a "knee" at the search's first level.
+const NETWORK_KNEE_FROM: f64 = 1e-3;
+
+#[test]
+fn nam_wavenet_standard() {
+    pin_stage_from(
+        "stages/nam_wavenet_standard",
+        "nam::Network (WaveNet, NAM standard) from the trainer's wavenet_standard.nam fixture, knee searched from -60 dBFS",
+        Some("stave_dsp::learned::WaveNet"),
+        |_| nam_fixture(include_str!("../../stave-dsp/tests/reference/nam/wavenet_standard.nam")),
+        NETWORK_KNEE_FROM,
+    );
+}
+
+#[test]
+fn nam_lstm() {
+    pin_stage_from(
+        "stages/nam_lstm",
+        "nam::Network (LSTM) from the trainer's lstm.nam fixture, knee searched from -60 dBFS",
+        Some("stave_dsp::learned::Lstm"),
+        |_| nam_fixture(include_str!("../../stave-dsp/tests/reference/nam/lstm.nam")),
+        NETWORK_KNEE_FROM,
+    );
+}
+
+#[test]
+fn gru() {
+    pin_stage_from(
+        "stages/gru",
+        "Gru from the torch-exported gru.json fixture, knee searched from -60 dBFS",
+        Some("stave_dsp::learned::Gru"),
+        |rate| {
+            let mut net = stave_dsp::learned::Gru::parse(include_str!("../../stave-dsp/tests/reference/nam/gru.json")).unwrap();
+            net.prepare(rate as f32);
+            ticker(net)
+        },
+        NETWORK_KNEE_FROM,
+    );
+}
+
+/// A lowpass biquad section at `hz` (Q 0.71) at 48 kHz, the datasheet's.
+fn section(hz: f64) -> stave_dsp::learned::block::Section {
+    let w = std::f64::consts::TAU * hz / 48_000.0;
+    let alpha = w.sin() / 1.4;
+    let a0 = 1.0 + alpha;
+    stave_dsp::learned::block::Section {
+        b: [(1.0 - w.cos()) / 2.0 / a0, (1.0 - w.cos()) / a0, (1.0 - w.cos()) / 2.0 / a0],
+        a: [-2.0 * w.cos() / a0, (1.0 - alpha) / a0],
+    }
+}
+
+#[test]
+fn wiener_hammerstein() {
+    use stave_dsp::learned::block::{Linear, Nonlinearity, WienerHammerstein};
+    pin_stage(
+        "stages/wiener_hammerstein",
+        "WienerHammerstein, lowpasses at 700 Hz and 5 kHz, a 24-knot tanh spline over ±3, lowpasses at 9 and 12 kHz",
+        Some("stave_dsp::learned::block::WienerHammerstein"),
+        |rate| {
+            let knots: Vec<f64> = (0..24).map(|k| (f64::from(k) / 23.0 * 2.0 - 1.0).powi(3) * 3.0).collect();
+            let spline = Nonlinearity::Spline { values: knots.iter().map(|&u| u.tanh()).collect(), knots };
+            let mut wh = WienerHammerstein::new(
+                48_000.0,
+                Linear::Rational(vec![section(700.0), section(5_000.0)]),
+                spline,
+                Linear::Rational(vec![section(9_000.0), section(12_000.0)]),
+            );
+            wh.prepare(rate as f32);
+            ticker(wh)
+        },
+    );
+}
+
+/// Through the `Block` a model file reads into, so its dispatch is pinned too.
+#[test]
+fn parallel_hammerstein() {
+    use stave_dsp::learned::block::{Block, Linear, ParallelHammerstein};
+    pin_stage(
+        "stages/parallel_hammerstein",
+        "Block::ParallelHammerstein, order 5, two lowpass sections a branch at 2–6 kHz",
+        Some("stave_dsp::learned::block::ParallelHammerstein"),
+        |rate| {
+            let branches = (0..5).map(|m| Linear::Rational(vec![section(2_000.0 + 1_000.0 * f64::from(m)); 2])).collect();
+            let mut block = Block::from(ParallelHammerstein::new(48_000.0, branches));
+            block.prepare(rate as f32);
+            ticker(block)
+        },
+    );
+}
+
+/// The tape machine with its flutter off: the record side's hysteresis
+/// (15× inside), the play head's losses, time-invariant. The machine
+/// with its flutter is a golden digest (`golden.rs`).
+#[test]
+fn tape_record_and_play() {
+    use stave_dsp::physical::tape::{Chowdhury, Machine};
+    pin_stage(
+        "stages/tape_tc260",
+        "Chowdhury, TC-260 at 7.5 ips, flutter off",
+        Some("stave_dsp::physical::tape::Chowdhury"),
+        |rate| {
+            let mut deck = Chowdhury::new(Machine::TC260);
+            deck.set_flutter(0.0);
+            deck.prepare(rate as f32);
+            ticker(deck)
+        },
+    );
+}
+
+#[test]
+fn driver_large_signal() {
+    use stave_dsp::physical::speaker::{Driver, LargeSignal, ThieleSmall};
+    pin_stage(
+        "stages/driver_large_signal",
+        "Driver, Jensen C12N (LR-2 coil), Klippel curves from limits 1.0/1.2/6 mm, 20 V a unit",
+        Some("stave_dsp::physical::speaker::Driver"),
+        |rate| {
+            let mut d = Driver::new(ThieleSmall::JENSEN_C12N_LR2, LargeSignal::from_limits(1.0e-3, 1.2e-3, 6e-3));
+            d.set_volts(20.0);
+            d.prepare(rate as f32);
+            ticker(d)
+        },
     );
 }

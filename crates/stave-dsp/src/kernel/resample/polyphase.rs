@@ -80,6 +80,24 @@ pub(crate) fn design(p: usize, r: usize) -> Vec<f64> {
     taps
 }
 
+/// The interpolator's ring for a `len`-tap design at `p`×: phase `j`
+/// reads its taps `j + p·k` at ages `k < ⌈len/p⌉`.
+fn up_ring_len(len: usize, p: usize) -> usize {
+    len.div_ceil(p).next_power_of_two()
+}
+
+/// The decimator's ring: it reads every tap, ages `i < len`.
+fn down_ring_len(len: usize) -> usize {
+    len.next_power_of_two()
+}
+
+/// The slot of the sample `age` samples older than the newest (at
+/// `at`) in a power-of-two ring of `mask + 1` slots.
+#[inline(always)]
+fn slot(at: usize, age: usize, mask: usize) -> usize {
+    (at + mask + 1 - age) & mask
+}
+
 /// A `p`× polyphase FIR interpolator and decimator pair around one
 /// design. State lives in power-of-two rings sized at construction.
 #[derive(Clone)]
@@ -121,9 +139,9 @@ impl Polyphase {
             len,
             phases,
             taps,
-            up_ring: vec![0.0; len.div_ceil(p).next_power_of_two()],
+            up_ring: vec![0.0; up_ring_len(len, p)],
             up_at: 0,
-            down_ring: vec![0.0; len.next_power_of_two()],
+            down_ring: vec![0.0; down_ring_len(len)],
             down_at: 0,
         }
     }
@@ -159,7 +177,7 @@ impl Polyphase {
             for (y, phase) in group.iter_mut().zip(&self.phases) {
                 let mut acc = 0.0f64;
                 for &(k, c) in phase {
-                    acc += c * f64::from(self.up_ring[(self.up_at + mask + 1 - k) & mask]);
+                    acc += c * f64::from(self.up_ring[slot(self.up_at, k, mask)]);
                 }
                 *y = acc as f32;
             }
@@ -176,7 +194,7 @@ impl Polyphase {
             self.down_ring[self.down_at] = group[0];
             let mut acc = 0.0f64;
             for &(i, c) in &self.taps {
-                acc += c * f64::from(self.down_ring[(self.down_at + mask + 1 - i) & mask]);
+                acc += c * f64::from(self.down_ring[slot(self.down_at, i, mask)]);
             }
             *y = acc as f32;
             for &v in &group[1..] {
@@ -212,6 +230,43 @@ mod tests {
         for (p, r) in [(3, 1), (5, 1), (3, 2), (3, 4), (5, 6), (7, 3)] {
             let len = design(p, r).len();
             assert_eq!((len - 1) % (p * r), 0, "p {p} r {r}");
+        }
+    }
+}
+
+/// Kani proof (DSP.md R10; `scripts/kani.sh`): the polyphase index maths.
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// For every design to 4096 taps at every factor to 16: each tap
+    /// `i` belongs to exactly one phase (`j = i mod p`, at age
+    /// `k = ⌊i/p⌋`, `i == j + p·k`, no other phase's taps `j' + p·k'`
+    /// reach it) and every age either filter reads is younger than its
+    /// ring; and in every power-of-two ring to 2¹³ slots every age lands
+    /// in the ring, age 0 at the newest slot, two different ages never in
+    /// the same slot.
+    #[kani::proof]
+    fn every_tap_has_one_phase_and_one_slot() {
+        let len: usize = kani::any_where(|l: &usize| (1..=4096).contains(l));
+        let p: usize = kani::any_where(|p: &usize| (1..=16).contains(p));
+        let i: usize = kani::any_where(|i: &usize| *i < len);
+        let (j, k) = (i % p, i / p);
+        assert!(j < p && j + p * k == i);
+        assert!(k < up_ring_len(len, p) && i < down_ring_len(len));
+        let other: usize = kani::any_where(|o: &usize| *o < p);
+        if other != j {
+            assert!(i < other || (i - other) % p != 0);
+        }
+
+        let mask = (1usize << kani::any_where(|b: &u32| *b <= 13)) - 1;
+        let at: usize = kani::any_where(|a: &usize| *a <= mask);
+        let a: usize = kani::any_where(|a: &usize| *a <= mask);
+        let b: usize = kani::any_where(|b: &usize| *b <= mask);
+        assert!(slot(at, a, mask) <= mask);
+        assert_eq!(slot(at, 0, mask), at);
+        if a != b {
+            assert_ne!(slot(at, a, mask), slot(at, b, mask));
         }
     }
 }

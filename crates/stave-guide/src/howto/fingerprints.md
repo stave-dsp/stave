@@ -104,6 +104,37 @@ let moved = diff(&soft, &hard, &plan).join("\n");
 assert!(moved.contains("C5 harmonics") && moved.contains("knee"), "{moved}");
 ```
 
+## Golden digests: the stages a fingerprint cannot hold still
+
+The T0 plan assumes a stage settles: a multisine or a tone, measured
+once it is steady. A reverb's tail, a modulated delay, a pitch shifter,
+a granulator, a compressor's attack and a bowed string do not settle,
+so they are pinned by a **golden digest** instead (DSP.md R9,
+`stave_test::golden`). Each such catalogued stage runs at 48 kHz over one
+fixed, seeded stimulus of 0.68 s: an impulse and its tail, white noise
+at −30 and −6 dBFS RMS with silence after each, and a 20 Hz–20 kHz
+sweep. The output is kept as 33 Hann frames by 11 octave bands of
+power in dB, plus its RMS and peak: about 4 KB of text under
+`crates/stave-test/golden/`.
+
+`crates/stave-test/tests/golden.rs` holds 60 stages to their digests
+(reverbs, dynamics, EQ, modulation, pitch, granular, the physical models
+and instruments, the tape transport, the photocell, the tuned
+resonators). A band moves when it changes by more than 0.01 dB plus an
+absolute error 100 dB below the digest's loudest band; macOS on aarch64
+and Linux on x86_64 agree to the written 0.001 dB within 60 dB of the
+loudest band. A failure lists each frame (as times) and band (as
+frequencies) that moved, by how much and against what tolerance, largest
+first. Re-bless with `STAVE_BLESS=1 cargo test -p stave-test --test golden`
+and review the diff.
+
+The nonlinear learned and physical stages (the NAM WaveNet and LSTM, the
+GRU, both block models, the tape machine without flutter, the driver on
+Klippel's curves) have fingerprints like the other stages. A network's
+knee search starts at −60 dBFS (`pin_stage_from`), because its output
+sits on a DC offset whose `f32` rounding looks like 1 % THD under a 10 µ
+tone.
+
 ## Pinning a sound chosen by ear
 
 In `stave-play`, **bless** in the Voicing tab

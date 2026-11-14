@@ -52,6 +52,14 @@ jobs:
           - { crate: stave-dsp, harness: delays_by_exactly_its_length }
           - { crate: stave-dsp, harness: bit_reversal_is_an_in_range_involution }
           - { crate: stave-dsp, harness: delay_line_slots_are_distinct_and_in_range }
+          - { crate: stave-dsp, harness: every_tap_is_scheduled_once_and_every_run_meets_its_deadline }
+          - { crate: stave-dsp, harness: linear_reads_a_constant_exactly }
+          - { crate: stave-dsp, harness: lagrange3_weights_sum_to_one }
+          - { crate: stave-dsp, harness: lagrange5_weights_sum_to_one }
+          - { crate: stave-dsp, harness: thiran_pole_stays_inside_a_third }
+          - { crate: stave-dsp, harness: sinc_reads_two_rows_inside_the_table }
+          - { crate: stave-dsp, harness: every_tap_has_one_phase_and_one_slot }
+          - { crate: stave-dsp, harness: halfband_windows_stay_inside_their_lines }
     steps:
       - uses: actions/checkout@v4
       - name: Cache Kani

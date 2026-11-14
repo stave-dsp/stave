@@ -26,6 +26,7 @@ pub mod characterise;
 pub mod checks;
 pub mod corpus;
 pub mod face;
+pub mod golden;
 pub mod harness;
 pub mod image;
 pub mod instance;

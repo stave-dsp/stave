@@ -276,7 +276,7 @@ impl Interpolator for Lagrange5 {
 ///
 /// # Derivation
 /// Thiran 1971; as a delay-line read, Jaffe & Smith 1983 and Laakso et
-/// al. 1996, §IV. `d` is kept in `[0.5, 1.5)` (the read borrows one
+/// al. 1996, §IV. `d` is kept in `[0.5, 1.5]` (the read borrows one
 /// sample of the whole delay when `frac < 0.5`) so the pole stays inside
 /// `|a| ≤ 1/3`. The previous input is read back from the line, so a
 /// moving delay feeds the recursion a consistent signal.
@@ -307,9 +307,22 @@ pub struct Thiran {
 }
 
 impl Thiran {
-    /// The allpass coefficient for a fractional delay `d ∈ [0.5, 1.5)`.
+    /// The allpass coefficient for a fractional delay `d ∈ [0.5, 1.5]`.
     pub fn coefficient(d: f32) -> f32 {
         (1.0 - d) / (1.0 + d)
+    }
+
+    /// The read at `frac`: the tap the recursion takes as its newest
+    /// input (`taps[k]`, its previous input `taps[k + 1]`) and the
+    /// fractional delay `d ∈ [0.5, 1.5]` from it, borrowing one sample of
+    /// the whole delay below `frac = 0.5`.
+    #[inline]
+    fn read(frac: f32) -> (usize, f32) {
+        if frac < 0.5 {
+            (0, 1.0 + frac)
+        } else {
+            (1, frac)
+        }
     }
 }
 
@@ -326,7 +339,8 @@ impl Interpolator for Thiran {
     /// `(a + e^(−jω))/(1 + a·e^(−jω))`, one sample early when the read
     /// borrows from the whole delay (`frac < 0.5`).
     fn response(&self, frac: f32, omega: f64) -> (f64, f64) {
-        let (d, early) = if frac < 0.5 { (1.0 + frac, 1.0) } else { (frac, 0.0) };
+        let (k, d) = Self::read(frac);
+        let early = (1 - k) as f64;
         let a = f64::from(Self::coefficient(d));
         let (c, s) = (omega.cos(), -omega.sin());
         let (nr, ni) = (a + c, s);
@@ -340,11 +354,8 @@ impl Interpolator for Thiran {
     #[inline]
     fn interpolate(&mut self, taps: &[f32], frac: f32) -> f32 {
         // taps: [i − 1, i, i + 1] samples old.
-        let (now, prev, d) = if frac < 0.5 {
-            (taps[0], taps[1], 1.0 + frac)
-        } else {
-            (taps[1], taps[2], frac)
-        };
+        let (k, d) = Self::read(frac);
+        let (now, prev) = (taps[k], taps[k + 1]);
         let a = Self::coefficient(d);
         let y = a * now + prev - a * self.y1;
         self.y1 = denormal::flush(y);
@@ -431,6 +442,16 @@ impl<const N: usize> Sinc<N> {
         }
         h
     }
+
+    /// The table rows a read at `frac` blends: row `p` (its `N` weights
+    /// at `p·N`, the next row's after them) and the weight `t` of row
+    /// `p + 1`.
+    #[inline]
+    fn row(frac: f32) -> (usize, f32) {
+        let pos = frac * SINC_PHASES as f32;
+        let p = (pos as usize).min(SINC_PHASES - 1);
+        (p, pos - p as f32)
+    }
 }
 
 /// The zeroth-order modified Bessel function of the first kind, by its
@@ -460,9 +481,7 @@ impl<const N: usize> Interpolator for Sinc<N> {
             w[N / 2 - 1] = 1.0 - frac;
             w[N / 2] = frac;
         } else {
-            let pos = frac * SINC_PHASES as f32;
-            let p = (pos as usize).min(SINC_PHASES - 1);
-            let t = pos - p as f32;
+            let (p, t) = Self::row(frac);
             let (lo, hi) = self.table[p * N..(p + 2) * N].split_at(N);
             for j in 0..N {
                 w[j] = lo[j] + (hi[j] - lo[j]) * t;
@@ -490,9 +509,7 @@ impl<const N: usize> Interpolator for Sinc<N> {
             let i = N / 2 - 1;
             return taps[i] + (taps[i + 1] - taps[i]) * frac;
         }
-        let pos = frac * SINC_PHASES as f32;
-        let p = (pos as usize).min(SINC_PHASES - 1);
-        let t = pos - p as f32;
+        let (p, t) = Self::row(frac);
         let (lo, hi) = self.table[p * N..(p + 2) * N].split_at(N);
         let mut y = 0.0;
         for j in 0..N {
@@ -504,3 +521,93 @@ impl<const N: usize> Interpolator for Sinc<N> {
 
 #[cfg(test)]
 mod tests;
+
+/// Kani proofs (DSP.md R10; `scripts/kani.sh`): the weights of every
+/// interpolator over its fraction range. An exhaustive scan of every
+/// `f32` fraction in `[0, 1)` (`tests.rs::every_f32_fraction_sums_to_one`,
+/// ignored by default) holds the Lagrange sums to the same bounds where
+/// a proof is on the quantised domain.
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// Any `f32` in `[0, 1)` (NaN fails both comparisons).
+    fn fraction() -> f32 {
+        kani::any_where(|f: &f32| *f >= 0.0 && *f < 1.0)
+    }
+
+    /// `k / 2⁸` for every `k < 2⁸`: the quantised domain the Lagrange
+    /// weights are proved on (each such fraction exact in `f32`). Their
+    /// chains of `f32` products and quotients are beyond CBMC's
+    /// bit-blasted float arithmetic on wider domains: the whole `f32`
+    /// range for Lagrange3, and `k / 2¹⁶` for Lagrange5, each ran past a
+    /// 20-minute bound. The exhaustive scan covers every `f32`.
+    fn grid_fraction() -> f32 {
+        let k: u32 = kani::any_where(|k: &u32| *k < 1 << 8);
+        k as f32 / 256.0
+    }
+
+    /// Linear: its weights `1 − frac` and `frac` sum to exactly one, and
+    /// a constant reads back exactly, for every `f32` fraction and every
+    /// finite constant.
+    #[kani::proof]
+    fn linear_reads_a_constant_exactly() {
+        let frac = fraction();
+        assert_eq!((1.0 - frac) + frac, 1.0);
+        let c: f32 = kani::any_where(|c: &f32| c.is_finite());
+        assert_eq!(Linear.interpolate(&[c, c], frac), c);
+    }
+
+    /// Lagrange3: the four weights, summed as the read sums them (newest
+    /// first), come to one within two `f32` epsilons and none exceeds
+    /// one in magnitude (the middle interval, where odd-order Lagrange
+    /// is passive), at every fraction `k / 2⁸`.
+    #[kani::proof]
+    fn lagrange3_weights_sum_to_one() {
+        let frac = grid_fraction();
+        let h = Lagrange3::weights(frac);
+        let sum = Lagrange3.interpolate(&[1.0; 4], frac);
+        assert!((sum - 1.0).abs() <= 2.0 * f32::EPSILON);
+        assert!(h.iter().all(|w| w.abs() <= 1.0));
+    }
+
+    /// Lagrange5: the six weights sum to one within three `f32` epsilons
+    /// and none exceeds one in magnitude, at every fraction `k / 2⁸`.
+    #[kani::proof]
+    fn lagrange5_weights_sum_to_one() {
+        let frac = grid_fraction();
+        let h = Lagrange5::weights(frac);
+        let sum = Lagrange5.interpolate(&[1.0; 6], frac);
+        assert!((sum - 1.0).abs() <= 3.0 * f32::EPSILON);
+        assert!(h.iter().all(|w| w.abs() <= 1.0));
+    }
+
+    /// Thiran: for every `f32` fraction the read stays inside its three
+    /// taps, its delay `d` inside `[0.5, 1.5]` (1.5 itself: `1 + frac`
+    /// rounds up for the fractions just below one half) and its pole
+    /// within a third (the `SETTLE` the delay line relies on, so the
+    /// recursion is stable at every fraction), and its DC gain
+    /// `(a + 1)/(1 + a)` is exactly one.
+    #[kani::proof]
+    fn thiran_pole_stays_inside_a_third() {
+        let frac = fraction();
+        let (k, d) = Thiran::read(frac);
+        assert!(k + 1 < Thiran::NEWER + Thiran::OLDER + 1);
+        assert!((0.5..=1.5).contains(&d));
+        let a = Thiran::coefficient(d);
+        assert!(a.abs() <= 1.0 / 3.0 + f32::EPSILON / 4.0);
+        assert_eq!((a + 1.0) / (1.0 + a), 1.0);
+    }
+
+    /// Sinc: for every `f32` fraction the two table rows a read blends
+    /// lie inside the `(256 + 1)·N` table and the blend weight is in
+    /// `[0, 1]`: a tabled read is a convex blend of two rows that each
+    /// sum to one (`tests.rs::weights_sum_to_one`).
+    #[kani::proof]
+    fn sinc_reads_two_rows_inside_the_table() {
+        let frac = fraction();
+        let (p, t) = Sinc::<32>::row(frac);
+        assert!((p + 2) * 32 <= (SINC_PHASES + 1) * 32);
+        assert!((0.0..=1.0).contains(&t));
+    }
+}
