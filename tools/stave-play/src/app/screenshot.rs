@@ -65,6 +65,13 @@ impl HostApp {
         let Some(shot) = self.screenshot.as_mut() else {
             return;
         };
+        // A comparison being prepared: settle once it is ready.
+        if self.project.active_view == crate::project::ViewId::Voicing
+            && self.voicing.is_preparing()
+        {
+            ctx.request_repaint();
+            return;
+        }
         match shot.tick() {
             Step::Wait => ctx.request_repaint(),
             Step::Play(key) => self.push_note(NoteEvent::on(key, Note::DEFAULT_VELOCITY)),

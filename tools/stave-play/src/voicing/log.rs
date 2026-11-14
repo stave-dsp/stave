@@ -78,11 +78,45 @@ pub struct RatingRecord {
     pub stats: RatingStats,
 }
 
+/// The answer to "Which sounds better?".
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Choice {
+    /// The source lettered A.
+    A,
+    /// The source lettered B.
+    B,
+    /// A later letter (C, D…: `candidate` says which).
+    Other,
+    /// Both heard: equally good, or no meaningful difference.
+    Tie,
+    /// Not enough to make a call (the material does not exercise the
+    /// difference; another clip or level is needed). Not a tie.
+    Unclear,
+}
+
+impl Choice {
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::A => "a",
+            Self::B => "b",
+            Self::Other => "other",
+            Self::Tie => "tie",
+            Self::Unclear => "unclear",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Preference {
     pub at: String,
-    pub candidate: usize,
+    pub choice: Choice,
+    /// The candidate preferred, for a lettered choice.
+    pub candidate: Option<usize>,
+    /// Its label, or "tie" / "unclear".
     pub label: String,
+    /// The material the answer was given on.
+    pub material: String,
     /// Sighted: the listener knew which was which.
     pub sighted: bool,
     pub notes: String,
@@ -331,10 +365,21 @@ pub fn summary(log: &SessionLog) -> String {
             line("  the hidden reference scored below 90 on more than 15 % of trials (BS.1534-3 would exclude this run)".into());
         }
     }
+    if !log.preferences.is_empty() {
+        let count = |c: Choice| log.preferences.iter().filter(|p| p.choice == c).count();
+        line(format!(
+            "which sounds better: a {}, b {}, other {}, tie {}, unclear {}",
+            count(Choice::A),
+            count(Choice::B),
+            count(Choice::Other),
+            count(Choice::Tie),
+            count(Choice::Unclear)
+        ));
+    }
     for p in &log.preferences {
         let how = if p.sighted { "sighted" } else { "blind" };
         let notes = if p.notes.is_empty() { String::new() } else { format!(": {}", p.notes) };
-        line(format!("preferred ({how}): {}{notes}", p.label));
+        line(format!("  {} ({how}, {}): {}{notes}", p.choice.word(), p.material, p.label));
     }
     for b in &log.blessed {
         line(format!("blessed: {} → {}", b.label, b.record.display()));

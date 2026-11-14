@@ -1,13 +1,16 @@
 //! The Voicing view: setup (material, candidates, options), then the
-//! live session (loudness, timeline and loop, the modes), driven from
-//! the keyboard.
+//! live session: the default screen (`simple.rs`: Dry / A / B buttons,
+//! play, "Which sounds better?", the guided blind test) and, under
+//! Advanced, the details (loudness, takes, loop points, bless) and the
+//! rating, null and classic ABX modes, driven from the keyboard.
 //!
-//! Keys (whenever no text field has focus):
+//! The default screen's keys are in `simple.rs`. Advanced modes' keys
+//! (whenever no text field has focus):
 //!
 //! ```text
 //! space        play / stop
-//! 1–9          select a candidate (sighted) or a rating slot
-//! A  B  X      sighted: candidates 1 and 2 · ABX: listen to A, B or X
+//! 1–9          select a candidate (null test) or a rating slot
+//! A  B  X      ABX: listen to A, B or X
 //! ⇧A  ⇧B  ← →  ABX: answer "X is A" / "X is B"
 //! ⏎  N         next trial (confirm the answer or the ratings)
 //! R            rating: the open reference
@@ -29,7 +32,7 @@ pub(super) const ACCENT: Color32 = Color32::from_rgb(140, 200, 255);
 pub(super) const GOOD: Color32 = Color32::from_rgb(90, 200, 140);
 pub(super) const WARN: Color32 = Color32::from_rgb(235, 180, 70);
 pub(super) const BAD: Color32 = Color32::from_rgb(235, 90, 80);
-const PANEL: Color32 = Color32::from_rgb(16, 18, 22);
+pub(super) const PANEL: Color32 = Color32::from_rgb(16, 18, 22);
 
 /// A key pressed this frame, taken so no focused widget sees it too.
 pub(super) fn take_key(ctx: &egui::Context, mods: Modifiers, key: Key) -> bool {
@@ -48,14 +51,16 @@ impl Voicing {
             self.ensure_stream(ctx);
         }
         let shortcuts = !ui.ctx().wants_keyboard_input();
-        self.header(ui);
-        ui.separator();
         if self.live.is_some() {
             if shortcuts {
                 self.keys(ui.ctx());
             }
             self.live_ui(ui);
+        } else if self.preparing.is_some() {
+            self.preparing_ui(ui);
         } else {
+            self.header(ui);
+            ui.separator();
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| self.setup_ui(ui, ctx));
@@ -70,22 +75,110 @@ impl Voicing {
                 let c = if *error { BAD } else { ui.visuals().text_color() };
                 ui.label(RichText::new(text).color(c));
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("Open").on_hover_text("show the folder").clicked() {
-                    reveal(&self.dir);
-                }
-                if ui.small_button("Change…").clicked() {
-                    if let Some(d) = rfd::FileDialog::new().set_directory(&self.dir).pick_folder() {
-                        self.dir = d;
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.logs_dir_ui(ui));
+        });
+    }
+
+    /// Where session logs go: open the folder, or change it.
+    fn logs_dir_ui(&mut self, ui: &mut egui::Ui) {
+        if ui.small_button("Open").on_hover_text("show the folder").clicked() {
+            reveal(&self.dir);
+        }
+        if ui.small_button("Change…").clicked() {
+            if let Some(d) = rfd::FileDialog::new().set_directory(&self.dir).pick_folder() {
+                self.dir = d;
+            }
+        }
+        ui.label(RichText::new(format!("logs: {}", self.dir.display())).weak().small());
+    }
+
+    /// The status line, small, under the title.
+    fn status_line(&self, ui: &mut egui::Ui) {
+        if let Some((text, error)) = &self.status {
+            let c = if *error { BAD } else { ui.visuals().weak_text_color() };
+            ui.label(RichText::new(text).color(c));
+        }
+    }
+
+    /// What is being compared, in plain words, and on which material
+    /// (choosing another prepares it).
+    fn title_ui(&mut self, ui: &mut egui::Ui) -> Option<MaterialChoice> {
+        let title = match &self.live {
+            Some(l) => l.title(),
+            None => {
+                let labels: Vec<&str> = self
+                    .setup
+                    .rows
+                    .iter()
+                    .filter(|r| !matches!(r.candidate.source, Source::Dry))
+                    .map(|r| r.candidate.label.as_str())
+                    .collect();
+                labels.join(" vs ")
+            }
+        };
+        let mut chosen = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(title).size(26.0).strong());
+            ui.add_space(6.0);
+            ui.label(RichText::new("on").size(18.0).weak());
+            chosen = self.material_combo(ui, 220.0);
+        });
+        chosen
+    }
+
+    /// While the candidates run: the title and a progress bar.
+    fn preparing_ui(&mut self, ui: &mut egui::Ui) {
+        if let Some(c) = self.title_ui(ui) {
+            // Not while preparing: note it for the next prepare.
+            self.setup.material = c;
+        }
+        ui.add_space(20.0);
+        if let Some(p) = &self.preparing {
+            let f = Live::progress_of_prepare(p);
+            ui.add(egui::ProgressBar::new(f).desired_width(420.0).text("Getting ready…"));
+        }
+        self.status_line(ui);
+        ui.ctx().request_repaint();
+    }
+
+    /// The material dropdown: the built-ins, any scanned library files,
+    /// and "Other WAV file…".
+    fn material_combo(&mut self, ui: &mut egui::Ui, width: f32) -> Option<MaterialChoice> {
+        let mut chosen: Option<MaterialChoice> = None;
+        let current = match &self.setup.material {
+            MaterialChoice::Builtin(n) => n.clone(),
+            MaterialChoice::File(p) => p.file_name().map_or_else(String::new, |f| f.to_string_lossy().into()),
+            MaterialChoice::Role(r, i) => format!("{r} #{i}"),
+        };
+        egui::ComboBox::from_id_source("voicing_material")
+            .selected_text(RichText::new(current).size(16.0))
+            .width(width)
+            .show_ui(ui, |ui| {
+                for b in builtin::BUILTINS {
+                    let sel = self.setup.material == MaterialChoice::Builtin(b.name.into());
+                    if ui.selectable_label(sel, b.name).on_hover_text(b.about).clicked() {
+                        chosen = Some(MaterialChoice::Builtin(b.name.into()));
                     }
                 }
-                ui.label(
-                    RichText::new(format!("logs: {}", self.dir.display()))
-                        .weak()
-                        .small(),
-                );
+                if let Some(files) = &self.library {
+                    if !files.is_empty() {
+                        ui.separator();
+                        for (rel, path) in files {
+                            let sel = self.setup.material == MaterialChoice::File(path.clone());
+                            if ui.selectable_label(sel, rel).clicked() {
+                                chosen = Some(MaterialChoice::File(path.clone()));
+                            }
+                        }
+                    }
+                }
+                ui.separator();
+                if ui.selectable_label(false, "Other WAV file…").clicked() {
+                    if let Some(p) = rfd::FileDialog::new().add_filter("WAV", &["wav", "WAV"]).pick_file() {
+                        chosen = Some(MaterialChoice::File(p));
+                    }
+                }
             });
-        });
+        chosen
     }
 
     // ---- setup ---------------------------------------------------------
@@ -104,7 +197,7 @@ impl Voicing {
                 ui.add(egui::ProgressBar::new(f).desired_width(320.0).text("running candidates…"));
                 ui.ctx().request_repaint();
             } else {
-                let ready = self.setup.rows.len() >= 2;
+                let ready = !self.setup.rows.is_empty();
                 let b = egui::Button::new(RichText::new("Prepare  ⏎").strong())
                     .min_size(egui::vec2(140.0, 30.0));
                 if ui.add_enabled(ready, b).clicked() || (ready && take_key(ui.ctx(), Modifiers::NONE, Key::Enter)) {
@@ -123,41 +216,8 @@ impl Voicing {
 
     fn material_ui(&mut self, ui: &mut egui::Ui, rate: f64) {
         let mut chosen: Option<MaterialChoice> = None;
-        let current = match &self.setup.material {
-            MaterialChoice::Builtin(n) => format!("built-in: {n}"),
-            MaterialChoice::File(p) => format!("file: {}", p.file_name().map_or_else(String::new, |f| f.to_string_lossy().into())),
-            MaterialChoice::Role(r, i) => format!("role: {r}#{i}"),
-        };
         ui.horizontal(|ui| {
-            egui::ComboBox::from_id_source("voicing_material")
-                .selected_text(current)
-                .width(320.0)
-                .show_ui(ui, |ui| {
-                    ui.label(RichText::new("BUILT-IN").small().strong());
-                    for b in builtin::BUILTINS {
-                        let sel = self.setup.material == MaterialChoice::Builtin(b.name.into());
-                        if ui.selectable_label(sel, b.name).on_hover_text(b.about).clicked() {
-                            chosen = Some(MaterialChoice::Builtin(b.name.into()));
-                        }
-                    }
-                    if let Some(files) = &self.library {
-                        if !files.is_empty() {
-                            ui.separator();
-                            ui.label(RichText::new("SAMPLE LIBRARY · TEST CORPUS").small().strong());
-                            for (rel, path) in files {
-                                let sel = self.setup.material == MaterialChoice::File(path.clone());
-                                if ui.selectable_label(sel, rel).clicked() {
-                                    chosen = Some(MaterialChoice::File(path.clone()));
-                                }
-                            }
-                        }
-                    }
-                });
-            if ui.button("Open WAV…").clicked() {
-                if let Some(p) = rfd::FileDialog::new().add_filter("WAV", &["wav", "WAV"]).pick_file() {
-                    chosen = Some(MaterialChoice::File(p));
-                }
-            }
+            chosen = self.material_combo(ui, 320.0);
             match &self.library_root {
                 Some(root) if self.library.is_none() => {
                     if ui.button("Scan library").on_hover_text(root.display().to_string()).clicked() {
@@ -255,7 +315,7 @@ impl Voicing {
             }
         }
         if rows == 0 {
-            ui.label(RichText::new("no candidates yet: add two or more below (a dry anchor is a good first)").italics().weak());
+            ui.label(RichText::new("nothing to compare yet: add one or more below (the dry sound is always there to switch to)").italics().weak());
         }
         if let Some(i) = probe {
             self.probe_params(i, ctx);
@@ -374,70 +434,51 @@ impl Voicing {
 
     // ---- live ----------------------------------------------------------
 
+    /// The default screen, then the Advanced disclosure.
     fn live_ui(&mut self, ui: &mut egui::Ui) {
         let dir = self.dir.clone();
-        let (mut end, mut retry) = (false, false);
-        let Some(l) = &mut self.live else { return };
-        ui.horizontal(|ui| {
-            let m = &l.prepared.matching;
-            let ok = m.max_deviation_lu <= LOUDNESS_TOLERANCE_LU;
-            ui.label(RichText::new(&l.prepared.material.name).strong());
-            ui.label(RichText::new(format!("trim {:+.1} dB", l.prepared.trim_db)).weak());
-            ui.separator();
-            ui.label(
-                RichText::new(format!(
-                    "{} matched at {:.1} LUFS · max deviation {:.3} LU",
-                    if ok { "✔" } else { "✘" },
-                    m.target_lufs,
-                    m.max_deviation_lu
-                ))
-                .color(if ok { GOOD } else { BAD }),
-            );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("End session").on_hover_text("write the log and go back to the setup").clicked() {
-                    end = true;
-                }
-                if l.stream.is_none() && ui.button("Retry audio").clicked() {
-                    retry = true;
-                }
-            });
-        });
-        egui::CollapsingHeader::new("Takes and loudness")
-            .default_open(false)
-            .show(ui, |ui| takes_table(ui, l));
-        ui.add_space(4.0);
-        transport_ui(ui, l);
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            for (mode, name) in [(Mode::Sighted, "Sighted A/B"), (Mode::Abx, "Blind ABX"), (Mode::Rating, "Rating"), (Mode::Null, "Null test")] {
-                if ui.selectable_label(l.mode == mode, RichText::new(name).strong()).clicked() && l.mode != mode {
-                    l.mode = mode;
-                    l.transport.select(0);
-                }
-            }
-        });
-        ui.separator();
-        let mut status = None;
+        let mut material = None;
+        let mut asks = super::simple::Asks::default();
+        let (mut end, mut retry, mut status) = (false, false, None);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                status = match l.mode {
-                    Mode::Sighted => l.sighted_ui(ui, &dir),
-                    Mode::Abx => l.abx_ui(ui, &dir),
-                    Mode::Rating => l.rating_ui(ui, &dir),
-                    Mode::Null => l.null_ui(ui),
-                };
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    ui.label("session notes");
-                    ui.add(egui::TextEdit::singleline(&mut l.history.notes).desired_width(420.0));
-                });
-                if let Some((path, at)) = &l.saved {
-                    ui.label(RichText::new(format!("log saved {at} → {}", path.display())).weak().small());
+                material = self.title_ui(ui);
+                self.status_line(ui);
+                let start_audio = self.start_audio;
+                let Some(l) = &mut self.live else { return };
+                if l.stream.is_none() && start_audio {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("No sound: the audio device did not start.").color(BAD));
+                        retry = ui.button("Try again").clicked();
+                    });
+                }
+                ui.add_space(12.0);
+                asks = l.listen_ui(ui, &dir);
+                ui.add_space(24.0);
+                let arrow = if l.advanced_open { "Hide advanced" } else { "Advanced…" };
+                if ui.selectable_label(false, RichText::new(arrow).weak()).clicked() {
+                    l.advanced_open = !l.advanced_open;
+                    if !l.advanced_open {
+                        // Closed: the keys go back to the default screen.
+                        l.mode = Mode::Listen;
+                    }
+                }
+                if l.advanced_open {
+                    egui::Frame::none().inner_margin(egui::Margin::symmetric(12.0, 6.0)).show(ui, |ui| {
+                        (status, end) = advanced_ui(ui, l, &dir);
+                    });
+                    ui.horizontal(|ui| self.logs_dir_ui(ui));
                 }
             });
-        if let Some(s) = status {
+        if let Some(s) = status.or(asks.status) {
             self.status = Some(s);
+        }
+        if asks.next_material {
+            material = Some(self.next_material());
+        }
+        if let Some(m) = material {
+            self.change_material(m);
         }
         if end {
             self.end_session();
@@ -466,20 +507,19 @@ impl Voicing {
         if take_key(ctx, Modifiers::NONE, Key::Backspace) {
             t.set_loop(0, t.frames());
         }
+        if l.mode == Mode::Listen {
+            if let Some(s) = l.listen_keys(ctx, &dir) {
+                self.status = Some(s);
+            }
+            return;
+        }
         let digit = digit_pressed(ctx);
         let next = take_key(ctx, Modifiers::NONE, Key::Enter) || take_key(ctx, Modifiers::NONE, Key::N);
         let status = match l.mode {
-            Mode::Sighted | Mode::Null => {
-                let n = l.prepared.candidates.len();
-                let mut pick = digit.filter(|&d| d < n);
-                if take_key(ctx, Modifiers::NONE, Key::A) {
-                    pick = Some(0);
-                }
-                if take_key(ctx, Modifiers::NONE, Key::B) && n > 1 {
-                    pick = Some(1);
-                }
-                if let Some(d) = pick {
-                    l.select(d);
+            // The null test: digits select candidates by number.
+            Mode::Listen | Mode::Null => {
+                if let Some(d) = digit.filter(|&d| d < l.prepared.candidates.len()) {
+                    l.pick(d);
                 }
                 None
             }
@@ -654,6 +694,109 @@ fn settings_editor(ui: &mut egui::Ui, row: &mut Row) {
                 row.candidate.label = row.candidate.default_label();
             }
         });
+}
+
+/// Everything past the default screen: the details (loudness, takes,
+/// loop points, bless, notes), rating, the null test and classic ABX.
+/// Returns a status and whether to end the session.
+fn advanced_ui(ui: &mut egui::Ui, l: &mut Live, dir: &std::path::Path) -> (Option<(String, bool)>, bool) {
+    let mut end = false;
+    ui.horizontal(|ui| {
+        for (mode, name) in [
+            (Mode::Listen, "Details"),
+            (Mode::Rating, "Rating (MUSHRA)"),
+            (Mode::Null, "Null test"),
+            (Mode::Abx, "Classic ABX"),
+        ] {
+            if ui.selectable_label(l.mode == mode, RichText::new(name).strong()).clicked() {
+                l.mode = mode;
+            }
+        }
+    });
+    ui.separator();
+    let status = match l.mode {
+        Mode::Listen => {
+            let m = &l.prepared.matching;
+            let ok = m.max_deviation_lu <= LOUDNESS_TOLERANCE_LU;
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&l.prepared.material.name).strong());
+                ui.label(RichText::new(format!("trim {:+.1} dB", l.prepared.trim_db)).weak());
+                ui.separator();
+                ui.label(
+                    RichText::new(format!(
+                        "{} loudness matched at {:.1} LUFS · max deviation {:.3} LU",
+                        if ok { "✔" } else { "✘" },
+                        m.target_lufs,
+                        m.max_deviation_lu
+                    ))
+                    .color(if ok { GOOD } else { BAD }),
+                );
+            });
+            takes_table(ui, l);
+            ui.add_space(6.0);
+            transport_ui(ui, l);
+            ui.add_space(6.0);
+            let mut status = None;
+            let playing = l.playing_candidate();
+            ui.horizontal(|ui| {
+                ui.label("blind trials");
+                ui.add(egui::DragValue::new(&mut l.abx_trials).clamp_range(1..=1_000));
+                let n = l.abx_trials;
+                let power = Abx::power(n, ALPHA, ASSUMED_HIT_RATE);
+                let need = Abx::critical(n, ALPHA).map_or("never significant".to_string(), |k| format!("needs {k}/{n}"));
+                ui.label(
+                    RichText::new(format!("{need} at p < {ALPHA} · {:.0} % power at a {ASSUMED_HIT_RATE} hit rate", power * 100.0))
+                        .color(if power >= 0.8 { GOOD } else { WARN }),
+                );
+            });
+            if let Some(c) = playing.filter(|&c| c != l.dry) {
+                let label = l.prepared.candidates[c].label.clone();
+                if ui
+                    .button(format!("Bless “{label}”"))
+                    .on_hover_text("pin its settings, material and take so a later change shows up")
+                    .clicked()
+                {
+                    status = l.bless_candidate(c, dir);
+                }
+            }
+            for p in &l.history.preferences {
+                let how = if p.sighted { "sighted" } else { "blind" };
+                ui.label(RichText::new(format!("{} ({how}, {}): {}  {}", p.choice.word(), p.material, p.label, p.notes)).weak());
+            }
+            for b in &l.history.blessed {
+                ui.label(RichText::new(format!("blessed {} → {}", b.label, b.record.display())).color(GOOD));
+            }
+            for rec in &l.history.abx {
+                ui.label(
+                    RichText::new(format!(
+                        "blind: {} vs {}: {}/{} → {}",
+                        rec.a,
+                        rec.b,
+                        rec.stats.correct,
+                        rec.stats.trials,
+                        rec.stats.verdict.describe()
+                    ))
+                    .weak(),
+                );
+            }
+            ui.horizontal(|ui| {
+                ui.label("session notes");
+                ui.add(egui::TextEdit::singleline(&mut l.history.notes).desired_width(420.0));
+            });
+            if let Some((path, at)) = &l.saved {
+                ui.label(RichText::new(format!("log saved {at} → {}", path.display())).weak().small());
+            }
+            end = ui
+                .button("Change what's compared…")
+                .on_hover_text("write the log and go back to the setup")
+                .clicked();
+            status
+        }
+        Mode::Abx => l.abx_ui(ui, dir),
+        Mode::Rating => l.rating_ui(ui, dir),
+        Mode::Null => l.null_ui(ui),
+    };
+    (status, end)
 }
 
 fn takes_table(ui: &mut egui::Ui, l: &Live) {
