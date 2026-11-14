@@ -198,19 +198,15 @@ const PIANO: &[(&str, f64, f64)] = &[
     ("ce_stage_static", 13.0, 10.0), // -11.5 / 10.0 dB at +12 / +20, 8×
     ("jfet_booster_static", -3.2, -6.2), // -6.7 / -6.2 dB at +12 / +20, 8×
     ("mosfet_booster_static", 16.9, 13.9), // 13.0 / 13.9 dB at +12 / +20, 8×
-    // The classics (R27), each catalogued topology as it ships today,
-    // unoversampled (`SHIPPING` holds no entry for them until R12's sweep
-    // chooses one): every one but the Big Muff (−43.4 / −28.1, held to
-    // −10 dB) aliases audibly at the top of the piano. The Phase 90 reads
-    // worse at +12 than at +20.
-    ("tube_screamer_ts808", 49.6, 46.6), // 21.5 / 46.6 dB at +12 / +20
-    ("proco_rat", 24.4, 21.4), // -21.2 / 21.4 dB at +12 / +20
-    ("marshall_jcm800_2203", 51.0, 48.0), // 35.3 / 48.0 dB at +12 / +20
-    ("moog_ladder_feedback", 68.4, 65.4), // 44.1 / 65.4 dB at +12 / +20
-    ("mxr_phase90", 52.2, 49.2), // 49.2 / 43.8 dB at +12 / +20
-    ("boss_ds1", 49.7, 46.7), // 39.7 / 46.7 dB at +12 / +20
-    ("klon_centaur", 29.6, 26.6), // -8.4 / 26.6 dB at +12 / +20
-    ("mxr_distortion_plus", 32.0, 29.0), // -3.8 / 29.0 dB at +12 / +20
+    // The classics (R27) as they ship (R12's sweep: TS-808, Big Muff,
+    // RAT, Klon and D+ at 4×, the Moog and DS-1 at 8×, the JCM800 and
+    // Phase 90 at 16×): every one under −10 dB but the DS-1, whose floor
+    // stops falling at 8× (−2.1 dB at 8× and 16×, at 4194 Hz: not
+    // aliasing), and the JCM800, still falling at 16× (+4.2 at 8×), which
+    // 32× would bring under at twice a cost already past real time. At 1×
+    // they read 21.4 (RAT) to 65.4 dB (Moog).
+    ("marshall_jcm800_2203", -6.5, -9.5), // -21.7 / -9.5 dB at +12 / +20, 16×
+    ("boss_ds1", 0.9, -2.1), // -33.7 / -2.1 dB at +12 / +20, 8×
 ];
 
 /// R16 on program material (DSP.md C13, R22's corpus): each circuit's
@@ -270,7 +266,7 @@ fn null_on_program_material() {
     let jobs: Vec<&circuits::Circuit> = CIRCUITS.iter().filter(|c| !c.supply).collect();
     let lines: Vec<String> = par_map(&jobs, |c| {
         let plan = Plan::parse(&std::fs::read_to_string(dir.join(format!("{}.plan", c.name))).unwrap()).unwrap();
-        let deck = deck(c.name);
+        let deck = circuits::netlist(c.name);
         let s = shipping(c.name);
         let ship = s.oversample.max(1) as usize;
         // The reference: the solver well past the shipped factor.

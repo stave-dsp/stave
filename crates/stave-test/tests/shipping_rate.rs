@@ -41,6 +41,9 @@ use stave_test::characterise::{deck, Characterisation, Characterise, Check, Plan
 /// also a 16 kHz prewarp, 2×, 4× and 8×, and the implicit midpoint rule
 /// (`None`).
 fn configurations(name: &str) -> Vec<Option<Shipping>> {
+    if let Some(list) = circuits::configs_from_env() {
+        return list.into_iter().map(Some).collect();
+    }
     let mut v = vec![Some(Shipping::PLAIN)];
     if std::env::var_os("STAVE_SHIPPING_ALL").is_some() {
         v.extend([
@@ -114,7 +117,7 @@ fn shipping_rate_report() {
         let shipped = Some(shipping(c.name));
         let label = config.map_or("1×, midpoint".to_string(), |s| s.to_string());
         let (characterise, m) = match config {
-            Some(s) => (Characterise::ngspice(c.name).tier(Tier::T1).circuit().shipped(s), s.oversample),
+            Some(s) => (circuits::model(c.name, Tier::T1).shipped(s), s.oversample),
             None => (midpoint(c.name).tier(Tier::T1), 1),
         };
         let result = characterise.oversampled(oversample(c.name, Tier::T1)).run();
@@ -148,7 +151,7 @@ fn shipping_rate_report() {
 fn anmr_report() {
     use circuits::piano_anmr;
     let only = std::env::var("STAVE_SHIPPING_ONLY").ok();
-    let configs = [
+    let configs = circuits::configs_from_env().unwrap_or_else(|| vec![
         Shipping::PLAIN,
         Shipping::oversampled(2),
         Shipping::oversampled(4),
@@ -158,7 +161,7 @@ fn anmr_report() {
         Shipping::oversampled(4).antialiased(),
         Shipping::oversampled(8).antialiased(),
         Shipping::oversampled(16),
-    ];
+    ]);
     let cases: Vec<_> = CIRCUITS
         .iter()
         .filter(|c| !c.supply)

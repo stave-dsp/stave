@@ -418,10 +418,20 @@ fn measure_circuit<S: Solver>(
             }
         }
     }
+    // ADAA's half inner sample, reported as latency (`Shipping::latency_seconds`):
+    // every phase is read with it taken out.
+    let latency = config.latency_seconds(rate / f64::from(config.oversample.max(1)));
+    let advance = |hz: f64, c: Complex<f64>| {
+        if latency == 0.0 {
+            return c;
+        }
+        let (s, co) = (std::f64::consts::TAU * hz * latency).sin_cos();
+        Complex::new(c.re * co - c.im * s, c.re * s + c.im * co)
+    };
     for &hz in &plan.response_hz {
         if hz < rate / 2.0 {
             if let Some(r) = base.response(hz, oversampled) {
-                table.ac.push((hz, Complex::new(r.re, r.im)));
+                table.ac.push((hz, advance(hz, Complex::new(r.re, r.im))));
             }
         }
     }
@@ -439,7 +449,16 @@ fn measure_circuit<S: Solver>(
         let stats = c.stats();
         health.capped += stats.capped;
         health.solves += stats.solves;
-        table.runs.insert(run.id.clone(), measure_decimated(run, rate, &periods, config.oversample));
+        let mut measured = measure_decimated(run, rate, &periods, config.oversample);
+        if latency != 0.0 {
+            let hz = 1.0 / run.period().seconds();
+            for spectrum in &mut measured.periods {
+                for (k, c) in &mut spectrum.bins {
+                    *c = advance(f64::from(*k) * hz, *c);
+                }
+            }
+        }
+        table.runs.insert(run.id.clone(), measured);
     }
 }
 

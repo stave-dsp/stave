@@ -13,6 +13,10 @@
 //! ```text
 //! cargo test --release -p stave-test --test shipping_cost -- --ignored --nocapture
 //! ```
+//!
+//! With `STAVE_SHIPPING_CONFIGS` (`1,2,4,8,4a`: a factor, `a` for ADAA)
+//! each circuit named in `STAVE_SHIPPING_ONLY` runs in each of those
+//! instead of its default.
 
 #[allow(dead_code)]
 mod circuits;
@@ -21,7 +25,7 @@ use std::time::Instant;
 
 use circuits::{shipped_circuit, CIRCUITS, SHIPPING};
 use stave_dsp::{Oversampled, Stage};
-use stave_test::characterise::deck;
+use stave_test::characterise::Shipping;
 
 const HOST: f64 = 48_000.0;
 const BLOCK: usize = 256;
@@ -44,11 +48,24 @@ fn noise(len: usize, dc: f64, amplitude: f64) -> Vec<f32> {
 fn shipping_cost_report() {
     let only = std::env::var("STAVE_SHIPPING_ONLY").ok();
     println!("| circuit | shipping | ns per host sample | real-time load at 48 kHz |\n|---|---|---|---|");
-    for (name, s) in SHIPPING.iter().filter(|(n, _)| only.as_deref().is_none_or(|o| o.split(',').any(|x| x == *n))) {
-        let circuit = CIRCUITS.iter().find(|c| c.name == *name).expect("a shipping circuit is characterised");
+    // With `STAVE_SHIPPING_CONFIGS`, each named circuit in each of those.
+    let cases: Vec<(&str, Shipping)> = match circuits::configs_from_env() {
+        Some(list) => CIRCUITS
+            .iter()
+            .filter(|c| only.as_deref().is_some_and(|o| o.split(',').any(|x| x == c.name)))
+            .flat_map(|c| list.iter().map(move |&s| (c.name, s)))
+            .collect(),
+        None => SHIPPING
+            .iter()
+            .filter(|(n, _)| only.as_deref().is_none_or(|o| o.split(',').any(|x| x == *n)))
+            .copied()
+            .collect(),
+    };
+    for (name, s) in cases {
+        let circuit = CIRCUITS.iter().find(|c| c.name == name).expect("a shipping circuit is characterised");
         let input = (circuit.input)();
         let amplitude = if circuit.supply { 0.005 } else { 0.3 };
-        let c = shipped_circuit(&deck(name), &input, HOST, *s);
+        let c = shipped_circuit(&circuits::netlist(name), &input, HOST, s);
         let mut os = Oversampled::linear(c, s.oversample);
         os.prepare(HOST as f32);
         let x = noise(RUN, input.dc, amplitude);
@@ -63,10 +80,6 @@ fn shipping_cost_report() {
         };
         run();
         let ns = (0..7).map(|_| run()).fold(f64::INFINITY, f64::min);
-        println!(
-            "| {name} | {}× | {ns:.0} | {:.2} |",
-            s.oversample,
-            ns / (1e9 / HOST)
-        );
+        println!("| {name} | {s} | {ns:.0} | {:.2} |", ns / (1e9 / HOST));
     }
 }
