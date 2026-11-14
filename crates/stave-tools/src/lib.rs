@@ -31,6 +31,7 @@
 
 pub mod command;
 pub mod commands;
+pub mod listen;
 pub mod registry;
 pub mod target;
 

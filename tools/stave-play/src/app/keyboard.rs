@@ -23,6 +23,8 @@ const PIANO_HEIGHT: f32 = 64.0;
 pub(super) enum Tab {
     Midi,
     Samples,
+    /// A registry command's result.
+    Output,
 }
 
 pub(super) struct Keyboard {
@@ -108,7 +110,10 @@ impl HostApp {
         let t = self.tokens;
         let mut run = None;
         ui.horizontal(|ui| {
-            for (tab, label, command) in [(Tab::Midi, "Keyboard", id::KEYBOARD), (Tab::Samples, "Samples", id::SAMPLES)] {
+            let output = if self.tools.busy() { "Output ●" } else { "Output" };
+            for (tab, label, command) in
+                [(Tab::Midi, "Keyboard", id::KEYBOARD), (Tab::Samples, "Samples", id::SAMPLES), (Tab::Output, output, id::OUTPUT)]
+            {
                 if ui.selectable_label(self.keyboard.tab == tab, label).clicked() {
                     run = Some(Invocation::new(command));
                 }
@@ -133,6 +138,7 @@ impl HostApp {
                 Tab::Samples => {
                     ui.label(RichText::new("click a sample to play it through the plugin").small().color(t.ink_soft));
                 }
+                Tab::Output => self.output_toolbar(ui),
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let b = ui.add(egui::Button::new("×").frame(false));
@@ -149,6 +155,10 @@ impl HostApp {
             Tab::Samples => {
                 self.keyboard.mouse = None; // leaving the piano releases its note
                 self.draw_sample_chips(ui);
+            }
+            Tab::Output => {
+                self.keyboard.mouse = None;
+                self.draw_output(ui);
             }
         }
         if let Some(inv) = run {

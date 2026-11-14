@@ -22,6 +22,9 @@ stave-dsp.workspace = true
 # The design system's colour, spacing and type tokens for the workbench.
 stave-face.workspace = true
 stave-ui.workspace = true
+# The shared command registry: the palette runs the CLI's and MCP's
+# commands and the Output panel shows their results.
+stave-tools.workspace = true
 thiserror.workspace = true
 cpal = "0.15"
 crossbeam-queue = "0.3"

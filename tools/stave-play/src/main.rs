@@ -23,7 +23,7 @@ use stave_host::config::{HostConfig, SampleRate};
 const USAGE: &str = "stave-play [PLUGIN.vst3] [--sample-rate HZ] [--block-size N] \
                      [--set NAME=VALUE ...] \
                      [--view VIEW] [--theme system|dark|light] [--ui ITEM,ITEM] \
-                     [--window WxH] [--screenshot PATH [--note PITCH] [--editor-only]] \
+                     [--window WxH] [--command ID[=ARG] ...] [--screenshot PATH [--note PITCH] [--editor-only]] \
                      [--face-trace PATH]
        stave-play --compare CANDIDATE --compare CANDIDATE ... [--material MATERIAL] \
                      [--trim DB] [--abx-trials N] [--voicing-dir DIR]
@@ -50,7 +50,8 @@ Scope, Meters, Phase, CPU, Validate, Telemetry, Log) or a mode (Play, Listen,
 Measure, Validate, Debug). --ui opens or closes regions at start (library,
 inspector, panel, each with no- to close; keyboard, samples, palette, focus),
 so --screenshot can capture any state. In the app, Cmd+Shift+P (or Cmd+K)
-lists every command.
+lists every command; --command runs one at start, by id (tool:ID runs a
+command of the shared registry, as `stave ID` would, on the loaded plugin).
 MATERIAL is a built-in name, role:NAME[#N] (item N of a reference-corpus
 role from the sample library, DSP.md R22; see --list-material) or a WAV
 path.";
@@ -290,6 +291,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
         theme: None,
         ui: Vec::new(),
         window: None,
+        commands: Vec::new(),
     };
     let (mut verify_blessed, mut tolerance_db, mut list_material) = (None, -120.0, false);
     let mut export_material = None;
@@ -331,6 +333,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
                     l.ui.push(app::UiFlag::parse(item).ok_or_else(|| bad("--ui", item))?);
                 }
             }
+            "--command" => l.commands.push(value("--command")?),
             "--window" => {
                 let v = value("--window")?;
                 l.window = Some(parse_size(&v).ok_or_else(|| bad("--window", &v))?);
@@ -465,7 +468,10 @@ mod tests {
 
     #[test]
     fn parses_workbench_options() {
-        let l = p("--view cpu --theme light --ui library,no-panel,palette --window 1024x700").unwrap().unwrap();
+        let l = p("--view cpu --theme light --ui library,no-panel,palette --window 1024x700 --command tool:bench")
+            .unwrap()
+            .unwrap();
+        assert_eq!(l.commands, ["tool:bench"]);
         assert_eq!(l.view, Some(project::ViewId::Perf));
         assert_eq!(l.theme, Some(app::theme::ThemeChoice::Light));
         assert_eq!(l.ui, [app::UiFlag::Library(true), app::UiFlag::Panel(false), app::UiFlag::Palette]);

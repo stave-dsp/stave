@@ -2,6 +2,7 @@
 
 pub mod bench;
 pub mod instance;
+pub mod listen;
 pub mod validate;
 
 use crate::registry::Registry;
@@ -18,7 +19,11 @@ pub fn register(r: &mut Registry) {
         .register_fn(bench::PROCESS, bench::process)
         .register_fn(bench::BENCH, bench::bench)
         .register_fn(validate::VALIDATE, validate::validate)
-        .register_fn(validate::RESPONSE, validate::response);
+        .register_fn(validate::RESPONSE, validate::response)
+        .register_fn(listen::ADD, listen::add)
+        .register_fn(listen::LIST, listen::list)
+        .register_fn(listen::NEXT, listen::next)
+        .register_fn(listen::ANSWER, listen::answer);
 }
 
 #[cfg(test)]
