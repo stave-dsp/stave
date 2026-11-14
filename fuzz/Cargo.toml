@@ -65,10 +65,3 @@ path = "fuzz_targets/clap_events.rs"
 test = false
 doc = false
 bench = false
-
-[[bin]]
-name = "solvers"
-path = "fuzz_targets/solvers.rs"
-test = false
-doc = false
-bench = false

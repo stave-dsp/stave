@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install "$NIGHTLY" --profile minimal
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { workspaces: fuzz, key: "${{ matrix.target }}" }
+        with: { workspaces: "${{ matrix.target == 'solvers' && 'fuzz/solvers' || 'fuzz' }}", key: "${{ matrix.target }}" }
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: cargo-fuzz@0.13.2 }
       - run: scripts/fuzz.sh 240 ${{ matrix.target }}
@@ -74,7 +74,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-${{ matrix.target }}
-          path: fuzz/artifacts/${{ matrix.target }}
+          path: |
+            fuzz/artifacts/${{ matrix.target }}
+            fuzz/solvers/artifacts/${{ matrix.target }}
 
   rate-range:
     # T1 of DSP.md R6: every catalogued stage robust at fifteen rates from

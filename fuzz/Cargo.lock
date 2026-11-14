@@ -414,8 +414,9 @@ checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "stave"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
+ "stave-au",
  "stave-clap",
  "stave-core",
  "stave-dsp",
@@ -425,8 +426,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "stave-au"
+version = "0.5.0"
+dependencies = [
+ "stave-au-sys",
+ "stave-core",
+ "stave-face",
+ "stave-ui-cocoa",
+]
+
+[[package]]
+name = "stave-au-sys"
+version = "0.5.0"
+
+[[package]]
 name = "stave-clap"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-clap-sys",
  "stave-core",
@@ -438,11 +453,11 @@ dependencies = [
 
 [[package]]
 name = "stave-clap-sys"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "stave-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "loom",
  "stave-dsp",
@@ -452,11 +467,11 @@ dependencies = [
 
 [[package]]
 name = "stave-dsp"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "stave-face"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-core",
  "stave-dsp",
@@ -466,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "stave-font"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "skrifa",
  "stave-raster",
@@ -489,13 +504,14 @@ dependencies = [
 
 [[package]]
 name = "stave-host"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crossbeam-queue",
  "hound",
  "libc",
  "serde",
  "serde_json",
+ "stave-au-sys",
  "stave-core",
  "stave-dsp",
  "stave-measure",
@@ -507,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "stave-macros"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -516,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "stave-measure"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "stave-dsp",
@@ -525,28 +541,29 @@ dependencies = [
 
 [[package]]
 name = "stave-model"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "stave-raster"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-ui",
 ]
 
 [[package]]
 name = "stave-telemetry"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "loom",
 ]
 
 [[package]]
 name = "stave-test"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert_no_alloc",
  "miniz_oxide",
+ "serde_json",
  "stave",
  "stave-core",
  "stave-dsp",
@@ -560,18 +577,18 @@ dependencies = [
 
 [[package]]
 name = "stave-tilt-vst3"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave",
 ]
 
 [[package]]
 name = "stave-ui"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "stave-ui-cocoa"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-core",
  "stave-face",
@@ -581,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "stave-ui-shell"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-core",
  "stave-face",
@@ -592,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "stave-ui-win32"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-core",
  "stave-face",
@@ -602,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "stave-ui-x11"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-core",
  "stave-face",
@@ -613,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "stave-vst3"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "stave-core",
  "stave-face",
@@ -625,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "stave-vst3-sys"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "syn"

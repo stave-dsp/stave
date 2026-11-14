@@ -1,0 +1,31 @@
+# The circuit-solver fuzz target (DSP.md R7), apart from fuzz/: its own
+# workspace, so its graph is stave-test's alone. fuzz/ depends on Tilt
+# (vst3_host), whose cdylib links on its own; `solvers` runs without a
+# sanitizer (scripts/fuzz.sh), and with none there is no runtime to supply
+# SanitizerCoverage's callbacks to that dylib, which macOS's linker refuses.
+[package]
+name = "stave-fuzz-solvers"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+stave-test = { path = "../../crates/stave-test" }
+
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "solvers"
+path = "fuzz_targets/solvers.rs"
+test = false
+doc = false
+bench = false

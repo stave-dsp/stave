@@ -204,9 +204,10 @@ are oracles:
 
 `fuzz/` holds cargo-fuzz targets for state loading (seeded from the
 committed state fixtures), parameter text parsing, the rasteriser and
-hosting a real plugin through stave-host. `scripts/fuzz.sh [seconds]
+hosting a real plugin through stave-host; `fuzz/solvers/`, a package of
+its own, holds the circuit-solver target. `scripts/fuzz.sh [seconds]
 [target]` runs them; a crash leaves its input in
-`fuzz/artifacts/<target>/` to replay.
+`fuzz/artifacts/<target>/` (`fuzz/solvers/artifacts/solvers/`) to replay.
 
 ## API stability
 

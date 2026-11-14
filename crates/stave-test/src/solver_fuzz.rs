@@ -16,7 +16,7 @@
 //!   times the continuation steps) agrees with it — a solve that said it
 //!   converged did converge, to the same root.
 //!
-//! `fuzz/fuzz_targets/solvers.rs` decodes libFuzzer's bytes with
+//! `fuzz/solvers/fuzz_targets/solvers.rs` decodes libFuzzer's bytes with
 //! [`Case::from_bytes`]; `tests/solver_fuzz.rs` runs a seeded corpus
 //! ([`Case::seeded`]) in CI and replays the committed regressions.
 
