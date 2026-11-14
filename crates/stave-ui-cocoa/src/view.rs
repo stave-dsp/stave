@@ -176,24 +176,30 @@ impl FaceView {
     /// Show the face in `parent` (replacing any earlier attachment). A
     /// null parent shows nothing.
     ///
-    /// # Panics
-    /// Off the main thread.
+    /// Never panics: off the main thread, when AppKit refuses an object
+    /// the view needs, or when face code panics on the way, the window is
+    /// refused with an [`AttachError`] and nothing is shown — a GUI fault
+    /// never unwinds into the wrapper, whose panic latch would silence
+    /// the audio instance.
     ///
     /// # Safety
     /// `parent` is null or a live NSView.
-    pub unsafe fn attach(&mut self, parent: *mut c_void) {
+    pub unsafe fn attach(&mut self, parent: *mut c_void) -> Result<(), AttachError> {
         self.detach();
         let Some(parent) = Obj::from_ptr(parent) else {
-            return;
+            return Ok(());
         };
-        let main = MainThread::new().expect("a face view is attached on the main thread");
-        let size = {
-            let mut ui = self.shared.ui.borrow_mut();
-            ui.opened = Instant::now();
-            ui.runtime.size()
-        };
-        // SAFETY: this function's contract; on the main thread.
-        self.mount = Some(unsafe { Mount::new(main, parent, &self.shared, size) });
+        let main = MainThread::new().ok_or(AttachError::NotMainThread)?;
+        guard(Err(AttachError::Panicked), || {
+            let size = {
+                let mut ui = self.shared.ui.try_borrow_mut().map_err(|_| AttachError::Busy)?;
+                ui.opened = Instant::now();
+                ui.runtime.size()
+            };
+            // SAFETY: this function's contract; on the main thread.
+            self.mount = Some(unsafe { Mount::new(main, parent, &self.shared, size) }?);
+            Ok(())
+        })
     }
 
     /// Remove the view from its parent and stop its timer.
@@ -209,6 +215,36 @@ impl FaceView {
         self.mount.as_ref().map(|m| m.view.get())
     }
 }
+
+/// Why [`FaceView::attach`] refused the window. Only the editor is
+/// refused: the host gets a failure code, the audio instance keeps
+/// processing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AttachError {
+    /// Called off the main thread (AppKit is main-thread only).
+    NotMainThread,
+    /// Called from inside one of the view's own callbacks.
+    Busy,
+    /// AppKit or CoreFoundation returned nil for the object named.
+    Refused(&'static str),
+    /// Face code panicked while the view was being made (the panic hook
+    /// has reported it).
+    Panicked,
+}
+
+impl core::fmt::Display for AttachError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            AttachError::NotMainThread => f.write_str("a face view is attached on the main thread only"),
+            AttachError::Busy => f.write_str("the face view is busy in one of its own callbacks"),
+            AttachError::Refused(what) => write!(f, "AppKit refused {what}"),
+            AttachError::Panicked => f.write_str("face code panicked while the view was made"),
+        }
+    }
+}
+
+impl std::error::Error for AttachError {}
 
 impl Drop for FaceView {
     fn drop(&mut self) {
@@ -255,22 +291,27 @@ struct Mount {
 impl Mount {
     /// # Safety
     /// `parent` is a live NSView.
-    unsafe fn new(_main: MainThread, parent: Obj, shared: &Rc<Shared>, (w, h): (f64, f64)) -> Self {
+    unsafe fn new(
+        _main: MainThread,
+        parent: Obj,
+        shared: &Rc<Shared>,
+        (w, h): (f64, f64),
+    ) -> Result<Self, AttachError> {
         let class = face_view_class();
         // SAFETY: `alloc` and `initWithFrame:` on an NSView subclass, on
-        // the main thread.
+        // the main thread (an `init` that returns nil releases the
+        // allocation itself).
         let view = unsafe {
             let raw: Option<Obj> = send(class.class.0, sel!(c"alloc"), ());
-            let view: Option<Obj> = send(raw.expect("alloc"), sel!(c"initWithFrame:"), (CGRect::new(0.0, 0.0, w, h),));
-            Retained::from_owned(view.expect("an NSView initializes"))
+            let raw = raw.ok_or(AttachError::Refused("the face NSView (alloc)"))?;
+            let view: Option<Obj> = send(raw, sel!(c"initWithFrame:"), (CGRect::new(0.0, 0.0, w, h),));
+            Retained::from_owned(view.ok_or(AttachError::Refused("the face NSView (initWithFrame:)"))?)
         };
-        // SAFETY: a fresh instance of the face view class; the reference
-        // the ivar holds is taken back in `remove`.
-        unsafe { *face_slot(view.get()) = Rc::into_raw(Rc::clone(shared)) };
+        // Everything that can fail comes before the view takes a count of
+        // `shared` or joins its parent, so on a refusal dropping what was
+        // made is the whole cleanup.
         // SAFETY: a live view, on the main thread.
-        unsafe { track_pointer(view.get()) };
-        // SAFETY: `parent` is a live NSView (this function's contract).
-        unsafe { send::<_, ()>(parent, sel!(c"addSubview:"), (view.get(),)) };
+        unsafe { track_pointer(view.get()) }?;
         let mut context = TimerContext {
             version: 0,
             info: view.get().as_ptr(),
@@ -281,7 +322,7 @@ impl Mount {
         let interval = 1.0 / 60.0;
         // SAFETY: the context is copied by the call; `info` (the view)
         // outlives the timer, which `remove` invalidates before the view
-        // is released. Added to this (the main) thread's run loop.
+        // is released (a timer refused below never joins a run loop).
         let timer = unsafe {
             let t = CFRunLoopTimerCreate(
                 core::ptr::null(),
@@ -292,11 +333,16 @@ impl Mount {
                 tick,
                 &mut context,
             );
-            let timer = CfRef::from_create(t).expect("a run loop timer");
-            CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer.as_ptr(), kCFRunLoopCommonModes);
-            timer
+            CfRef::from_create(t).ok_or(AttachError::Refused("the repaint timer"))?
         };
-        Mount { view, timer }
+        // SAFETY: a fresh instance of the face view class; the reference
+        // the ivar holds is taken back in `remove`.
+        unsafe { *face_slot(view.get()) = Rc::into_raw(Rc::clone(shared)) };
+        // SAFETY: `parent` is a live NSView (this function's contract).
+        unsafe { send::<_, ()>(parent, sel!(c"addSubview:"), (view.get(),)) };
+        // SAFETY: our timer, added to this (the main) thread's run loop.
+        unsafe { CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer.as_ptr(), kCFRunLoopCommonModes) };
+        Ok(Mount { view, timer })
     }
 
     /// On the main thread: `Mount` is made there (`new` takes the token)
@@ -543,7 +589,7 @@ fn set_cursor(_main: MainThread, c: Cursor) {
 ///
 /// # Safety
 /// `view` is a live NSView, on the main thread.
-unsafe fn track_pointer(view: Obj) {
+unsafe fn track_pointer(view: Obj) -> Result<(), AttachError> {
     const MOUSE_ENTERED_EXITED: u64 = 0x01;
     const MOUSE_MOVED: u64 = 0x02;
     const ACTIVE_ALWAYS: u64 = 0x80;
@@ -554,14 +600,16 @@ unsafe fn track_pointer(view: Obj) {
     // released when `area` drops.
     unsafe {
         let raw: Option<Obj> = send(class(c"NSTrackingArea"), sel!(c"alloc"), ());
+        let raw = raw.ok_or(AttachError::Refused("the tracking area (alloc)"))?;
         let area: Option<Obj> = send(
-            raw.expect("alloc"),
+            raw,
             sel!(c"initWithRect:options:owner:userInfo:"),
             (CGRect::new(0.0, 0.0, 0.0, 0.0), options, view, None::<Obj>),
         );
-        let area = Retained::from_owned(area.expect("a tracking area initializes"));
+        let area = Retained::from_owned(area.ok_or(AttachError::Refused("the tracking area (init)"))?);
         send::<_, ()>(view, sel!(c"addTrackingArea:"), (area.get(),));
     }
+    Ok(())
 }
 
 // ------------------------------------------------------- the methods
@@ -728,4 +776,48 @@ extern "C" fn key_down(this: Obj, _cmd: Sel, event: Option<Obj>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use stave_core::params::{AnyParam, ParamId};
+    use stave_core::units::Normalized;
+    use stave_core::TapId;
+
+    struct Blank;
+    impl stave_face::Part for Blank {}
+
+    struct Inert;
+    impl Controller for Inert {
+        fn param(&self, _: ParamId) -> Option<&dyn AnyParam> {
+            None
+        }
+        fn begin(&self, _: ParamId) {}
+        fn set(&self, _: ParamId, _: Normalized) {}
+        fn end(&self, _: ParamId) {}
+        fn tap(&self, _: TapId) -> f64 {
+            0.0
+        }
+    }
+
+    /// A5: AppKit is main-thread only, and a host that attaches the
+    /// editor from another thread gets a refusal — not a panic, which
+    /// the wrapper's panic latch would turn into a silenced audio
+    /// instance. (libtest runs tests off the main thread.)
+    #[test]
+    fn attaching_off_the_main_thread_is_refused_not_a_panic() {
+        assert!(MainThread::new().is_none(), "libtest runs this off the main thread");
+        let face = Face::new(stave_face::Theme::graphite(), stave_face::leaf(Blank, 10.0, 10.0));
+        let mut view = FaceView::new(face, Box::new(Inert));
+        // Never dereferenced: the thread is checked first.
+        let parent = core::ptr::NonNull::<c_void>::dangling().as_ptr();
+        // SAFETY: refused before `parent` is used.
+        let attached = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| unsafe { view.attach(parent) }));
+        assert_eq!(attached.ok(), Some(Err(AttachError::NotMainThread)), "refused, not a panic");
+        assert!(view.ns_view().is_none(), "nothing is shown");
+        // A null parent still shows nothing, on any thread.
+        // SAFETY: a null parent is allowed.
+        assert_eq!(unsafe { view.attach(core::ptr::null_mut()) }, Ok(()));
+    }
 }

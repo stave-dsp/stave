@@ -231,10 +231,11 @@ pub(super) unsafe extern "C" fn gui_set_parent<P: ClapExport>(
             };
             #[cfg(target_os = "macos")]
             // SAFETY: a `cocoa` window carries the host's live NSView
-            // (clap gui.h), on the main thread.
-            unsafe {
-                view.attach(window.handle.cocoa)
-            };
+            // (clap gui.h). Off the main thread the view refuses, not
+            // panics: a GUI fault never latches the audio instance.
+            if let Err(error) = unsafe { view.attach(window.handle.cocoa) } {
+                return inst.answer("gui.set_parent", Err(CallError::WindowRefused(error.to_string())));
+            }
             #[cfg(windows)]
             // SAFETY: a `win32` window carries the host's live HWND
             // (clap gui.h), on the main (UI) thread.

@@ -28,4 +28,4 @@ mod view;
 pub mod synthetic;
 
 pub use app::run_app;
-pub use view::{FaceView, OnKey};
+pub use view::{AttachError, FaceView, OnKey};
