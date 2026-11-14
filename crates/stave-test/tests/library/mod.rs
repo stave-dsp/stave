@@ -447,8 +447,9 @@ fn physical(out: &mut Vec<Entry>) {
         c
     }));
     out.push(stage(F, "Chowdhury tape (TC-260)", Measure::Level, || Chowdhury::new(Machine::TC260)));
-    // The record side needs a rate above twice its 55 kHz bias (its
-    // valid range): 16× here, as `Chowdhury` runs it.
+    // The record side's valid range starts at 12 times its 55 kHz bias,
+    // where it holds the bias at 14 samples a cycle: 16× here, 705.6 kHz
+    // and up.
     out.push(stage(F, "Recording (TC-260, 16x)", Measure::Response, || {
         stave_dsp::Oversampled::linear(Recording::new(Machine::TC260), 16)
     }));

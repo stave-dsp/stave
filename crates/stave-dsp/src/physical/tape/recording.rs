@@ -34,7 +34,10 @@ use crate::kernel::node::Stage;
 /// # Verified
 /// `crates/stave-dsp/src/physical/tape/tests.rs::bias_linearises_the_dead_zone`
 /// (the paper's claims, measured), and through [`Chowdhury`](super::Chowdhury):
-/// `crates/stave-test/tests/tape_matches_reference.rs::hysteresis_loop_against_chowdhury_fig_2`.
+/// `crates/stave-test/tests/tape_matches_reference.rs::hysteresis_loop_against_chowdhury_fig_2`;
+/// standalone at 16× from 44.1 to 192 kHz in DSP.md R6's sweep
+/// (`crates/stave-test/tests/rate_range.rs`, `"Recording (TC-260, 16x)"`),
+/// the same third harmonic of a hot 200 Hz tone at every rate.
 ///
 /// # Cost
 /// Datasheet `"Chowdhury tape (TC-260, 7.5 ips)"`, which runs it 15× at 48 kHz.
@@ -46,7 +49,10 @@ use crate::kernel::node::Stage;
 ///
 /// # Valid ranges
 /// Inputs to a few times full scale (the field stays within a few times
-/// the tape's saturation); a rate above twice the bias frequency.
+/// the tape's saturation); rates from 12 times the bias frequency
+/// (660 kHz for the TC-260), where the bias holds [`BIAS_SAMPLES`] a
+/// cycle; below, down to twice the bias frequency, the count follows
+/// the rate and so does the sound.
 #[derive(Clone)]
 pub struct Recording {
     machine: Machine,
@@ -133,31 +139,46 @@ impl Recording {
     }
 }
 
+/// Inner samples a bias cycle across the record side's valid range: the
+/// hysteresis sees the same sampled bias whatever the rate, so its
+/// harmonics are the same. The Jiles–Atherton loop is rate independent
+/// (an ODE in H), so what it makes of the bias is set by the field's
+/// path through a cycle — its samples — not by the bias's frequency; a
+/// count that follows the frequency instead (12 at 705.6 kHz, 14 at 768,
+/// 56 at 3.07 MHz) moves the third harmonic of a hot 200 Hz tone from
+/// −55 to −71 dBc. A phase-continuous bias at the machine's exact
+/// frequency holds that harmonic within 1.2 dB but folds the bias's
+/// harmonics inharmonically into the band (the 13th of 55 kHz at
+/// 720 kHz lands at 5 kHz, −25 dB under a −6 dBFS tone), so the count
+/// is whole, and fixed.
+pub const BIAS_SAMPLES: u32 = 14;
+
 impl Recording {
-    /// The bias frequency in use at `sample_rate`: the machine's,
-    /// moved (by under 8% at 700 kHz) to an even number of samples a
-    /// cycle. Whole, so every harmonic the hysteresis makes of it folds
-    /// onto another harmonic of it — never into the audio band (at
-    /// 720 kHz a 55 kHz bias's 13th harmonic would fold to 5 kHz); even,
-    /// so the sampled bias keeps its half-wave symmetry and the
-    /// symmetric loop makes no even harmonics (an odd count leaves H2 at
-    /// −64 dBc).
+    /// The bias frequency in use at `sample_rate`: [`BIAS_SAMPLES`] a
+    /// cycle across the valid range (from 12 times the machine's
+    /// frequency up: 50.4 kHz at 705.6, 54.9 at 768, 219 at 3.07 MHz,
+    /// against the TC-260's 55), else the even count nearest the
+    /// machine's frequency. Whole, so every harmonic the hysteresis
+    /// makes of it folds onto another harmonic of it — never into the
+    /// audio band; even, so the sampled bias keeps its half-wave symmetry
+    /// and the symmetric loop makes no even harmonics (an odd count
+    /// leaves H2 at −64 dBc).
     pub fn bias_hz(&self, sample_rate: f64) -> f64 {
         sample_rate / self.samples_per_bias(sample_rate)
     }
 
     /// Samples a bias cycle at `sample_rate`: [`set_bias_samples`](Self::set_bias_samples)'s,
-    /// else the even count nearest the machine's frequency.
+    /// else [`BIAS_SAMPLES`] in the valid range and the even count
+    /// nearest the machine's frequency below it.
     fn samples_per_bias(&self, sample_rate: f64) -> f64 {
         match self.bias_samples {
             Some(n) => f64::from(n),
+            None if sample_rate >= 12.0 * self.machine.bias.hz => f64::from(BIAS_SAMPLES),
             None => 2.0 * (0.5 * sample_rate / self.machine.bias.hz).round().max(1.0),
         }
     }
 
-    /// Hold the bias at `samples` (even) a cycle whatever the rate, so
-    /// the hysteresis sees the same sampled bias at every host rate
-    /// ([`Chowdhury`](super::Chowdhury) holds 14).
+    /// Hold the bias at `samples` (even) a cycle whatever the rate.
     pub fn set_bias_samples(&mut self, samples: u32) {
         self.bias_samples = Some(2 * (samples / 2).max(1));
     }

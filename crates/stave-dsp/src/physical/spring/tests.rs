@@ -153,7 +153,7 @@ fn decay_is_the_t60() {
         spring.prepare(rate as f32);
         spring.set_high_chirps(Db::new(-200.0));
         spring.set_t60(seconds(t60));
-        let k = spring.low_chirp().stretch() as f64;
+        let k = spring.low_chirp().stretch();
         let f = (-f64::from(LOW_COEFFICIENT)).acos() / (TAU * k) * rate;
         let h = impulse_response(&mut spring, (1.6 * t60 * rate) as usize);
         // The band's envelope every 16 samples (σ = 4 ms).
@@ -250,11 +250,48 @@ fn transducers_band_limit_the_tank() {
 }
 
 #[test]
-fn transition_snaps_to_whole_stretches() {
+fn the_transition_is_the_one_set_at_every_rate() {
     let mut spring = Spring::new(seconds(0.03), hz(4_300.0));
-    spring.prepare(48_000.0);
-    assert_eq!(spring.low_chirp().stretch(), 6);
-    assert_eq!(spring.transition(), hz(4_000.0));
-    spring.prepare(96_000.0);
-    assert_eq!(spring.low_chirp().stretch(), 11);
+    for rate in [44_100.0f32, 48_000.0, 96_000.0, 192_000.0] {
+        spring.prepare(rate);
+        let k = f64::from(rate) / 8_600.0;
+        assert!((spring.low_chirp().stretch() - k).abs() < 1e-9, "{rate}: k {}", spring.low_chirp().stretch());
+        assert!((spring.transition().get() - 4_300.0).abs() < 0.01, "{rate}: {:?}", spring.transition());
+    }
+}
+
+#[test]
+fn fractional_stretch_is_allpass() {
+    for (k, a) in [(5.51, 0.6f32), (1.088, -0.6), (1.5, 0.6), (2.177, -0.6)] {
+        let mut chirp = Chirp::stretched(50, k, a);
+        let n = 1 << 16;
+        let (re, im) = spectrum(&impulse_response(&mut chirp, n), n);
+        let worst = (0..n / 2).map(|b| (10.0 * (re[b] * re[b] + im[b] * im[b]).log10()).abs()).fold(0.0, f64::max);
+        assert!(worst < 1e-3, "k {k}, a {a}: {worst} dB");
+    }
+}
+
+#[test]
+fn fractional_stretch_follows_the_design_delay() {
+    // Thiran's delay is exact at DC and falls short toward Nyquist, so a
+    // fractional stretch follows Parker's D(ω) at that k closely below
+    // the transition and less closely at its peak.
+    for (k, a) in [(5.51, 0.6f32), (11.03, 0.6), (1.088, -0.6), (2.177, -0.6)] {
+        let mut chirp = Chirp::stretched(50, k, a);
+        let n = 1 << 17;
+        let h = impulse_response(&mut chirp, n);
+        let (re, im) = spectrum(&h, n);
+        let peak = chirp.mean_delay() * (1.0 + f64::from(a.abs())) / (1.0 - f64::from(a.abs()));
+        let top = (0.8 * n as f64 / (2.0 * k)) as usize;
+        let mut worst: f64 = 0.0;
+        for b in 1..top {
+            let (p0, p1) = (im[b].atan2(re[b]), im[b + 1].atan2(re[b + 1]));
+            let dphi = (p1 - p0 + PI).rem_euclid(TAU) - PI;
+            let measured = -dphi / (TAU / n as f64);
+            let design = chirp.group_delay((b as f64 + 0.5) / n as f64);
+            worst = worst.max((measured - design).abs() / peak);
+        }
+        println!("k {k}, a {a}: worst group-delay error {:.3} % of the {peak:.0}-sample peak", 100.0 * worst);
+        assert!(worst < 0.025, "k {k}, a {a}: {worst}");
+    }
 }

@@ -332,10 +332,6 @@ fn spread(reference: &Reading, readings: &[Reading]) -> Spread {
 /// - the BLT-designed filters' stopbands at 5 kHz (LR4 1 dB, SVF, the
 ///   Sallen-Key and Korg-35 0.6, Formants 0.9) and ADAA's half-sample
 ///   average at 5 kHz (tanh curve, triode, TS808 ~0.45);
-/// - the record head at 16× (15.7 dB harmonic): its bias period is a
-///   whole number of samples, so the bias's frequency, and the
-///   distortion it leaves, moves with the rate (−55 dBc at 44.1 kHz,
-///   −71 at 192);
 /// - floors: a harmonic near −100 dBc moves by tens of dB on nothing (the
 ///   true-peak limiter's 25.7, the BBD's 18);
 /// - random processes (OU 2.6, Wiener 3.3 dB): one realisation a rate.
@@ -432,12 +428,12 @@ const BUDGETS: &[(&str, f64, f64, f64)] = &[
     // physical
     ("Plate (EMT 140, to 5 kHz)", 0.05, 1.0, 0.005),
     ("Chirp (100 sections)", 0.05, 1.0, 0.005),
-    ("Spring", 0.186, 1.0, 0.005),
-    ("Tank (3 springs)", 0.221, 1.0, 0.005),
+    ("Spring", 0.053, 1.0, 0.005),
+    ("Tank (3 springs)", 0.097, 1.0, 0.005),
     ("Radiator (horn, tremolo)", 0.075, 1.0, 0.005),
     ("Cabinet (Leslie 122H, chorale)", 0.073, 1.0, 0.005),
     ("Chowdhury tape (TC-260)", 0.052, 1.0, 0.005),
-    ("Recording (TC-260, 16x)", 0.36, 15.71, 0.005),
+    ("Recording (TC-260, 16x)", 0.063, 1.0, 0.005),
     ("Playback (7.5 ips)", 0.05, 1.0, 0.005),
     ("Flutter (Akai 4000D)", 0.065, 1.0, 0.005),
     // effects
