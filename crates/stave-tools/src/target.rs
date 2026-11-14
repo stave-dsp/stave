@@ -14,7 +14,7 @@
 //!
 //! A [`Workspace`] keeps opened sessions between commands (the MCP
 //! server's and the GUI's live for the process; the CLI's for one
-//! command), so an agent can open once, set, then bench and render the
+//! command), so an agent can open once, set, then bench and process the
 //! same instance.
 
 use std::num::NonZeroUsize;

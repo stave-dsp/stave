@@ -15,7 +15,7 @@ pub fn register(r: &mut Registry) {
         .register_fn(instance::OPEN, instance::open)
         .register_fn(instance::SET_PARAMS, instance::set)
         .register_fn(instance::CLOSE, instance::close)
-        .register_fn(bench::RENDER, bench::render)
+        .register_fn(bench::PROCESS, bench::process)
         .register_fn(bench::BENCH, bench::bench)
         .register_fn(validate::VALIDATE, validate::validate)
         .register_fn(validate::RESPONSE, validate::response);

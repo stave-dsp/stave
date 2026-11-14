@@ -89,7 +89,7 @@ fn a_bad_setting_fails_naming_it() {
 }
 
 #[test]
-fn benches_and_renders() {
+fn benches_and_processes() {
     let wav = scratch("bench.wav");
     let out = run(
         &mut Workspace::default(),
@@ -100,10 +100,10 @@ fn benches_and_renders() {
     assert_eq!(out.data["sample_rate"], 48000.0);
     assert_eq!(out.artefacts.len(), 1);
     assert!(wav.is_file());
-    let wav = scratch("render.wav");
+    let wav = scratch("process.wav");
     let out = run(
         &mut Workspace::default(),
-        "render",
+        "process",
         json!({ "target": "stage:coupler", "seconds": 0.1, "out": wav.display().to_string(), "signal": "sweep:20:2000" }),
     );
     assert_eq!((out.data["channels"].as_u64(), out.data["frames"].as_u64()), (Some(2), Some(4800)));

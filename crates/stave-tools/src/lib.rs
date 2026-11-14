@@ -1,5 +1,5 @@
 //! The stave tool's shared foundation: every capability — open,
-//! describe, bench, render, validate, measure, characterise, fit — is a
+//! describe, bench, process, validate, measure, characterise, fit — is a
 //! typed [`Command`] in one [`Registry`], implemented once here. The
 //! layers on top only present it:
 //!

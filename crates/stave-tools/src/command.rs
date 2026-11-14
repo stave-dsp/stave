@@ -1,7 +1,7 @@
 //! The command model: what one capability declares ([`CommandInfo`]: id,
 //! title, inputs, outputs), what it is given ([`Input`], a [`Context`]
 //! with progress and cancellation), and what it returns ([`Outcome`]:
-//! stable JSON, a human rendering, the files it wrote).
+//! stable JSON, the same as text, the files it wrote).
 //!
 //! Prior art: VS Code's command registry (an id and a title per
 //! capability, run from a palette or a keybinding alike), LSP's and
@@ -183,7 +183,7 @@ pub enum Status {
     Failed,
 }
 
-/// A file a command wrote: a rendered WAV, a report, a model.
+/// A file a command wrote: a processed WAV, a report, a model.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Artefact {
     pub path: PathBuf,

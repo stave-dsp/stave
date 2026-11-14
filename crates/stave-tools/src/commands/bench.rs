@@ -1,5 +1,5 @@
 //! Running a plugin on a signal: `bench` (the timed run's cost,
-//! latency and output, measured) and `render` (its output to a WAV).
+//! latency and output, measured) and `process` (its output to a WAV).
 
 use std::path::Path;
 
@@ -114,9 +114,9 @@ pub fn bench(input: &Input, cx: &mut Context<'_>) -> Result<Outcome, CommandErro
     Ok(outcome)
 }
 
-pub const RENDER: CommandInfo = CommandInfo {
-    id: "render",
-    title: "Render to WAV",
+pub const PROCESS: CommandInfo = CommandInfo {
+    id: "process",
+    title: "Process to WAV",
     summary: "Process a signal (or a WAV) through the target and write its output",
     description: "Run the target on a signal — a WAV file as wav:PATH, or a generated sine, sweep, noise or \
                   impulse — with notes for an instrument, and write the output as a 32-bit float WAV at \
@@ -144,11 +144,11 @@ pub const RENDER: CommandInfo = CommandInfo {
     long_running: true,
 };
 
-pub fn render(input: &Input, cx: &mut Context<'_>) -> Result<Outcome, CommandError> {
+pub fn process(input: &Input, cx: &mut Context<'_>) -> Result<Outcome, CommandError> {
     let mut cfg = config(input)?;
     cfg.capture = true;
-    let out = input.path("out").ok_or_else(|| CommandError::Usage("render: out is required".into()))?;
-    cx.progress(0.0, None, format!("rendering {}", Target::from_input(input)?.display()));
+    let out = input.path("out").ok_or_else(|| CommandError::Usage("process: out is required".into()))?;
+    cx.progress(0.0, None, format!("processing {}", Target::from_input(input)?.display()));
     let mut held = hold(input, cx.workspace)?;
     let run = bench::run(held.instance(), &cfg).map_err(|e| CommandError::from_error(&e))?;
     let channels = run.capture.unwrap_or_default();
