@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install "$NIGHTLY" --profile minimal
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { workspaces: fuzz, key: "${{ matrix.target }}" }
+        with: { workspaces: fuzz, key: "${{ matrix.target }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: cargo-fuzz@0.13.2 }
       - run: scripts/fuzz.sh 240 ${{ matrix.target }}
@@ -88,6 +88,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with: { cache-bin: "${{ runner.environment == 'github-hosted' }}" }
       - run: cargo test -p stave-test --locked --test rate_range -- --ignored
 
   miri:
@@ -109,6 +110,9 @@ jobs:
       - run: rustup toolchain install "$NIGHTLY" --profile minimal --component miri,rust-src
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           shared-key: miri
           save-if: "${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}"
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
@@ -139,6 +143,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           shared-key: characterise
           save-if: "${{ github.ref == 'refs/heads/main' && matrix.part == '1/4' }}"
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
@@ -163,6 +170,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           shared-key: characterise
           save-if: false
       - run: "cargo test -p stave-test --locked --test characterise_t1 -- --ignored classics::"

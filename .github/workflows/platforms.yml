@@ -82,6 +82,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
@@ -129,6 +132,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
@@ -161,6 +167,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
