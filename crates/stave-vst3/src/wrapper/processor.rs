@@ -35,15 +35,21 @@ pub(super) unsafe extern "C" fn ap_setup_processing<P: Vst3Export>(
             let Some(s) = setup else {
                 return inst.answer("setupProcessing", Err(CallError::NullArgument("setup")));
             };
+            // A negative maximum would wrap to ~4 billion frames: scratch
+            // sized for that aborts, and every later block passes the
+            // length check. Refused; the previous setup stands.
+            let Ok(max_frames) = u32::try_from(s.max_samples_per_block) else {
+                return inst.answer(
+                    "setupProcessing",
+                    Err(CallError::IndexOutOfRange(i64::from(s.max_samples_per_block))),
+                );
+            };
             inst.shared.set_sample_rate(s.sample_rate as f32);
-            inst.shared.set_max_frames(s.max_samples_per_block as u32);
+            inst.shared.set_max_frames(max_frames);
             // Non-realtime context: size the in-place scratch here too, so a
             // host that skips straight to process after setup is still covered.
             if let Some(mut proc) = inst.plugin.claim() {
-                proc.prepare_scratch(
-                    max_in_channels::<P>(),
-                    (s.max_samples_per_block as usize).max(1),
-                );
+                proc.prepare_scratch(max_in_channels::<P>(), (max_frames as usize).max(1));
             }
             K_RESULT_OK
         },
@@ -92,7 +98,15 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
             .record(ProcessFault::UnsupportedSampleSize, 1);
         return K_INTERNAL_ERROR;
     }
-    let frames = d.num_samples as usize;
+    // A negative length is no block at all: refused before anything reads
+    // it (as an unsigned count it would be beyond every maximum, so it is
+    // counted as one).
+    let Ok(frames) = usize::try_from(d.num_samples) else {
+        inst.diagnostics
+            .faults
+            .record(ProcessFault::BlockTooLong, 1);
+        return K_INVALID_ARGUMENT;
+    };
     // Serve the host-accepted configuration.
     let cfg = inst.config.load(Ordering::Acquire);
     let ports = P::LAYOUTS[cfg.min(P::LAYOUTS.len() - 1)];
@@ -163,7 +177,17 @@ fn process_block<P: Vst3Export>(inst: &Instance<P>, process: &Process<'_>) -> Tr
         return K_RESULT_OK;
     }
     let max_frames = inst.shared.max_frames() as usize;
-    if max_frames > 0 && frames > max_frames {
+    // Before `setupProcessing` there is no declared maximum and nothing is
+    // prepared: the block is silenced (the host's own `frames`, which it
+    // owns) and the plugin never runs.
+    if max_frames == 0 {
+        inst.diagnostics.faults.record(ProcessFault::Unprepared, 1);
+        // SAFETY: the host's output channels are writable for `frames`.
+        unsafe { stave_core::runtime::zero_tail(output_ptrs, 0, frames) };
+        process.mark_output_silent();
+        return K_RESULT_OK;
+    }
+    if frames > max_frames {
         inst.diagnostics
             .faults
             .record(ProcessFault::BlockTooLong, 1);
