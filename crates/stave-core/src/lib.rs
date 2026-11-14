@@ -37,7 +37,7 @@ pub use controller::{Controller, GestureSink, PluginController};
 pub use cost_taps::{CostTapIds, CostTaps};
 pub use environment::Environment;
 pub use event::{Event, EventCursor, EventKind, NoteEvent, NoteKind};
-pub use info::{Aux, Channels, Feature, Info, Layout};
+pub use info::{AuCodes, Aux, Channels, Feature, Info, Layout};
 pub use params::ParamId;
 pub use preset::Preset;
 pub use process::{Block, ParamBlock, ParamChange, ParamChangeKind, Transport};

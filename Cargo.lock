@@ -2980,6 +2980,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "stave"
 version = "0.5.0"
 dependencies = [
+ "stave-au",
  "stave-clap",
  "stave-core",
  "stave-dsp",
@@ -2988,6 +2989,20 @@ dependencies = [
  "stave-standalone",
  "stave-vst3",
 ]
+
+[[package]]
+name = "stave-au"
+version = "0.5.0"
+dependencies = [
+ "stave-au-sys",
+ "stave-core",
+ "stave-face",
+ "stave-ui-cocoa",
+]
+
+[[package]]
+name = "stave-au-sys"
+version = "0.5.0"
 
 [[package]]
 name = "stave-bench"
@@ -3103,10 +3118,12 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "stave-au-sys",
  "stave-core",
  "stave-dsp",
  "stave-measure",
  "stave-model",
+ "stave-pluck",
  "stave-telemetry",
  "stave-tilt-vst3",
  "stave-vst3-sys",
@@ -3159,6 +3176,14 @@ dependencies = [
  "stave-ui",
  "stave-vst3-sys",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "stave-pluck"
+version = "0.5.0"
+dependencies = [
+ "stave",
+ "stave-test",
 ]
 
 [[package]]

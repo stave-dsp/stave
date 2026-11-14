@@ -25,6 +25,7 @@ impl Erased for Silent {
         url: "",
         description: "diagnostics fixture",
         features: &[],
+        au: None,
     };
 
     fn new(_telemetry: &Telemetry) -> Self {

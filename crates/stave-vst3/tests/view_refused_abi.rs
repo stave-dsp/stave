@@ -40,6 +40,7 @@ mod macos {
             url: "",
             description: "IPlugView refusal fixture",
             features: &[],
+            au: None,
         };
         fn new(_telemetry: &Telemetry) -> Self {
             Fixture {

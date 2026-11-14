@@ -4,7 +4,7 @@
 # ctypes) and each symbol resolved:
 #
 #   all       GetPluginFactory, clap_entry
-#   macOS     bundleEntry, bundleExit
+#   macOS     bundleEntry, bundleExit, StaveAUFactory (the Audio Unit)
 #   Linux     ModuleEntry, ModuleExit
 #   Windows   InitDll, ExitDll
 #
@@ -15,7 +15,7 @@ PROFILE="${1:-release}"
 PY=$(command -v python3 || command -v python) || { echo "python not found" >&2; exit 2; }
 
 case "$STAVE_OS" in
-  macos) symbols="GetPluginFactory clap_entry bundleEntry bundleExit" ;;
+  macos) symbols="GetPluginFactory clap_entry bundleEntry bundleExit StaveAUFactory" ;;
   linux) symbols="GetPluginFactory clap_entry ModuleEntry ModuleExit" ;;
   windows) symbols="GetPluginFactory clap_entry InitDll ExitDll" ;;
 esac

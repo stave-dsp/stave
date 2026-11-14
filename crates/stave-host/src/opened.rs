@@ -1,5 +1,5 @@
-//! What a host tool opens: a VST3 bundle, an Audio Unit (`au:<name>` or
-//! a `.component` path, macOS) or a catalog stage (`stage:<name>`),
+//! What a host tool opens: a VST3 bundle, an Audio Unit (`au:<name>`, or
+//! a `.component` path — that bundle, registered in-process — macOS) or a catalog stage (`stage:<name>`),
 //! behind one type so every tool accepts all three.
 
 use std::path::{Path, PathBuf};
@@ -50,6 +50,10 @@ pub enum Opened {
 
 impl Opened {
     pub fn open(path: &Path, config: HostConfig) -> Result<Self, OpenError> {
+        #[cfg(target_os = "macos")]
+        if path.extension().is_some_and(|e| e == "component") && path.join("Contents/Info.plist").is_file() {
+            return open_au_bundle(path, config);
+        }
         if let Some(query) = au_query(path) {
             return open_au(&query, config);
         }
@@ -114,6 +118,18 @@ pub fn au_query(path: &Path) -> Option<String> {
 #[cfg(target_os = "macos")]
 fn open_au(query: &str, config: HostConfig) -> Result<Opened, OpenError> {
     crate::au::AuInstance::open(query, config)
+        .map(|a| Opened::AudioUnit(Box::new(a)))
+        .map_err(|source| OpenError::AudioUnit {
+            query: query.to_string(),
+            source,
+        })
+}
+
+/// A `.component` bundle on disk: that bundle, registered in-process.
+#[cfg(target_os = "macos")]
+fn open_au_bundle(path: &Path, config: HostConfig) -> Result<Opened, OpenError> {
+    let query = path.display().to_string();
+    crate::au::AuInstance::open_bundle(path, config)
         .map(|a| Opened::AudioUnit(Box::new(a)))
         .map_err(|source| OpenError::AudioUnit {
             query: query.to_string(),

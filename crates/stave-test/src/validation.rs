@@ -1,6 +1,7 @@
 //! Every plugin's price of admission: stave-host's validation suite, run
 //! through the plugin's own VST3 entry points, so the ABI is under test
-//! too.
+//! too — and on macOS through its Audio Unit as well
+//! (`assert_au_passes`).
 //!
 //! [`plugin_checks!`](macro@crate::plugin_checks) mounts it as one test
 //! per check ([`assert_check_passes`]), and the per-param checks (sweep,
@@ -40,6 +41,24 @@ fn fresh(entry: EntryPoints) -> impl FnMut() -> Result<Box<dyn stave_host::insta
             .map(|p| Box::new(p) as _)
             .map_err(OpenError::Linked)
     }
+}
+
+/// Run [`Suite::default`] on fresh instances of the linked plugin's Audio
+/// Unit: its factory registered with AudioToolbox under `codes` and
+/// driven through AudioToolbox, as a DAW drives it. Once per test binary
+/// (the registration is the process's).
+#[cfg(target_os = "macos")]
+pub fn assert_au_passes(codes: [[u8; 4]; 3], name: &str, factory: stave_host::au::AudioComponentFactoryFunction) {
+    use stave_host::au::{AuInstance, Component};
+    static COMPONENT: std::sync::OnceLock<Component> = std::sync::OnceLock::new();
+    let component = COMPONENT.get_or_init(|| Component::linked(codes, name, factory));
+    let mut fresh = || {
+        AuInstance::open_component(component.clone(), HostConfig::default())
+            .map(|a| Box::new(a) as Box<dyn stave_host::instance::Instance>)
+            .map_err(|source| OpenError::AudioUnit { query: name.to_string(), source })
+    };
+    let report = Suite::default().run(&mut fresh, |_| {});
+    assert_no_failures(&report.checks);
 }
 
 fn assert_no_failures(checks: &[CheckResult]) {

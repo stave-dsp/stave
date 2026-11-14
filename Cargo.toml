@@ -7,6 +7,8 @@
 resolver = "3"
 members = [
     "crates/stave",
+    "crates/stave-au",
+    "crates/stave-au-sys",
     "crates/stave-clap",
     "crates/stave-clap-sys",
     "crates/stave-core",
@@ -38,6 +40,7 @@ members = [
     "tools/storybook",
 
     "examples/tilt",
+    "examples/pluck",
 ]
 
 [workspace.package]
@@ -78,6 +81,8 @@ stave-font = { path = "crates/stave-font" }
 stave-macros = { path = "crates/stave-macros" }
 stave-core = { path = "crates/stave-core" }
 stave-clap = { path = "crates/stave-clap" }
+stave-au = { path = "crates/stave-au" }
+stave-au-sys = { path = "crates/stave-au-sys" }
 stave-vst3 = { path = "crates/stave-vst3" }
 stave-vst3-sys = { path = "crates/stave-vst3-sys" }
 stave-clap-sys = { path = "crates/stave-clap-sys" }

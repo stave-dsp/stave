@@ -1,0 +1,21 @@
+[package]
+name = "stave-pluck"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Stave Pluck — a plucked-string instrument: the worked example of an instrument."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+stave.workspace = true
+
+[dev-dependencies]
+stave-test = { path = "../../crates/stave-test" }
+
+[lints]
+workspace = true

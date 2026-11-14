@@ -29,6 +29,7 @@ impl Erased for Half {
         url: "",
         description: "host-ingress refusal fixture",
         features: &[],
+        au: None,
     };
 
     fn new(_telemetry: &Telemetry) -> Self {

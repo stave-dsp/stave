@@ -71,6 +71,7 @@ impl Erased for SlowSave {
         url: "",
         description: "state-save race fixture",
         features: &[],
+        au: None,
     };
 
     fn new(_telemetry: &Telemetry) -> Self {

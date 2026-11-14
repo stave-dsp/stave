@@ -48,6 +48,8 @@ pub mod howto {
 
     #[doc = include_str!("howto/host-tools.md")]
     pub mod host_tools {}
+    #[doc = include_str!("howto/formats.md")]
+    pub mod formats {}
     #[doc = include_str!("howto/project-layout.md")]
     pub mod project_layout {}
     #[doc = include_str!("howto/performance.md")]

@@ -36,6 +36,7 @@ impl Erased for Fixture {
         url: "",
         description: "clap.gui fixture",
         features: &[],
+        au: None,
     };
     fn new(_telemetry: &Telemetry) -> Self {
         Fixture { params: Arc::new(OneKnob { drive: FloatParam::new(ParamId(1), "drive", Range::linear(0.0, 1.0)) }) }

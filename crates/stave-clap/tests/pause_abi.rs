@@ -34,6 +34,7 @@ impl Erased for Loud {
         url: "",
         description: "breakpoint pause fixture",
         features: &[],
+        au: None,
     };
 
     fn new(telemetry: &Telemetry) -> Self {

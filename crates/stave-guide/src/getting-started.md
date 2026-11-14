@@ -1,8 +1,8 @@
 # Getting started
 
 From a fresh clone to Stave Tilt, the framework's worked example, loaded
-in a DAW: build it, bundle it as a VST3 and a CLAP plugin, validate both
-bundles, install them where hosts look, and open the plugin in Stave's
+in a DAW: build it, bundle it as a VST3 and a CLAP plugin (and on macOS
+an Audio Unit), validate the bundles, install them where hosts look, and open the plugin in Stave's
 own host. Then a tour of the one file that is the whole plugin.
 
 ## What you need
@@ -17,7 +17,8 @@ own host. Then a tour of the one file that is the whole plugin.
 - **Optionally, the formats' own validators.** `scripts/install.sh` runs
   Steinberg's VST3 validator when it finds one (`$VALIDATOR`, or a
   VST3 SDK build under `target/vst3sdk`) and `clap-validator` when it is
-  on your `PATH`, and says so when it skips either.
+  on your `PATH`, and says so when it skips either; on macOS it always
+  runs Apple's `auval` on the Audio Unit.
 
 ## Build, bundle, validate, install
 
@@ -40,8 +41,10 @@ installed:
    same shape; on Linux the VST3 holds `Contents/<arch>-linux/StaveTilt.so`
    and the `.clap` is the shared library itself; on Windows the VST3
    holds `Contents/<arch>-win/StaveTilt.vst3` and the `.clap` is the DLL.
+   On macOS there is also `build/StaveTilt.component`, the Audio Unit
+   (see [Plugin formats](crate::howto::formats)).
    The bundle identifier is `com.ryanbahan.stave.tilt.vst3` (and
-   `.clap`); set `STAVE_BUNDLE_VENDOR` to use your own prefix and
+   `.clap`, `.component`); set `STAVE_BUNDLE_VENDOR` to use your own prefix and
    `STAVE_BUNDLE_VERSION` for the bundle version (default `0.0.1`).
 3. **Validate.** Steinberg's validator must report its result and
    `clap-validator` must report `0 failed`, or the script stops before
@@ -51,19 +54,20 @@ installed:
    that has the old bundle mapped would otherwise see its file change
    underneath it. The folders are:
 
-   | OS | VST3 | CLAP |
-   |---|---|---|
-   | macOS | `~/Library/Audio/Plug-Ins/VST3` | `~/Library/Audio/Plug-Ins/CLAP` |
-   | Linux | `~/.vst3` | `~/.clap` |
-   | Windows | `%LOCALAPPDATA%\Programs\Common\VST3` | `%LOCALAPPDATA%\Programs\Common\CLAP` |
+   | OS | VST3 | CLAP | Audio Unit |
+   |---|---|---|---|
+   | macOS | `~/Library/Audio/Plug-Ins/VST3` | `~/Library/Audio/Plug-Ins/CLAP` | `~/Library/Audio/Plug-Ins/Components` |
+   | Linux | `~/.vst3` | `~/.clap` | — |
+   | Windows | `%LOCALAPPDATA%\Programs\Common\VST3` | `%LOCALAPPDATA%\Programs\Common\CLAP` | — |
 
-The steps also exist on their own. `scripts/bundle-vst3.sh` and
-`scripts/bundle-clap.sh` (`<crate> [release|debug] [out-dir]`) bundle
+The steps also exist on their own. `scripts/bundle-vst3.sh`,
+`scripts/bundle-clap.sh` and `scripts/bundle-au.sh` (`<crate>
+[release|debug] [out-dir]`) bundle
 an already-built library without building it; `scripts/bundle-all.sh
 [release|debug]` builds, bundles and installs every plugin under
-`examples/`; and `scripts/validate-formats.sh [vst3|clap|all]
+`examples/`; and `scripts/validate-formats.sh [vst3|clap|au|all]
 [out-dir]` builds every plugin in release, bundles it into
-`target/validate` and runs both validators, the way CI does.
+`target/validate` and runs the validators, the way CI does.
 
 ## Open it
 

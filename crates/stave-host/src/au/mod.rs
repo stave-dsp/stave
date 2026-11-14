@@ -6,7 +6,9 @@
 //! measure a VST3 or a stave stage.
 //!
 //! A tool opens an Audio Unit as `au:<name>` (`au:<manufacturer>:<name>`
-//! when two vendors share a name) or by its `.component` bundle path:
+//! when two vendors share a name) or by its `.component` bundle path —
+//! that bundle itself, registered in this process from its own binary
+//! (installed or not, whatever else is installed):
 //!
 //! ```text
 //! au:AUBandpass
@@ -14,27 +16,31 @@
 //! /Library/Audio/Plug-Ins/Components/Some Effect.component
 //! ```
 //!
-//! What it is for: a third-party plugin as a *benchmark* and a listening
-//! contender. It is not a reference — circuits are held to ngspice and
+//! What it is for: a stave plugin's own Audio Unit, held to the same
+//! validation as its VST3 (an instrument is driven by notes, through
+//! `MusicDeviceMIDIEvent`; state goes through `ClassInfo`); and a
+//! third-party plugin as a *benchmark* and a listening contender. It is not a reference — circuits are held to ngspice and
 //! datasheets — and its output is the vendor's, kept out of the
 //! repository. A plugin that needs a licence or DSP hardware it cannot
 //! find may open and output silence or its input: the host reports what it got and
 //! does nothing to get around it.
 //!
 //! ```text
-//! ffi.rs       AudioToolbox / CoreFoundation declarations
-//! mod.rs       finding components; AuInstance: open, process, params
+//! ffi.rs       the ABI (stave-au-sys) and host helpers
+//! mod.rs       finding components; AuInstance: open, process, params, state
+//! bundle.rs    a .component bundle registered in-process
 //! ```
 
+mod bundle;
 mod ffi;
 
 use std::ffi::c_void;
 use std::ptr;
 
-use stave_core::Event;
+use stave_core::{Event, EventKind, NoteKind};
 
 use crate::config::HostConfig;
-use crate::instance::{Instance, Layout, Tail};
+use crate::instance::{Instance, Layout, StateError, Tail};
 use crate::param::{Param, ParamError, ParamFlags, ParamId};
 
 use ffi::*;
@@ -42,7 +48,11 @@ use ffi::*;
 /// What `au:` names.
 pub const PREFIX: &str = "au:";
 
-/// An installed Audio Unit effect.
+/// An Audio Unit's factory function (what a linked stave plugin exports
+/// as `StaveAUFactory`).
+pub use ffi::AudioComponentFactoryFunction;
+
+/// An installed (or in-process registered) Audio Unit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Component {
     pub manufacturer: String,
@@ -54,6 +64,53 @@ pub struct Component {
 }
 
 impl Component {
+    fn new(c: AudioComponent, desc: AudioComponentDescription, full: &str) -> Self {
+        let (manufacturer, name) = full.split_once(": ").unwrap_or(("", full));
+        Component {
+            manufacturer: manufacturer.to_string(),
+            name: name.to_string(),
+            codes: [code(desc.componentType), code(desc.componentSubType), code(desc.componentManufacturer)],
+            desc,
+            handle: c as usize,
+        }
+    }
+
+    /// Register `factory` in this process as the component `desc` names
+    /// (`AudioComponentRegister`): a linked plugin, or a bundle's binary,
+    /// opened without installing it.
+    pub fn register(desc: AudioComponentDescription, name: &str, version: u32, factory: AudioComponentFactoryFunction) -> Self {
+        let cf = cf_string(name);
+        // SAFETY: a complete description, a CFString we release after the
+        // call (AudioToolbox copies it), and a factory function of the
+        // type the call takes, alive for the process.
+        let c = unsafe {
+            let c = AudioComponentRegister(&desc, cf, version, factory);
+            if !cf.is_null() {
+                CFRelease(cf);
+            }
+            c
+        };
+        Self::new(c, desc, name)
+    }
+
+    /// A plugin linked into this process, registered under its codes
+    /// (`[type, subtype, manufacturer]`, as `stave::identity` gives them).
+    pub fn linked(codes: [[u8; 4]; 3], name: &str, factory: AudioComponentFactoryFunction) -> Self {
+        let desc = AudioComponentDescription {
+            componentType: fourcc(&codes[0]),
+            componentSubType: fourcc(&codes[1]),
+            componentManufacturer: fourcc(&codes[2]),
+            componentFlags: 0,
+            componentFlagsMask: 0,
+        };
+        Self::register(desc, name, 0, factory)
+    }
+
+    /// An instrument: driven by notes, no audio input.
+    pub fn is_instrument(&self) -> bool {
+        self.desc.componentType == kAudioUnitType_MusicDevice
+    }
+
     /// "Manufacturer: Name".
     pub fn full_name(&self) -> String {
         format!("{}: {}", self.manufacturer, self.name)
@@ -71,6 +128,8 @@ pub enum AuError {
     Status { call: &'static str, status: i32 },
     #[error("the Audio Unit accepts neither mono nor stereo float audio at {rate} Hz")]
     NoFormat { rate: f64 },
+    #[error("{path}: {reason}")]
+    Bundle { path: String, reason: String },
 }
 
 fn near(similar: &[String]) -> String {
@@ -103,10 +162,11 @@ fn check(call: &'static str, status: OSStatus) -> Result<(), AuError> {
     }
 }
 
-/// Every installed effect Audio Unit (`aufx`, `aumf`), sorted by name.
+/// Every installed effect or instrument Audio Unit (`aufx`, `aumf`,
+/// `aumu`), sorted by name.
 pub fn components() -> Vec<Component> {
     let mut out = Vec::new();
-    for kind in [kAudioUnitType_Effect, kAudioUnitType_MusicEffect] {
+    for kind in [kAudioUnitType_Effect, kAudioUnitType_MusicEffect, kAudioUnitType_MusicDevice] {
         let wanted = AudioComponentDescription {
             componentType: kind,
             ..Default::default()
@@ -133,14 +193,7 @@ pub fn components() -> Vec<Component> {
                 }
                 s
             };
-            let (manufacturer, name) = full.split_once(": ").unwrap_or(("", &full));
-            out.push(Component {
-                manufacturer: manufacturer.to_string(),
-                name: name.to_string(),
-                codes: [code(desc.componentType), code(desc.componentSubType), code(desc.componentManufacturer)],
-                desc,
-                handle: c as usize,
-            });
+            out.push(Component::new(c, desc, &full));
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name).then(a.manufacturer.cmp(&b.manufacturer)));
@@ -313,8 +366,9 @@ impl AuInstance {
             sample_time: 0.0,
             infos: Vec::new(),
         };
-        let channels = this.configure_format(rate)?;
-        this.layout.inputs = channels;
+        let instrument = this.component.is_instrument();
+        let channels = this.configure_format(rate, instrument)?;
+        this.layout.inputs = if instrument { 0 } else { channels };
         this.layout.outputs = channels;
         this.feed.channels = vec![vec![0.0; max_block]; channels];
         this.out = vec![vec![0.0; max_block]; channels];
@@ -323,11 +377,13 @@ impl AuInstance {
         let offline: u32 = 1;
         // Offline processing is a hint; a unit that has no such mode is fine.
         let _ = this.set(kAudioUnitProperty_OfflineRender, kAudioUnitScope_Global, &offline, "OfflineRender");
-        let callback = AURenderCallbackStruct {
-            inputProc: feed,
-            inputProcRefCon: (&mut *this.feed as *mut Feed).cast(),
-        };
-        this.set(kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, &callback, "SetRenderCallback")?;
+        if !instrument {
+            let callback = AURenderCallbackStruct {
+                inputProc: Some(feed),
+                inputProcRefCon: (&mut *this.feed as *mut Feed).cast(),
+            };
+            this.set(kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, &callback, "SetRenderCallback")?;
+        }
         // SAFETY: a live, configured unit.
         check("AudioUnitInitialize", unsafe { AudioUnitInitialize(this.unit) })?;
         this.infos = this.read_params();
@@ -346,9 +402,10 @@ impl AuInstance {
     }
 
     /// Mono if the unit takes it, else stereo: the channel count set on
-    /// both buses.
-    fn configure_format(&mut self, rate: f64) -> Result<usize, AuError> {
-        for channels in [1u32, 2] {
+    /// both buses (an instrument: stereo if it takes it, on its output).
+    fn configure_format(&mut self, rate: f64, instrument: bool) -> Result<usize, AuError> {
+        let order: [u32; 2] = if instrument { [2, 1] } else { [1, 2] };
+        for channels in order {
             let f = AudioStreamBasicDescription {
                 mSampleRate: rate,
                 mFormatID: kAudioFormatLinearPCM,
@@ -360,7 +417,7 @@ impl AuInstance {
                 mBitsPerChannel: 32,
                 mReserved: 0,
             };
-            let ok = self.set(kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, &f, "StreamFormat").is_ok()
+            let ok = (instrument || self.set(kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, &f, "StreamFormat").is_ok())
                 && self.set(kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, &f, "StreamFormat").is_ok();
             if ok {
                 return Ok(channels as usize);
@@ -410,7 +467,7 @@ impl AuInstance {
     fn param_info(&self, id: u32) -> Option<Param> {
         // SAFETY: zeroed is a valid AudioUnitParameterInfo (plain data,
         // null CF references).
-        let mut info: AudioUnitParameterInfo = unsafe { std::mem::zeroed() };
+        let mut info: AudioUnitParameterInfo = unsafe { std::mem::zeroed::<AudioUnitParameterInfo>() };
         let mut size = std::mem::size_of::<AudioUnitParameterInfo>() as u32;
         // SAFETY: `info` is the property's type and size; the CF strings
         // it returns are read, then released when the unit says so.
@@ -471,11 +528,75 @@ impl AuInstance {
         }
     }
 
+    /// Where the unit's Cocoa view comes from (`kAudioUnitProperty_CocoaUI`):
+    /// the bundle path and the view-factory class name, or `None` for a
+    /// unit without one.
+    pub fn cocoa_view(&self) -> Option<(String, String)> {
+        let mut size = 0u32;
+        // SAFETY: a size query on a live unit.
+        let s = unsafe { AudioUnitGetPropertyInfo(self.unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, &mut size, ptr::null_mut()) };
+        if s != 0 || (size as usize) < std::mem::size_of::<AudioUnitCocoaViewInfo>() {
+            return None;
+        }
+        let mut info = AudioUnitCocoaViewInfo { mCocoaAUViewBundleLocation: ptr::null(), mCocoaAUViewClass: [ptr::null()] };
+        let mut size = std::mem::size_of::<AudioUnitCocoaViewInfo>() as u32;
+        // SAFETY: the property's type and size; the URL and class name it
+        // returns are ours to release.
+        unsafe {
+            if AudioUnitGetProperty(self.unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, (&mut info as *mut AudioUnitCocoaViewInfo).cast(), &mut size) != 0 {
+                return None;
+            }
+            let url = info.mCocoaAUViewBundleLocation;
+            let path = if url.is_null() { String::new() } else {
+                let p = CFURLCopyFileSystemPath(url, 0);
+                let s = string(p);
+                if !p.is_null() {
+                    CFRelease(p);
+                }
+                CFRelease(url);
+                s
+            };
+            let class = string(info.mCocoaAUViewClass[0]);
+            if !info.mCocoaAUViewClass[0].is_null() {
+                CFRelease(info.mCocoaAUViewClass[0]);
+            }
+            Some((path, class))
+        }
+    }
+
     fn value(&self, id: u32) -> f64 {
         let mut v = 0.0f32;
         // SAFETY: an f32 out-pointer.
         unsafe { AudioUnitGetParameter(self.unit, id, kAudioUnitScope_Global, 0, &mut v) };
         f64::from(v)
+    }
+
+    /// The block's notes to an instrument or music effect, each at its
+    /// frame (MIDI 1.0: note on and off; a choke is an off).
+    fn send_notes(&mut self, events: &[Event], frames: usize) {
+        if !(self.component.is_instrument() || self.component.desc.componentType == kAudioUnitType_MusicEffect) {
+            return;
+        }
+        for e in events {
+            let EventKind::Note(n) = e.kind;
+            let (status, velocity) = match n.kind {
+                NoteKind::On => (0x90, (n.velocity * 127.0).round().clamp(1.0, 127.0) as u32),
+                NoteKind::Off | NoteKind::Choke => (0x80, (n.velocity * 127.0).round().clamp(0.0, 127.0) as u32),
+            };
+            if !(0..128).contains(&n.key) {
+                continue;
+            }
+            let channel = n.channel.clamp(0, 15) as u32;
+            let offset = e.frame.min(frames.saturating_sub(1)) as u32;
+            // SAFETY: a live, initialised unit; plain MIDI bytes.
+            unsafe { MusicDeviceMIDIEvent(self.unit, status | channel, n.key as u32, velocity, offset) };
+        }
+    }
+
+    /// Open the `.component` bundle at `path`, registered in this
+    /// process from its own binary.
+    pub fn open_bundle(path: &std::path::Path, config: HostConfig) -> Result<Self, AuError> {
+        Self::open_component(bundle::register(path)?, config)
     }
 }
 
@@ -507,7 +628,7 @@ impl Instance for AuInstance {
         }
     }
 
-    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], _events: &[Event]) {
+    fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[Event]) {
         let n = outputs.first().map_or(0, |o| o.len()).min(self.layout.max_block);
         if n == 0 {
             return;
@@ -519,7 +640,7 @@ impl Instance for AuInstance {
             }
         }
         self.feed.frames = n;
-        let mut list = AudioBufferList {
+        let mut list = BufferList {
             mNumberBuffers: self.out.len() as u32,
             mBuffers: [AuBuffer {
                 mNumberChannels: 1,
@@ -528,6 +649,7 @@ impl Instance for AuInstance {
             }; MAX_CHANNELS],
         };
         for (b, o) in list.mBuffers.iter_mut().zip(&mut self.out) {
+            // (an instrument's buffer list is the same shape: outputs only)
             b.mDataByteSize = (n * 4) as u32;
             b.mData = o.as_mut_ptr().cast();
         }
@@ -537,9 +659,10 @@ impl Instance for AuInstance {
             ..Default::default()
         };
         let mut flags = 0u32;
+        self.send_notes(events, n);
         // SAFETY: a live, initialised unit; `list` points at `n` floats
         // per channel; the feed the callback reads holds `n` frames.
-        let status = unsafe { AudioUnitRender(self.unit, &mut flags, &time, 0, n as u32, &mut list) };
+        let status = unsafe { AudioUnitRender(self.unit, &mut flags, &time, 0, n as u32, list.as_raw()) };
         self.sample_time += n as f64;
         for (c, out) in outputs.iter_mut().enumerate() {
             let b = &list.mBuffers[c.min(self.out.len() - 1)];
@@ -567,6 +690,54 @@ impl Instance for AuInstance {
                 }
             })
             .collect()
+    }
+
+    /// The unit's `ClassInfo`, as a binary property list.
+    fn save_state(&mut self) -> Result<Vec<u8>, StateError> {
+        let mut list: CFPropertyListRef = ptr::null();
+        let mut size = std::mem::size_of::<CFPropertyListRef>() as u32;
+        // SAFETY: the property is a property list we own once returned.
+        let status = unsafe {
+            AudioUnitGetProperty(self.unit, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, (&mut list as *mut CFPropertyListRef).cast(), &mut size)
+        };
+        if status != 0 {
+            return Err(StateError::Refused { call: "ClassInfo", result: status });
+        }
+        // SAFETY: the list the unit returned, released once copied.
+        let bytes = unsafe {
+            let bytes = plist_bytes(list);
+            if !list.is_null() {
+                CFRelease(list);
+            }
+            bytes
+        };
+        bytes.ok_or(StateError::Refused { call: "ClassInfo", result: status })
+    }
+
+    fn load_state(&mut self, bytes: &[u8]) -> Result<(), StateError> {
+        let list = plist_from(bytes);
+        if list.is_null() {
+            return Err(StateError::Unreadable { bytes: bytes.len() });
+        }
+        // SAFETY: the property takes a pointer to the property list,
+        // which the unit reads during the call; released after.
+        let status = unsafe {
+            let s = AudioUnitSetProperty(
+                self.unit,
+                kAudioUnitProperty_ClassInfo,
+                kAudioUnitScope_Global,
+                0,
+                (&list as *const CFPropertyListRef).cast(),
+                std::mem::size_of::<CFPropertyListRef>() as u32,
+            );
+            CFRelease(list);
+            s
+        };
+        if status == 0 {
+            Ok(())
+        } else {
+            Err(StateError::Refused { call: "ClassInfo", result: status })
+        }
     }
 
     fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {

@@ -36,6 +36,18 @@ extern "C" {
     fn class_addIvar(class: Obj, name: *const c_char, size: usize, alignment: u8, types: *const c_char) -> ObjcBool;
     fn class_getInstanceVariable(class: Obj, name: *const c_char) -> Option<NonNull<c_void>>;
     fn ivar_getOffset(ivar: NonNull<c_void>) -> isize;
+    fn objc_getProtocol(name: *const c_char) -> Option<NonNull<c_void>>;
+    fn objc_allocateProtocol(name: *const c_char) -> Option<NonNull<c_void>>;
+    fn protocol_addMethodDescription(
+        protocol: NonNull<c_void>,
+        name: Sel,
+        types: *const c_char,
+        required: ObjcBool,
+        instance: ObjcBool,
+    );
+    fn objc_registerProtocol(protocol: NonNull<c_void>);
+    fn class_addProtocol(class: Obj, protocol: NonNull<c_void>) -> ObjcBool;
+    fn objc_msgSendSuper();
     fn pthread_main_np() -> i32;
 }
 
@@ -364,6 +376,9 @@ const BOOL_METHODS: [&CStr; 2] = [c"B@:", c"B@:@"];
 #[cfg(not(target_arch = "aarch64"))]
 const BOOL_METHODS: [&CStr; 2] = [c"c@:", c"c@:@"];
 
+method!(extern "C" fn(Obj, Sel), c"v@:");
+method!(extern "C" fn(Obj, Sel) -> u32, c"I@:");
+method!(extern "C" fn(Obj, Sel, *mut c_void, CGSize) -> Option<Obj>, c"@@:^v{CGSize=dd}");
 method!(extern "C" fn(Obj, Sel, Option<Obj>), c"v@:@");
 method!(extern "C" fn(Obj, Sel, CGRect), c"v@:{CGRect={CGPoint=dd}{CGSize=dd}}");
 method!(extern "C" fn(Obj, Sel) -> ObjcBool, BOOL_METHODS[0]);
@@ -388,6 +403,50 @@ impl ClassDecl {
         // signature `ENCODING` spells (`Method`'s contract).
         let added = unsafe { class_addMethod(self.0, sel, imp.imp(), M::ENCODING.as_ptr()) };
         assert!(added != NO, "a method added once");
+    }
+}
+
+impl ClassDecl {
+    /// Conform to the protocol `name`, declaring it (with `methods`, each
+    /// a required instance method and its encoding) when no image loaded
+    /// so far has.
+    pub(crate) fn protocol(&mut self, name: &CStr, methods: &[(Sel, &CStr)]) {
+        // SAFETY: the names and encodings are nul-terminated; a protocol
+        // allocated here is declared and registered before use.
+        let protocol = unsafe {
+            objc_getProtocol(name.as_ptr()).unwrap_or_else(|| {
+                let p = objc_allocateProtocol(name.as_ptr()).expect("a protocol no image declares can be allocated");
+                for &(sel, types) in methods {
+                    protocol_addMethodDescription(p, sel, types.as_ptr(), YES, YES);
+                }
+                objc_registerProtocol(p);
+                p
+            })
+        };
+        // SAFETY: the class is not yet registered; `protocol` is registered.
+        unsafe { class_addProtocol(self.0, protocol) };
+    }
+}
+
+/// `[super dealloc]` for an instance of a class whose superclass is
+/// `superclass`.
+///
+/// # Safety
+/// `obj` is an instance being deallocated, of a direct subclass of
+/// `superclass`; nothing uses it afterwards.
+pub(crate) unsafe fn super_dealloc(obj: Obj, superclass: Obj) {
+    /// `struct objc_super`.
+    #[repr(C)]
+    struct Super {
+        receiver: Obj,
+        class: Obj,
+    }
+    let sup = Super { receiver: obj, class: superclass };
+    // SAFETY: `objc_msgSendSuper` takes the super struct in the receiver's
+    // place; `dealloc` takes no arguments and returns nothing.
+    unsafe {
+        let imp: unsafe extern "C" fn(*const Super, Sel) = core::mem::transmute(objc_msgSendSuper as unsafe extern "C" fn());
+        imp(&sup, sel!(c"dealloc"));
     }
 }
 
