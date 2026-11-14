@@ -3,7 +3,8 @@
 * the grid at 0 V through the 68k stopper, 300 V through 100k, and the
 * cathode self-biased by RK bypassed by CK. RK is the value the tabulated
 * `Triode` takes under `Bias::Cathode` (its design bias -1.5 V over its
-* idle plate current, 1579.40 ohm); CK 22u. The memory: plate and grid
+* idle cathode current, the plate's load line from 300 V less the
+* cathode: 1595.95 ohm, so the deck rests at 1.5 V); CK 22u. The memory: plate and grid
 * current rectified into the cathode RC move the bias under drive and it
 * recovers after. Driven 2 V at 1 kHz. Output: the plate.
 .param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
@@ -12,7 +13,7 @@ V1 in 0 SIN(0 2 1k)
 RS in g 68k
 VB b 0 300
 RA b p 100k
-RK k 0 1579.40
+RK k 0 1595.95
 CK k 0 22u
 BG g k I = {gg*pow(ln(1+exp(cg*V(g,k)))/cg, xi) + ig0}
 BP p k I = {2*pow((V(p,k)/kp)*ln(1+exp(kp*(1/mu+V(g,k)/sqrt(kvb+V(p,k)*V(p,k))))), ex)/kg1}

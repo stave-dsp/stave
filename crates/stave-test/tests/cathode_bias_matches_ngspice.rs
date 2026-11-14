@@ -138,8 +138,8 @@ fn judge(name: &str, label: &str, run: &[f64], budget: f64, tau: f64) -> Outcome
 /// The decks on `Circuit<Dk>`: the bias trajectory at 4× and 8×, its
 /// error falling with the step, and the recovery time. Budgets: the 8×
 /// error three times over, rounded up to 1-2-5 (measured 4× → 8×: the
-/// triode's cathode 7.11e-8 → 1.84e-8, recovery 1.8e-9 relative; the
-/// pair's 1.61e-7 → 3.30e-8, 1.7e-8; the coupling cap's grid side
+/// triode's cathode 7.07e-8 → 1.83e-8, recovery 1.6e-9 relative; the
+/// pair's 1.54e-7 → 3.28e-8, 2.1e-8; the coupling cap's grid side
 /// 3.09e-7 → 1.61e-7, 2.5e-9). The blocking deck halves rather than
 /// quarters: its worst points are the grid's conduction onsets on the
 /// burst's first peaks (2.6e-6 → 2.0e-6 V), where ngspice's own 1 µs
@@ -160,13 +160,13 @@ fn bursts_on_circuit_dk_match_ngspice() {
 }
 
 /// The tabulated `Triode` under `Bias::Cathode`: its cathode (`vk0` plus
-/// its drift) against the circuit's. Measured 5.38e-3 normalised RMS (the
-/// worst 8.9 mV, 1.614 V against 1.605 V at the burst's end) and a 1/e
-/// recovery of 17.77 ms against 17.64 (+0.73%): the one-pole cathode on
-/// the fixed-bias table holds the circuit's memory to within a percent.
-/// Its rest is 8 mV hot of the circuit's (1.500 V against 1.492: the
-/// table reads plate volts to ground, the circuit's tube sees them less
-/// the cathode's). Budgets three times over, rounded up.
+/// its drift) against the circuit's. Both rest at 1.500 V (the stage's Rk
+/// from the plate's load line seen from the cathode); measured 8.48e-5
+/// normalised RMS (the worst 0.43 mV, at the burst's end) and a 1/e
+/// recovery of 17.84 ms against 17.75 (+0.53%): the one-pole cathode
+/// holds the circuit's memory to within a percent. Before the bias was
+/// corrected the stage rested 8 mV hot (5.4e-3). Budgets three times
+/// over, rounded up.
 #[test]
 fn triode_cathode_bias_matches_ngspice() {
     let name = "triode_stage_cathode_burst";
@@ -180,13 +180,14 @@ fn triode_cathode_bias_matches_ngspice() {
         t.tick(x as f32);
         rest + t.cathode_shift()
     });
-    judge(name, "Triode, Bias::Cathode, 4x", &run, 2e-2, 5e-2).assert();
+    judge(name, "Triode, Bias::Cathode, 4x", &run, 5e-4, 2e-2).assert();
 }
 
 /// `PushPull` under `Bias::Cathode`: its shared cathode against the
-/// circuit's. Measured 1.07e-2 normalised RMS (the worst 97 mV, 7.98 V
-/// against 7.88 V early in the burst) and a 1/e recovery of 17.01 ms
-/// against 17.05 (−0.23%); its rest 3.500 V against the circuit's 3.458.
+/// circuit's. Both rest at 3.500 V (the pair's Rk from the plates' load
+/// lines seen from the cathode; 3.458 V in the circuit before); measured
+/// 4.58e-3 normalised RMS (the worst 51 mV, 8.82 V against 8.77 V at the
+/// burst's end) and a 1/e recovery of 19.04 ms against 18.93 (+0.58%).
 /// Budgets three times over, rounded up.
 #[test]
 fn push_pull_cathode_bias_matches_ngspice() {
@@ -198,5 +199,5 @@ fn push_pull_cathode_bias_matches_ngspice() {
         p.tick(x as f32);
         3.5 + p.cathode_shift()
     });
-    judge(name, "PushPull, Bias::Cathode, 4x", &run, 5e-2, 1e-2).assert();
+    judge(name, "PushPull, Bias::Cathode, 4x", &run, 2e-2, 2e-2).assert();
 }

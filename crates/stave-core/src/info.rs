@@ -28,6 +28,53 @@ pub struct Info {
     pub description: &'static str,
     /// What kind of plugin this is, for hosts' browsers.
     pub features: &'static [Feature],
+    /// The Audio Unit's manufacturer and subtype codes, FOREVER once
+    /// shipped (hosts key sessions on them). `None` derives them from
+    /// `vendor` and `id`; a plugin that shipped as an Audio Unit before
+    /// pins the codes it shipped with.
+    pub au: Option<AuCodes>,
+}
+
+/// An Audio Unit's identity beside its type (`aufx`, `aumu`, `aumf`,
+/// which the plugin's kind decides): four ASCII characters each. Apple
+/// reserves all-lowercase manufacturer codes, so a manufacturer code
+/// has an uppercase letter.
+///
+/// ```
+/// use stave_core::{AuCodes, Info};
+///
+/// const INFO: Info = Info {
+///     id: "com.example.tilt",
+///     name: "Tilt",
+///     vendor: "Example",
+///     au: Some(AuCodes::new(*b"Exmp", *b"tilt")),
+///     ..Info::EFFECT
+/// };
+/// assert_eq!(INFO.au.unwrap().subtype, *b"tilt");
+/// ```
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AuCodes {
+    pub manufacturer: [u8; 4],
+    pub subtype: [u8; 4],
+}
+
+impl AuCodes {
+    /// The codes, checked at compile time when built in a `const`:
+    /// printable ASCII, and an uppercase letter in the manufacturer.
+    pub const fn new(manufacturer: [u8; 4], subtype: [u8; 4]) -> Self {
+        let mut i = 0;
+        let mut upper = false;
+        while i < 4 {
+            assert!(
+                manufacturer[i].is_ascii_graphic() && subtype[i].is_ascii_graphic(),
+                "an Audio Unit code is four printable ASCII characters"
+            );
+            upper |= manufacturer[i].is_ascii_uppercase();
+            i += 1;
+        }
+        assert!(upper, "Apple reserves all-lowercase manufacturer codes: use an uppercase letter");
+        Self { manufacturer, subtype }
+    }
 }
 
 impl Info {
@@ -40,6 +87,7 @@ impl Info {
         url: "",
         description: "",
         features: &[Feature::AudioEffect],
+        au: None,
     };
 
     /// An instrument (pair it with [`Layout::INSTRUMENT`]).

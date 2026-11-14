@@ -17,7 +17,7 @@ cd "$ROOT"
 BASE="${1:-$(git describe --tags --abbrev=0 --match 'v*' HEAD)}"
 # The tools, the example, the test harness and the guide are not a
 # published API.
-EXCLUDE='^(stave-bench|stave-play|stave-storybook|stave-tilt-vst3|stave-test|stave-guide|stave-docsite)$'
+EXCLUDE='^(stave-bench|stave-cli|stave-fit|stave-tools|stave-play|stave-storybook|stave-tilt-vst3|stave-pluck|stave-test|stave-guide|stave-docsite)$'
 PACKAGES=()
 while read -r name manifest; do
   [[ "$name" =~ $EXCLUDE ]] && continue

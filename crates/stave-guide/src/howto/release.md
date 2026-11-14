@@ -31,8 +31,9 @@ current branch is `main`, the working tree is clean, and the tag
 `scripts/semver-checks.sh [TAG]` runs `cargo-semver-checks` (0.51.0)
 over the workspace with the tag as the baseline revision (by default the
 newest `v*` tag in `HEAD`'s history). The tools, the example, the test
-harness and the guide are not a published API: `stave-bench`,
-`stave-play`, `stave-storybook`, `stave-docsite`, `stave-tilt-vst3`,
+harness and the guide are not a published API: `stave-tools`,
+`stave-cli`, `stave-bench`, `stave-fit`, `stave-play`, `stave-storybook`,
+`stave-docsite`, `stave-tilt-vst3`, `stave-pluck`,
 `stave-test` and `stave-guide` are excluded, and so is every package
 the baseline tag does not have yet (the script names each one it
 skips). Besides the release script, the `semver` job of the `deep`

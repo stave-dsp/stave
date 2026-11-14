@@ -6,15 +6,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Headless plugin bench: describe, measure and validate any VST3 from the command line"
+description = "Deprecated: forwards to `stave bench`, `stave describe`, `stave validate` and `stave response` (tools/stave-cli)"
 publish = false
 
 [dependencies]
-stave-measure.workspace = true
-stave-host.workspace = true
-serde = "1"
-serde_json = "1"
-thiserror.workspace = true
+stave-tools.workspace = true
 
 [lints]
 workspace = true

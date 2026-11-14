@@ -1240,3 +1240,48 @@ fn stable_and_tube_voiced() {
     );
     assert!(h2 / h1 > 0.01, "expected audible 2nd harmonic: {}", h2 / h1);
 }
+
+/// The Hermite table is the solved stage: values to the table's O(h⁴)
+/// between nodes, the tabulated slope the equilibrium's own (against a
+/// central difference of the solve), the cathode current table the
+/// solved plate-plus-grid current — and under `Bias::Cathode` the
+/// circuit with the stage's Rk rests where the stage does: the plate's
+/// load line from B+ to the plate (to ground) carries the tube's current
+/// at its plate-to-cathode volts, and Rk carries it at the design bias.
+#[test]
+fn the_table_is_the_solved_stage() {
+    for bias in [Bias::Fixed, Bias::Cathode { bypass_farads: 22e-6 }] {
+        let mut t = Triode::new();
+        t.set_bias(bias);
+        t.prepare(48_000.0);
+        let mut worst = (0.0f64, 0.0f64, 0.0f64);
+        let mut at = 0.0;
+        for i in 0..2000 {
+            let vg = -6.0 + 7.0 * (f64::from(i) + 0.37) / 2000.0;
+            let solved = t.solved(vg);
+            let (f, slope) = t.curve.f_and_slope_at(vg);
+            let h = 1e-5;
+            let numeric = (t.core_transfer(vg + h) - t.core_transfer(vg - h)) / (2.0 * h);
+            if (f - solved.swing.0).abs() > worst.0 {
+                (worst.0, at) = ((f - solved.swing.0).abs(), vg);
+            }
+            worst.1 = worst.1.max((slope - numeric).abs() / numeric.abs().max(1.0));
+            if let Bias::Cathode { .. } = bias {
+                worst.2 = worst.2.max((t.cathode_amps_at(vg) - solved.cathode_amps.0).abs());
+            }
+        }
+        println!("{bias:?}: table vs solve {:.2e} V (at {at:.3} V), slope {:.2e} rel, cathode current {:.2e} A", worst.0, worst.1, worst.2);
+        assert!(worst.0 < 2e-5, "{bias:?}: table vs solve {:.2e} V", worst.0);
+        assert!(worst.1 < 1e-4, "{bias:?}: slope {:.2e}", worst.1);
+        assert!(worst.2 < 2e-10, "{bias:?}: cathode current {:.2e} A", worst.2);
+    }
+    let mut t = Triode::new();
+    t.set_bias(Bias::Cathode { bypass_farads: 22e-6 });
+    t.prepare(48_000.0);
+    let (vk, plate) = (-t.p.grid_bias, t.operating_point());
+    let vgk = grid_volts_at(&t.p, t.p.grid_bias);
+    let ip = t.plate_current_at(vgk, plate - vk);
+    let ig = GRID.grid_current(vgk).0;
+    assert!(((t.p.supply_v - plate) / t.p.r_plate - ip).abs() < 1e-12, "the load line at rest");
+    assert!((t.cathode_ohms() * (ip + ig) - vk).abs() < 1e-9, "the cathode at rest");
+}

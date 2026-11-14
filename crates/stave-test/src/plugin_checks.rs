@@ -15,7 +15,8 @@
 //! It mounts, as separate tests: stave-host's validation through the
 //! plugin's VST3 entry points (`passes_validation::*`, a test per check
 //! and the per-param checks in parts, so they run side by side — see
-//! [`crate::validation`]); no allocation in `process` while every
+//! [`crate::validation`]), and on macOS through its Audio Unit
+//! (`passes_validation_as_an_audio_unit`); no allocation in `process` while every
 //! parameter moves (debug builds; the file's global allocator is the
 //! guard's, so give the macro a test file of its own); the perf check
 //! against the plugin's `CPU_BUDGET` (release builds); the face's bindings, grabs and interaction laws (if
@@ -90,6 +91,15 @@ macro_rules! plugin_checks {
                     state_roundtrip, channels_linked, channels_split, bypass_honest;
                 parts: param_sweep, params_glide, solver_converges;
             }
+        }
+
+        /// The whole validation suite through the plugin's Audio Unit, driven through AudioToolbox (`stave_test::validation::assert_au_passes`). macOS only.
+        #[test]
+        #[cfg(target_os = "macos")]
+        #[cfg_attr(miri, ignore)]
+        fn passes_validation_as_an_audio_unit() {
+            let id = $crate::__stave::identity::<$krate::$plugin>();
+            $crate::validation::assert_au_passes(id.au, stave_checks_name(), $krate::StaveAUFactory);
         }
 
         /// No allocation in `process` while every parameter moves ([`crate::no_alloc`]). Debug builds only.

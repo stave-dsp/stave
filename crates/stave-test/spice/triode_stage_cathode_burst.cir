@@ -12,7 +12,7 @@ VOFF z 0 SIN(0 -4 200 70.0104167m)
 RS in g 68k
 VB b 0 300
 RA b p 100k
-RK k 0 1579.40
+RK k 0 1595.95
 CK k 0 22u
 BG g k I = {gg*pow(ln(1+exp(cg*V(g,k)))/cg, xi) + ig0}
 BP p k I = {2*pow((V(p,k)/kp)*ln(1+exp(kp*(1/mu+V(g,k)/sqrt(kvb+V(p,k)*V(p,k))))), ex)/kg1}

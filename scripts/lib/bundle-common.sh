@@ -6,7 +6,8 @@
 #   CARGO_TARGET_DIR      honoured when locating the built library
 #
 # One path per OS (uname): macOS bundles (Contents/MacOS + Info.plist,
-# ad-hoc signed), Linux (VST3: Contents/<arch>-linux/<Name>.so; CLAP:
+# ad-hoc signed; a .component's Info.plist also carries the
+# AudioComponents entry compiled into the binary), Linux (VST3: Contents/<arch>-linux/<Name>.so; CLAP:
 # the .so as <Name>.clap) and Windows under Git Bash (VST3:
 # Contents/<arch>-win/<Name>.vst3; CLAP: the DLL as <Name>.clap) — the
 # layouts the VST3 SDK and clap.h name.
@@ -33,7 +34,8 @@ vst3_arch() {
 case "$STAVE_OS" in
   macos)
     USER_VST3_DIR="${HOME}/Library/Audio/Plug-Ins/VST3"
-    USER_CLAP_DIR="${HOME}/Library/Audio/Plug-Ins/CLAP" ;;
+    USER_CLAP_DIR="${HOME}/Library/Audio/Plug-Ins/CLAP"
+    USER_AU_DIR="${HOME}/Library/Audio/Plug-Ins/Components" ;;
   linux)
     USER_VST3_DIR="${HOME}/.vst3"
     USER_CLAP_DIR="${HOME}/.clap" ;;
@@ -72,9 +74,9 @@ lib_path() {
   echo "$path"
 }
 
-# make_bundle <crate> <profile> <out-dir> <vst3|clap> — prints the bundle path.
+# make_bundle <crate> <profile> <out-dir> <vst3|clap|component> — prints the bundle path.
 make_bundle() {
-  local crate=$1 profile=$2 out=$3 ext=$4 lib name trimmed id path
+  local crate=$1 profile=$2 out=$3 ext=$4 lib name trimmed id path components
   lib=$(lib_path "$crate" "$profile") || return 1
   name=$(bundle_name "$crate")
   trimmed="${crate%-vst3}"
@@ -85,6 +87,10 @@ make_bundle() {
   rm -rf "$path"
   mkdir -p "$out"
   case "$STAVE_OS:$ext" in
+    macos:component)
+      components=$(au_components "$lib") || return 1
+      make_macos_bundle "$lib" "$path" "$name" "$id" "$components" ;;
+    *:component) echo "error: Audio Units are a macOS format" >&2; return 1 ;;
     macos:*) make_macos_bundle "$lib" "$path" "$name" "$id" ;;
     linux:vst3)
       mkdir -p "$path/Contents/$(vst3_arch)-linux"
@@ -97,9 +103,25 @@ make_bundle() {
   echo "$path"
 }
 
-# make_macos_bundle <dylib> <bundle> <name> <id>
+# au_components <dylib>: the Info.plist's AudioComponents key, from the
+# entry `stave::export!` compiles into the binary's __DATA,__stave_au
+# section (the plugin's type, subtype, manufacturer, name and version,
+# never restated here). Fails if the binary has none.
+au_components() {
+  local entry
+  entry="$(mktemp)"
+  if ! segedit "$1" -extract __DATA __stave_au "$entry" >/dev/null 2>&1; then
+    rm -f "$entry"
+    echo "error: $1 has no Audio Unit entry (built with stave::export!?)" >&2
+    return 1
+  fi
+  printf '  <key>AudioComponents</key><array>%s</array>\n' "$(tr -d '\000' < "$entry")"
+  rm -f "$entry"
+}
+
+# make_macos_bundle <dylib> <bundle> <name> <id> [extra Info.plist keys]
 make_macos_bundle() {
-  local dylib=$1 path=$2 name=$3 id=$4
+  local dylib=$1 path=$2 name=$3 id=$4 extra=${5:-}
   mkdir -p "$path/Contents/MacOS" "$path/Contents/Resources"
   cp "$dylib" "$path/Contents/MacOS/${name}"
   echo "BNDL????" > "$path/Contents/PkgInfo"
@@ -118,7 +140,7 @@ make_macos_bundle() {
   <key>CFBundleSignature</key><string>????</string>
   <key>CFBundleVersion</key><string>${STAVE_BUNDLE_VERSION}</string>
   <key>NSHighResolutionCapable</key><true/>
-</dict>
+${extra}</dict>
 </plist>
 PLIST
   # Ad-hoc sign the bundle: the linker signs the dylib, but an unsigned

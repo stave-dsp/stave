@@ -1,6 +1,9 @@
 //! The built-in commands, one module per family.
 
 pub mod bench;
+pub mod characterise;
+pub mod corpus;
+pub mod fit;
 pub mod instance;
 pub mod listen;
 pub mod validate;
@@ -23,7 +26,12 @@ pub fn register(r: &mut Registry) {
         .register_fn(listen::ADD, listen::add)
         .register_fn(listen::LIST, listen::list)
         .register_fn(listen::NEXT, listen::next)
-        .register_fn(listen::ANSWER, listen::answer);
+        .register_fn(listen::ANSWER, listen::answer)
+        .register_fn(characterise::CHARACTERISE, characterise::characterise)
+        .register_fn(fit::STIMULUS, fit::stimulus)
+        .register_fn(fit::FIT, fit::fit)
+        .register_fn(corpus::LIST, corpus::list)
+        .register_fn(corpus::CHECK, corpus::check);
 }
 
 #[cfg(test)]

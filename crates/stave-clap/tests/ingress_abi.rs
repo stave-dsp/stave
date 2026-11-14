@@ -24,6 +24,7 @@ impl Erased for Passthrough {
         url: "",
         description: "host-ingress fixture",
         features: &[],
+        au: None,
     };
 
     fn new(_telemetry: &Telemetry) -> Self {

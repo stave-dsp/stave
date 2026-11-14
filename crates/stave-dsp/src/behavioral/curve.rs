@@ -16,6 +16,17 @@
 //!    antiderivatives; the kinks inject spurious odd harmonics that swamp
 //!    a curve's genuine low-level harmonic content. C1 continuity removes
 //!    the artifact.
+//!  - **Or cubic Hermite on value and slope, with exact antiderivatives**
+//!    ([`Curve::rebuild_hermite`]), where the source can give its own
+//!    slope. Catmull-Rom's error is O(h³) in `f`, its trapezoid `g1`'s
+//!    difference quotient only O(h²), and both ripple with the grid: a
+//!    small signal spanning a few cells reads the ripple as harmonics (on
+//!    the triode stage's table, H4 at −66 dBc on a −20 dB tone where the
+//!    circuit has −149). The Hermite cubic is O(h⁴) (`h⁴·f⁗/384`), and
+//!    `g1`, `g2` are its exact polynomial integrals (quartic and quintic
+//!    per cell), so `g1' = f` and `g2' = g1` hold to rounding and ADAA's
+//!    difference quotients see the interpolant itself, not a second
+//!    approximation of it. Same four-point fetch, one more column.
 //!  - **Physically-correct edge extrapolation.** Past the tabulated range
 //!    `f` is held constant, so `g1` continues *linearly* and `g2`
 //!    *quadratically*. Clamping the integrals instead would corrupt the
@@ -55,6 +66,8 @@ use std::sync::Arc;
 #[derive(Clone)]
 struct Tables {
     f: [f64; CURVE_N],
+    /// df/dx at the nodes (Hermite curves only).
+    d: [f64; CURVE_N],
     g1: [f64; CURVE_N],
     g2: [f64; CURVE_N],
     /// Optional auxiliary SENSE column:
@@ -75,6 +88,9 @@ pub struct Curve {
     /// alloc class as the Box it replaces).
     t: Arc<Tables>,
     has_sense: bool,
+    /// Cubic Hermite on (`f`, `d`) with exact antiderivatives, else
+    /// Catmull-Rom on `f` with trapezoid ones (see the module docs).
+    hermite: bool,
     x_min: f64,
     x_max: f64,
     inv_step: f64,
@@ -88,6 +104,7 @@ impl Clone for Curve {
         Self {
             t: Arc::clone(&self.t),
             has_sense: self.has_sense,
+            hermite: self.hermite,
             x_min: self.x_min,
             x_max: self.x_max,
             inv_step: self.inv_step,
@@ -118,11 +135,13 @@ impl Curve {
         Self {
             t: Arc::new(Tables {
                 f: [0.0; CURVE_N],
+                d: [0.0; CURVE_N],
                 g1: [0.0; CURVE_N],
                 g2: [0.0; CURVE_N],
                 sense: [0.0; CURVE_N],
             }),
             has_sense: false,
+            hermite: false,
             x_min: -1.0,
             x_max: 1.0,
             inv_step: (CURVE_N - 1) as f64 / 2.0,
@@ -150,7 +169,56 @@ impl Curve {
             t.f[k] = source(x_min + k as f64 * step);
         }
         self.has_sense = false;
+        self.hermite = false;
         self.integrate(ref_x, step);
+    }
+
+    /// Build a cubic Hermite curve from a source that returns its value
+    /// and slope, `(f(x), df/dx)` (module docs: O(h⁴), the antiderivatives
+    /// exact integrals of the interpolant). In place, no allocation;
+    /// CURVE_N source evaluations.
+    pub fn rebuild_hermite(
+        &mut self,
+        x_min: f64,
+        x_max: f64,
+        ref_x: f64,
+        mut source: impl FnMut(f64) -> (f64, f64),
+    ) {
+        debug_assert!(x_max > x_min);
+        self.x_min = x_min;
+        self.x_max = x_max;
+        let step = (x_max - x_min) / ((CURVE_N - 1) as f64);
+        self.inv_step = 1.0 / step;
+        let t = Arc::make_mut(&mut self.t);
+        for k in 0..CURVE_N {
+            (t.f[k], t.d[k]) = source(x_min + k as f64 * step);
+        }
+        self.has_sense = false;
+        self.hermite = true;
+        self.integrate_hermite(ref_x, step);
+    }
+
+    /// [`Curve::rebuild_hermite`] with a sense column (Catmull-Rom).
+    pub fn rebuild_hermite_with_sense(
+        &mut self,
+        x_min: f64,
+        x_max: f64,
+        ref_x: f64,
+        source: impl FnMut(f64) -> (f64, f64),
+        mut sense: impl FnMut(f64) -> f64,
+    ) {
+        self.rebuild_hermite(x_min, x_max, ref_x, source);
+        let step = (x_max - x_min) / ((CURVE_N - 1) as f64);
+        let t = Arc::make_mut(&mut self.t);
+        for k in 0..CURVE_N {
+            t.sense[k] = sense(x_min + k as f64 * step);
+        }
+        self.has_sense = true;
+    }
+
+    /// Whether this is a cubic Hermite curve (see the module docs).
+    pub fn is_hermite(&self) -> bool {
+        self.hermite
     }
 
     /// Like [`Curve::rebuild`], additionally tabulating a sense column
@@ -204,20 +272,67 @@ impl Curve {
         };
         self.x_min = first.x_min;
         self.x_max = first.x_max;
+        let hermite = first.hermite;
         let step = (self.x_max - self.x_min) / ((CURVE_N - 1) as f64);
         self.inv_step = 1.0 / step;
         for k in 0..CURVE_N {
-            let mut acc = 0.0;
+            let (mut acc, mut slope) = (0.0, 0.0);
             for &(c, w) in parts {
                 debug_assert!(
                     c.x_min == self.x_min && c.x_max == self.x_max,
                     "combine: basis domains must match"
                 );
+                debug_assert!(c.hermite == hermite, "combine: basis kinds must match");
                 acc += w * c.t.f[k];
+                slope += w * c.t.d[k];
             }
-            Arc::make_mut(&mut self.t).f[k] = acc;
+            let t = Arc::make_mut(&mut self.t);
+            t.f[k] = acc;
+            t.d[k] = slope;
         }
-        self.integrate(ref_x, step);
+        self.hermite = hermite;
+        if hermite {
+            self.integrate_hermite(ref_x, step);
+        } else {
+            self.integrate(ref_x, step);
+        }
+    }
+
+    /// The exact integrals of the Hermite interpolant into `g1` and `g2`
+    /// at the nodes, each referenced to 0 at `ref_x`.
+    fn integrate_hermite(&mut self, ref_x: f64, step: f64) {
+        let t = Arc::make_mut(&mut self.t);
+        t.g1[0] = 0.0;
+        for k in 0..CURVE_N - 1 {
+            let a = cell(&t.f, &t.d, k, step);
+            t.g1[k + 1] = t.g1[k] + step * (a[0] + a[1] / 2.0 + a[2] / 3.0 + a[3] / 4.0);
+        }
+        let off1 = self.g1_at(ref_x);
+        let t = Arc::make_mut(&mut self.t);
+        for v in t.g1.iter_mut() {
+            *v -= off1;
+        }
+        t.g2[0] = 0.0;
+        for k in 0..CURVE_N - 1 {
+            let a = cell(&t.f, &t.d, k, step);
+            t.g2[k + 1] = t.g2[k]
+                + step * t.g1[k]
+                + step * step * (a[0] / 2.0 + a[1] / 6.0 + a[2] / 12.0 + a[3] / 20.0);
+        }
+        let off2 = self.g2_at(ref_x);
+        let t = Arc::make_mut(&mut self.t);
+        for v in t.g2.iter_mut() {
+            *v -= off2;
+        }
+    }
+
+    /// The Hermite cell holding domain point `x` (in range): its index
+    /// and local coordinate s ∈ [0, 1].
+    #[inline]
+    fn hermite_cell(&self, x: f64) -> (usize, f64) {
+        let t = self.t_of(x);
+        let i = (t as usize).min(CURVE_N - 2);
+        (i, t - i as f64)
     }
 
     /// Trapezoid-integrate `f` into `g1`, `g1` into `g2`, then reference
@@ -260,6 +375,10 @@ impl Curve {
             self.t.f[0]
         } else if x >= self.x_max {
             self.t.f[CURVE_N - 1]
+        } else if self.hermite {
+            let (i, s) = self.hermite_cell(x);
+            let a = cell(&self.t.f, &self.t.d, i, 1.0 / self.inv_step);
+            a[0] + s * (a[1] + s * (a[2] + s * a[3]))
         } else {
             interp(&self.t.f, self.t_of(x))
         }
@@ -279,6 +398,13 @@ impl Curve {
             (self.t.f[0], 0.0)
         } else if x >= self.x_max {
             (self.t.f[CURVE_N - 1], 0.0)
+        } else if self.hermite {
+            let (i, s) = self.hermite_cell(x);
+            let a = cell(&self.t.f, &self.t.d, i, 1.0 / self.inv_step);
+            (
+                a[0] + s * (a[1] + s * (a[2] + s * a[3])),
+                (a[1] + s * (2.0 * a[2] + s * 3.0 * a[3])) * self.inv_step,
+            )
         } else {
             let t = self.t_of(x);
             let (f, df_dt) = interp_with_slope(&self.t.f, t);
@@ -294,6 +420,11 @@ impl Curve {
             self.t.g1[0] + self.t.f[0] * (x - self.x_min)
         } else if x > self.x_max {
             self.t.g1[CURVE_N - 1] + self.t.f[CURVE_N - 1] * (x - self.x_max)
+        } else if self.hermite {
+            let (i, s) = self.hermite_cell(x);
+            let h = 1.0 / self.inv_step;
+            let a = cell(&self.t.f, &self.t.d, i, h);
+            self.t.g1[i] + h * s * (a[0] + s * (a[1] / 2.0 + s * (a[2] / 3.0 + s * a[3] / 4.0)))
         } else {
             interp(&self.t.g1, self.t_of(x))
         }
@@ -310,6 +441,13 @@ impl Curve {
             self.t.g2[CURVE_N - 1]
                 + self.t.g1[CURVE_N - 1] * d
                 + 0.5 * self.t.f[CURVE_N - 1] * d * d
+        } else if self.hermite {
+            let (i, s) = self.hermite_cell(x);
+            let h = 1.0 / self.inv_step;
+            let a = cell(&self.t.f, &self.t.d, i, h);
+            self.t.g2[i]
+                + h * self.t.g1[i] * s
+                + h * h * s * s * (a[0] / 2.0 + s * (a[1] / 6.0 + s * (a[2] / 12.0 + s * a[3] / 20.0)))
         } else {
             interp(&self.t.g2, self.t_of(x))
         }
@@ -331,6 +469,16 @@ impl Curve {
             out_scale,
         }
     }
+}
+
+/// Cell `i` of a Hermite curve as a cubic in s ∈ [0, 1],
+/// `f(s) = a0 + a1·s + a2·s² + a3·s³`, from its end values and slopes
+/// (slopes per unit x, scaled by the step `h`).
+#[inline]
+fn cell(f: &[f64; CURVE_N], d: &[f64; CURVE_N], i: usize, h: f64) -> [f64; 4] {
+    let (f0, f1) = (f[i], f[i + 1]);
+    let (d0, d1) = (d[i] * h, d[i + 1] * h);
+    [f0, d0, 3.0 * (f1 - f0) - 2.0 * d0 - d1, 2.0 * (f0 - f1) + d0 + d1]
 }
 
 /// Catmull-Rom (cubic) interpolation at fractional index `t` (in range).
@@ -516,6 +664,54 @@ mod tests {
         }
     }
 
+    /// The Hermite curve on tanh with its exact slope: O(h⁴) (measured
+    /// worst 1.3e-10 at h = 16/1023; Catmull-Rom's bound above is 2e-7),
+    /// its antiderivatives the analytic ones to the same order, and exact
+    /// integrals of the interpolant (central differences of `g1`, `g2`
+    /// read `f`, `g1` to the difference's own truncation).
+    #[test]
+    fn hermite_matches_the_source_and_its_antiderivatives() {
+        let mut c = Curve::flat();
+        c.rebuild_hermite(-8.0, 8.0, 0.0, |x| (x.tanh(), 1.0 - x.tanh().powi(2)));
+        assert!(c.is_hermite());
+        let mut worst = 0.0f64;
+        for i in 0..1000 {
+            let x = -7.9 + 15.8 * (i as f64 + 0.371) / 1000.0;
+            worst = worst.max((c.f_at(x) - x.tanh()).abs());
+            let (f, slope) = c.f_and_slope_at(x);
+            assert_eq!(f, c.f_at(x));
+            assert!((slope - (1.0 - x.tanh().powi(2))).abs() < 1e-6, "slope at {x}");
+        }
+        assert!(worst < 1e-9, "interp error {worst:.2e}");
+        for &x in &[-6.0f64, -2.5, -0.3, 0.0, 0.4, 1.7, 5.0] {
+            assert!((c.g1_at(x) - x.cosh().ln()).abs() < 1e-9, "g1 at {x}");
+        }
+        let h = 1e-4;
+        for &x in &[-5.0, -1.2, 0.1, 0.9, 3.3] {
+            let df1 = (c.g1_at(x + h) - c.g1_at(x - h)) / (2.0 * h);
+            assert!((df1 - c.f_at(x)).abs() < 1e-8, "dg1 != f at {x}");
+            let df2 = (c.g2_at(x + h) - c.g2_at(x - h)) / (2.0 * h);
+            assert!((df2 - c.g1_at(x)).abs() < 1e-8, "dg2 != g1 at {x}");
+        }
+        assert!(c.g1_at(0.0).abs() < 1e-12 && c.g2_at(0.0).abs() < 1e-12);
+        // Across the edges the extrapolation continues the tables.
+        let (lo, hi) = c.domain();
+        for &(a, b) in &[(lo - 1e-9, lo + 1e-9), (hi - 1e-9, hi + 1e-9)] {
+            assert!((c.g1_at(a) - c.g1_at(b)).abs() < 1e-6);
+            assert!((c.g2_at(a) - c.g2_at(b)).abs() < 1e-6);
+        }
+        // Combining Hermite bases is exact, slopes included.
+        let mut b2 = Curve::flat();
+        b2.rebuild_hermite(-8.0, 8.0, 0.0, |x| (x * x, 2.0 * x));
+        let mut sum = Curve::flat();
+        sum.combine(0.0, &[(&c, 0.5), (&b2, 0.25)]);
+        assert!(sum.is_hermite());
+        for &x in &[-3.3, 0.2, 4.1] {
+            assert!((sum.f_at(x) - (0.5 * x.tanh() + 0.25 * x * x)).abs() < 1e-9);
+            assert!((sum.g1_at(x) - (0.5 * c.g1_at(x) + 0.25 * b2.g1_at(x))).abs() < 1e-9);
+        }
+    }
+
     #[test]
     fn reference_point_zeroes_antiderivatives() {
         let mut c = Curve::flat();
@@ -633,6 +829,22 @@ impl CurveStage {
         let mut cs = Self::from_fn(x_min, x_max, ref_x, |_| 0.0);
         cs.curve
             .rebuild_with_sense(x_min, x_max, ref_x, source, sense);
+        cs
+    }
+
+    /// Tabulate a shape that gives its own slope, `(f(x), df/dx)`, as a
+    /// cubic Hermite curve (see [`Curve::rebuild_hermite`]), with a
+    /// sense column.
+    pub fn from_hermite_with_sense(
+        x_min: f64,
+        x_max: f64,
+        ref_x: f64,
+        source: impl FnMut(f64) -> (f64, f64),
+        sense: impl FnMut(f64) -> f64,
+    ) -> Self {
+        let mut cs = Self::from_fn(x_min, x_max, ref_x, |_| 0.0);
+        cs.curve
+            .rebuild_hermite_with_sense(x_min, x_max, ref_x, source, sense);
         cs
     }
 

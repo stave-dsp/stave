@@ -35,6 +35,7 @@ impl Erased for Panics {
         url: "",
         description: "panic containment fixture",
         features: &[],
+        au: None,
     };
 
     fn new(_telemetry: &Telemetry) -> Self {

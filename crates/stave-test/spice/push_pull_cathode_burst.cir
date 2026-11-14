@@ -16,7 +16,7 @@ RS2 in2 g2 40k
 VB b 0 300
 RA1 b p1 100k
 RA2 b p2 100k
-RK k 0 17384.1
+RK k 0 19087.8
 CK k 0 2.2u
 BG1 g1 k I = {gg*pow(ln(1+exp(cg*V(g1,k)))/cg, xi) + ig0}
 BG2 g2 k I = {gg*pow(ln(1+exp(cg*V(g2,k)))/cg, xi) + ig0}

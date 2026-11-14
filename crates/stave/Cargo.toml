@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Write an audio plugin: one trait, one macro, VST3 and CLAP"
+description = "Write an audio plugin: one trait, one macro, VST3, CLAP and Audio Unit"
 
 [dependencies]
 stave-core.workspace = true
@@ -15,6 +15,7 @@ stave-face.workspace = true
 stave-macros.workspace = true
 stave-vst3.workspace = true
 stave-clap.workspace = true
+stave-au.workspace = true
 stave-standalone = { workspace = true, optional = true }
 
 [features]

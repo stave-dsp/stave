@@ -78,9 +78,9 @@
 //! `crates/stave-test/tests/design_fit.rs`: the Fender AB763 tone stack
 //! recovers its treble and bass rotations, slope resistor and mid
 //! capacitor from its own response to 1e-6; fitted to the Marshall
-//! 2203's ngspice response it meets it within 6.1e-6 dB (14.0 dB as
-//! drawn), 0.159 dB at E12, each held to the 2203's deck by the R1
-//! harness itself.
+//! 2203's ngspice response by least squares it meets it within 1.5e-12
+//! dB (14.0 dB as drawn), 0.188 dB at E12, each held to the 2203's deck
+//! by the R1 harness itself.
 //!
 //! # Cost
 //!

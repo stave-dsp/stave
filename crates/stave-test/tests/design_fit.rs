@@ -81,11 +81,11 @@ fn ab763_recovers_its_parts_and_rotations() {
 /// to 20 kHz, as a table): the two pots' rotations and five parts free,
 /// the parts then snapped to E12 (the bass capacitor to E6). As drawn
 /// the AB763 is 14.0 dB off at 317 Hz (the 2203 has a third of its
-/// scoop); fitted, 6.1e-6 dB — the two networks share their order, and
-/// seven values reach the 2203's response exactly, the bass rheostat at
-/// its stop (470 pF, 16.1k, 45.5 nF, 6.49k, 44.7 nF) — and at E12 (470
-/// pF, 18k, 47 nF, 6.8k, 39 nF, the rotations refitted) 0.159 dB at
-/// 632 Hz.
+/// scoop); fitted by least squares, 1.5e-12 dB — the two networks share
+/// their order, and seven values reach the 2203's response exactly, the
+/// bass rheostat at its stop (470 pF, 16.1k, 45.5 nF, 6.49k, 44.7 nF) —
+/// and at E12 (470 pF, 18k, 47 nF, 6.8k, 39 nF, the rotations refitted)
+/// 0.188 dB at 710 Hz.
 #[test]
 fn ab763_fitted_to_the_marshall_2203() {
     let design = ab763();
@@ -106,10 +106,20 @@ fn ab763_fitted_to_the_marshall_2203() {
         Free::new("rm", 100.0, 100e3).snap(Series::E12),
         Free::new("c3", 2.2e-9, 470e-9).snap(Series::E12),
     ];
+    // Least squares from the stack as drawn. The 2203 is reachable
+    // exactly, so least squares lands on it, and the L_p continuation's
+    // minimax stages only add the solver's noise (measured: 1.5e-12 dB
+    // after p = 2, 2.3e-6 dB after p = 16); the as-drawn start reaches
+    // the optimum the Halton starts do (one to six starts, the same seven
+    // values). Six starts and four stages took 1.5 s on a build host and
+    // timed out past 120 s on a loaded Windows runner; this, a tenth of
+    // that. The snapped stack's rotations are refitted by least squares
+    // too, which costs its worst point 0.03 dB against minimax (0.188 dB
+    // against 0.159), inside the same budget.
     let fitting = Fitting {
         bench: bench(),
-        starts: 6,
-        ..Fitting::default()
+        starts: 1,
+        exponents: vec![2.0],
     };
     let response = |values: &[f64]| {
         let circuit: Circuit<Dk> = design.build(values).unwrap();
@@ -131,9 +141,10 @@ fn ab763_fitted_to_the_marshall_2203() {
     snapped.assert();
 }
 
-/// The 2203's response met by an AB763, worst point: measured 6.1e-6 dB
+/// The 2203's response met by an AB763, worst point: measured 1.5e-12 dB
 /// (the fit's floor, not a model error), budgeted with room for another
 /// platform's rounding along the solver's path.
 const BUDGET_DB: f64 = 1e-4;
-/// The same with its parts at preferred values: measured 0.159 dB.
+/// The same with its parts at preferred values: measured 0.188 dB (its
+/// rotations refitted by least squares; 0.159 under minimax).
 const SNAPPED_BUDGET_DB: f64 = 0.2;

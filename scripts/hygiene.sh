@@ -18,7 +18,7 @@ if [[ "${1:-}" == advisories ]]; then
 fi
 
 cargo deny --locked check bans licenses sources
-cargo machete $(ls -d crates/*/ tools/*/ examples/*/ fuzz/)
+cargo machete $(ls -d crates/*/ tools/*/ examples/*/ fuzz/ fuzz/solvers/)
 # `deps`: no compiling (CI's Linux `rules` job; the macOS `lint` job
 # documents the private items).
 [[ "${1:-}" == deps ]] && exit 0

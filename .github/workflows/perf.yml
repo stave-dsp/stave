@@ -63,15 +63,18 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install valgrind (${{ env.VALGRIND_VERSION }})
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends valgrind
           test "$(valgrind --version)" = "$VALGRIND_VERSION" || { echo "::error::valgrind is $(valgrind --version), the baseline is $VALGRIND_VERSION's: re-bless"; exit 1; }
       - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           shared-key: icount
           save-if: "${{ github.ref == 'refs/heads/main' }}"
       - name: Every stage within +5% of the baseline
@@ -88,7 +91,7 @@ jobs:
           fi
           git checkout crates/stave-dsp/benches/stages.icount
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: icount
           path: target/icount

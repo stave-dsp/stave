@@ -1,19 +1,25 @@
 # How-to guides
 
-Task-oriented recipes for work around a plugin: driving the host tools,
+Task-oriented recipes for work around a plugin: the stave tool, driving the host tools,
 laying out a project, measuring performance, voicing by ear, pinning a
 model's sound with fingerprints, placing a
 DSP model, capturing and fitting block models, designing a circuit from
 its parts, cutting a release, and shipping a plugin to strangers.
 Each assumes you know the [concepts](crate::concepts).
 
+- [The stave tool: UI, CLI and MCP](crate::howto::stave_tool): every
+  capability as one command, reached from the GUI, the `stave` command
+  line and an MCP server alike.
 - [Use the host tools](crate::howto::host_tools): measure, validate and
-  play any VST3 with `stave-host`, `stave-bench`, `stave-play` and
-  `stave-events`.
+  play any VST3 with `stave-host`, `stave` and `stave-events`.
+- [Plugin formats](crate::howto::formats): VST3, CLAP and Audio Unit
+  from one crate, each format's identity, bundling, validators, and a
+  GarageBand smoke test.
 - [Lay out a plugin project](crate::howto::project_layout): the shape,
   the tree rules, and the gates that hold them.
 - [Local configuration](crate::howto::local_config): per-machine hosts,
-  sample libraries and captures, and building on another machine.
+  sample libraries and captures, building on another machine, and
+  cleaning up after jobs and agents.
 - [Gate what a change affects](crate::howto::affected): only the
   packages and gates a change can reach, and a tree never gated twice.
 - [Measure performance](crate::howto::performance): the CPU budget
@@ -29,7 +35,7 @@ Each assumes you know the [concepts](crate::concepts).
   goes in stave-dsp, what it is called, and how it is verified.
 - [Capture and fit a block model](crate::howto::block_models): the
   stimulus to play through a device, a Wiener–Hammerstein or polynomial
-  Hammerstein fit with `stave-fit`, where block models fall short, and
+  Hammerstein fit with `stave fit`, where block models fall short, and
   nonlinear kernels (Hammerstein, Volterra) as an analysis.
 - [Design a circuit](crate::howto::design_tools): import a KiCad
   netlist, find the part that moves the response most, and the spread
@@ -39,3 +45,5 @@ Each assumes you know the [concepts](crate::concepts).
 - [Ship your plugin](crate::howto::ship): the standalone app, one
   download per OS, Developer ID signing and notarisation, and the release
   workflow.
+
+- [Operating the merge queue](crate::howto::merge_queue): gates, recovery and queue operations.

@@ -8,7 +8,9 @@
 //! so nothing upstream can drive per-hit supply movement).
 //!
 //! Each half is the triode's own transfer, tabulated once over grid
-//! volts and antialiased by its own ADAA at the pair's live bias:
+//! volts with its slope (a cubic Hermite [`Curve`], exact
+//! antiderivatives) and antialiased by its own ADAA at the pair's live
+//! bias:
 //! audio y = f(b + x) − f(b − x) with b = class point − cathode drift
 //! − any external offset, so a moving bias is evaluated exactly. The
 //! plate DRAW i(b + x) + i(b − x) RISES with drive in class AB (idle
@@ -19,7 +21,10 @@
 //! approximately matched — character, chosen not inherited). Under
 //! `Bias::Cathode` the shared cathode is the circuit's RC on the pair's
 //! cathode current: a class-AB pair driven hard draws more, the cathode
-//! rises, the class point cools.
+//! rises, the class point cools. Its resistor makes the class point from
+//! both halves' idle cathode current with each plate seeing B+ less the
+//! resting cathode (the screens too), so the circuit with that resistor
+//! rests where the pair does.
 //!
 //! Level policy: Physical from birth — drive scales grid volts
 //! honestly into a FIXED ceiling; small-signal gain and ceiling
@@ -44,9 +49,7 @@ use crate::circuit::devices::pentode::Pentode;
 use crate::circuit::devices::triode::koren::Koren;
 use crate::circuit::methods::load_line::LoadLine;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats, Solved};
-use crate::circuit::topologies::triode_stage::{
-    grid_amps_at, grid_volts_at, solve_load_line, Bias, TriodeParams,
-};
+use crate::circuit::topologies::triode_stage::{grid_at, solve_load_line, Bias, TriodeParams};
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff64;
 use crate::units::Seconds;
@@ -157,16 +160,48 @@ impl PentodePair {
 
 /// One half of the pair, as the tables are built from it: the grid
 /// network (phase inverter and grid current, in `grid`) and the plate
-/// law — the triode in `grid`, or a pentode.
+/// law — the triode in `grid`, or a pentode — with the shared cathode
+/// resting `cathode` volts above ground (0 under fixed bias): the plate
+/// and screen supplies as the tube sees them are B+ less it.
 #[derive(Copy, Clone)]
 struct Half {
     grid: TriodeParams,
     pentode: Option<PentodePair>,
+    cathode: f64,
+}
+
+/// One half solved at a source-side grid voltage, slopes per input volt.
+#[derive(Copy, Clone)]
+struct HalfPoint {
+    plate_volts: f64,
+    plate_volts_slope: f64,
+    screen_amps: f64,
+    screen_amps_slope: f64,
+    grid_amps: f64,
+    grid_amps_slope: f64,
 }
 
 impl Half {
+    /// The plate's supply to the cathode.
     fn supply(&self) -> f64 {
-        self.pentode.map_or(self.grid.supply_v, |t| t.supply_volts)
+        self.pentode.map_or(self.grid.supply_v, |t| t.supply_volts) - self.cathode
+    }
+
+    /// The triode's circuit as its plate sees it.
+    fn triode(&self) -> TriodeParams {
+        TriodeParams {
+            supply_v: self.grid.supply_v - self.cathode,
+            ..self.grid
+        }
+    }
+
+    /// The pentode pair as its plates and screens see it.
+    fn pentode(&self) -> Option<PentodePair> {
+        self.pentode.map(|t| PentodePair {
+            supply_volts: t.supply_volts - self.cathode,
+            screen_volts: t.screen_volts - self.cathode,
+            ..t
+        })
     }
 
     fn load(&self) -> f64 {
@@ -178,36 +213,57 @@ impl Half {
         self.pentode.map_or(self.grid.grid_bias, |t| t.grid_bias)
     }
 
-    /// The plate's voltage for a source-side grid voltage `input`.
-    fn plate_volts(&self, input: f64, seed: f64) -> f64 {
-        let vg = grid_volts_at(&self.grid, input);
-        match self.pentode {
-            None => solve_load_line(&self.grid, vg, seed),
+    /// The half at a source-side grid voltage `input` (plate volts to
+    /// the cathode), slopes by implicit differentiation of the grid's,
+    /// screen's and plate's equations at the solution.
+    fn point(&self, input: f64, seed: f64) -> HalfPoint {
+        let g = grid_at(&self.grid, input);
+        let vg = g.volts;
+        let (plate_volts, per_grid, screen_amps, screen_per_grid) = match self.pentode() {
+            None => {
+                let p = self.triode();
+                let vp = solve_load_line(&p, vg, seed);
+                let c = p.tube.plate(vg, vp);
+                (vp, -c.per_grid_volt / (1.0 / p.r_plate + c.per_plate_volt), 0.0, 0.0)
+            }
             Some(t) => {
                 let vs = t.screen_at(vg);
+                // The screen's current as `screen_at` reads it; its
+                // series resistor makes its volts follow the grid.
+                let s = t.tube.currents(vg, vs, 1.0);
+                let vs_per_grid = if t.screen_ohms > 0.0 {
+                    -s.screen_per_grid_volt / (1.0 / t.screen_ohms + s.screen_per_screen_volt)
+                } else {
+                    0.0
+                };
                 let line = LoadLine {
                     supply_volts: t.supply_volts,
                     load_ohms: t.plate_load_ohms(),
                 };
-                line.solve(
-                    |vp| {
-                        let c = t.tube.currents(vg, vs, vp);
-                        (c.plate, c.plate_per_plate_volt)
-                    },
-                    seed,
-                    &NewtonSettings::default(),
-                )
-                .value
+                let vp = line
+                    .solve(
+                        |vp| {
+                            let c = t.tube.currents(vg, vs, vp);
+                            (c.plate, c.plate_per_plate_volt)
+                        },
+                        seed,
+                        &NewtonSettings::default(),
+                    )
+                    .value;
+                let c = t.tube.currents(vg, vs, vp);
+                let per_grid = -(c.plate_per_grid_volt + c.plate_per_screen_volt * vs_per_grid)
+                    / (1.0 / t.plate_load_ohms() + c.plate_per_plate_volt);
+                (vp, per_grid, s.screen, s.screen_per_grid_volt + s.screen_per_screen_volt * vs_per_grid)
             }
+        };
+        HalfPoint {
+            plate_volts,
+            plate_volts_slope: per_grid * g.volts_per_input,
+            screen_amps,
+            screen_amps_slope: screen_per_grid * g.volts_per_input,
+            grid_amps: g.amps,
+            grid_amps_slope: g.amps_per_input,
         }
-    }
-
-    /// The screen's current (0 for a triode).
-    fn screen_amps(&self, input: f64) -> f64 {
-        self.pentode.map_or(0.0, |t| {
-            let vg = grid_volts_at(&self.grid, input);
-            t.tube.currents(vg, t.screen_at(vg), 1.0).screen
-        })
     }
 
     /// `(grid min, grid max, input span)` of the tables around class point `vq`.
@@ -233,27 +289,38 @@ impl Half {
 ///
 /// # Derivation
 /// Each half's load-line transfer (the screen's own load line first, for
-/// a pentode) solved and tabulated once over grid volts, evaluated as
+/// a pentode) solved and tabulated once over grid volts with its slope
+/// (cubic Hermite, O(h⁴), exact antiderivatives), evaluated as
 /// f(b + x) − f(b − x) at the live bias; under `Bias::Cathode` the
-/// shared cathode is the circuit's RC.
+/// shared cathode is the circuit's RC, its resistor the class point over
+/// both halves' idle cathode current with the supplies seen from the
+/// cathode.
 ///
 /// # Verified
 /// `crates/stave-test/tests/matches_ngspice.rs::push_pull_static_transfer_matches_ngspice`:
-/// the static transfer against the ngspice plate difference, 2e-6
-/// normalized RMS up to the pair's level scale;
+/// the static transfer against the ngspice plate difference, 4.4e-8
+/// normalized RMS up to the pair's level scale (budget 2e-7);
 /// `crates/stave-test/tests/matches_ngspice.rs::push_pull_pentode_static_transfer_matches_ngspice`:
-/// the EL34 pair against ngspice's, 2.6e-7 (budget 1e-6) up to its level
+/// the EL34 pair against ngspice's, 1.7e-8 (budget 1e-7) up to its level
 /// scale;
+/// `crates/stave-dsp/src/circuit/topologies/push_pull.rs::the_tables_are_the_solved_halves`;
 /// `crates/stave-test/tests/solver_conformance.rs::push_pull_feedback_converges_at_the_host_rate`,
 /// `crates/stave-test/tests/solver_conformance.rs::push_pull_pentode_feedback_converges_at_the_host_rate`;
 /// under [`Bias::Cathode`] (DSP.md R15),
 /// `crates/stave-test/tests/cathode_bias_matches_ngspice.rs::push_pull_cathode_bias_matches_ngspice`:
 /// the shared cathode through an 8 V burst and its recovery against
-/// ngspice's cathode-biased pair (`spice/push_pull_cathode_burst.cir`).
+/// ngspice's cathode-biased pair with this pair's Rk
+/// (`spice/push_pull_cathode_burst.cir`; 4.6e-3 normalized RMS, both at
+/// rest at 3.5 V, recovery +0.6%), and the pair's whole T0/T1 matrix
+/// against that deck (`characterise.rs`, `hand::push_pull_cathode`:
+/// inaudible by R16's null, −32.4 / −14.8 dB NMR).
 ///
 /// # Cost
 /// The datasheet's `"PushPull (EL34) x100"` (the triode pair costs the
-/// same: the tables are built once, off the audio path).
+/// same: the tables are built once, off the audio path). The Hermite
+/// tables cost about a fifth more a sample than the Catmull-Rom ones they
+/// replaced (a build host, release: 85 against 68 ns fixed-biased, 109
+/// against 93 under `Bias::Cathode`).
 ///
 /// # Aliasing
 /// ADAA on each tabulated half at the live bias; oversample when it is
@@ -450,9 +517,24 @@ impl PushPull {
     /// How the pair is biased: `Fixed` from a bias supply, or
     /// `Cathode` through a shared, bypassed cathode resistor whose
     /// voltage follows the pair's cathode current at Rk·Ck.
+    ///
+    /// Switching between `Fixed` and `Cathode` rebuilds the tables (the
+    /// supplies are seen from the cathode); a new bypass only moves the
+    /// time constant.
     pub fn set_bias(&mut self, bias: Bias) {
+        let rebuild = matches!(bias, Bias::Cathode { .. }) != matches!(self.bias, Bias::Cathode { .. });
         self.bias = bias;
-        self.update_cathode_coeff();
+        if rebuild {
+            self.rebuild();
+        } else {
+            self.update_cathode_coeff();
+        }
+    }
+
+    /// The plate-difference volts one unit of output stands for at stiff
+    /// supply: the normalisation that puts the ceiling at 0 dBFS.
+    pub fn plate_volts_per_unit(&self) -> f64 {
+        1.0 / self.out_scale
     }
 
     pub fn cathode_ohms(&self) -> f64 {
@@ -577,22 +659,33 @@ impl PushPull {
     }
 
     fn rebuild(&mut self) {
-        let p = self.p;
-        let half = Half {
-            grid: p,
+        let mut half = Half {
+            grid: self.p,
             pentode: self.pentode,
+            cathode: 0.0,
         };
         let vq = half.bias() - self.bias_cold;
+        if let Bias::Cathode { .. } = self.bias {
+            half.cathode = -vq;
+        }
         self.class_point = vq;
         let (vg_min, vg_max, x_span) = half.domain(vq);
         let (supply, load) = (half.supply(), half.load());
-        let vpk0 = half.plate_volts(vq, supply * 0.7);
-        self.half
-            .rebuild(vg_min, vg_max, vq, |vg| vpk0 - half.plate_volts(vg, vpk0));
-        let plate = |vg: f64| (supply - half.plate_volts(vg, vpk0)) / load;
-        self.plate_amps.rebuild(vg_min, vg_max, vq, plate);
-        self.cathode_amps.rebuild(vg_min, vg_max, vq, |vg| {
-            plate(vg) + half.screen_amps(vg) + grid_amps_at(&p, vg)
+        let vpk0 = half.point(vq, supply * 0.7).plate_volts;
+        self.half.rebuild_hermite(vg_min, vg_max, vq, |vg| {
+            let h = half.point(vg, vpk0);
+            (vpk0 - h.plate_volts, -h.plate_volts_slope)
+        });
+        let plate = |h: &HalfPoint| ((supply - h.plate_volts) / load, -h.plate_volts_slope / load);
+        self.plate_amps
+            .rebuild_hermite(vg_min, vg_max, vq, |vg| plate(&half.point(vg, vpk0)));
+        self.cathode_amps.rebuild_hermite(vg_min, vg_max, vq, |vg| {
+            let h = half.point(vg, vpk0);
+            let (ip, dip) = plate(&h);
+            (
+                ip + h.screen_amps + h.grid_amps,
+                dip + h.screen_amps_slope + h.grid_amps_slope,
+            )
         });
         // Normalize the ceiling to 0 dBFS at stiff supply.
         let span = |i: usize| -x_span + 2.0 * x_span * i as f64 / 256.0;
@@ -612,10 +705,14 @@ impl PushPull {
                 (self.pair_at(vq, x + d) - self.pair_at(vq, x - d)).abs() / (2.0 * d)
             })
             .fold(0.0, f64::max);
-        self.idle_plate_amps = 2.0 * plate(vq).max(1e-12);
+        // The idle point solved, not read between table nodes: Rk then
+        // rests the circuit exactly at the class point.
+        let idle = half.point(vq, vpk0);
+        let (idle_plate, _) = plate(&idle);
+        self.idle_plate_amps = 2.0 * idle_plate.max(1e-12);
         // The shared cathode makes the class point: Rk carries both
         // halves' idle cathode current.
-        let idle_cathode_amps = 2.0 * self.cathode_amps.f_at(vq);
+        let idle_cathode_amps = 2.0 * (idle_plate + idle.screen_amps + idle.grid_amps);
         self.vk0 = -vq;
         self.rk = self.vk0 / idle_cathode_amps.max(1e-12);
         self.vk = self.vk0;
@@ -1010,6 +1107,69 @@ mod tests {
         back.set_pentode(PentodePair::EL34);
         back.set_tube(Koren::T12AX7);
         assert_eq!(back.pentode(), None);
+    }
+
+    /// The Hermite tables are the solved halves: every slope column the
+    /// equilibrium's own (against a central difference of the solve), for
+    /// the triode pair fixed- and cathode-biased and every pentode pair;
+    /// and the cathode-biased triode pair's Rk rests the circuit at the
+    /// class point (each plate's load line from B+ to the plate carrying
+    /// the tube's current at its plate-to-cathode volts, Rk both halves'
+    /// cathode current at −vq).
+    #[test]
+    fn the_tables_are_the_solved_halves() {
+        let mut pairs: Vec<PushPull> = Vec::new();
+        for bias in [Bias::Fixed, Bias::Cathode { bypass_farads: 2.2e-6 }] {
+            let mut pp = PushPull::new();
+            pp.set_bias(bias);
+            pairs.push(pp);
+        }
+        for pair in PentodePair::ALL {
+            let mut pp = PushPull::new();
+            pp.set_pentode(pair);
+            pairs.push(pp);
+        }
+        for pp in &pairs {
+            let half = Half {
+                grid: pp.p,
+                pentode: pp.pentode,
+                cathode: match pp.bias {
+                    Bias::Fixed => 0.0,
+                    Bias::Cathode { .. } => -pp.class_point,
+                },
+            };
+            let (lo, hi, _) = half.domain(pp.class_point);
+            let seed = half.supply() * 0.5;
+            let mut worst = 0.0f64;
+            for i in 1..400 {
+                let vg = lo + (hi - lo) * (f64::from(i) + 0.31) / 400.0;
+                let h = 1e-5;
+                let point = half.point(vg, seed);
+                let numeric = |f: &dyn Fn(&HalfPoint) -> f64| {
+                    (f(&half.point(vg + h, seed)) - f(&half.point(vg - h, seed))) / (2.0 * h)
+                };
+                let checks = [
+                    (point.plate_volts_slope, numeric(&|p| p.plate_volts)),
+                    (point.screen_amps_slope, numeric(&|p| p.screen_amps)),
+                    (point.grid_amps_slope, numeric(&|p| p.grid_amps)),
+                ];
+                for (slope, numeric) in checks {
+                    worst = worst.max((slope - numeric).abs() / numeric.abs().max(1e-3));
+                }
+            }
+            assert!(worst < 1e-4, "{:?}: slope {worst:.2e}", pp.pentode.map(|t| t.tube.name));
+        }
+        let pp = &pairs[1];
+        let (vk, vq) = (-pp.class_point, pp.class_point);
+        let half = Half { grid: pp.p, pentode: None, cathode: vk };
+        let rest = half.point(vq, 200.0);
+        let plate_to_ground = rest.plate_volts + vk;
+        let vgk = crate::circuit::topologies::triode_stage::grid_at(&pp.p, vq).volts;
+        let ip = pp.p.tube.plate_current(vgk, rest.plate_volts).0;
+        let line = (pp.p.supply_v - plate_to_ground) / pp.p.r_plate - ip;
+        assert!(line.abs() < 1e-12, "the load line at rest: {line:e} A");
+        let cathode = pp.cathode_ohms() * 2.0 * (ip + rest.grid_amps) - vk;
+        assert!(cathode.abs() < 1e-9, "the cathode at rest: {cathode:e} V");
     }
 
     /// THE REPORT IS THE TRUTH — small-signal gain and ceiling.

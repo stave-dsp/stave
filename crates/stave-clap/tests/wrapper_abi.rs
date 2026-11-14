@@ -32,6 +32,7 @@ impl Erased for TestEcho {
         url: "",
         description: "ABI soundness fixture",
         features: &[],
+        au: None,
     };
 
     fn new(_telemetry: &Telemetry) -> Self {

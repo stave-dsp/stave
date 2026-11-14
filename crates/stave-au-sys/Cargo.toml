@@ -1,0 +1,12 @@
+[package]
+name = "stave-au-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Raw Audio Unit (v2) ABI for the stave framework: AudioToolbox, CoreFoundation and Objective-C runtime types, constants and declarations (no logic)"
+
+[lints]
+workspace = true

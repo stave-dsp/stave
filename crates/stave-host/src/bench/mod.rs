@@ -1,7 +1,8 @@
 //! The bench: one instance, a stimulus, and everything measurable about
 //! the pair — CPU, latency (reported vs measured), output levels, tone
 //! gain/THD, silence residual, the plugin's own taps. Pure library:
-//! `stave-bench` parses its own arguments and prints [`BenchReport`]s.
+//! the `bench` command (`stave-tools`) parses arguments and prints
+//! [`BenchReport`]s.
 
 pub mod describe;
 mod phases;

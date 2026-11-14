@@ -1,0 +1,22 @@
+[package]
+name = "stave-au"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Audio Unit (v2) plugin backend for the stave framework"
+
+[dependencies]
+stave-core.workspace = true
+stave-au-sys.workspace = true
+stave-face.workspace = true
+
+# Audio Units are a macOS format; elsewhere the crate holds only the
+# portable identity code (and the export macro emits nothing).
+[target.'cfg(target_os = "macos")'.dependencies]
+stave-ui-cocoa.workspace = true
+
+[lints]
+workspace = true

@@ -29,6 +29,7 @@ impl Erased for TwoConfig {
         url: "",
         description: "layout negotiation fixture",
         features: &[],
+        au: None,
     };
 
     const LAYOUTS: &'static [Layout] = &[

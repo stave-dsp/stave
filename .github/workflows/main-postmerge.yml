@@ -1,0 +1,180 @@
+# Slow checks run for every main revision and nightly; never path-filtered.
+# ci-observe.yml records facts and proposes a validated revert on failure.
+name: main post-merge
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  NIGHTLY: nightly-2026-11-01
+jobs:
+  kani-harnesses:
+    # The matrix is found, not listed: every #[kani::proof] in the tree
+    # (scripts/kani.sh --matrix), so a new harness cannot be left out.
+    name: kani harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: list
+        run: |
+          matrix="$(scripts/kani.sh --matrix)"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  kani:
+    # One job per harness: each one's time is visible, and one that blows
+    # its bounds cannot hold the rest (30 min cap).
+    name: kani (${{ matrix.harness }})
+    needs: kani-harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.kani-harnesses.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Cache Kani
+        id: kani-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/bin/kani
+            ~/.cargo/bin/cargo-kani
+            ~/.kani
+          key: kani-0.68.0-${{ runner.os }}
+      - if: steps.kani-cache.outputs.cache-hit != 'true'
+        run: cargo install --locked kani-verifier@0.68.0 && cargo kani setup
+      - run: scripts/kani.sh -p ${{ matrix.crate }} --harness ${{ matrix.harness }}
+
+  fuzz:
+    # macOS: the vst3_host target hosts Tilt through stave-host.
+    name: fuzz (${{ matrix.target }})
+    timeout-minutes: 20
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [state_load, param_text, vst3_host, clap_events, raster, solvers]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install "$NIGHTLY" --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with: { workspaces: "${{ matrix.target == 'solvers' && 'fuzz/solvers' || 'fuzz' }}", key: "${{ matrix.target }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with: { tool: cargo-fuzz@0.13.2 }
+      - run: scripts/fuzz.sh 240 ${{ matrix.target }}
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: |
+            fuzz/artifacts/${{ matrix.target }}
+            fuzz/solvers/artifacts/${{ matrix.target }}
+
+  rate-range:
+    # T1 of DSP.md R6: every catalogued stage robust at fifteen rates from
+    # 8 to 768 kHz and rate-invariant at 44.1–192 kHz within its budget
+    # (T0, a few rates, runs in ci.yml's tests). Unoptimised, like the
+    # tests: about eleven minutes on three cores.
+    name: rate range (T1)
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with: { cache-bin: "${{ runner.environment == 'github-hosted' }}" }
+      - run: cargo test -p stave-test --locked --test rate_range -- --ignored
+
+  miri:
+    # The unsafe core and the FULL wrapper path (factory → vtables →
+    # in-place process → two instances → release) interpreted under the
+    # memory model — this caught the CLAP field-provenance bug. One
+    # nextest process per test, sharded so each shard stays under five
+    # minutes; safe-code sweeps are `#[cfg_attr(miri, ignore)]`.
+    name: miri (${{ matrix.shard }}/4)
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
+      - run: rustup toolchain install "$NIGHTLY" --profile minimal --component miri,rust-src
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
+          shared-key: miri
+          save-if: "${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}"
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with: { tool: nextest@0.9.148 }
+      - run: cargo +"$NIGHTLY" miri setup
+      - run: >-
+          cargo +"$NIGHTLY" miri nextest run --locked --profile miri
+          --partition hash:${{ matrix.shard }}/4
+          -p stave-core -p stave-telemetry -p stave-vst3 -p stave-clap
+          -E 'package(stave-core) | package(stave-telemetry) | binary_id(/::(wrapper|table|diagnostics|negotiation|panic|state_race)_abi$/)'
+
+  characterise:
+    # T1 (DSP.md R17): every circuit's whole matrix against the committed
+    # tables — the grid of levels and frequencies, IMD, bursts —
+    # oversampled and at 44.1, 48 and 96 kHz, in four nextest partitions,
+    # and the piano's ANMR sweep (one test, about seven minutes, its
+    # circuits on par_map) in a job of its own.
+    # Reference freshness is checked separately in references.yml.
+    name: characterise (T1 ${{ matrix.part }})
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1/4, 2/4, 3/4, 4/4, piano]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
+          shared-key: characterise
+          save-if: "${{ github.ref == 'refs/heads/main' && matrix.part == '1/4' }}"
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with: { tool: nextest@0.9.148 }
+      - env:
+          PART: ${{ matrix.part }}
+        run: |
+          if [[ "$PART" == piano ]]; then
+            select=(-E 'test(=anmr_over_the_piano)')
+          else
+            select=(--partition "count:$PART" -E 'not test(/^classics::/) and not test(=anmr_over_the_piano)')
+          fi
+          cargo nextest run -p stave-test --locked --profile t1 --test characterise_t1 --run-ignored only "${select[@]}"
+
+  characterise-classics:
+    # The classics' T1 (`classics::` in characterise_t1.rs).
+    name: characterise classics (T1)
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # Never on persistent self-hosted runners: its cleanBin deletes the
+          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
+          cache-bin: "${{ runner.environment == 'github-hosted' }}"
+          shared-key: characterise
+          save-if: false
+      - run: "cargo test -p stave-test --locked --test characterise_t1 -- --ignored classics::"
