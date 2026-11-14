@@ -437,7 +437,7 @@ impl Voicing {
         let warnings: usize = live.prepared.takes.iter().map(|t| t.warnings.len()).sum();
         self.set_status(
             if warnings > 0 {
-                format!("ready, with {warnings} warning(s): see Takes")
+                format!("ready ({warnings} warning(s): see Advanced)")
             } else {
                 "ready: space plays".into()
             },

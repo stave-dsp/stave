@@ -456,8 +456,8 @@ impl Voicing {
                 ui.add_space(12.0);
                 asks = l.listen_ui(ui, &dir);
                 ui.add_space(24.0);
-                let arrow = if l.advanced_open { "▾" } else { "▸" };
-                if ui.selectable_label(false, RichText::new(format!("{arrow}  Advanced")).weak()).clicked() {
+                let arrow = if l.advanced_open { "Hide advanced" } else { "Advanced…" };
+                if ui.selectable_label(false, RichText::new(arrow).weak()).clicked() {
                     l.advanced_open = !l.advanced_open;
                     if !l.advanced_open {
                         // Closed: the keys go back to the default screen.
