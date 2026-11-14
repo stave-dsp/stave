@@ -894,6 +894,7 @@ impl Wdf {
                 self.k.push(scale * across(a, b, c) - own);
             }
         }
+        self.work.recheck(&self.k);
         self.p = vec![0.0; rows.len()];
         self.z = vec![0.0; width];
         if diode_columns.is_none() {

@@ -326,6 +326,7 @@ impl Wdf {
                 self.k[i * nn + c - nl] = o[r * width + c] - one;
             }
         }
+        self.work.recheck(&self.k);
     }
 
     /// The root's rows and the forest's resistances, for comparing an
