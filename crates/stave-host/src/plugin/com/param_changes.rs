@@ -12,8 +12,13 @@ use std::ptr;
 
 use stave_vst3_sys::{
     IParamValueQueue, IParamValueQueueVtbl, IParameterChanges, IParameterChangesVtbl, ParamId,
-    ParamValue, Tresult, Tuid, K_NO_INTERFACE, K_RESULT_FALSE, K_RESULT_OK,
+    ParamValue, Tresult, Tuid, K_INTERNAL_ERROR, K_NO_INTERFACE, K_RESULT_FALSE, K_RESULT_OK,
 };
+
+use super::host_entry;
+
+/// `kNoParamId`: what `getParameterId` answers if it fails.
+const NO_PARAM_ID: ParamId = ParamId::MAX;
 
 /// Points one parameter can carry per block.
 pub(crate) const MAX_POINTS: usize = 16;
@@ -113,12 +118,14 @@ unsafe fn queue<'a>(this: *mut IParamValueQueue) -> &'a mut ParamQueue {
 // handed out (`this`), under the SDK's contract for their other pointers.
 
 unsafe extern "C" fn no_qi<T>(_this: *mut T, _iid: *const Tuid, obj: *mut *mut c_void) -> Tresult {
-    // Borrowed for one process call: nothing to hand out a reference to.
-    // SAFETY: SDK: null or writable.
-    if let Some(obj) = unsafe { obj.as_mut() } {
-        *obj = ptr::null_mut();
-    }
-    K_NO_INTERFACE
+    host_entry(K_INTERNAL_ERROR, || {
+        // Borrowed for one process call: nothing to hand out a reference to.
+        // SAFETY: SDK: null or writable.
+        if let Some(obj) = unsafe { obj.as_mut() } {
+            *obj = ptr::null_mut();
+        }
+        K_NO_INTERFACE
+    })
 }
 unsafe extern "C" fn static_ref<T>(_this: *mut T) -> u32 {
     1
@@ -135,12 +142,16 @@ static QUEUE_VTBL: IParamValueQueueVtbl = IParamValueQueueVtbl {
 };
 
 unsafe extern "C" fn q_id(this: *mut IParamValueQueue) -> ParamId {
-    // SAFETY: `this` is ours (see above).
-    unsafe { queue(this) }.id
+    host_entry(NO_PARAM_ID, || {
+        // SAFETY: `this` is ours (see above).
+        unsafe { queue(this) }.id
+    })
 }
 unsafe extern "C" fn q_count(this: *mut IParamValueQueue) -> i32 {
-    // SAFETY: `this` is ours (see above).
-    unsafe { queue(this) }.len as i32
+    host_entry(0, || {
+        // SAFETY: `this` is ours (see above).
+        unsafe { queue(this) }.len as i32
+    })
 }
 unsafe extern "C" fn q_get(
     this: *mut IParamValueQueue,
@@ -148,23 +159,25 @@ unsafe extern "C" fn q_get(
     sample_offset: *mut i32,
     value: *mut ParamValue,
 ) -> Tresult {
-    // SAFETY: `this` is ours (see above).
-    let q = unsafe { queue(this) };
-    let Some(&(off, v)) = usize::try_from(index)
-        .ok()
-        .and_then(|i| q.points[..q.len].get(i))
-    else {
-        return K_RESULT_FALSE;
-    };
-    // SAFETY: SDK: each null or writable.
-    let (offset_out, value_out) = unsafe { (sample_offset.as_mut(), value.as_mut()) };
-    if let Some(out) = offset_out {
-        *out = off;
-    }
-    if let Some(out) = value_out {
-        *out = v;
-    }
-    K_RESULT_OK
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: `this` is ours (see above).
+        let q = unsafe { queue(this) };
+        let Some(&(off, v)) = usize::try_from(index)
+            .ok()
+            .and_then(|i| q.points[..q.len].get(i))
+        else {
+            return K_RESULT_FALSE;
+        };
+        // SAFETY: SDK: each null or writable.
+        let (offset_out, value_out) = unsafe { (sample_offset.as_mut(), value.as_mut()) };
+        if let Some(out) = offset_out {
+            *out = off;
+        }
+        if let Some(out) = value_out {
+            *out = v;
+        }
+        K_RESULT_OK
+    })
 }
 unsafe extern "C" fn q_add(
     this: *mut IParamValueQueue,
@@ -172,15 +185,17 @@ unsafe extern "C" fn q_add(
     value: ParamValue,
     index: *mut i32,
 ) -> Tresult {
-    // SAFETY: `this` is ours (see above).
-    let Some(i) = unsafe { queue(this) }.add(sample_offset, value) else {
-        return K_RESULT_FALSE;
-    };
-    // SAFETY: SDK: null or writable.
-    if let Some(out) = unsafe { index.as_mut() } {
-        *out = i as i32;
-    }
-    K_RESULT_OK
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: `this` is ours (see above).
+        let Some(i) = unsafe { queue(this) }.add(sample_offset, value) else {
+            return K_RESULT_FALSE;
+        };
+        // SAFETY: SDK: null or writable.
+        if let Some(out) = unsafe { index.as_mut() } {
+            *out = i as i32;
+        }
+        K_RESULT_OK
+    })
 }
 
 static CHANGES_VTBL: IParameterChangesVtbl = IParameterChangesVtbl {
@@ -193,34 +208,40 @@ static CHANGES_VTBL: IParameterChangesVtbl = IParameterChangesVtbl {
 };
 
 unsafe extern "C" fn c_count(this: *mut IParameterChanges) -> i32 {
-    // SAFETY: `this` is ours (see above).
-    unsafe { changes(this) }.len as i32
+    host_entry(0, || {
+        // SAFETY: `this` is ours (see above).
+        unsafe { changes(this) }.len as i32
+    })
 }
 unsafe extern "C" fn c_get(this: *mut IParameterChanges, index: i32) -> *mut IParamValueQueue {
-    // SAFETY: `this` is ours (see above).
-    let c = unsafe { changes(this) };
-    match usize::try_from(index) {
-        Ok(i) if i < c.len => (&mut c.queues[i] as *mut ParamQueue).cast(),
-        _ => ptr::null_mut(),
-    }
+    host_entry(ptr::null_mut(), || {
+        // SAFETY: `this` is ours (see above).
+        let c = unsafe { changes(this) };
+        match usize::try_from(index) {
+            Ok(i) if i < c.len => (&mut c.queues[i] as *mut ParamQueue).cast(),
+            _ => ptr::null_mut(),
+        }
+    })
 }
 unsafe extern "C" fn c_add(
     this: *mut IParameterChanges,
     id: *const ParamId,
     index: *mut i32,
 ) -> *mut IParamValueQueue {
-    // SAFETY: SDK: null or readable; `this` is ours (see above).
-    let (Some(&id), c) = (unsafe { id.as_ref() }, unsafe { changes(this) }) else {
-        return ptr::null_mut();
-    };
-    let Some(slot) = c.slot_for(id) else {
-        return ptr::null_mut();
-    };
-    // SAFETY: SDK: null or writable.
-    if let Some(out) = unsafe { index.as_mut() } {
-        *out = slot as i32;
-    }
-    (&mut c.queues[slot] as *mut ParamQueue).cast()
+    host_entry(ptr::null_mut(), || {
+        // SAFETY: SDK: null or readable; `this` is ours (see above).
+        let (Some(&id), c) = (unsafe { id.as_ref() }, unsafe { changes(this) }) else {
+            return ptr::null_mut();
+        };
+        let Some(slot) = c.slot_for(id) else {
+            return ptr::null_mut();
+        };
+        // SAFETY: SDK: null or writable.
+        if let Some(out) = unsafe { index.as_mut() } {
+            *out = slot as i32;
+        }
+        (&mut c.queues[slot] as *mut ParamQueue).cast()
+    })
 }
 
 // Every `unsafe` block in these tests plays the plugin: it calls this

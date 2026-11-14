@@ -255,7 +255,7 @@ fn separate_controller(
     let mut s = StreamHandle::new(Vec::new());
     // SAFETY: the object's own method, called on the live object `Com` holds.
     let got = unsafe { (component.vtbl().get_state)(component.as_ptr(), s.as_funknown()) };
-    let synced = got == K_RESULT_OK && {
+    let synced = got == K_RESULT_OK && !s.overflowed() && {
         s.rewind();
         // SAFETY: the object's own method, called on the live object `Com` holds.
         unsafe { (ctrl.vtbl().set_component_state)(ctrl.as_ptr(), s.as_funknown()) == K_RESULT_OK }

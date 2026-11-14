@@ -2,6 +2,10 @@
 //! `getState`/`setState`/`setComponentState` read and write. The plugin
 //! sees a refcounted, spec-shaped stream; the host holds a
 //! [`StreamHandle`] and sees plain bytes.
+//!
+//! Every callback is a panic boundary ([`host_entry`]) and does checked
+//! arithmetic: a plugin's seek or write can never make the host panic,
+//! overflow, or allocate without bound.
 
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
@@ -9,8 +13,19 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use stave_vst3_sys::{
     FUnknown, IBStream, IBStreamVtbl, Tresult, Tuid, IID_FUNKNOWN, IID_IBSTREAM,
-    K_INVALID_ARGUMENT, K_NO_INTERFACE, K_RESULT_OK, SEEK_CUR, SEEK_END, SEEK_SET,
+    K_INTERNAL_ERROR, K_INVALID_ARGUMENT, K_NO_INTERFACE, K_OUT_OF_MEMORY, K_RESULT_OK, SEEK_CUR,
+    SEEK_END, SEEK_SET,
 };
+
+use super::host_entry;
+
+/// The largest state a plugin may write into a host stream (1 GiB). A
+/// write that would grow the stream past it is refused with
+/// `kOutOfMemory`, and [`StreamHandle::overflowed`] records that it
+/// happened, so the host reports the refusal instead of letting a buggy
+/// plugin exhaust its memory (an allocation failure aborts; it cannot
+/// be caught).
+pub(crate) const MAX_STATE_BYTES: usize = 1 << 30;
 
 #[repr(C)]
 struct MemStream {
@@ -18,6 +33,8 @@ struct MemStream {
     refs: AtomicU32,
     data: Vec<u8>,
     pos: usize,
+    /// A write was refused for passing [`MAX_STATE_BYTES`].
+    overflowed: bool,
 }
 
 static VTBL: IBStreamVtbl = IBStreamVtbl {
@@ -42,6 +59,7 @@ impl StreamHandle {
             refs: AtomicU32::new(1),
             data,
             pos: 0,
+            overflowed: false,
         });
         Self(NonNull::from(Box::leak(boxed)))
     }
@@ -62,6 +80,13 @@ impl StreamHandle {
     pub fn bytes(&self) -> Vec<u8> {
         // SAFETY: as in `rewind`.
         unsafe { (*self.0.as_ptr()).data.clone() }
+    }
+
+    /// Whether the plugin tried to write past [`MAX_STATE_BYTES`] (its
+    /// state is then incomplete, whatever its call returned).
+    pub fn overflowed(&self) -> bool {
+        // SAFETY: as in `rewind`.
+        unsafe { (*self.0.as_ptr()).overflowed }
     }
 }
 
@@ -85,34 +110,48 @@ unsafe fn stream<'a>(this: *mut IBStream) -> &'a mut MemStream {
 // handed out (`this`), under the SDK's contract for their other pointers.
 
 unsafe extern "C" fn qi(this: *mut IBStream, iid: *const Tuid, obj: *mut *mut c_void) -> Tresult {
-    // SAFETY: SDK: null or valid.
-    let (Some(iid), Some(obj)) = (unsafe { iid.as_ref() }, unsafe { obj.as_mut() }) else {
-        return K_INVALID_ARGUMENT;
-    };
-    if *iid == IID_FUNKNOWN || *iid == IID_IBSTREAM {
-        // SAFETY: `this` is ours (see above).
-        unsafe { add_ref(this) };
-        *obj = this.cast();
-        K_RESULT_OK
-    } else {
-        *obj = ptr::null_mut();
-        K_NO_INTERFACE
-    }
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: SDK: null or valid.
+        let (Some(iid), Some(obj)) = (unsafe { iid.as_ref() }, unsafe { obj.as_mut() }) else {
+            return K_INVALID_ARGUMENT;
+        };
+        if *iid == IID_FUNKNOWN || *iid == IID_IBSTREAM {
+            // SAFETY: `this` is ours (see above).
+            unsafe { add_ref(this) };
+            *obj = this.cast();
+            K_RESULT_OK
+        } else {
+            *obj = ptr::null_mut();
+            K_NO_INTERFACE
+        }
+    })
 }
 
 unsafe extern "C" fn add_ref(this: *mut IBStream) -> u32 {
-    // SAFETY: `this` is ours (see above).
-    unsafe { stream(this) }.refs.fetch_add(1, Ordering::AcqRel) + 1
+    host_entry(0, || {
+        // SAFETY: `this` is ours (see above).
+        let refs = &unsafe { stream(this) }.refs;
+        refs.fetch_add(1, Ordering::AcqRel).wrapping_add(1)
+    })
 }
 
 unsafe extern "C" fn release(this: *mut IBStream) -> u32 {
-    // SAFETY: `this` is ours (see above).
-    let left = unsafe { stream(this) }.refs.fetch_sub(1, Ordering::AcqRel) - 1;
-    if left == 0 {
-        // SAFETY: the last reference; `StreamHandle::new` leaked the box.
-        drop(unsafe { Box::from_raw(this as *mut MemStream) });
-    }
-    left
+    host_entry(0, || {
+        // SAFETY: `this` is ours (see above).
+        let refs = &unsafe { stream(this) }.refs;
+        // An over-release (refs already 0) is the plugin's bug; refuse it
+        // rather than wrap the count or free twice.
+        let Ok(before) = refs.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+        else {
+            return 0;
+        };
+        let left = before - 1;
+        if left == 0 {
+            // SAFETY: the last reference; `StreamHandle::new` leaked the box.
+            drop(unsafe { Box::from_raw(this as *mut MemStream) });
+        }
+        left
+    })
 }
 
 unsafe extern "C" fn read(
@@ -121,24 +160,28 @@ unsafe extern "C" fn read(
     num_bytes: i32,
     num_read: *mut i32,
 ) -> Tresult {
-    // SAFETY: `this` is ours (see above).
-    let s = unsafe { stream(this) };
-    let avail = s.data.get(s.pos..).unwrap_or_default();
-    let n = avail.len().min(num_bytes.max(0) as usize);
-    if n > 0 {
-        if buffer.is_null() {
-            return K_INVALID_ARGUMENT;
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: `this` is ours (see above).
+        let s = unsafe { stream(this) };
+        let avail = s.data.get(s.pos..).unwrap_or_default();
+        let n = avail.len().min(usize::try_from(num_bytes).unwrap_or(0));
+        if n > 0 {
+            if buffer.is_null() {
+                return K_INVALID_ARGUMENT;
+            }
+            // SAFETY: SDK: `buffer` is writable for `num_bytes` ≥ `n`; our
+            // `data` is a separate allocation.
+            unsafe { ptr::copy_nonoverlapping(avail.as_ptr(), buffer.cast(), n) };
         }
-        // SAFETY: SDK: `buffer` is writable for `num_bytes` ≥ `n`; our
-        // `data` is a separate allocation.
-        unsafe { ptr::copy_nonoverlapping(avail.as_ptr(), buffer.cast(), n) };
-    }
-    s.pos += n;
-    // SAFETY: SDK: null or writable.
-    if let Some(out) = unsafe { num_read.as_mut() } {
-        *out = n as i32;
-    }
-    K_RESULT_OK
+        // `n` ≤ the bytes left after `pos`, so this stays ≤ `data.len()`.
+        s.pos += n;
+        // SAFETY: SDK: null or writable.
+        if let Some(out) = unsafe { num_read.as_mut() } {
+            // `n` ≤ `num_bytes`, an i32.
+            *out = n as i32;
+        }
+        K_RESULT_OK
+    })
 }
 
 unsafe extern "C" fn write(
@@ -147,56 +190,75 @@ unsafe extern "C" fn write(
     num_bytes: i32,
     num_written: *mut i32,
 ) -> Tresult {
-    // SAFETY: `this` is ours (see above).
-    let s = unsafe { stream(this) };
-    let n = num_bytes.max(0) as usize;
-    if n > 0 {
-        if buffer.is_null() {
-            return K_INVALID_ARGUMENT;
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: `this` is ours (see above).
+        let s = unsafe { stream(this) };
+        let n = usize::try_from(num_bytes).unwrap_or(0);
+        if n > 0 {
+            if buffer.is_null() {
+                return K_INVALID_ARGUMENT;
+            }
+            let end = match s.pos.checked_add(n) {
+                Some(end) if end <= MAX_STATE_BYTES => end,
+                _ => {
+                    s.overflowed = true;
+                    return K_OUT_OF_MEMORY;
+                }
+            };
+            // SAFETY: SDK: `buffer` is readable for `num_bytes`.
+            let src = unsafe { std::slice::from_raw_parts(buffer as *const u8, n) };
+            if end > s.data.len() {
+                s.data.resize(end, 0);
+            }
+            s.data[s.pos..end].copy_from_slice(src);
+            s.pos = end;
         }
-        // SAFETY: SDK: `buffer` is readable for `num_bytes`.
-        let src = unsafe { std::slice::from_raw_parts(buffer as *const u8, n) };
-        let end = s.pos + n;
-        if end > s.data.len() {
-            s.data.resize(end, 0);
+        // SAFETY: SDK: null or writable.
+        if let Some(out) = unsafe { num_written.as_mut() } {
+            // `n` ≤ `num_bytes`, an i32.
+            *out = n as i32;
         }
-        s.data[s.pos..end].copy_from_slice(src);
-        s.pos = end;
-    }
-    // SAFETY: SDK: null or writable.
-    if let Some(out) = unsafe { num_written.as_mut() } {
-        *out = n as i32;
-    }
-    K_RESULT_OK
+        K_RESULT_OK
+    })
 }
 
 unsafe extern "C" fn seek(this: *mut IBStream, pos: i64, mode: i32, result: *mut i64) -> Tresult {
-    // SAFETY: `this` is ours (see above).
-    let s = unsafe { stream(this) };
-    let target = match mode {
-        SEEK_SET => pos,
-        SEEK_CUR => s.pos as i64 + pos,
-        SEEK_END => s.data.len() as i64 + pos,
-        _ => return K_INVALID_ARGUMENT,
-    };
-    if target < 0 {
-        return K_INVALID_ARGUMENT;
-    }
-    s.pos = target as usize;
-    // SAFETY: SDK: null or writable.
-    if let Some(out) = unsafe { result.as_mut() } {
-        *out = target;
-    }
-    K_RESULT_OK
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: `this` is ours (see above).
+        let s = unsafe { stream(this) };
+        let base = match mode {
+            SEEK_SET => Some(0),
+            SEEK_CUR => i64::try_from(s.pos).ok(),
+            SEEK_END => i64::try_from(s.data.len()).ok(),
+            _ => return K_INVALID_ARGUMENT,
+        };
+        let Some(target) = base.and_then(|b| b.checked_add(pos)) else {
+            return K_INVALID_ARGUMENT;
+        };
+        let Ok(at) = usize::try_from(target) else {
+            return K_INVALID_ARGUMENT; // negative, or past the address space
+        };
+        s.pos = at;
+        // SAFETY: SDK: null or writable.
+        if let Some(out) = unsafe { result.as_mut() } {
+            *out = target;
+        }
+        K_RESULT_OK
+    })
 }
 
 unsafe extern "C" fn tell(this: *mut IBStream, pos: *mut i64) -> Tresult {
-    // SAFETY: SDK: null or writable; `this` is ours (see above).
-    let (Some(out), s) = (unsafe { pos.as_mut() }, unsafe { stream(this) }) else {
-        return K_INVALID_ARGUMENT;
-    };
-    *out = s.pos as i64;
-    K_RESULT_OK
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: SDK: null or writable; `this` is ours (see above).
+        let (Some(out), s) = (unsafe { pos.as_mut() }, unsafe { stream(this) }) else {
+            return K_INVALID_ARGUMENT;
+        };
+        let Ok(at) = i64::try_from(s.pos) else {
+            return K_INTERNAL_ERROR;
+        };
+        *out = at;
+        K_RESULT_OK
+    })
 }
 
 // Every `unsafe` block in these tests plays the plugin: it calls this
@@ -298,5 +360,50 @@ mod tests {
         let mut obj: *mut c_void = ptr::dangling_mut::<c_void>();
         let r = unsafe { (v.query_interface)(p, &[7; 16], &mut obj) };
         assert_eq!((r, obj), (K_NO_INTERFACE, ptr::null_mut()));
+    }
+
+    // Audit U4: a plugin's seek/write must never panic (an abort through
+    // `extern "C"`), overflow, or make the host allocate without bound.
+
+    #[test]
+    fn a_write_after_a_huge_seek_is_refused_not_an_abort() {
+        let h = StreamHandle::new(Vec::new());
+        let (v, p) = vt(&h);
+        let mut n = -1;
+        unsafe {
+            assert_eq!((v.seek)(p, i64::MAX, SEEK_SET, ptr::null_mut()), K_RESULT_OK);
+            let r = (v.write)(p, b"x".as_ptr() as *mut c_void, 1, &mut n);
+            assert_eq!(r, K_OUT_OF_MEMORY);
+        }
+        assert_eq!(n, -1, "a refused write reports nothing written");
+        assert!(h.overflowed());
+        assert!(h.bytes().is_empty());
+    }
+
+    #[test]
+    fn a_write_past_max_state_bytes_is_refused_and_recorded() {
+        let h = StreamHandle::new(Vec::new());
+        let (v, p) = vt(&h);
+        unsafe {
+            (v.seek)(p, MAX_STATE_BYTES as i64, SEEK_SET, ptr::null_mut());
+            let r = (v.write)(p, b"x".as_ptr() as *mut c_void, 1, ptr::null_mut());
+            assert_eq!(r, K_OUT_OF_MEMORY);
+        }
+        assert!(h.overflowed());
+        assert!(h.bytes().is_empty(), "nothing was allocated");
+    }
+
+    #[test]
+    fn an_overflowing_relative_seek_is_refused() {
+        let h = StreamHandle::new(vec![0; 4]);
+        let (v, p) = vt(&h);
+        let mut at = 0;
+        unsafe {
+            (v.seek)(p, i64::MAX, SEEK_SET, &mut at);
+            assert_eq!((v.seek)(p, 1, SEEK_CUR, &mut at), K_INVALID_ARGUMENT);
+            assert_eq!((v.seek)(p, i64::MAX, SEEK_END, &mut at), K_INVALID_ARGUMENT);
+            (v.tell)(p, &mut at);
+        }
+        assert_eq!(at, i64::MAX, "a refused seek leaves the position alone");
     }
 }
