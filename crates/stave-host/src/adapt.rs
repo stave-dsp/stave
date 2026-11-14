@@ -107,11 +107,12 @@ mod tests {
     use crate::validate::{self, Status};
     use stave_dsp::{Biquad, FilterSpec};
     use stave_measure::tone_window::ToneWindow;
+    use stave_dsp::units::{Db, Hz};
 
     fn peak_filter(channels: usize) -> StageInstance<Biquad> {
         let peak = FilterSpec::Peak {
-            hz: 1_000.0,
-            db: 6.0,
+            frequency: Hz::new(1_000.0),
+            gain: Db::new(6.0),
             q: 1.0,
         };
         StageInstance::new(StageInstanceConfig {

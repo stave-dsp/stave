@@ -14,6 +14,7 @@
 use stave_dsp::FilterSpec;
 use stave_dsp::{Biquad, Stage};
 use stave_measure::tone_window::ToneWindow;
+use stave_dsp::units::{Db, Hz};
 
 const FS: f64 = 48_000.0;
 const N: usize = 8192;
@@ -32,7 +33,7 @@ fn resp(bq: &mut Biquad, m: usize) -> f64 {
 
 #[test]
 fn stave_shelf_lip_and_dip_are_pinned() {
-    let mut c = Biquad::new(FilterSpec::LowShelf { hz: 200.0, db: 6.0 });
+    let mut c = Biquad::new(FilterSpec::LowShelf { frequency: Hz::new(200.0), gain: Db::new(6.0) });
     c.prepare(FS as f32);
     let lip = resp(&mut c, 17); // ~99.6 Hz
     let dip = resp(&mut c, 68); // ~398 Hz
@@ -50,7 +51,7 @@ fn stave_shelf_lip_and_dip_are_pinned() {
 
 #[test]
 fn rbj_shelf_is_monotonic_and_cookbook_flat() {
-    let mut c = Biquad::new(FilterSpec::LowShelfRbj { hz: 200.0, db: 6.0 });
+    let mut c = Biquad::new(FilterSpec::LowShelfRbj { frequency: Hz::new(200.0), gain: Db::new(6.0) });
     c.prepare(FS as f32);
     let below = resp(&mut c, 8); // ~46.9 Hz → near full gain
     let corner = resp(&mut c, 34); // ~199 Hz → ~half gain

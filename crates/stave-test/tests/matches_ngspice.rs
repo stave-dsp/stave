@@ -5,6 +5,7 @@
 //! circuits with exact answers, so the first cases pin that.
 
 use stave_test::reference::{assert_converges, Case, Drive, Metric, Reference, Stimulus};
+use stave_dsp::units::Hz;
 
 /// The oracle on a closed form: the RC step, 1 − e^(−t/RC).
 #[test]
@@ -179,7 +180,7 @@ fn tone_stack_matches_ngspice() {
 #[test]
 fn coupler_matches_ngspice() {
     use stave_dsp::{Coupler, Stage};
-    let mut coupler = Coupler::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32);
+    let mut coupler = Coupler::new(Hz::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32));
     coupler.prepare(48_000.0);
     Case::ngspice("coupler")
         .stimulus(Stimulus::sine(1.0, 50.0))

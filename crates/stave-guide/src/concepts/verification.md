@@ -84,10 +84,11 @@ different; a budget is never loosened to make a change pass.
 3. Add the case and commit the netlist and its waveform together:
 
 ```rust
+use stave_dsp::units::Hz;
 use stave_dsp::{Coupler, Stage};
 use stave_test::reference::{Case, Drive, Metric, Stimulus};
 
-let mut coupler = Coupler::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32);
+let mut coupler = Coupler::new(Hz::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32));
 coupler.prepare(48_000.0);
 Case::ngspice("coupler")
     .stimulus(Stimulus::sine(1.0, 50.0)) // the netlist's source

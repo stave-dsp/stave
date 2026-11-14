@@ -9,6 +9,7 @@
 //! a pole 1.6e-4 from unity and parks 69 dB of DC above the f64 floor.
 
 use stave_dsp::{Coupler, Stage};
+use stave_dsp::units::hz;
 
 const FS4X: f32 = 192_000.0;
 
@@ -83,7 +84,7 @@ fn residual_dc_dbfs(fs: f64, mut tick: impl FnMut(f32) -> f32) -> f64 {
 
 #[test]
 fn corner_is_accurate_at_4x_rate() {
-    let mut c = Coupler::new(5.0);
+    let mut c = Coupler::new(hz(5.0));
     c.prepare(FS4X);
     let g5 = tone_gain_db(5.0, FS4X as f64, |x| c.tick(x));
     // A first-order RC is −3.01 dB at its corner. The f64 pole puts it
@@ -93,7 +94,7 @@ fn corner_is_accurate_at_4x_rate() {
         "5 Hz corner off: measured {g5:.3} dB (want −3.01)"
     );
     // In-band transparency: −0.01 dB or better by 100 Hz.
-    let mut c = Coupler::new(5.0);
+    let mut c = Coupler::new(hz(5.0));
     c.prepare(FS4X);
     let g100 = tone_gain_db(100.0, FS4X as f64, |x| c.tick(x));
     assert!(g100 > -0.02, "100 Hz not transparent: {g100:.4} dB");
@@ -101,7 +102,7 @@ fn corner_is_accurate_at_4x_rate() {
 
 #[test]
 fn f64_blocker_beats_f32_on_residual_dc() {
-    let mut f64c = Coupler::new(5.0);
+    let mut f64c = Coupler::new(hz(5.0));
     f64c.prepare(FS4X);
     let dc64 = residual_dc_dbfs(FS4X as f64, |x| f64c.tick(x));
     let mut f32c = F32Coupler::new(5.0, FS4X);

@@ -7,6 +7,7 @@ use stave_dsp::{
     CommonCathode, CommonCathodeConfig, Dempwolf, DiodeClipper, DiodeClipperConfig, OpAmpClipper,
     OpAmpClipperConfig, PairSolver, PowerSupply, PowerSupplyConfig, Shockley, Stage,
 };
+use stave_dsp::units::db;
 
 const RATE: f64 = 48_000.0;
 
@@ -80,8 +81,8 @@ fn push_pull_pentode_feedback_converges_at_the_host_rate() {
     let mut s = stave_dsp::PushPull::new();
     s.set_pentode(stave_dsp::circuit::topologies::push_pull::PentodePair::EL34);
     s.prepare(RATE as f32);
-    s.set_drive_db(36.0);
-    s.set_feedback_db(12.0);
+    s.set_drive(db(36.0));
+    s.set_feedback(db(12.0));
     for n in 0..RATE as usize {
         s.tick(hot(n, 1.0) as f32);
     }
@@ -104,8 +105,8 @@ fn power_supply_converges_under_a_swinging_load() {
 fn push_pull_feedback_converges_at_the_host_rate() {
     let mut s = stave_dsp::PushPull::new();
     s.prepare(RATE as f32);
-    s.set_drive_db(18.0);
-    s.set_feedback_db(12.0);
+    s.set_drive(db(18.0));
+    s.set_feedback(db(12.0));
     for n in 0..RATE as usize {
         s.tick(hot(n, 1.0) as f32);
     }

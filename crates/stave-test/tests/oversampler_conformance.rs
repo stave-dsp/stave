@@ -4,6 +4,7 @@
 
 use stave_dsp::{Biquad, FilterSpec, Oversampled2x, Stage};
 use stave_measure::tone_window::ToneWindow;
+use stave_dsp::units::Hz;
 
 /// The interior that passes its input through.
 struct Identity;
@@ -28,7 +29,7 @@ impl IirOversampler {
             let mut bq = Biquad::default();
             bq.prepare(2.0 * sample_rate);
             bq.set(FilterSpec::Lowpass {
-                hz: 0.45 * sample_rate,
+                frequency: Hz::new(0.45 * sample_rate),
                 q: 1.0 / (2.0 * theta.cos()),
             });
             bq

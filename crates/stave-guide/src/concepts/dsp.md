@@ -90,9 +90,10 @@ pub trait Stage {
 Here is the block form agreeing with the tick loop, bit for bit:
 
 ```rust
+use stave_dsp::units::{db, hz};
 use stave_dsp::{Biquad, FilterSpec, Stage};
 
-let spec = FilterSpec::Peak { hz: 1_000.0, db: 6.0, q: 1.0 };
+let spec = FilterSpec::Peak { frequency: hz(1_000.0), gain: db(6.0), q: 1.0 };
 let (mut blockwise, mut tickwise) = (Biquad::new(spec), Biquad::new(spec));
 blockwise.prepare(48_000.0);
 tickwise.prepare(48_000.0);
@@ -210,6 +211,7 @@ below the fundamental, harmonics apart. `crates/stave-dsp/tests/aliasing_budgets
 holds every nonlinear stage and oscillator to a budget that way (DSP.md R5).
 
 ```rust
+use stave_dsp::units::Hz;
 use stave_dsp::{Osc, Stage, Waveform, Wavetable};
 use stave_measure::aliasing::SteppedTone;
 
@@ -219,7 +221,7 @@ let folds = |make: &dyn Fn() -> Osc| {
         .generated(|hz| {
             let mut o = make();
             o.prepare(48_000.0);
-            o.set_hz(hz as f32);
+            o.set_frequency(Hz::new(hz as f32));
             move |_: f32| o.tick(0.0)
         })
         .worst_audible()
@@ -234,7 +236,7 @@ let table = Wavetable::new(Waveform::Saw);
 let clean = sweep.generated(|hz| {
     let mut w = table.clone();
     w.prepare(48_000.0);
-    w.set_hz(hz as f32);
+    w.set_frequency(Hz::new(hz as f32));
     move |_: f32| w.tick(0.0)
 });
 assert!(clean.worst().inharmonic_db < -100.0);
@@ -256,19 +258,20 @@ accessor per slot (`amp.voicing()`, the typed stage), and a
 [`Stage`](stave_dsp::Stage) impl so the whole chain nests in any form.
 
 ```rust
+use stave_dsp::units::{db, hz};
 use stave_dsp::{Biquad, FilterSpec, Slew, Stage};
 
 stave_dsp::chain! {
     /// A slew limiter into a high shelf, in signal order.
     pub struct Voicing {
         limit: Slew = Slew::new(10.0, 10.0),
-        shelf: Filter = Biquad::new(FilterSpec::HighShelf { hz: 3_000.0, db: -3.0 }),
+        shelf: Filter = Biquad::new(FilterSpec::HighShelf { frequency: hz(3_000.0), gain: db(-3.0) }),
     }
 }
 
 let mut v = Voicing::new();
 v.prepare(48_000.0);
-v.shelf().set(FilterSpec::HighShelf { hz: 2_000.0, db: -6.0 });
+v.shelf().set(FilterSpec::HighShelf { frequency: hz(2_000.0), gain: db(-6.0) });
 let y = v.tick(0.25);
 assert!(y.is_finite());
 // Every join is a sense endpoint: the slot's output, by its id.
@@ -413,10 +416,11 @@ against its specification and run at zero latency:
 
 ```rust
 use stave_dsp::primitives::spectral::{Fir, Head, Passband};
+use stave_dsp::units::db;
 use stave_dsp::{Convolver, Stage};
 
 let sample_rate = 48_000.0;
-let fir = Fir::kaiser(Passband::Lowpass { cutoff: 4_800.0 / sample_rate }, 80.0, 0.04);
+let fir = Fir::kaiser(Passband::Lowpass { cutoff: 4_800.0 / sample_rate }, db(80.0), 0.04);
 assert!(fir.gain_db(1_000.0 / sample_rate).abs() < 0.001); // passband: flat
 assert!(fir.gain_db(8_000.0 / sample_rate) < -79.0); // stopband: 80 dB down
 
@@ -557,6 +561,29 @@ assert_eq!(hz(2_400.0).to_string(), "2.40 kHz");       // reads as a Unit::Hz pa
 assert_eq!(kohm(4.7).to_string(), "4.70 kΩ");
 ```
 
+Every stave-dsp setter and constructor takes the unit: `set_frequency(Hz)`,
+`set_t60(Seconds)`, `set_ceiling(Db)`, a [`FilterSpec`](stave_dsp::FilterSpec)
+of `frequency: Hz` and `gain: Db`. A plugin's params convert at that
+boundary, once: [`FloatParam::value_as`](stave::params::FloatParam::value_as)
+(block rate) and [`Ramp::next_as`](stave::params::Ramp::next_as) (per frame)
+yield the unit the param's [`Unit`](stave::params::Unit) names (`Unit::Hz`
+gives `Hz`, `Unit::Db` gives `Db` or its linear `Gain`, `Unit::Ms` gives
+`Seconds`, `Unit::Ratio` gives `Ratio`; checked in debug builds). The
+newtypes are `#[repr(transparent)]`, so the typed setter compiles to the
+same instructions as the bare one (`svf-swept` in
+`crates/stave-dsp/benches/stages.rs`, DSP.md U4).
+
+```rust
+use stave::prelude::*;
+
+let cutoff = FloatParam::new(ParamId(1), "Cutoff", Range::log(20.0, 20_000.0))
+    .unit(Unit::Hz)
+    .default(2_400.0);
+let mut filter = Svf::default();
+filter.set(cutoff.value_as(), 0.707); // a Unit::Hz param is Hz
+assert_eq!(cutoff.value_as::<Hz>(), khz(2.4));
+```
+
 Operators exist only where they read as physics. Adding a level to a
 frequency, or a duration to a sample count without a rate, does not
 compile:
@@ -612,14 +639,15 @@ flanger or vibrato.
 ```rust
 use stave_dsp::primitives::time::delay::{Delay, DelayLine};
 use stave_dsp::primitives::time::interpolators::{Lagrange3, Thiran};
+use stave_dsp::units::ms;
 use stave_dsp::Stage;
 
 // A chorus voice: 10 ms through four-point Lagrange, gliding.
-let mut voice = Delay::<Lagrange3>::new(20.0, 10.0);
+let mut voice = Delay::<Lagrange3>::new(ms(20.0), ms(10.0));
 voice.prepare(48_000.0);
 let mut y = 0.0;
 for n in 0..4_800 {
-    voice.set_ms(10.0 + 2.0 * (n as f32 / 4_800.0));
+    voice.set_delay(ms(10.0 + 2.0 * (f64::from(n) / 4_800.0)));
     y = voice.tick(0.5);
 }
 // The weights sum to one: a constant reads back as itself.
@@ -656,10 +684,11 @@ decay at the T60 it is set to, at every sample rate from 44.1 to 192 kHz:
 
 ```rust
 use stave_dsp::effects::reverb::{Fdn, Mixing};
+use stave_dsp::units::seconds;
 use stave_dsp::{Stage, Tail};
 
 let mut room = Fdn::new(Mixing::Hadamard);
-room.set_t60_s(1.2);
+room.set_decay(seconds(1.2));
 room.set_hf_ratio(0.5); // highs die twice as fast
 room.prepare(48_000.0);
 let (left, right) = room.tick_stereo(1.0);
@@ -668,7 +697,7 @@ assert!(left.is_finite() && right.is_finite());
 let Tail::Samples(n) = room.tail() else { unreachable!() };
 assert!(n > 2 * 57_600);
 // An infinite T60 freezes the loop.
-room.set_t60_s(f32::INFINITY);
+room.set_decay(seconds(f64::INFINITY));
 assert_eq!(room.tail(), Tail::Infinite);
 ```
 
@@ -687,11 +716,12 @@ under its ceiling and reports its latency exactly:
 
 ```rust
 use stave_dsp::effects::dynamics::{Compressor, GainComputer, Limiter, Peaks, Topology};
+use stave_dsp::units::db;
 use stave_dsp::Stage;
 
 // 4:1 above −20 dB with a 6 dB knee: 0 dB in comes out at −15 dB.
 let curve = GainComputer { threshold_db: -20.0, ratio: 4.0, knee_db: 6.0 };
-assert_eq!(curve.output_db(0.0), -15.0);
+assert_eq!(curve.output(db(0.0)), db(-15.0));
 let mut comp = Compressor::new(curve, Topology::FeedForward);
 comp.prepare(48_000.0);
 let y = (0..48_000).fold(0.0, |_, _| comp.tick(1.0));
@@ -700,7 +730,7 @@ assert!((20.0 * y.log10() + 15.0).abs() < 0.01);
 // A true-peak limiter at −1 dBTP: the latency is its lookahead plus the
 // interpolator's look forward and hold, and an impulse under the
 // ceiling arrives exactly that late.
-let mut limiter = Limiter::new(Peaks::True, -1.0);
+let mut limiter = Limiter::new(Peaks::True, db(-1.0));
 limiter.prepare(48_000.0);
 assert_eq!(limiter.latency(), 16 + 71 + 16);
 let out: Vec<f32> = (0..200).map(|n| limiter.tick(if n == 0 { 0.5 } else { 0.0 })).collect();
@@ -775,7 +805,7 @@ delayed to the slowest band's latency, and the total is reported:
 ```rust
 use stave_dsp::effects::dynamics::{Compressor, GainComputer, Limiter, Multiband, Peaks, Topology};
 use stave_dsp::primitives::filters::crossover::{Crossover, Order};
-use stave_dsp::units::{db, hz};
+use stave_dsp::units::{db, hz, ms};
 use stave_dsp::Stage;
 
 // Three bands, 24 dB/octave, a compressor in each, linked.
@@ -783,8 +813,8 @@ let split = Crossover::<3>::linkwitz_riley(Order::Lr4, &[hz(150.0), hz(2_500.0)]
 let curve = GainComputer { threshold_db: -24.0, ratio: 3.0, knee_db: 6.0 };
 let mut mb = Multiband::new(split, |_| Compressor::new(curve, Topology::FeedForward));
 mb.prepare(48_000.0);
-mb.band_mut(0)[0].set_attack_ms(30.0); // slower lows, left
-mb.band_mut(0)[1].set_attack_ms(30.0); // and right
+mb.band_mut(0)[0].set_attack(ms(30.0)); // slower lows, left
+mb.band_mut(0)[1].set_attack(ms(30.0)); // and right
 mb.set_bypass(2, true); // leave the highs alone
 let (l, r) = mb.tick_stereo_linked(0.5, 0.4);
 assert!(l.is_finite() && r.is_finite());
@@ -793,9 +823,9 @@ assert_eq!(mb.latency(), 0);
 // Linear phase, a look-ahead limiter per band: the latency is the
 // crossover's half-length plus the limiter's, and an impulse lands there.
 let split = Crossover::<4>::linear_phase(&[hz(120.0), hz(800.0), hz(5_000.0)], hz(200.0), db(80.0));
-let mut mb = Multiband::new(split, |_| Limiter::new(Peaks::Sample, 0.0));
+let mut mb = Multiband::new(split, |_| Limiter::new(Peaks::Sample, db(0.0)));
 mb.prepare(48_000.0);
-let mut one = Limiter::new(Peaks::Sample, 0.0);
+let mut one = Limiter::new(Peaks::Sample, db(0.0));
 one.prepare(48_000.0);
 let d = mb.latency() as usize;
 assert_eq!(d, 603 + one.latency() as usize);
@@ -836,7 +866,7 @@ let mut voice = Formants::new(ah);
 voice.prepare(48_000.0);
 let mut saw = Osc::new(Waveform::Saw);
 saw.prepare(48_000.0);
-saw.set_hz(220.0);
+saw.set_frequency(hz(220.0));
 for n in 0..4_800 {
     voice.morph(ah, ee, n as f32 / 4_800.0);
     assert!(voice.tick(0.3 * saw.next()).abs() < 4.0);
@@ -1260,14 +1290,18 @@ assert!(y.is_finite());
 
 ## Conventions
 
-- **Units in names.** `sample_rate` is `f32` everywhere (state may be
-  `f64`); frequencies end `_hz`, times `_ms`, levels `_db`; filters take
-  `q` (Butterworth is 1/√2), never "resonance"; phase is in cycles,
+- **Units are types.** A frequency is [`Hz`](stave_dsp::units::Hz), a
+  level [`Db`](stave_dsp::units::Db), a time
+  [`Seconds`](stave_dsp::units::Seconds) (built with `ms(..)`), in every
+  setter and constructor; never an `f32` whose name says which
+  (`check-vocabulary.sh` rejects `*_hz`, `*_db`, `*_ms`, `*_s` in the
+  public API). `sample_rate` is `f32` everywhere (state may be `f64`);
+  filters take `q` (Butterworth is 1/√2), never "resonance"; phase is in cycles,
   `0 ≤ t < 1`. One [`Waveform`](stave_dsp::Waveform) (sine, triangle,
   saw, square) serves oscillators and LFOs.
 - **Time constants come from the rate.** Every smoother, envelope and
-  lag uses [`tau_coeff`](stave_dsp::tau_coeff)`(seconds, sample_rate)`
-  = `1 − e^(−1/(seconds · sample_rate))`, never a bare per-sample
+  lag uses [`tau_coeff`](stave_dsp::tau_coeff)`(tau, sample_rate)`
+  = `1 − e^(−1/(tau · sample_rate))`, never a bare per-sample
   coefficient.
 - **Capacity is a type.** Fixed-capacity pushes
   ([`Chain::push`](stave_dsp::Chain::push),
@@ -1288,6 +1322,7 @@ assert!(y.is_finite());
   anything persistent are `f64`; audio-rate interfaces are `f32`.
 
 ```rust
+use stave_dsp::units::ms;
 use stave_dsp::{amp_to_db, db_to_amp, tau_coeff, Tail};
 
 assert_eq!(db_to_amp(0.0), 1.0);
@@ -1296,7 +1331,7 @@ assert_eq!(amp_to_db(0.0), -180.0); // the floor of f32 audio
 // A pole at radius 0.5 falls 120 dB in 20 samples.
 assert_eq!(Tail::from_pole(0.5), Tail::Samples(20));
 // After one time constant a step has covered 1 − 1/e of the way.
-let c = tau_coeff(0.001, 48_000.0);
+let c = tau_coeff(ms(1.0), 48_000.0);
 let y = (0..48).fold(0.0_f32, |y, _| y + c * (1.0 - y));
 assert!((y - (1.0 - (-1.0_f32).exp())).abs() < 1e-3);
 ```

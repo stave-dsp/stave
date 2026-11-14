@@ -9,6 +9,7 @@
 use stave_dsp::circuit::devices::converter::{Converter, Filter, Machine};
 use stave_dsp::Stage;
 use stave_measure::spectrum::goertzel;
+use stave_dsp::units::Hz;
 
 const FS: f32 = 48_000.0;
 const N: usize = 60_000;
@@ -119,7 +120,7 @@ fn anti_alias_filters_remove_what_they_should() {
     let kept = level_db(&run(filtered, k, 0.5), alias, 0.5);
     let mut c = Converter::new(filtered);
     c.prepare(FS);
-    let expect = 20.0 * f64::from(c.input_magnitude_at(hz as f32)).log10();
+    let expect = 20.0 * f64::from(c.input_magnitude_at(Hz::new(hz as f32))).log10();
     assert!(expect < -40.0, "{expect}");
     assert!((kept - bare - expect).abs() < 0.5, "alias {bare:.2} → {kept:.2} dB, filter {expect:.2}");
     // A reconstruction filter takes the image down the same way.
@@ -130,6 +131,6 @@ fn anti_alias_filters_remove_what_they_should() {
     let kept = level_db(&run(smoothed, image_k, 0.5), image, 0.5);
     let mut c = Converter::new(smoothed);
     c.prepare(FS);
-    let expect = 20.0 * f64::from(c.output_magnitude_at(image as f32)).log10();
+    let expect = 20.0 * f64::from(c.output_magnitude_at(Hz::new(image as f32))).log10();
     assert!((kept - bare - expect).abs() < 0.5, "image {bare:.2} → {kept:.2} dB, filter {expect:.2}");
 }
