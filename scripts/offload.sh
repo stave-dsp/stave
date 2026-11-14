@@ -95,7 +95,8 @@ fi
 ROOT="$(git rev-parse --show-toplevel)"
 source "$LIB/config.sh"
 stave_config_load "$ROOT"
-RUNNER="$(base64 < "$LIB/offload-runner.pl" | tr -d '\n')"
+RUNNER="$LIB/offload-runner.pl"
+RUNNER_ID="$(perl -MDigest::SHA=sha256_hex -0777 -ne 'print sha256_hex($_)' "$RUNNER")"
 
 GC=0 REAP=0
 if [[ "$HOST" == gc || "$HOST" == reap ]]; then
@@ -146,12 +147,19 @@ runner() {
   local host="$1" mode="$2" a args=""
   shift 2
   for a in "$@"; do args+=" $(printf 'x%s' "$a" | base64 | tr -d '\n')"; done
-  local boot='eval decode_base64(shift); die $@ if $@'
   if [[ "$host" == local ]]; then
     # shellcheck disable=SC2086
-    exec perl -MMIME::Base64 -e "$boot" "$RUNNER" "$mode" $args
+    exec perl "$RUNNER" "$mode" $args
   else
-    exec ssh "$host" "cd && exec perl -MMIME::Base64 -e '$boot' $RUNNER $mode$args"
+    # Keep source off argv: Windows has a command-line length limit and its
+    # bash launcher expands shell sigils once more. Upload via a separate
+    # connection so the eventual runner still owns its caller's stdin.
+    local cached=".cache/stave-offload/runner-$RUNNER_ID.pl"
+    if ! ssh "$host" "cd && test -f $cached" </dev/null; then
+      local pending="$cached.$$.${RANDOM}.part"
+      ssh "$host" "cd && umask 077 && mkdir -p .cache/stave-offload && cat > $pending && perl -c $pending && mv $pending $cached" < "$RUNNER" || return
+    fi
+    exec ssh "$host" "cd && exec perl $cached $mode$args"
   fi
 }
 # Run a shell command on HOST, in its home directory.
