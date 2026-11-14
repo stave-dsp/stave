@@ -3149,10 +3149,12 @@ dependencies = [
  "serde_json",
  "stave-core",
  "stave-dsp",
+ "stave-face",
  "stave-host",
  "stave-measure",
  "stave-telemetry",
  "stave-test",
+ "stave-ui",
  "stave-vst3-sys",
  "thiserror 2.0.18",
 ]

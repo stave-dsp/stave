@@ -1,4 +1,4 @@
-//! The view tabs and whichever view is active.
+//! The editor area: whichever view is active.
 
 use eframe::egui::{self, RichText};
 
@@ -8,22 +8,6 @@ use crate::project::ViewId;
 use crate::views;
 
 impl HostApp {
-    pub(super) fn draw_view_tabs(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            for v in ViewId::ALL {
-                let active = self.project.active_view == v;
-                if ui.selectable_label(active, v.label()).clicked() && !active {
-                    if self.project.active_view == ViewId::Voicing {
-                        self.leave_voicing();
-                    }
-                    self.project.active_view = v;
-                    self.mark_dirty();
-                }
-            }
-        });
-        ui.add_space(4.0);
-    }
-
     pub(super) fn draw_central(&mut self, ui: &mut egui::Ui, dt: f32) {
         if self.project.active_view == ViewId::Voicing {
             return self.draw_voicing(ui);
@@ -43,13 +27,24 @@ impl HostApp {
                     Some(ed)
                         if rect.width() < ed.width as f32 || rect.height() < ed.height as f32 =>
                     {
-                        ui.label(
-                            RichText::new(format!(
-                                "window too small for the editor ({} × {})",
-                                ed.width as i32, ed.height as i32
-                            ))
-                            .weak(),
+                        let need = egui::vec2(
+                            (ed.width as f32 - rect.width()).max(0.0),
+                            (ed.height as f32 - rect.height()).max(0.0),
                         );
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(rect.height() * 0.3);
+                            ui.label(
+                                RichText::new(format!(
+                                    "The editor needs {} × {}: the window is {} × {} short.",
+                                    ed.width as i32, ed.height as i32, need.x as i32, need.y as i32
+                                ))
+                                .weak(),
+                            );
+                            if ui.button("Grow the window to fit").clicked() {
+                                let size = ui.ctx().screen_rect().size() + need + egui::vec2(8.0, 8.0);
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                            }
+                        });
                     }
                     Some(_) => {}
                     None => {
@@ -109,14 +104,16 @@ impl HostApp {
         }
     }
 
-    /// Float the native editor over the Plugin tab's rect (hidden on
-    /// every other tab).
+    /// Float the native editor over the Plugin view's rect (hidden on
+    /// every other view).
     pub(super) fn place_editor(&self, ctx: &egui::Context) {
         let Some(ed) = self.session.as_ref().and_then(|s| s.editor()) else {
             return;
         };
         let r = self.editor_rect;
-        let hidden = self.project.active_view != ViewId::Plugin || r == egui::Rect::NOTHING;
+        // A native view floats above egui: hide it while the palette
+        // (drawn over the editor area) is open.
+        let hidden = self.project.active_view != ViewId::Plugin || r == egui::Rect::NOTHING || self.palette.open;
         ed.place(
             f64::from(r.left()),
             f64::from(r.top()),

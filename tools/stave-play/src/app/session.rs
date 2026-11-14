@@ -28,7 +28,7 @@ pub enum SessionError {
     /// Audio Units are measured and auditioned offline (the Voicing tab,
     /// `--characterise`); the live session hosts VST3 and stages.
     #[cfg(target_os = "macos")]
-    #[error("{0}: an Audio Unit plays in the Voicing tab and --characterise, not live")]
+    #[error("{0}: an Audio Unit plays in Listen (Voicing) and --characterise, not live")]
     OfflineOnly(String),
 }
 
@@ -44,6 +44,7 @@ pub struct Session {
     telemetry: *const Telemetry,
     _stream: AudioStream,
     pub name: String,
+    pub inputs: usize,
     pub outputs: usize,
 }
 
@@ -65,7 +66,7 @@ impl Session {
             Opened::AudioUnit(_) => Err(SessionError::OfflineOnly(name)),
             Opened::Stage(stage) => {
                 let params = ParamSource::Stage(stage.handle());
-                let outputs = stage.layout().outputs;
+                let (inputs, outputs) = (stage.layout().inputs, stage.layout().outputs);
                 let stream = audio::start(stage, shared)?;
                 Ok(Self {
                     editor: None,
@@ -73,6 +74,7 @@ impl Session {
                     telemetry: std::ptr::null(),
                     _stream: stream,
                     name,
+                    inputs,
                     outputs,
                 })
             }
@@ -96,7 +98,7 @@ impl Session {
                 log.warn(line)
             }
         }
-        let outputs = plugin.layout().outputs;
+        let (inputs, outputs) = (plugin.layout().inputs, plugin.layout().outputs);
         let params = ParamSource::Plugin(plugin.controller_handle());
         let telemetry = plugin.telemetry_raw();
         let editor_owner = plugin.editor_owner_raw();
@@ -113,6 +115,7 @@ impl Session {
             telemetry,
             _stream: stream,
             name,
+            inputs,
             outputs,
         })
     }

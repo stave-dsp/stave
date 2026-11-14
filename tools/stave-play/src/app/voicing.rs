@@ -17,10 +17,12 @@ impl HostApp {
         let session = &mut self.session;
         let suspended = &mut self.suspended_for_voicing;
         let status = &mut self.status;
+        let status_error = &mut self.status_error;
         let mut suspend = || {
             if session.take().is_some() {
                 *suspended = true;
-                *status = "main plugin paused while voicing (leave the view to resume)".into();
+                *status = "main plugin paused while listening (leave Listen to resume)".into();
+                *status_error = false;
             }
         };
         let mut ctx = Ctx {

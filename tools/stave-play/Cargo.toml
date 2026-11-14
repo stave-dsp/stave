@@ -19,6 +19,9 @@ stave-vst3-sys.workspace = true
 stave-telemetry.workspace = true
 stave-core.workspace = true
 stave-dsp.workspace = true
+# The design system's colour, spacing and type tokens for the workbench.
+stave-face.workspace = true
+stave-ui.workspace = true
 thiserror.workspace = true
 cpal = "0.15"
 crossbeam-queue = "0.3"

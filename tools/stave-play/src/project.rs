@@ -73,6 +73,7 @@ impl ViewId {
         ViewId::Debug,
     ];
 
+    /// The tab label: what the view shows, not how it is built.
     pub fn label(self) -> &'static str {
         match self {
             ViewId::Plugin => "Plugin",
@@ -83,11 +84,103 @@ impl ViewId {
             ViewId::Spectrum => "Spectrum",
             ViewId::Meters => "Meters",
             ViewId::Phase => "Phase",
-            ViewId::Debugger => "Debugger",
+            ViewId::Debugger => "Telemetry",
             ViewId::Validate => "Validate",
-            ViewId::Perf => "Perf",
-            ViewId::Debug => "Debug",
+            ViewId::Perf => "CPU",
+            ViewId::Debug => "Log",
             ViewId::Voicing => "Voicing",
+        }
+    }
+
+    /// The mode (the job) the view belongs to.
+    pub fn mode(self) -> Mode {
+        match self {
+            ViewId::Plugin => Mode::Play,
+            ViewId::Voicing => Mode::Listen,
+            ViewId::Validate => Mode::Validate,
+            ViewId::Debugger | ViewId::Debug => Mode::Debug,
+            ViewId::Profiles
+            | ViewId::Response
+            | ViewId::Spectrogram
+            | ViewId::Scope
+            | ViewId::Spectrum
+            | ViewId::Meters
+            | ViewId::Phase
+            | ViewId::Perf => Mode::Measure,
+        }
+    }
+
+    /// A view by its label or a mode's name, any case (`--view`).
+    pub fn parse(name: &str) -> Option<ViewId> {
+        let name = name.to_ascii_lowercase();
+        ViewId::ALL
+            .into_iter()
+            .find(|v| v.label().eq_ignore_ascii_case(&name) || format!("{v:?}").eq_ignore_ascii_case(&name))
+            .or_else(|| Mode::ALL.into_iter().find(|m| m.label().eq_ignore_ascii_case(&name)).map(Mode::first))
+    }
+}
+
+/// The five jobs the activity bar switches between. A mode owns one or
+/// more views; with more than one they show as tabs in the header.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Mode {
+    /// Hear the plugin: its editor, the params, the keyboard.
+    Play,
+    /// Compare by ear: loudness-matched A/B, blind tests, null, bless.
+    Listen,
+    /// Read it: live analysers, offline profiles, CPU.
+    Measure,
+    /// Check it hosts correctly.
+    Validate,
+    /// Look inside: telemetry taps, the log.
+    Debug,
+}
+
+impl Mode {
+    pub const ALL: [Mode; 5] = [Mode::Play, Mode::Listen, Mode::Measure, Mode::Validate, Mode::Debug];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Mode::Play => "Play",
+            Mode::Listen => "Listen",
+            Mode::Measure => "Measure",
+            Mode::Validate => "Validate",
+            Mode::Debug => "Debug",
+        }
+    }
+
+    /// The mode's views, in tab order.
+    pub fn views(self) -> &'static [ViewId] {
+        match self {
+            Mode::Play => &[ViewId::Plugin],
+            Mode::Listen => &[ViewId::Voicing],
+            Mode::Measure => &[
+                ViewId::Response,
+                ViewId::Profiles,
+                ViewId::Spectrum,
+                ViewId::Spectrogram,
+                ViewId::Scope,
+                ViewId::Meters,
+                ViewId::Phase,
+                ViewId::Perf,
+            ],
+            Mode::Validate => &[ViewId::Validate],
+            Mode::Debug => &[ViewId::Debugger, ViewId::Debug],
+        }
+    }
+
+    pub fn first(self) -> ViewId {
+        self.views()[0]
+    }
+
+    /// One line for the activity bar's tooltip and the palette.
+    pub fn about(self) -> &'static str {
+        match self {
+            Mode::Play => "the plugin, its params and the keyboard",
+            Mode::Listen => "loudness-matched A/B, blind tests, null, bless",
+            Mode::Measure => "response, profiles, spectrum, scope, meters, CPU",
+            Mode::Validate => "host-conformance checks",
+            Mode::Debug => "telemetry taps and the log",
         }
     }
 }
@@ -213,6 +306,23 @@ mod tests {
             .collect();
         assert_eq!(names, ["Alpha", "zeta"]);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn every_view_belongs_to_exactly_the_mode_that_lists_it() {
+        for v in ViewId::ALL {
+            let owners: Vec<Mode> = Mode::ALL.into_iter().filter(|m| m.views().contains(&v)).collect();
+            assert_eq!(owners, [v.mode()], "{v:?}");
+        }
+    }
+
+    #[test]
+    fn views_parse_by_label_variant_or_mode() {
+        assert_eq!(ViewId::parse("cpu"), Some(ViewId::Perf));
+        assert_eq!(ViewId::parse("Perf"), Some(ViewId::Perf));
+        assert_eq!(ViewId::parse("listen"), Some(ViewId::Voicing));
+        assert_eq!(ViewId::parse("measure"), Some(ViewId::Response));
+        assert_eq!(ViewId::parse("nope"), None);
     }
 
     #[test]
