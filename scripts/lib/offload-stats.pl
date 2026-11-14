@@ -15,6 +15,7 @@ open my $f, '<', $log or die "offload: cannot read $log: $!\n";
 while (<$f>) {
   my $j = eval { decode_json($_) } or next;
   next if ($j->{end} // 0) < $since;
+  next if defined $j->{kind};   # reaps (`offload.sh reap`), not jobs
   my $k = "$j->{host}\t$j->{class}";
   my $s = $g{$k} //= { slots => 0, wait => [], run => [], n => 0, busy => 0, fail => 0, timeout => 0 };
   $s->{n}++;
