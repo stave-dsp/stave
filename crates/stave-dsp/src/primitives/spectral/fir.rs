@@ -13,6 +13,7 @@ use super::fft::{Complex, Fft};
 use super::impulse_response::ImpulseResponse;
 use super::window::Window;
 use core::f64::consts::{PI, TAU};
+use crate::units::Db;
 
 /// What a windowed-sinc design passes. Edges are fractions of the
 /// sample rate, in `(0, 0.5)`, at the −6 dB point of the windowed
@@ -109,7 +110,7 @@ pub struct Band {
 /// use stave_dsp::primitives::spectral::{Fir, Passband};
 ///
 /// // A lowpass at 1/8 of the rate, 80 dB down 0.03 above it.
-/// let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.125 }, 80.0, 0.03);
+/// let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.125 }, db(80.0), 0.03);
 /// assert!(fir.gain_db(0.0).abs() < 0.001);
 /// assert!(fir.gain_db(0.125 + 0.03) < -79.0);
 /// ```
@@ -216,7 +217,8 @@ impl Fir {
     /// passband ripple is about the same fraction as the stopband:
     /// `±10^(−A/20)`. A bandpass is the difference of two lowpasses whose
     /// errors add, so it is designed 6 dB deeper.
-    pub fn kaiser(passband: Passband, attenuation_db: f64, transition: f64) -> Self {
+    pub fn kaiser(passband: Passband, attenuation: Db, transition: f64) -> Self {
+        let attenuation_db = f64::from(attenuation.get());
         assert!(transition > 0.0, "Fir::kaiser: the transition must be positive");
         let attenuation_db = match passband {
             Passband::Bandpass { .. } => attenuation_db + 20.0 * 2f64.log10(),
@@ -238,7 +240,7 @@ impl Fir {
                 high: high + shift,
             },
         };
-        Self::windowed_sinc(passband, len, Window::kaiser_for(attenuation_db))
+        Self::windowed_sinc(passband, len, Window::kaiser_for(Db::new(attenuation_db as f32)))
     }
 
     /// The linear-phase (type I) design of odd length `len` minimising

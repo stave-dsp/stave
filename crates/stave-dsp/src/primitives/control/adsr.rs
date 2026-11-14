@@ -20,6 +20,7 @@
 
 use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
+use crate::units::Seconds;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Segment {
@@ -89,9 +90,9 @@ impl Adsr {
         );
         self.config = *config;
         let sample_rate = self.sample_rate;
-        self.a_coeff = tau_coeff(config.attack_ms / ATTACK_LN * 0.001, sample_rate);
-        self.d_coeff = tau_coeff(config.decay_ms * 0.001, sample_rate);
-        self.r_coeff = tau_coeff(config.release_ms * 0.001, sample_rate);
+        self.a_coeff = tau_coeff(Seconds::new(f64::from(config.attack_ms / ATTACK_LN * 0.001)), sample_rate);
+        self.d_coeff = tau_coeff(Seconds::new(f64::from(config.decay_ms * 0.001)), sample_rate);
+        self.r_coeff = tau_coeff(Seconds::new(f64::from(config.release_ms * 0.001)), sample_rate);
         debug_assert!(
             (0.0..=1.0).contains(&config.sustain),
             "sustain {}",

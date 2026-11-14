@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::node::Stage;
 use crate::primitives::time::delay::{Delay, DelayLine};
+use crate::units::ms;
 
 const FRACS: [f32; 7] = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95];
 
@@ -117,7 +118,7 @@ fn modulated_stays_finite<I: Interpolator>(name: &str) {
         (lcg >> 8) as f32 / (1u32 << 23) as f32 - 1.0
     };
     for mod_hz in [0.01f32, 7.0, 1_000.0, 11_000.0, 23_999.0] {
-        let mut d = Delay::<I>::new(20.0, 10.0);
+        let mut d = Delay::<I>::new(ms(20.0), ms(10.0));
         d.prepare(rate);
         let mut peak = 0.0f32;
         for n in 0..4_800 {
@@ -127,7 +128,7 @@ fn modulated_stays_finite<I: Interpolator>(name: &str) {
                 1..=99 => 10.0 * (noise() + 1.0), // random jumps over the range
                 _ => 10.0 + 9.99 * phase.sin(),
             };
-            d.set_ms(ms);
+            d.set_delay(crate::units::ms(f64::from(ms)));
             let x = if n % 64 < 32 { 1.0 } else { noise() };
             let y = d.tick(x);
             assert!(y.is_finite(), "{name} at {mod_hz} Hz, sample {n}: {y}");

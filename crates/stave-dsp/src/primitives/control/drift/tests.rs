@@ -1,4 +1,5 @@
 use super::*;
+use crate::units::Seconds;
 
 #[test]
 fn ornstein_uhlenbeck_has_its_variance_and_correlation() {
@@ -6,7 +7,7 @@ fn ornstein_uhlenbeck_has_its_variance_and_correlation() {
     // times, so the variance's standard error is about 1 %.
     for (rate, seed) in [(1_000.0f32, 3u64), (48_000.0, 4)] {
         let tau_s = 50.0 / f64::from(rate);
-        let mut p = OrnsteinUhlenbeck::new(2.0, 0.5, tau_s, seed);
+        let mut p = OrnsteinUhlenbeck::new(2.0, 0.5, Seconds::new(tau_s), seed);
         p.prepare(rate);
         let n = 1 << 21;
         let x: Vec<f64> = (0..n).map(|_| p.tick_f64()).collect();

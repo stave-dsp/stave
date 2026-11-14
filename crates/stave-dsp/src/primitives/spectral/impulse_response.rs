@@ -15,6 +15,7 @@ use super::window::{bessel_i0, Window};
 use crate::units::SampleRate;
 use core::f64::consts::PI;
 use core::fmt;
+use crate::units::Db;
 
 /// How an [`ImpulseResponse`]'s paths connect inputs to outputs.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -348,7 +349,7 @@ impl Kernel {
         let cutoff = 0.475 * scale;
         let transition = 0.05 * scale;
         let half = ((Self::ATTENUATION - 7.95) / (14.36 * transition) / 2.0).ceil();
-        let Window::Kaiser { beta } = Window::kaiser_for(Self::ATTENUATION) else {
+        let Window::Kaiser { beta } = Window::kaiser_for(Db::new(Self::ATTENUATION as f32)) else {
             unreachable!("kaiser_for returns a Kaiser window")
         };
         let inv_i0 = 1.0 / bessel_i0(beta);

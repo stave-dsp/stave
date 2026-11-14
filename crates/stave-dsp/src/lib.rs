@@ -60,7 +60,7 @@ pub use primitives::control::adsr::{Adsr, AdsrConfig};
 pub use primitives::control::envelope::{EnvelopeFollower, EnvelopeTimes};
 pub use primitives::control::lag::Lag;
 pub use primitives::control::lfo::Lfo;
-pub use primitives::control::mod_lfo::{mod_lfo_hz, rise, ModLfo, ModLfoShape, SYNC_BEATS};
+pub use primitives::control::mod_lfo::{mod_lfo_rate, rise, ModLfo, ModLfoShape, SYNC_BEATS};
 pub use primitives::control::note_sources::{
     key_position, standard_sources, sympathy, Ensemble, NoteSources,
 };

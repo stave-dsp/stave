@@ -18,6 +18,8 @@ use crate::kernel::control::Source;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 use crate::primitives::filters::one_pole::tau_coeff;
+use crate::units::Hz;
+use crate::units::seconds;
 
 #[derive(Clone)]
 pub struct SubOctave {
@@ -57,9 +59,9 @@ impl Default for SubOctave {
 impl SubOctave {
     pub fn new() -> Self {
         let mut s = Self {
-            det_hp: Biquad::new(FilterSpec::Highpass { hz: 35.0, q: 0.707 }),
+            det_hp: Biquad::new(FilterSpec::Highpass { frequency: Hz::new(35.0), q: 0.707 }),
             det_lp: Biquad::new(FilterSpec::Lowpass {
-                hz: 900.0,
+                frequency: Hz::new(900.0),
                 q: 0.707,
             }),
             env: 0.0,
@@ -70,7 +72,7 @@ impl SubOctave {
             smooth: 0.0,
             smooth_coeff: 0.0,
             out_lp: Biquad::new(FilterSpec::Lowpass {
-                hz: 1_500.0,
+                frequency: Hz::new(1_500.0),
                 q: 0.707,
             }),
             hyst_frac: 0.35,
@@ -82,8 +84,8 @@ impl SubOctave {
 
     fn derive(&mut self, sample_rate: f32) {
         // Envelope: 1 ms attack / 60 ms release.
-        self.env_atk = tau_coeff(0.001, sample_rate);
-        self.env_rel = tau_coeff(0.060, sample_rate);
+        self.env_atk = tau_coeff(seconds(0.001), sample_rate);
+        self.env_rel = tau_coeff(seconds(0.060), sample_rate);
         // Edge smoothing ≈ 400 Hz one-pole.
         self.smooth_coeff = 1.0 - (-2.0 * core::f32::consts::PI * 400.0 / sample_rate).exp();
     }
