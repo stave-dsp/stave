@@ -336,6 +336,26 @@ fn mxr_phase90_matches_ngspice() {
     fine.assert();
 }
 
+/// The MXR Phase 90 swept: its gates driven by a 4 Hz sine from 3.1 to
+/// 4.3 V (one whole sweep in 0.25 s, standing in for the LFO), 300 mV at
+/// 1 kHz in, so the notches cross the tone and the channels move within
+/// each of its periods. The deck's behavioural LM741s at 16× (measured
+/// 9.2e-6), then the topology, its `vg` carrying the deck's sweep, at 8×
+/// and 16× against ngspice's transient, falling as h² (3.9e-5 to 9.2e-6;
+/// 1.6e-4 at 4×, 2.1e-6 at 32×): the time-varying case holds as the
+/// frozen one does.
+#[test]
+fn mxr_phase90_swept_matches_ngspice() {
+    let name = "mxr_phase90_sweep";
+    let case = |budget| Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+    run(name, "the deck", &deck(name), 16, case(2e-5)).assert();
+    let topology = stimulated(stimulated(topologies::mxr_phase90(3.4), name, "vin"), name, "vg");
+    let coarse = run(name, "topology", &topology, 8, case(8e-5));
+    let fine = run(name, "topology", &topology, 16, case(2e-5));
+    assert_converges(&coarse, &fine, 3.0);
+    fine.assert();
+}
+
 /// The Boss DS-1, 200 mV at 1 kHz: the booster saturates, the NJM2904
 /// rails and the 1N4148s clip — edges a coarse grid smears, so it needs
 /// a fine one: the deck's behavioural op-amps at 32× (measured 1.4e-4),
@@ -373,6 +393,28 @@ fn klon_centaur_matches_ngspice() {
     let topology = stimulated(topologies::klon_centaur(0.5, 0.5), name, "vin");
     let coarse = run(name, "topology", &topology, 4, case(4e-4));
     let fine = run(name, "topology", &topology, 8, case(1e-4));
+    assert_converges(&coarse, &fine, 3.0);
+    fine.assert();
+}
+
+/// The MXR Distortion+: at distortion 0.5 the linearised response of the
+/// topology and the AC deck against ngspice (measured 1.5e-6 dB); then
+/// both pots at maximum, 100 mV at 1 kHz into a gain of 214 (the 741
+/// rails and slews, the germanium pair clips), the deck's behavioural
+/// LM741 at 32× (measured 1.05e-4) and the topology's `OpAmp` element at
+/// 16× and 32× against ngspice's transient, falling as h² (4.4e-4 to
+/// 1.05e-4; 6.2e-3 at 4×, 1.8e-3 at 8×, 2.5e-5 at 64×).
+#[test]
+fn mxr_distortion_plus_matches_ngspice() {
+    let ac = "mxr_distortion_plus_ac";
+    response(ac, "topology", &topologies::mxr_distortion_plus(0.5, 1.0), 5e-6);
+    response(ac, "the deck", &deck(ac), 5e-6);
+    let name = "mxr_distortion_plus";
+    let case = |budget| Case::ngspice(name).budget(Metric::NormalizedRms, budget);
+    run(name, "the deck", &deck(name), 32, case(2e-4)).assert();
+    let topology = stimulated(topologies::mxr_distortion_plus(1.0, 1.0), name, "vin");
+    let coarse = run(name, "topology", &topology, 16, case(1e-3));
+    let fine = run(name, "topology", &topology, 32, case(2e-4));
     assert_converges(&coarse, &fine, 3.0);
     fine.assert();
 }

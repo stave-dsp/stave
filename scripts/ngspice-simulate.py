@@ -608,6 +608,8 @@ def main():
                              "a waveform by 1.6e-3 or more)")
     parser.add_argument("--expect-version", help="fail unless ngspice reports this version")
     parser.add_argument("--only", help="only these decks (comma-separated names)")
+    parser.add_argument("--exclude", help="every deck but these (comma-separated names): CI checks "
+                        "the slow classics' decks and tables in a job of their own")
     parser.add_argument("--tables-only", action="store_true", help="skip the waveforms")
     parser.add_argument("--keep", type=pathlib.Path,
                         help="--check: copy every stale table's fresh simulation here (CI uploads them)")
@@ -615,6 +617,10 @@ def main():
                         help="parallel characterisation runs (with the ngspice program)")
     args = parser.parse_args()
     only = set(args.only.split(",")) if args.only else None
+    exclude = set(args.exclude.split(",")) if args.exclude else set()
+
+    def chosen(stem):
+        return (not only or stem in only) and stem not in exclude
 
     spice = load()
     found = version(spice)
@@ -627,7 +633,7 @@ def main():
         check_exact(spice, scratch)
         failed = []
         for cir in sorted(SPICE_DIR.glob("*.cir")):
-            if args.tables_only or (only and cir.stem not in only):
+            if args.tables_only or not chosen(cir.stem):
                 continue
             committed = cir.with_suffix(".ngspice.txt")
             if not args.check:
@@ -650,7 +656,7 @@ def main():
         # programs, so a slow deck never leaves the others idle.
         global SLOTS
         SLOTS = threading.BoundedSemaphore(args.jobs)
-        plans = [p for p in sorted(SPICE_DIR.glob("*.plan")) if not only or p.stem in only]
+        plans = [p for p in sorted(SPICE_DIR.glob("*.plan")) if chosen(p.stem)]
 
         def one(plan):
             cir, committed = plan.with_suffix(".cir"), plan.with_suffix(".table")

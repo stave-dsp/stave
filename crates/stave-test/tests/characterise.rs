@@ -21,7 +21,7 @@
 #[allow(dead_code)]
 mod circuits;
 
-use circuits::{budgets, CIRCUITS};
+use circuits::{budgets, model, CIRCUITS};
 use stave_test::characterise::kernels::KernelPlan;
 use stave_test::characterise::model::{knee, settle_seconds};
 use stave_test::characterise::{deck, Characterise, Plan, Tier};
@@ -85,7 +85,7 @@ const KERNELS: [&str; 3] = ["common_cathode", "diode_clipper", "tube_screamer"];
 /// `name`'s T0 matrix on `Circuit<Dk>`, with its budgets, held to its
 /// fingerprint (`fingerprints/<name>.fingerprint`, DSP.md R18).
 fn circuit(name: &str) {
-    let c = Characterise::ngspice(name).tier(Tier::T0).circuit();
+    let c = model(name, Tier::T0);
     let c = if KERNELS.contains(&name) { c.kernels(KernelPlan::default()) } else { c };
     budgets(name, Tier::T0, c).run().pinned().assert();
 }
@@ -170,6 +170,55 @@ fn boss_ce2_filters() {
     circuit("boss_ce2_filters");
 }
 
+// The classics (DSP.md R24, R25): each catalogued topology on its deck's
+// plan, at the grid its waveform case converges on (16–32× for the
+// op-amp circuits: seconds, not the tier's half-second target).
+
+#[test]
+fn tube_screamer_ts808() {
+    circuit("tube_screamer_ts808");
+}
+
+#[test]
+fn big_muff_rams_head() {
+    circuit("big_muff_rams_head");
+}
+
+#[test]
+fn proco_rat() {
+    circuit("proco_rat");
+}
+
+#[test]
+fn marshall_jcm800_2203() {
+    circuit("marshall_jcm800_2203");
+}
+
+#[test]
+fn moog_ladder_feedback() {
+    circuit("moog_ladder_feedback");
+}
+
+#[test]
+fn mxr_phase90() {
+    circuit("mxr_phase90");
+}
+
+#[test]
+fn boss_ds1() {
+    circuit("boss_ds1");
+}
+
+#[test]
+fn klon_centaur() {
+    circuit("klon_centaur");
+}
+
+#[test]
+fn mxr_distortion_plus() {
+    circuit("mxr_distortion_plus");
+}
+
 /// `Circuit<Wdf>` on every circuit's plan at `Circuit<Dk>`'s T0
 /// budgets: the wave digital method (trees under an R-type root, the
 /// devices a K-method root) held to ngspice on the whole matrix — both
@@ -180,7 +229,9 @@ fn every_circuit_on_wdf() {
     // whose cards' charge moves the matrix run as their `*_static` twins.
     // The diode clipper's 4 pF beside its 10 nF moves nothing it measures.
     const CHARGED: [&str; 5] = ["fuzz_face", "rangemaster", "ce_stage", "jfet_booster", "mosfet_booster"];
-    for c in CIRCUITS.iter().filter(|c| !CHARGED.contains(&c.name)) {
+    // The classics run on `Circuit<Dk>` only: at their 8–32× grids they
+    // would make this the slowest test of the tier.
+    for c in CIRCUITS.iter().filter(|c| !CHARGED.contains(&c.name) && c.classic.is_none()) {
         budgets(c.name, Tier::T0, Characterise::ngspice(c.name).tier(Tier::T0).wdf())
             .named(format!("{}/wdf", c.name))
             .run()

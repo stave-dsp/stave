@@ -42,7 +42,12 @@ use crate::circuit::netlist::Netlist;
 /// the deck `mxr_phase90.cir` (300 mV at 1 kHz, the op-amps written as
 /// behavioural sources) and this netlist on its stimulus against
 /// ngspice's transient, 6e-5 normalized RMS at 16× (measured 3.0e-5),
-/// converging as h² from 2×.
+/// converging as h² from 2×. Swept,
+/// `mxr_phase90_swept_matches_ngspice`: `vg` carrying a 4 Hz sine from
+/// 3.1 to 4.3 V (the deck `mxr_phase90_sweep.cir`, one whole sweep in
+/// 0.25 s) under the same tone, 2e-5 normalized RMS at 16× (measured
+/// 9.2e-6), converging as h² from 4× — the channels moving within each
+/// period of the signal are solved as ngspice solves them.
 ///
 /// # Cost
 /// Datasheet `"Circuit<Dk> MXR Phase 90 (LM741)"`.
@@ -54,8 +59,9 @@ use crate::circuit::netlist::Netlist;
 /// # Valid ranges
 /// `gate_volts` from about 3 V (channels off) to the 5.1 V reference
 /// (vgs ≤ 0; past it the gate junctions conduct); inputs within the
-/// 9 V supply. Verified at one frozen gate voltage: the sweep's own
-/// time variation (the LFO moving the channels within a period) is not.
+/// 9 V supply. A swept `vg` (set its source's signal) is verified
+/// from 3.1 to 4.3 V at 4 Hz; the LFO itself (IC6, its triangle and the
+/// gate bus's 3M9 / 47n smoothing) is not modelled.
 ///
 /// [`ShichmanHodges::N2N5952`]: crate::circuit::devices::jfet::ShichmanHodges::N2N5952
 /// [`GummelPoon::N2N4125`]: crate::circuit::devices::bjt::GummelPoon::N2N4125

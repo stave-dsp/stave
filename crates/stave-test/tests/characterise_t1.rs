@@ -4,20 +4,21 @@
 //! and bursts (C8) — oversampled and at 44.1, 48 and 96 kHz (C11: the
 //! same budgets at every host rate). Ignored by default: the references
 //! job runs it (`cargo test -p stave-test --test characterise_t1 --
-//! --ignored`), beside the ngspice regeneration it is held to.
+//! --ignored --skip classics::`), beside the ngspice regeneration it is
+//! held to. The classics (DSP.md R24, R25, R27), at the 8–32× grids their
+//! op-amps and clippers need, take tens of minutes: their own job runs
+//! them (`-- --ignored classics::`).
 
 #[allow(dead_code)]
 mod circuits;
 
-use circuits::{budgets, par_map, piano_anmr, shipping, CIRCUITS};
+use circuits::{budgets, model, par_map, piano_anmr, shipping, CIRCUITS};
 use stave_measure::perceptual::nmr::AUDIBLE_ANMR_DB;
 use stave_test::characterise::model::knee;
-use stave_test::characterise::{deck, Characterise, Plan, Tier};
+use stave_test::characterise::{deck, Plan, Tier};
 
 fn circuit(name: &str) {
-    budgets(name, Tier::T1, Characterise::ngspice(name).tier(Tier::T1).circuit())
-        .run()
-        .assert();
+    budgets(name, Tier::T1, model(name, Tier::T1)).run().assert();
 }
 
 /// The knees the plans were built at are still the circuits' knees,
@@ -25,8 +26,13 @@ fn circuit(name: &str) {
 #[test]
 #[ignore = "T1: the references job runs it"]
 fn knees_are_current() {
+    knees(false);
+}
+
+/// [`knees_are_current`] for the classics, or every other circuit.
+fn knees(classics: bool) {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("spice");
-    for c in CIRCUITS.iter().filter(|c| !c.supply) {
+    for c in CIRCUITS.iter().filter(|c| !c.supply && c.classic.is_some() == classics) {
         let plan = Plan::parse(&std::fs::read_to_string(dir.join(format!("{}.plan", c.name))).unwrap())
             .unwrap();
         let committed = plan.knee.unwrap();
@@ -71,6 +77,37 @@ t1!(
     boss_ce2_filters
 );
 
+/// The classics (DSP.md R24, R25, R27): each catalogued topology's whole
+/// matrix on its deck's plan, the knees and the piano, in a job of their
+/// own (`classics::`).
+mod classics {
+    use super::{circuit, knees, piano};
+
+    #[test]
+    #[ignore = "T1: the references job runs it"]
+    fn knees_are_current() {
+        knees(true);
+    }
+
+    #[test]
+    #[ignore = "T1: the references job runs it"]
+    fn anmr_over_the_piano() {
+        piano(true);
+    }
+
+    t1!(
+        tube_screamer_ts808,
+        big_muff_rams_head,
+        proco_rat,
+        marshall_jcm800_2203,
+        moog_ladder_feedback,
+        mxr_phase90,
+        boss_ds1,
+        klon_centaur,
+        mxr_distortion_plus
+    );
+}
+
 /// The hand topologies' whole matrices.
 mod hand {
     use super::circuits::hand;
@@ -107,9 +144,17 @@ mod hand {
 #[test]
 #[ignore = "T1: the references job runs it"]
 fn anmr_over_the_piano() {
+    piano(false);
+}
+
+/// [`anmr_over_the_piano`] for the classics, or every other circuit.
+fn piano(classics: bool) {
     let rate = 44_100.0;
     // A thread a circuit, at most the slot's share of the cores.
-    let circuits: Vec<_> = CIRCUITS.iter().filter(|c| !c.supply).collect();
+    let circuits: Vec<_> = CIRCUITS
+        .iter()
+        .filter(|c| !c.supply && c.classic.is_some() == classics)
+        .collect();
     let results: Vec<(&str, f64, f64, f64)> = par_map(&circuits, |c| {
         let config = shipping(c.name);
         let worst = |offset: f64| piano_anmr(c.name, rate, config, offset);
@@ -148,6 +193,19 @@ const PIANO: &[(&str, f64, f64)] = &[
     ("ce_stage_static", 13.0, 10.0), // -11.5 / 10.0 dB at +12 / +20, 8×
     ("jfet_booster_static", -3.2, -6.2), // -6.7 / -6.2 dB at +12 / +20, 8×
     ("mosfet_booster_static", 16.9, 13.9), // 13.0 / 13.9 dB at +12 / +20, 8×
+    // The classics (R27), each catalogued topology as it ships today,
+    // unoversampled (`SHIPPING` holds no entry for them until R12's sweep
+    // chooses one): every one but the Big Muff (−43.4 / −28.1, held to
+    // −10 dB) aliases audibly at the top of the piano. The Phase 90 reads
+    // worse at +12 than at +20.
+    ("tube_screamer_ts808", 49.6, 46.6), // 21.5 / 46.6 dB at +12 / +20
+    ("proco_rat", 24.4, 21.4), // -21.2 / 21.4 dB at +12 / +20
+    ("marshall_jcm800_2203", 51.0, 48.0), // 35.3 / 48.0 dB at +12 / +20
+    ("moog_ladder_feedback", 68.4, 65.4), // 44.1 / 65.4 dB at +12 / +20
+    ("mxr_phase90", 52.2, 49.2), // 49.2 / 43.8 dB at +12 / +20
+    ("boss_ds1", 49.7, 46.7), // 39.7 / 46.7 dB at +12 / +20
+    ("klon_centaur", 29.6, 26.6), // -8.4 / 26.6 dB at +12 / +20
+    ("mxr_distortion_plus", 32.0, 29.0), // -3.8 / 29.0 dB at +12 / +20
 ];
 
 /// R16 on program material (DSP.md C13, R22's corpus): each circuit's

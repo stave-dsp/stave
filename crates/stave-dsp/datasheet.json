@@ -57,6 +57,7 @@
     { "stage": "Circuit<Dk> MXR Phase 90 (LM741)", "ns_per_sample": 5014.255, "spread_pct": 0.0, "rate_hz": 48000 },
     { "stage": "Circuit<Dk> Boss DS-1 (NJM2904)", "ns_per_sample": 7431.056, "spread_pct": 0.2, "rate_hz": 48000 },
     { "stage": "Circuit<Dk> Klon Centaur (TL072)", "ns_per_sample": 2987.187, "spread_pct": 0.1, "rate_hz": 48000 },
+    { "stage": "Circuit<Dk> MXR Distortion+ (LM741)", "ns_per_sample": 2138.254, "spread_pct": 0.1, "rate_hz": 48000 },
     { "stage": "DiodeClipper x10 (WDF) 1x ADAA", "ns_per_sample": 307.636, "spread_pct": 0.1, "rate_hz": 48000 },
     { "stage": "Circuit<Dk> diode clipper x10 1x ADAA", "ns_per_sample": 599.845, "spread_pct": 0.2, "rate_hz": 48000 },
     { "stage": "Circuit<Dk> op-amp clipper 1x ADAA", "ns_per_sample": 708.538, "spread_pct": 0.0, "rate_hz": 48000 },
