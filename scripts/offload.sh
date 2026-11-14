@@ -41,6 +41,10 @@
 # Hosts listed in STAVE_TAR_HOSTS (or any host with STAVE_OFFLOAD_SYNC=tar)
 # get a tarball instead of rsync, with a fresh git index of exactly the files
 # sent (the vocabulary and purity checks read `git ls-files`).
+# Every remote command begins with `cd`, so a host whose ssh shell does not
+# start in the home directory still keeps its slots at ~/stave-offload: a
+# Windows machine serving its WSL distribution (OpenSSH's DefaultShell set
+# to bash.exe) starts the shell in the Windows profile, /mnt/c/Users/....
 # STAVE_OFFLOAD_FETCH names paths (relative to the tree, space-separated) the
 # command writes on the host; after it exits, pass or fail, each one that
 # exists is copied back into the local tree.
@@ -121,9 +125,11 @@ runner() {
     # shellcheck disable=SC2086
     exec perl -MMIME::Base64 -e "$boot" "$RUNNER" "$mode" $args
   else
-    exec ssh "$host" "exec perl -MMIME::Base64 -e '$boot' $RUNNER $mode$args"
+    exec ssh "$host" "cd && exec perl -MMIME::Base64 -e '$boot' $RUNNER $mode$args"
   fi
 }
+# Run a shell command on HOST, in its home directory.
+remote_sh() { ssh "$1" "cd && $2"; }
 
 if ((GC)); then
   HOST="$(resolve "$HOST")"
@@ -334,7 +340,7 @@ else
     # (build output, bundles, refs) is not sent, and the slot's target/
     # (also excluded) survives --delete. .git goes whole (rules come
     # first-match-first: gitignore's **/refs/ must not reach .git/refs).
-    step rsync -rlpzc --delete \
+    step rsync -rlpzc --delete --rsync-path='cd && rsync' \
       --include '/.git/***' \
       --filter=':- .gitignore' \
       --exclude '/target/' --exclude '/.claude/' --exclude '**/refs/' \
@@ -345,8 +351,8 @@ else
     if [[ -f "$ROOT/.git" ]]; then
       COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)"
       GITDIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-dir)"
-      step rsync -az --delete --exclude '/worktrees/' --exclude '/HEAD' --exclude '/index' "$COMMON/" "$HOST:$SLOTDIR/git/"
-      step rsync -a "$GITDIR/HEAD" "$GITDIR/index" "$HOST:$SLOTDIR/git/"
+      step rsync -az --delete --rsync-path='cd && rsync' --exclude '/worktrees/' --exclude '/HEAD' --exclude '/index' "$COMMON/" "$HOST:$SLOTDIR/git/"
+      step rsync -a --rsync-path='cd && rsync' "$GITDIR/HEAD" "$GITDIR/index" "$HOST:$SLOTDIR/git/"
       GITENV="GIT_DIR=\$HOME/$SLOTDIR/git GIT_WORK_TREE=\$HOME/$DIR "
     fi
   fi
@@ -363,12 +369,12 @@ T_END="$(date +%s)"
 if [[ -n "${STAVE_OFFLOAD_FETCH:-}" && "$HOST" != local ]]; then
   for path in $STAVE_OFFLOAD_FETCH; do
     path="${path%/}"
-    if ssh "$HOST" "test -e '$DIR/$path'"; then
+    if remote_sh "$HOST" "test -e '$DIR/$path'"; then
       mkdir -p "$ROOT/$(dirname "$path")"
       if [[ "$SYNC" == tar ]]; then
-        ssh "$HOST" "tar -czf - -C '$DIR' '$path'" | tar -xzf - -C "$ROOT"
+        remote_sh "$HOST" "tar -czf - -C '$DIR' '$path'" | tar -xzf - -C "$ROOT"
       else
-        rsync -az "$HOST:$DIR/$path" "$ROOT/$(dirname "$path")/"
+        rsync -az --rsync-path='cd && rsync' "$HOST:$DIR/$path" "$ROOT/$(dirname "$path")/"
       fi
       echo "offload: fetched $path" >&2
     else

@@ -70,6 +70,21 @@ a one-file change recompiles only what that change reaches, whichever
 checkout sent the slot's previous job. `STAVE_OFFLOAD_NAME` labels a job
 (queue messages, the log); it does not choose a directory.
 
+**A Windows PC.** A Windows machine serves as a Linux build host through
+WSL: install Ubuntu in WSL with a Linux host's tools (rustup,
+`cargo-nextest`, a C toolchain, the X11 and ALSA development libraries,
+`rsync`), and have Windows' OpenSSH server start that shell: its
+`DefaultShell` (an administrator's registry setting) must be
+`C:\Windows\System32\bash.exe`, which accepts the `-c COMMAND` the server
+passes and lands in the default distribution (`wsl.exe` itself refuses
+`-c`; PowerShell would need every command wrapped). Commands then arrive as
+on any Linux host, except that the shell starts in the Windows profile
+(`/mnt/c/Users/...`); `offload.sh` begins every remote command with `cd`,
+so the slots live in the distribution's own home directory on its own
+disk. Size it with `host:N` like any other host; `.wslconfig` in the
+Windows profile caps the distribution's cores and memory, and `nproc`
+inside it is what the slots divide.
+
 **Long jobs.** `STAVE_OFFLOAD_CLASS=long` (ngspice batches, fuzzing, kani,
 datasheet fits) runs at nice 19, one per host, in the host's long slot, so
 it never holds a build slot from the builds queued behind it
