@@ -16,8 +16,9 @@ The proposed ruleset requires three checks:
 | `build the site` | Documentation build, examples, links and generated pages |
 
 Both aggregate gates run even after a dependency fails or is cancelled and
-require every dependency to succeed. An unaffected job succeeds after selection;
-a missing, failed or cancelled job never counts as a pass. The downstream
+require every affected dependency to succeed. The platform gate accepts skipped
+jobs only after successful selection explicitly reports no affected packages;
+a missing, failed or cancelled affected job never counts as a pass. The downstream
 `plugins against this change (Linux)` job remains advisory.
 
 PRs and merge groups use `scripts/affected.sh` against their base. It selects
