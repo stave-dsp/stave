@@ -23,7 +23,7 @@ struct CatalogStage<S> {
     solver: Option<fn(&S) -> NewtonStats>,
 }
 
-fn stage<S: Stage + Send + 'static>(
+pub(super) fn stage<S: Stage + Send + 'static>(
     stage: S,
     configure: fn(&mut S, &StageParams),
 ) -> BoxedStage {
@@ -171,7 +171,12 @@ pub(super) fn float(
 
 /// A choice among `T`'s options, starting at the first.
 pub(super) fn choice<T: ParamEnum>(id: u32, name: &'static str) -> Box<dyn AnyParam> {
-    Box::new(EnumParam::new(ParamId(id), name, T::from_index(0)))
+    choice_at::<T>(id, name, 0)
+}
+
+/// A choice among `T`'s options, starting at option `index`.
+pub(super) fn choice_at<T: ParamEnum>(id: u32, name: &'static str, index: u32) -> Box<dyn AnyParam> {
+    Box::new(EnumParam::new(ParamId(id), name, T::from_index(index)))
 }
 
 options_list!(
@@ -423,6 +428,51 @@ pub const REFERENCES: &[StageSpec] = &[
         name: "circuit/phase90",
         params: super::pedals::phase90_params,
         build: super::pedals::phase90,
+    },
+    StageSpec {
+        name: "reverb/plate_emt140",
+        params: super::effects::plate_params,
+        build: super::effects::plate,
+    },
+    StageSpec {
+        name: "rotary/leslie_122h",
+        params: super::effects::leslie_params,
+        build: super::effects::leslie,
+    },
+    StageSpec {
+        name: "tape/chowdhury",
+        params: super::effects::tape_params,
+        build: super::effects::tape,
+    },
+    StageSpec {
+        name: "dynamics/opto",
+        params: super::effects::opto_params,
+        build: super::effects::opto,
+    },
+    StageSpec {
+        name: "converter/sampler",
+        params: super::effects::sampler_params,
+        build: super::effects::sampler,
+    },
+    StageSpec {
+        name: "quantise/dither",
+        params: super::effects::quantiser_params,
+        build: super::effects::quantiser,
+    },
+    StageSpec {
+        name: "cabinet/close_mic",
+        params: super::effects::close_mic_params,
+        build: super::effects::close_mic,
+    },
+    StageSpec {
+        name: "instrument/string",
+        params: super::effects::string_params,
+        build: super::effects::string,
+    },
+    StageSpec {
+        name: "instrument/drum",
+        params: super::effects::drum_params,
+        build: super::effects::drum,
     },
     StageSpec {
         name: "circuit/jcm800_2203",

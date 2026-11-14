@@ -8,6 +8,7 @@
 //! catalog.rs   the static catalog: every stage, its params and builder
 //! classics.rs  REFERENCES: the classic netlists and the ladders, offline
 //! pedals.rs    REFERENCES: the classic pedals with their knobs
+//! effects.rs   REFERENCES: plate, rotary, tape, opto, converters, mic, instruments
 //! volts.rs     a netlist in volts, its knobs and in-stage sweeps
 //! instance.rs  CatalogInstance / CatalogHandle: a catalog stage running
 //! ```
@@ -36,6 +37,7 @@ macro_rules! options_list {
 
 mod catalog;
 mod classics;
+mod effects;
 mod instance;
 mod pedals;
 mod volts;
