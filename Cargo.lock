@@ -3216,6 +3216,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "stave-tools"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "stave-core",
+ "stave-host",
+ "stave-measure",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "stave-ui"
 version = "0.5.0"
 
