@@ -259,7 +259,7 @@ fn t60_per_octave_band_matches_the_profile() {
         for rate in [48_000.0f32, 96_000.0] {
             for modulation_ms in [0.0, 0.25] {
                 let mut fdn = Fdn::new(Mixing::Hadamard);
-                fdn.set_modulation(ms(f64::from(modulation_ms)));
+                fdn.set_modulation(ms(modulation_ms));
                 fdn.set_t60(T60::octaves(profile.map(seconds)));
                 let longest = profile.iter().copied().fold(0.0, f64::max) as f32;
                 let measured = band_t60s(&mut fdn, rate, 1.2 * longest + 0.2, 1..=8);

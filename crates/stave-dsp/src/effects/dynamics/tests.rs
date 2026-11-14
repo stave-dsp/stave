@@ -282,7 +282,7 @@ fn limiter_latency_is_exact() {
         (Peaks::Sample, 48_000.0, 0.0),
     ] {
         let mut l = Limiter::new(peaks, Db::new(0.0));
-        l.set_lookahead(ms(f64::from(lookahead)));
+        l.set_lookahead(ms(lookahead));
         l.prepare(rate);
         let y: Vec<f32> = (0..1_000).map(|n| l.tick(if n == 0 { 0.25 } else { 0.0 })).collect();
         let arrival = y.iter().position(|&v| v != 0.0).unwrap();
