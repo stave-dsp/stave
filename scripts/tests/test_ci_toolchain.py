@@ -20,6 +20,9 @@ class Toolchain(unittest.TestCase):
                 env['RUNNER_ENVIRONMENT'] = mode
                 subprocess.run([str(ROOT/'scripts/ci-toolchain.sh'),'1.86.0'], env=env, check=True)
                 self.assertEqual(trace.read_text().strip(), expected)
+            env['RUNNER_ENVIRONMENT'] = 'github-hosted'
+            subprocess.run([str(ROOT/'scripts/ci-toolchain.sh')], env=env, cwd=ROOT, check=True)
+            self.assertEqual(trace.read_text().strip(), 'toolchain install')
             env.update(RUNNER_ENVIRONMENT='self-hosted', RESULT='1')
             failed = subprocess.run([str(ROOT/'scripts/ci-toolchain.sh'),'1.86.0'], env=env)
             self.assertNotEqual(failed.returncode, 0)
