@@ -74,7 +74,7 @@ impl ModLfo {
     pub fn new(walk_interval: Seconds, seed: u32) -> Self {
         Self {
             lfo: Lfo::default(),
-            walk: RandomWalk::new(ms(f64::from(walk_interval)), ms(f64::from(Seconds::new(0.0))), seed),
+            walk: RandomWalk::new(walk_interval, Seconds::new(0.0), seed),
             shape: ModLfoShape::Wave(Waveform::Sine),
             hz: 1.0,
             value: 0.0,
@@ -181,6 +181,15 @@ mod tests {
         assert_eq!(lfo.at_phase(0.16), v);
         lfo.set(Hz::new(4.0), ModLfoShape::Wave(Waveform::Sine));
         assert_eq!(lfo.at_phase(0.25), Waveform::Sine.eval(0.25));
+    }
+
+    #[test]
+    fn the_walk_interval_is_taken_as_given() {
+        // `new` once read its seconds as milliseconds (an 833 ms walk
+        // became 0.833 ms): the walk must be exactly the one asked for.
+        let lfo = ModLfo::new(ms(833.0), 7);
+        let walk = RandomWalk::new(ms(833.0), Seconds::new(0.0), 7);
+        assert_eq!(format!("{:?}", lfo.walk), format!("{walk:?}"));
     }
 
     #[test]
