@@ -955,10 +955,13 @@ other references; a model with a capture is held to it within budget.
   at k = 3. Cost, on P7's solver: T0 21 s for
   the nine in release on three cores (past the tier's half second a
   circuit), T1 344 s; ngspice ~45 min for the nine tables on three cores
-  (on CI's runners 14 and 26 min before P7), so CI checks the classics'
-  tables and T1 in jobs of their own
-  (`references (classics, ngspice)`, `characterise classics (T1)`,
-  `ngspice-simulate.py --exclude`/`--only`, `characterise_t1 classics::`);
+  (on CI's runners 14 and 26 min before P7; 19 and 27 min after R27),
+  so CI splits every deck's check across twelve shards balanced by
+  measured ngspice time (`references (ngspice i/12)`,
+  `ngspice-simulate.py --shard i/n`, `spice/costs.tsv`), skips on a pull
+  request the decks unchanged since a passing check (`--stamps`), and
+  runs T1 in four nextest partitions plus the classics' own job
+  (`characterise classics (T1)`, `characterise_t1 classics::`);
   the piano sweeps run on `par_map`, held to `RAYON_NUM_THREADS`.
 
 ### P — profiling and performance
