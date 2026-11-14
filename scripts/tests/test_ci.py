@@ -153,11 +153,12 @@ class Selection(unittest.TestCase):
             shutil.copyfile(ROOT / 'scripts' / 'affected.sh', root / 'scripts' / 'affected.sh')
             (root / 'scripts' / 'test-affected.py').write_text('raise SystemExit(42)\n')
             (root / 'crates' / 'p' / 'lib.rs').write_text('// before\n')
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
-            subprocess.run(['git', 'add', '.'], cwd=root, check=True)
+            git_env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+            subprocess.run(['git', 'init', '-q'], cwd=root, env=git_env, check=True)
+            subprocess.run(['git', 'add', '.'], cwd=root, env=git_env, check=True)
             subprocess.run(['git', '-c', 'user.name=CI fixture', '-c', 'user.email=fixture@example.test',
-                            '-c', 'core.hooksPath=/dev/null', 'commit', '-qm',
-                            'Fixture\n\nCo-Authored-By: Codex <noreply@openai.com>'], cwd=root, check=True)
+                            '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', 'commit', '-qm',
+                            'Fixture\n\nCo-Authored-By: Codex <noreply@openai.com>'], cwd=root, env=git_env, check=True)
             changed = root / 'new-root-config' if root_change else root / 'crates' / 'p' / 'lib.rs'
             changed.write_text('changed\n')
             # Keep command fixtures outside the tree: untracked root files
@@ -167,7 +168,7 @@ class Selection(unittest.TestCase):
                 metadata = json.dumps({'packages': [{'name': 'p', 'targets': [{'kind': ['lib']}]}]})
                 cargo.write_text('#!/usr/bin/env python3\nprint(' + repr(metadata) + ')\n')
                 cargo.chmod(0o755)
-                env = {**os.environ, 'PATH': commands + os.pathsep + os.environ['PATH']}
+                env = {**git_env, 'PATH': commands + os.pathsep + os.environ['PATH']}
                 return subprocess.run(['bash', 'scripts/affected.sh', '--outputs', '--base', 'HEAD'],
                                       cwd=root, env=env, capture_output=True, text=True)
 
