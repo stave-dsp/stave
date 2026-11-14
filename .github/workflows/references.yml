@@ -100,11 +100,14 @@ jobs:
     # the pinned ngspice (the `linux-build` and `ngspice` capabilities) for
     # trusted events (a push, a dispatch, a pull request from a branch of
     # this repository), GitHub's ubuntu-24.04 for a fork's pull request.
+    # Main's runs always qualify; other refs once the repository variable
+    # SELF_HOSTED_ALL_REFS is `true` (ci.yml's `lint` says why).
     # A full run is ~25 jobs: on GitHub's runners it took most of the free
     # plan's 20 concurrent jobs, and every other workflow queued behind it.
     runs-on: >-
       ${{ (github.event_name != 'pull_request'
            || github.event.pull_request.head.repo.full_name == github.repository)
+          && (github.ref == 'refs/heads/main' || vars.SELF_HOSTED_ALL_REFS == 'true')
           && fromJSON('["self-hosted","Linux","X64","linux-build","ngspice"]')
           || 'ubuntu-24.04' }}
     outputs:

@@ -94,10 +94,14 @@ jobs:
     timeout-minutes: 10
     # A self-hosted macOS runner (the `macos-build` capability) for trusted
     # events — a push, a merge group, a pull request from a branch of this
-    # repository; a fork's pull request gets GitHub's runner.
+    # repository; a fork's pull request always gets GitHub's runner. Main's
+    # runs always qualify; other refs (pull requests, merge groups, other
+    # branches) once the repository variable SELF_HOSTED_ALL_REFS is
+    # `true`, which says the runners' group admits those refs' workflows.
     runs-on: >-
       ${{ (github.event_name != 'pull_request'
            || github.event.pull_request.head.repo.full_name == github.repository)
+          && (github.ref == 'refs/heads/main' || vars.SELF_HOSTED_ALL_REFS == 'true')
           && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
           || 'macos-latest' }}
     steps:
@@ -132,6 +136,7 @@ jobs:
     runs-on: >-
       ${{ (github.event_name != 'pull_request'
            || github.event.pull_request.head.repo.full_name == github.repository)
+          && (github.ref == 'refs/heads/main' || vars.SELF_HOSTED_ALL_REFS == 'true')
           && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
           || 'macos-latest' }}
     steps:
