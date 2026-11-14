@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The fuzz targets (OVERHAUL.md C5), cargo-fuzz on the pinned
-# nightly. Every target for SECONDS each (default 30: the PR smoke; the
+# nightly: fuzz/, and fuzz/solvers/ for `solvers` (its own package). Every target for SECONDS each (default 30: the PR smoke; the
 # nightly job runs 600). The committed state fixtures seed state_load;
 # `solvers` (DSP.md R7) replays a slow or crashing input with
 # `STAVE_FUZZ_REPLAY` (crates/stave-test/tests/solver_fuzz.rs).
@@ -10,8 +10,8 @@
 #   scripts/fuzz.sh 60 raster  # one target
 #
 # Tools: rustup toolchain nightly-2026-11-01, cargo-fuzz 0.13.2. A crash
-# leaves its input in fuzz/artifacts/<target>/; replay it with
-#   cargo +nightly-2026-11-01 fuzz run <target> fuzz/artifacts/<target>/<file>
+# leaves its input in <fuzz dir>/artifacts/<target>/; replay it with
+#   cargo +nightly-2026-11-01 fuzz run --fuzz-dir <fuzz dir> <target> <fuzz dir>/artifacts/<target>/<file>
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -27,10 +27,11 @@ for target in ${TARGETS[@]+"${TARGETS[@]}"}; do
   echo "== fuzz: ${target} (${SECONDS_EACH}s)"
   # The solvers target is safe Rust doing numerics: AddressSanitizer
   # finds nothing there and slows each case tenfold, so it runs without.
-  sanitizer=address
-  [[ "$target" == solvers ]] && sanitizer=none
+  # Its own package (fuzz/solvers/Cargo.toml says why).
+  sanitizer=address dir=fuzz
+  [[ "$target" == solvers ]] && sanitizer=none dir=fuzz/solvers
   # --target: a cargo-fuzz built for another arch (Rosetta) would
   # otherwise default to its own.
-  cargo +"$NIGHTLY" fuzz run --fuzz-dir fuzz --target "$TARGET" --sanitizer "$sanitizer" "$target" -- \
+  cargo +"$NIGHTLY" fuzz run --fuzz-dir "$dir" --target "$TARGET" --sanitizer "$sanitizer" "$target" -- \
     -max_total_time="$SECONDS_EACH" -rss_limit_mb=4096 -max_len=4096
 done

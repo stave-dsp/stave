@@ -22,7 +22,6 @@ stave-host = { path = "../crates/stave-host" }
 stave-clap = { path = "../crates/stave-clap" }
 stave-raster = { path = "../crates/stave-raster" }
 stave-ui = { path = "../crates/stave-ui" }
-stave-test = { path = "../crates/stave-test" }
 stave-tilt-vst3 = { path = "../examples/tilt" }
 
 [workspace]
@@ -62,13 +61,6 @@ bench = false
 [[bin]]
 name = "clap_events"
 path = "fuzz_targets/clap_events.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "solvers"
-path = "fuzz_targets/solvers.rs"
 test = false
 doc = false
 bench = false

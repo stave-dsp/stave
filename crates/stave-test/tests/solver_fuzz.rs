@@ -4,7 +4,7 @@
 //! from 8 to 768 kHz, sines, squares, the Nyquist tone, impulses, steps
 //! and noise from a tenth to ten times each deck's hot level — and the
 //! committed regressions, the inputs libFuzzer once broke a rule with
-//! (`fuzz/fuzz_targets/solvers.rs`; replay a new one with
+//! (`fuzz/solvers/fuzz_targets/solvers.rs`; replay a new one with
 //! `Case::from_bytes`). Cases run on `stave_test::threads()`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
