@@ -87,7 +87,7 @@ impl OffscreenWindow {
             let window = Retained::from_owned(window.expect("a window"));
             send::<_, ()>(window.get(), sel!(c"setReleasedWhenClosed:"), (false,));
             let content: Option<Obj> = send(window.get(), sel!(c"contentView"), ());
-            view.attach(content.expect("a content view").as_ptr());
+            view.attach(content.expect("a content view").as_ptr()).expect("the face attaches");
             window
         };
         OffscreenWindow { window, view, _main: main }

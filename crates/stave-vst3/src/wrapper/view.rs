@@ -224,11 +224,22 @@ pub(super) unsafe extern "C" fn sv_attached<P: Vst3Export>(
             // `&mut` is unique; the box is a different allocation from the
             // instance `inst` borrows.
             let editor = unsafe { &mut *this.cast::<EditorBox<P>>() };
-            #[cfg(not(all(unix, not(target_os = "macos"))))]
+            #[cfg(target_os = "macos")]
             {
-                // SAFETY: `parent` is the host's NSView or HWND for this
-                // platform's type (the only one `isPlatformTypeSupported`
-                // accepts), on the UI thread.
+                // SAFETY: `parent` is the host's NSView (the only type
+                // `isPlatformTypeSupported` accepts). Off the main thread
+                // the view refuses, not panics: a GUI fault never latches
+                // the audio instance.
+                if let Err(error) = unsafe { editor.view.attach(parent) } {
+                    let error = stave_core::diagnostics::CallError::WindowRefused(error.to_string());
+                    return inst.answer("IPlugView::attached", Err(error));
+                }
+                K_RESULT_OK
+            }
+            #[cfg(not(unix))]
+            {
+                // SAFETY: `parent` is the host's HWND (the only type
+                // `isPlatformTypeSupported` accepts), on the UI thread.
                 unsafe { editor.view.attach(parent) };
                 K_RESULT_OK
             }

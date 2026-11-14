@@ -53,7 +53,9 @@ pub fn run_app(title: &str, mut view: FaceView) {
         send::<_, ()>(window.get(), sel!(c"setTitle:"), (ns_string(title),));
         send::<_, ()>(window.get(), sel!(c"center"), ());
         let content: Option<Obj> = send(window.get(), sel!(c"contentView"), ());
-        view.attach(content.expect("a content view").as_ptr());
+        // A stand-alone app has no host to refuse to: a window that cannot
+        // be shown is the end of it.
+        view.attach(content.expect("a content view").as_ptr()).expect("the face attaches");
         if let Some(face) = view.ns_view() {
             send::<_, bool>(window.get(), sel!(c"makeFirstResponder:"), (face,));
         }
