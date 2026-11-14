@@ -67,7 +67,7 @@ pub use capstan::{Capstan, Drift, Motor, Splices, Stop};
 pub use flutter::{Flutter, Transport};
 pub use spacing::{Condition, Dropout, Spacing};
 pub use playback::{Phase, Playback};
-pub use recording::Recording;
+pub use recording::{Recording, BIAS_SAMPLES};
 
 use crate::circuit::devices::magnetic::JilesAtherton;
 use crate::kernel::node::{Stage, Tail};
@@ -192,12 +192,6 @@ impl Machine {
 /// The oversampled rate the record side runs at, about (the factor is
 /// `round(INNER_RATE / rate)`: 705.6–768 kHz at the usual host rates).
 const INNER_RATE: f64 = 720_000.0;
-/// Inner samples a bias cycle, at every host rate: the hysteresis sees
-/// the same sampled bias whatever the rate (50.4–54.9 kHz against the
-/// machine's 55), so its harmonics are the same; a count that follows
-/// the frequency instead (12 or 14) moves the third harmonic 5 dB
-/// between 44.1 and 48 kHz.
-const BIAS_SAMPLES: u32 = 14;
 
 /// An analog tape machine's record-and-play path: the record head with
 /// its bias into the tape's hysteresis (oversampled), the transport's

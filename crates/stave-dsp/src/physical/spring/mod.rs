@@ -60,11 +60,11 @@ struct Waveguide {
 }
 
 impl Waveguide {
-    fn new(sections: usize, stretch: usize, a: f32, length: usize) -> Self {
+    fn new(sections: usize, stretch: f64, a: f32, length: usize) -> Self {
         let length = length.max(1);
         let mut w = Self {
-            forward_chirp: Chirp::new(sections / 2, stretch, a),
-            back_chirp: Chirp::new(sections - sections / 2, stretch, a),
+            forward_chirp: Chirp::stretched(sections / 2, stretch, a),
+            back_chirp: Chirp::stretched(sections - sections / 2, stretch, a),
             length,
             ..Self::default()
         };
@@ -125,10 +125,12 @@ impl Waveguide {
 /// cascade; `L` set so the band-mean transit (`L + kM/2`, the cascade's
 /// mean delay being `kM`) is the spring's transit time. The decay is a
 /// reflection gain per round trip from T60 over the mean round trip, so
-/// the setting holds where `D(ω) = kM` (`cos(ωk) = −a`). The low
-/// stretch rounds to whole samples, so `f_C` is `fs/(2k)`
-/// ([`transition`](Self::transition) reports it); the wide-band stretch
-/// is `round(fs/44.1 kHz)`, which keeps its chirp's length in time.
+/// the setting holds where `D(ω) = kM` (`cos(ωk) = −a`). The stretches
+/// are fractional ([`Chirp::stretched`]): the low `k = fs/(2·f_C)`
+/// exactly, so `f_C` is the one asked for at every rate; the wide-band
+/// `fs/44.1 kHz`, which keeps its chirp's length in time. (Whole-sample
+/// stretches moved `f_C` with the rate — 3.68 kHz for 4 kHz at
+/// 44.1 kHz — and snapped a tank's spread of transitions to one.)
 ///
 /// # Verified
 /// `crates/stave-dsp/src/physical/spring/tests.rs::transient_boings_as_rising_chirps`
@@ -152,7 +154,7 @@ impl Waveguide {
 /// None (linear).
 ///
 /// # Valid ranges
-/// Transition frequency 2–6 kHz (whole-sample stretch: `fs/(2k)`);
+/// Transition frequency 2–6 kHz, below `fs/2` (a stretch of at least 1);
 /// transit time longer than the low cascade's half mean delay
 /// (`kM/2/fs`, 6.25 ms at the defaults); T60 in `(0, ∞]`.
 #[derive(Clone, Debug)]
@@ -201,9 +203,10 @@ impl Spring {
         self.high_gain = if level.get() <= -120.0 { 0.0 } else { 10f32.powf(level.get() / 20.0) };
     }
 
-    /// The transition frequency in use, `fs/(2k)`.
+    /// The transition frequency in use, `fs/(2k)`: the one set, unless
+    /// that is above a quarter of the rate (a stretch under 2).
     pub fn transition(&self) -> Hz {
-        Hz::new(self.sample_rate / (2.0 * self.low.forward_chirp.stretch() as f32))
+        Hz::new((f64::from(self.sample_rate) / (2.0 * self.low.forward_chirp.stretch())) as f32)
     }
 
     /// The low chirps' transit delay `L` (each direction), in samples.
@@ -224,14 +227,14 @@ impl Spring {
 
     fn build(&mut self) {
         let fs = f64::from(self.sample_rate);
-        let k = (fs / (2.0 * f64::from(self.transition.get().max(1.0)))).round().max(1.0) as usize;
+        let k = (fs / (2.0 * f64::from(self.transition.get().max(1.0)))).max(1.0);
         let transit = self.transit.get() * fs;
-        let low_len = (transit - (k * LOW_SECTIONS) as f64 / 2.0).round().max(2.0) as usize;
+        let low_len = (transit - k * LOW_SECTIONS as f64 / 2.0).round().max(2.0) as usize;
         self.low = Waveguide::new(LOW_SECTIONS, k, LOW_COEFFICIENT, low_len);
-        let kh = (fs / HIGH_DESIGN_RATE).round().max(1.0) as usize;
-        let high_len = (transit - (kh * HIGH_SECTIONS) as f64 / 2.0).round().max(2.0) as usize;
+        let kh = (fs / HIGH_DESIGN_RATE).max(1.0);
+        let high_len = (transit - kh * HIGH_SECTIONS as f64 / 2.0).round().max(2.0) as usize;
         self.high_chirps = Waveguide::new(HIGH_SECTIONS, kh, HIGH_COEFFICIENT, high_len);
-        let fc = self.sample_rate / (2.0 * k as f32);
+        let fc = (fs / (2.0 * k)) as f32;
         // A fourth-order Butterworth at f_C (Q of its two sections).
         for (b, q) in self.lowpass.iter_mut().zip([0.541_196_1, 1.306_563]) {
             *b = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(fc.min(0.45 * self.sample_rate)), q });
