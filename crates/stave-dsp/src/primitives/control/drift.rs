@@ -7,6 +7,7 @@
 //! ```
 //! use stave_dsp::primitives::control::drift::OrnsteinUhlenbeck;
 //! use stave_dsp::circuit::devices::thermal::Expo;
+//! use stave_dsp::units::seconds;
 //! use stave_dsp::Stage;
 //!
 //! // A VCO core wandering ±0.5 °C about 30 °C over tens of seconds,

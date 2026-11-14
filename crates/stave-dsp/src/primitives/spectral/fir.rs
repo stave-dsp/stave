@@ -108,6 +108,7 @@ pub struct Band {
 ///
 /// ```
 /// use stave_dsp::primitives::spectral::{Fir, Passband};
+/// use stave_dsp::units::db;
 ///
 /// // A lowpass at 1/8 of the rate, 80 dB down 0.03 above it.
 /// let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.125 }, db(80.0), 0.03);

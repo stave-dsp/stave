@@ -16,6 +16,7 @@ use crate::units::Db;
 ///
 /// ```
 /// use stave_dsp::primitives::spectral::Window;
+/// use stave_dsp::units::db;
 ///
 /// let close = |a: &[f64], b: &[f64]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-15);
 /// // Periodic, for an STFT: shifted by half its length, it sums to one.
