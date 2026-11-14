@@ -96,7 +96,7 @@ commit hashes never reach main: cite the PR, never a branch commit.
   page (P1); instruction counts gate CI (P2); `scripts/profile.sh` (P3);
   per-stage cost taps (P5); `stave-bench` measures a built plugin, and
   another vendor's VST3 or AU as a benchmark (R26).
-- **Ledger** (audit 2026-11-13, E9, H7, M6, H10 and P6 since): 85 of 107 items done; 15 of the rest
+- **Ledger** (audit 2026-11-13, E9, H7, M6, H10, P6 and R27 since): 86 of 108 items done; 15 of the rest
   partial, each with a `Status:` line (E10 a note) saying what exists and
   what is missing.
 
@@ -923,7 +923,7 @@ other references; a model with a capture is held to it within budget.
   because the latched output was nearly DC). No R18 fingerprint covered
   the 904-A, so none moved. At k = 0
   it matches the Huovilainen ladder at 2 kHz within 0.3 dB to 10 kHz.
-- [ ] **R27** The R25 follow-ups: the MXR Distortion+ as a verified deck
+- [x] **R27** (PR #17 (52e55906)) The R25 follow-ups: the MXR Distortion+ as a verified deck
   and topology (`mxr_distortion_plus(distortion, output)`: C1 1n, 10n /
   10k into an LM741 non-inverting stage, 1M feedback, 47n + 4k7 + the 1M
   rheostat, 1u / 10k into a germanium pair and 1n, the 10k output pot;
