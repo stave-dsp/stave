@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+# Nothing is published to crates.io (the guide: Cut a release); unpublished,
+# cargo-deny lets its workspace path dependencies be wildcards.
+publish = false
 description = "Run a stave plugin as its own app: audio device I/O, MIDI input, device settings, saved state, the face as the window"
 
 [dependencies]
