@@ -194,6 +194,11 @@ jobs:
           STAVE_SAMPLE_LIBRARY: ${{ secrets.STAVE_SAMPLE_LIBRARY }}
           STAVE_CORPUS_LOCK: ${{ secrets.STAVE_CORPUS_LOCK }}
           STAVE_CAPTURES: ${{ secrets.STAVE_CAPTURES }}
+          # The signing identities release.yml signs with (their names and
+          # team IDs), and a local notary profile's name.
+          STAVE_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          STAVE_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
+          STAVE_NOTARY_PROFILE: ${{ secrets.STAVE_NOTARY_PROFILE }}
       - run: scripts/hygiene.sh deps
 
   plugins:
