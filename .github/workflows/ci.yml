@@ -390,18 +390,3 @@ jobs:
       - run: python3 -c 'import json,os; assert all(j["result"] == "success" for j in json.loads(os.environ["NEEDS"]).values())'
         env:
           NEEDS: ${{ toJSON(needs) }}
-
-  # Migration bridges for the old ruleset; no Miri executes before merge.
-  # Remove after the documented required-check migration has been applied.
-  miri:
-    name: miri (${{ matrix.shard }}/4)
-    needs: gate
-    if: always()
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        shard: [1, 2, 3, 4]
-    steps:
-      - run: test "$RESULT" = success
-        env:
-          RESULT: ${{ needs.gate.result }}
