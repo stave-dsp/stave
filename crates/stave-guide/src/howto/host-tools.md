@@ -201,7 +201,15 @@ swept by its LFO or frozen) — each with an `oversample` choice: 0 = 1×,
 1 = 2×, 2 = 4×, 3 = 8×), whole netlists run offline and not held to the
 realtime catalog's validation. A choice takes its option's label as
 well as its index (`oversample=4x`, `opamp=JRC4558_TABLE`,
-`tube=ECC83_PHILIPS` on `circuit/common_cathode`).
+`tube=ECC83_PHILIPS` on `circuit/common_cathode`). Beside them, the
+physical and converter models: `reverb/plate_emt140`,
+`rotary/leslie_122h` (a `toggle_s` flips chorale and tremolo so the
+motors' ramps are heard), `tape/chowdhury` (transport and condition
+presets, a `stop_s` that stops and restarts the motor),
+`dynamics/opto`, `converter/sampler`, `quantise/dither`,
+`cabinet/close_mic`, and two instruments that play themselves every
+`interval` (stave-play has no note input), `instrument/string` and
+`instrument/drum`.
 
 ```sh
 stave-play \
