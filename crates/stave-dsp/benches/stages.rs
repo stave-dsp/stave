@@ -2,8 +2,9 @@
 //! (DSP.md P2, P3): a filter, the SVF, the oversampler (2× to 16×, the
 //! factors circuits ship at), the FFT and the convolver, the triode
 //! stage and the diode clipper, one plugin-sized chain, the expensive
-//! models — the tape machine and the two op-amp pedals solved whole by
-//! `Circuit<Dk>` — and Neural Amp Modeler's standard WaveNet, each run
+//! models — the tape machine, and the two op-amp pedals and the Moog
+//! 904-A ladder solved whole by `Circuit<Dk>` — and Neural Amp Modeler's
+//! standard WaveNet, each run
 //! block by block over the same seeded noise.
 //!
 //! ```text
@@ -320,6 +321,12 @@ const STAGES: &[Entry] = &[
         what: "WaveNet, Neural Amp Modeler's standard size (16 + 8 channels, 2 x 10 layers)",
         block: BLOCK,
         build: wavenet,
+    },
+    Entry {
+        id: "moog-904a",
+        what: "Circuit<Dk> Moog 904-A ladder core (k = 3), the whole netlist",
+        block: BLOCK,
+        build: || driven(topologies::moog_ladder_904a(3.0)),
     },
 ];
 

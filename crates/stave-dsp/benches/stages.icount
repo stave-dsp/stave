@@ -17,10 +17,11 @@ convolver-16k	625.13
 convolver-1k-direct	562.72
 convolver-96k	2424.32
 triode	205.89
-diode-clipper-newton	557.68
-diode-clipper-omega	384.37
+diode-clipper-newton	560.66
+diode-clipper-omega	392.36
 amp-chain	1518.21
-tape	24803.22
-boss-ds1	117108.32
-mxr-phase90	86326.57
-wavenet	40879.58
+tape	24814.20
+boss-ds1	115990.02
+mxr-phase90	86808.65
+wavenet	40878.33
+moog-904a	296510.89

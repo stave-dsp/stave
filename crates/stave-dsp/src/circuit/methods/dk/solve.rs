@@ -50,7 +50,7 @@
 //!   hidden.
 
 use super::devices::Nonlinear;
-use super::matrix::{lu, lu_solve};
+use super::matrix::Lu;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 
 /// The largest residual, relative to `1 + max |v|`, a converged solve
@@ -181,8 +181,14 @@ struct Block {
     /// `Jq`'s structural nonzeros on the block's own controls, `(output,
     /// control, column in the block)`, outputs ascending.
     columns: Vec<(usize, usize, usize)>,
+    /// The same, `(output, control)` by column then output, and each
+    /// column's range in it: the Jacobian's assembly a column at a time.
+    assembly: Vec<(usize, usize)>,
+    by_column: Vec<(usize, usize)>,
     /// Every `Jq` entry its devices write, `(output, control)`.
     pattern: Vec<(usize, usize)>,
+    /// Its Jacobian, assembled and factored in place each iteration.
+    lu: Lu,
 }
 
 /// The solve's buffers, sized once so a sample never allocates.
@@ -198,8 +204,6 @@ pub(crate) struct Workspace {
     jq_try: Vec<f64>,
     r: Vec<f64>,
     r_try: Vec<f64>,
-    jacobian: Vec<f64>,
-    pivots: Vec<usize>,
     delta: Vec<f64>,
     correction: Vec<f64>,
     p_step: Vec<f64>,
@@ -216,6 +220,13 @@ pub(crate) struct Workspace {
     decoupled: Vec<(usize, usize)>,
     /// Whether the per-sample solve runs block by block.
     split: bool,
+    /// `Kᵀ` (`nq`×`nv`), for assembling the Jacobian a column at a time:
+    /// kept by [`decompose`](Self::decompose) and [`recheck`](Self::recheck),
+    /// which every change to `K` goes through.
+    kt: Vec<f64>,
+    /// One column of `K` gathered, for a block whose controls are not one
+    /// run, or a `K` whose transpose is not kept.
+    gathered: Vec<f64>,
     /// Which `Jq` entries a device may write (the whole block's pattern
     /// as a mask: the debug check that no device writes outside it).
     #[cfg(debug_assertions)]
@@ -238,8 +249,6 @@ impl Workspace {
             jq_try: vec![0.0; nq * nv],
             r: vec![0.0; nv],
             r_try: vec![0.0; nv],
-            jacobian: vec![0.0; nv * nv],
-            pivots: vec![0; nv],
             delta: vec![0.0; nv],
             correction: vec![0.0; nv],
             p_step: vec![0.0; nv],
@@ -248,6 +257,8 @@ impl Workspace {
             blocks: Vec::new(),
             decoupled: Vec::new(),
             split: false,
+            kt: vec![0.0; nv * nq],
+            gathered: vec![0.0; nv],
             #[cfg(debug_assertions)]
             written: {
                 let mut mask = vec![false; nq * nv];
@@ -279,6 +290,7 @@ impl Workspace {
     /// controls are four blocks, the Phase 90's 20 are ten. At prepare
     /// (it allocates); a subsystem that does not split is solved whole.
     pub fn decompose(&mut self, k: &[f64], devices: &[Nonlinear]) {
+        self.transpose(k);
         let (nv, nq, nd) = (self.nv, self.nq, devices.len());
         let outputs = |d: usize| devices[d].output..devices.get(d + 1).map_or(nq, |n| n.output);
         let scale: Vec<f64> = (0..nv).map(|c| row_scale(k, c, nq)).collect();
@@ -325,11 +337,22 @@ impl Workspace {
     /// After `K` moved (a part's value, N6): keep the blocks only while
     /// every coupling their order takes as none still is. Realtime.
     pub fn recheck(&mut self, k: &[f64]) {
+        self.transpose(k);
         let nq = self.nq;
         if self.split
             && self.decoupled.iter().any(|&(c, j)| k[c * nq + j].abs() > DECOUPLED * row_scale(k, c, nq))
         {
             self.split = false;
+        }
+    }
+
+    /// Keep `Kᵀ` for `k`.
+    fn transpose(&mut self, k: &[f64]) {
+        let (nv, nq) = (self.nv, self.nq);
+        for i in 0..nv {
+            for j in 0..nq {
+                self.kt[j * nv + i] = k[i * nq + j];
+            }
         }
     }
 
@@ -367,6 +390,12 @@ impl Workspace {
         health: &mut Health,
     ) {
         let Prediction { p, k } = prediction;
+        #[cfg(debug_assertions)]
+        {
+            let (nv, nq) = (self.nv, self.nq);
+            let kept = (0..nv).all(|i| (0..nq).all(|j| self.kt[j * nv + i].to_bits() == k[i * nq + j].to_bits()));
+            debug_assert!(kept, "K changed without Workspace::recheck");
+        }
         if self.nv == 0 {
             self.evaluate(devices, time);
             return;
@@ -375,8 +404,8 @@ impl Workspace {
         let mut outcome = if self.split {
             self.solve_blocks(p, k, devices, time, &settings.newton)
         } else {
-            let whole = std::mem::take(&mut self.whole);
-            let outcome = self.iterate(&whole, p, k, devices, time, &settings.newton, true);
+            let mut whole = std::mem::take(&mut self.whole);
+            let outcome = self.iterate(&mut whole, p, k, devices, time, &settings.newton, true);
             self.whole = whole;
             outcome
         };
@@ -395,14 +424,14 @@ impl Workspace {
             }
             let steps = settings.continuation_steps;
             let mut total = outcome.iterations;
-            let whole = std::mem::take(&mut self.whole);
+            let mut whole = std::mem::take(&mut self.whole);
             for s in 1..=steps {
                 let f = f64::from(s) / f64::from(steps);
                 for i in 0..self.nv {
                     self.p_step[i] = self.p_start[i] + f * (p[i] - self.p_start[i]);
                 }
                 let p_step = std::mem::take(&mut self.p_step);
-                outcome = self.iterate(&whole, &p_step, k, devices, time, &settings.newton, true);
+                outcome = self.iterate(&mut whole, &p_step, k, devices, time, &settings.newton, true);
                 self.p_step = p_step;
                 total += outcome.iterations;
                 if !outcome.converged {
@@ -430,14 +459,14 @@ impl Workspace {
         self.v_try.copy_from_slice(&self.v);
         self.q_try.copy_from_slice(&self.q);
         self.jq_try.copy_from_slice(&self.jq);
-        let blocks = std::mem::take(&mut self.blocks);
+        let mut blocks = std::mem::take(&mut self.blocks);
         let mut total = Outcome {
             iterations: 0,
             converged: true,
             final_step: 0.0,
             residual: 0.0,
         };
-        for b in &blocks {
+        for b in &mut blocks {
             let o = self.iterate(b, p, k, devices, time, settings, true);
             total.iterations = total.iterations.max(o.iterations);
             total.final_step = total.final_step.max(o.final_step);
@@ -474,8 +503,8 @@ impl Workspace {
         time: f64,
         settings: &NewtonSettings,
     ) -> Outcome {
-        let whole = std::mem::take(&mut self.whole);
-        let outcome = self.iterate(&whole, p, k, devices, time, settings, false);
+        let mut whole = std::mem::take(&mut self.whole);
+        let outcome = self.iterate(&mut whole, p, k, devices, time, settings, false);
         self.whole = whole;
         outcome
     }
@@ -527,7 +556,7 @@ impl Workspace {
     #[allow(clippy::too_many_arguments)]
     fn iterate(
         &mut self,
-        b: &Block,
+        b: &mut Block,
         p: &[f64],
         k: &[f64],
         devices: &mut [Nonlinear],
@@ -535,6 +564,10 @@ impl Workspace {
         settings: &NewtonSettings,
         early: bool,
     ) -> Outcome {
+        // The per-sample solves (`early`) face the circuit's own `K`, whose
+        // transpose is kept; the operating point's faces the DC one, read
+        // as given.
+        let transposed = early;
         let (nv, nq, m) = (self.nv, self.nq, b.controls.len());
         self.evaluate_block(b, devices, time, false);
         self.residual_block(b, p, k, false);
@@ -545,34 +578,60 @@ impl Workspace {
         while iterations < settings.max_iterations && (step.is_nan() || step >= settings.tolerance) {
             // J = K·Jq − I on the block's controls, over Jq's structural
             // nonzeros (each device's outputs read its own controls only);
-            // solve J·δ = −r.
-            let jacobian = &mut self.jacobian[..m * m];
-            jacobian.iter_mut().for_each(|x| *x = 0.0);
+            // solve J·δ = −r. A column at a time, each written whole (no
+            // clearing pass): `K`'s column for each output that reads the
+            // control (a row of `Kᵀ`, contiguous) times its slope, summed
+            // in ascending output order onto the identity's −1 — the sums
+            // a row at a time would form, in the same order.
+            let stride = b.lu.stride();
+            let jacobian = b.lu.columns_mut();
             for (a, &c) in b.controls.iter().enumerate() {
-                jacobian[a * m + a] = -1.0;
                 self.delta[a] = -self.r[c];
             }
-            for &(j, c, column) in &b.columns {
-                let slope = self.jq[j * nv + c];
-                if slope == 0.0 {
-                    continue;
+            for (column, &(from, to)) in b.by_column.iter().enumerate() {
+                let x = &mut jacobian[column * stride..column * stride + m];
+                let mut written = false;
+                for &(j, c) in &b.assembly[from..to] {
+                    let slope = self.jq[j * nv + c];
+                    if slope == 0.0 {
+                        continue;
+                    }
+                    let k_column: &[f64] = match (b.first, transposed) {
+                        (Some(first), true) => &self.kt[j * nv + first..j * nv + first + m],
+                        (_, true) => {
+                            for (y, &row) in self.gathered.iter_mut().zip(&b.controls) {
+                                *y = self.kt[j * nv + row];
+                            }
+                            &self.gathered[..m]
+                        }
+                        (_, false) => {
+                            for (y, &row) in self.gathered.iter_mut().zip(&b.controls) {
+                                *y = k[row * nq + j];
+                            }
+                            &self.gathered[..m]
+                        }
+                    };
+                    if written {
+                        for (x, &kj) in x.iter_mut().zip(k_column) {
+                            *x += kj * slope;
+                        }
+                    } else {
+                        for (x, &kj) in x.iter_mut().zip(k_column) {
+                            *x = kj * slope;
+                        }
+                        x[column] = -1.0 + k_column[column] * slope;
+                        written = true;
+                    }
                 }
-                if let Some(first) = b.first {
-                    // Contiguous controls (the whole subsystem, and most
-                    // blocks): strided runs, no lookups.
-                    for a in 0..m {
-                        jacobian[a * m + column] += k[(first + a) * nq + j] * slope;
-                    }
-                } else {
-                    for (a, &row) in b.controls.iter().enumerate() {
-                        jacobian[a * m + column] += k[row * nq + j] * slope;
-                    }
+                if !written {
+                    x.fill(0.0);
+                    x[column] = -1.0;
                 }
             }
-            if !lu(jacobian, m, &mut self.pivots) {
+            if !b.lu.factor() {
                 break;
             }
-            lu_solve(&self.jacobian, m, &self.pivots, &mut self.delta);
+            b.lu.solve(&mut self.delta);
             let largest = self.delta[..m].iter().fold(0.0f64, |s, d| s.max(d.abs()));
             if largest > settings.max_step {
                 let scale = settings.max_step / largest;
@@ -597,7 +656,7 @@ impl Workspace {
                 for (a, &c) in b.controls.iter().enumerate() {
                     self.correction[a] = -self.r_try[c];
                 }
-                lu_solve(&self.jacobian, m, &self.pivots, &mut self.correction);
+                b.lu.solve(&mut self.correction);
                 let next = self.correction[..m].iter().fold(0.0f64, |s, d| s.max(d.abs()));
                 if next < size || size == 0.0 || (next.is_finite() && damping <= settings.min_damping) {
                     break (true, next);
@@ -659,7 +718,9 @@ impl Workspace {
 /// A block of `controls` and `devices`: its outputs and `Jq` entries.
 fn block(controls: &[usize], devices: &[usize], all: &[Nonlinear], nq: usize) -> Block {
     let contiguous = controls.windows(2).all(|w| w[1] == w[0] + 1);
+    let m = controls.len();
     let mut b = Block {
+        lu: Lu::new(m),
         controls: controls.to_vec(),
         first: controls.first().copied().filter(|_| contiguous),
         devices: devices.to_vec(),
@@ -684,6 +745,16 @@ fn block(controls: &[usize], devices: &[usize], all: &[Nonlinear], nq: usize) ->
     }
     b.pattern.sort_unstable();
     b.columns.sort_unstable();
+    let mut by_column: Vec<(usize, usize, usize)> =
+        b.columns.iter().map(|&(j, c, column)| (column, j, c)).collect();
+    by_column.sort_unstable();
+    b.assembly = by_column.iter().map(|&(_, j, c)| (j, c)).collect();
+    b.by_column = (0..m)
+        .map(|column| {
+            let from = by_column.partition_point(|e| e.0 < column);
+            (from, by_column.partition_point(|e| e.0 <= column))
+        })
+        .collect();
     b
 }
 
