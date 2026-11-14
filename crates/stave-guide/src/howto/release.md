@@ -19,8 +19,10 @@ current branch is `main`, the working tree is clean, and the tag
    `cargo update --workspace`;
 2. runs `scripts/semver-checks.sh` against the newest `v*` tag, so the
    new version number must allow the API change since the last release;
-3. runs `scripts/gates.sh`: the tree rules, every test and the
-   doctests;
+3. runs every gate CI runs, whatever changed (`scripts/affected.sh
+   --full --no-cache`): the tree rules, clippy, every test, the
+   doctests, rustdoc with private items, the MSRV check (its toolchain
+   installed first) and the docs site; then `scripts/check-local-leaks.sh`;
 4. commits `Release v<version>`, makes an annotated tag `v<version>`,
    and pushes `main` and the tag to every configured remote.
 

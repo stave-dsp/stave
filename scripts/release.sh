@@ -5,7 +5,8 @@
 #
 # Requires a clean tree on main and the release notes, releases/v<version>.md. Sets [workspace.package] version (every
 # crate inherits it), refreshes Cargo.lock, checks the version against
-# the API change (scripts/semver-checks.sh), runs the gates, commits, tags
+# the API change (scripts/semver-checks.sh), runs every gate
+# (scripts/affected.sh --full) and the leak check, commits, tags
 # v<version> and pushes main + the tag to every configured remote.
 # Then, in stave-plugins: scripts/bump-framework.sh v<version>.
 set -euo pipefail
@@ -31,7 +32,15 @@ PY
 cargo update --workspace
 # The version must allow the API change since the last release.
 bash scripts/semver-checks.sh "$(git describe --tags --abbrev=0 --match 'v*')"
-bash scripts/gates.sh
+# Every gate CI runs, whatever changed: the tree rules, clippy, the tests,
+# doctests, rustdoc with private items, the MSRV check and the docs site
+# (affected.sh skips the MSRV check without its toolchain: install it).
+msrv="$(sed -n 's/^rust-version = "\([0-9.]*\)".*/\1/p' Cargo.toml)"
+[[ "$msrv" == *.*.* ]] || msrv="$msrv.0"
+rustup toolchain install "$msrv" --profile minimal
+bash scripts/affected.sh --full --no-cache
+# No value from this machine's configuration goes out with the tag.
+bash scripts/check-local-leaks.sh
 
 git add "$NOTES"
 git commit -qam "Release ${TAG}"

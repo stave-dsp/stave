@@ -102,13 +102,19 @@ in the last 15 minutes (`--dry-run` lists them).
 
 `scripts/check-local-leaks.sh` fails when any value from your local
 configuration — a host name, a library path — appears in tracked files
-(`--staged`: in what is about to be committed). Run it from a pre-commit
-hook so a slip never lands:
+(`--staged`: in what is about to be committed). The repository's hooks
+run it before every commit (`--staged`) and every push (the whole
+tree); turn them on once per clone:
 
 ```sh
-printf '#!/bin/sh\nexec scripts/check-local-leaks.sh --staged\n' > .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
+git config core.hooksPath .githooks
 ```
+
+CI runs it too, on every pull request (the `tree rules + hygiene` job),
+with the values read from the repository's secrets under the same keys
+(`STAVE_LINUX_HOST`, `STAVE_AUTO_HOSTS`, …), and refuses any home
+directory or agent worktree path whatever the configuration.
+`scripts/release.sh` runs it before tagging.
 
 Pick host aliases that are distinctive (not a crate or project name), so
 the check has nothing to confuse them with.

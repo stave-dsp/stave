@@ -172,6 +172,28 @@ jobs:
       - run: scripts/check-vocabulary.sh
       - run: scripts/check-purity.sh
       - run: scripts/check-golden-sizes.sh
+      # The nightly Kani matrix (deep.yml) is found by this parser: a
+      # harness it cannot read fails here, on the change that wrote it.
+      - run: scripts/kani.sh --list
+      # This machine's values (host names, library paths) never land: the
+      # check reads them from the repository's secrets, the same keys as
+      # stave.env.example; unset, it checks the generic shapes only.
+      - name: local configuration leaks
+        run: |
+          scripts/check-local-leaks.sh
+          if git grep -nE '/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/|[.]claude/worktrees/'; then
+            echo "a machine path is written into the repo (use the config keys, stave.env.example)" >&2
+            exit 1
+          fi
+        env:
+          STAVE_LINUX_HOST: ${{ secrets.STAVE_LINUX_HOST }}
+          STAVE_MACOS_HOST: ${{ secrets.STAVE_MACOS_HOST }}
+          STAVE_REFERENCE_HOST: ${{ secrets.STAVE_REFERENCE_HOST }}
+          STAVE_AUTO_HOSTS: ${{ secrets.STAVE_AUTO_HOSTS }}
+          STAVE_TAR_HOSTS: ${{ secrets.STAVE_TAR_HOSTS }}
+          STAVE_SAMPLE_LIBRARY: ${{ secrets.STAVE_SAMPLE_LIBRARY }}
+          STAVE_CORPUS_LOCK: ${{ secrets.STAVE_CORPUS_LOCK }}
+          STAVE_CAPTURES: ${{ secrets.STAVE_CAPTURES }}
       - run: scripts/hygiene.sh deps
 
   plugins:
