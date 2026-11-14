@@ -5,6 +5,8 @@ use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
 use crate::primitives::gain::db_to_amp;
 use crate::primitives::time::delay::DelayLine;
+use crate::units::Seconds;
+use crate::units::Db;
 
 /// Interpolator taps on each side of a reconstructed point — the
 /// BS.1770-4 annex 2 meter's (and `stave_measure::loudness::TruePeak`'s
@@ -126,7 +128,8 @@ pub struct Limiter {
 impl Limiter {
     /// A limiter on `peaks` at `ceiling_db`, with 1.5 ms lookahead and
     /// 50 ms release. Buffers are allocated in `prepare`.
-    pub fn new(peaks: Peaks, ceiling_db: f32) -> Self {
+    pub fn new(peaks: Peaks, ceiling: Db) -> Self {
+        let ceiling_db = ceiling.get();
         let mut l = Self {
             peaks,
             ceiling_db,
@@ -153,20 +156,23 @@ impl Limiter {
     }
 
     /// The ceiling in dB (true peak or sample peak, per [`Peaks`]).
-    pub fn set_ceiling_db(&mut self, db: f32) {
+    pub fn set_ceiling(&mut self, ceiling: Db) {
+        let db = ceiling.get();
         self.ceiling_db = db;
         self.update();
     }
 
     /// The release time constant (gain recovery, 63 %).
-    pub fn set_release_ms(&mut self, ms: f32) {
+    pub fn set_release(&mut self, release: Seconds) {
+        let ms = release.to_ms() as f32;
         self.release_ms = ms;
         self.update();
     }
 
     /// The lookahead: how long the gain ramps into a peak. Changes the
     /// latency, so it takes effect at the next `prepare`.
-    pub fn set_lookahead_ms(&mut self, ms: f32) {
+    pub fn set_lookahead(&mut self, lookahead: Seconds) {
+        let ms = lookahead.to_ms() as f32;
         self.lookahead_ms = ms.max(0.0);
     }
 
@@ -178,7 +184,7 @@ impl Limiter {
 
     fn update(&mut self) {
         self.ceiling = db_to_amp(self.ceiling_db);
-        self.release = tau_coeff(self.release_ms / 1000.0, self.sample_rate);
+        self.release = tau_coeff(Seconds::new(f64::from(self.release_ms / 1000.0)), self.sample_rate);
     }
 
     /// Samples between the detector's newest input and the sample it

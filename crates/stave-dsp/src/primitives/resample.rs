@@ -5,6 +5,7 @@
 
 use crate::kernel::node::Stage;
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
+use crate::units::Hz;
 
 const STAGES: usize = 6;
 
@@ -47,7 +48,7 @@ impl Oversampler2x {
             let q = 1.0 / (2.0 * theta.cos());
             for bq in [&mut self.up[k], &mut self.down[k]] {
                 bq.prepare(inner_rate);
-                bq.set(FilterSpec::Lowpass { hz: cutoff, q });
+                bq.set(FilterSpec::Lowpass { frequency: Hz::new(cutoff), q });
             }
         }
     }

@@ -19,6 +19,8 @@ use stave_dsp::{
     CommonCathode, CommonCathodeConfig, Dempwolf, DiodeClipper, DiodeClipperConfig, OpAmpClipper,
     OpAmpClipperConfig, PairSolver, PowerSupply, PowerSupplyConfig, Shockley, Stage,
 };
+use stave_dsp::units::Db;
+use stave_dsp::units::db;
 
 const RATE: f64 = 48_000.0;
 const BLOCK: usize = 64;
@@ -187,8 +189,8 @@ fn hand_topologies_publish_no_cap_hits() {
             pair.set_pentode(stave_dsp::circuit::topologies::push_pull::PentodePair::EL34);
         }
         pair.prepare(RATE as f32);
-        pair.set_drive_db(if pentode { 36.0 } else { 18.0 });
-        pair.set_feedback_db(12.0);
+        pair.set_drive(Db::new(if pentode { 36.0 } else { 18.0 }));
+        pair.set_feedback(db(12.0));
         let pair = std::cell::RefCell::new(pair);
         hand(
             label,

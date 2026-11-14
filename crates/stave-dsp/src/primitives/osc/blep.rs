@@ -10,6 +10,7 @@
 //! and `n + 1`.
 
 use crate::primitives::spectral::{Fir, Passband, Window};
+use crate::units::Db;
 
 /// The tables, generated from the design in [`MinBlep::design`] and held
 /// to it by `tables_match_their_design` (`STAVE_BLESS=1` rewrites them).
@@ -84,7 +85,7 @@ impl MinBlep {
                 cutoff: CUTOFF / OVERSAMPLE as f64,
             },
             taps,
-            Window::kaiser_for(ATTENUATION_DB),
+            Window::kaiser_for(Db::new(ATTENUATION_DB as f32)),
         )
         .minimum_phase();
         let h = lowpass.taps();

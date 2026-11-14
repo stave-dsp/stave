@@ -9,12 +9,14 @@
 
 mod control;
 mod display;
+mod quantity;
 mod smooth;
 mod taper;
 mod types;
 mod watch;
 
 pub use display::{Unit, ValueText, VALUE_TEXT_BYTES};
+pub use quantity::Quantity;
 pub use smooth::Smooth;
 pub use taper::{Range, Taper};
 pub use types::{

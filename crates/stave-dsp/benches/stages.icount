@@ -5,6 +5,7 @@
 # valgrind-3.22.0 · glibc 2.39 · rustc 1.96.0 · x86_64
 biquad	38.66
 svf	28.64
+svf-swept	122.78
 oversampled2x	344.09
 oversampled4x	746.52
 oversampled8x	1081.96

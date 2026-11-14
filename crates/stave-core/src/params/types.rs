@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::vec::Vec;
 
 use super::display::{Unit, ValueText};
+use super::quantity::Quantity;
 use super::smooth::Smooth;
 use super::taper::Range;
 
@@ -147,6 +148,20 @@ impl FloatParam {
     #[inline]
     pub fn value(&self) -> f32 {
         self.plain() as f32
+    }
+
+    /// The value as the stave-dsp unit this param's [`Unit`] names —
+    /// [`Hz`](stave_dsp::units::Hz) from a `Unit::Hz` param,
+    /// [`Db`](stave_dsp::units::Db) or [`Gain`](stave_dsp::units::Gain)
+    /// from a `Unit::Db` one, [`Seconds`](stave_dsp::units::Seconds) from
+    /// `Unit::Ms`, [`Ratio`](stave_dsp::units::Ratio) from `Unit::Ratio` —
+    /// so it goes straight into the setter that takes it
+    /// (`filter.set_frequency(params.cutoff.value_as())`). The unit is
+    /// checked in debug builds. A block-rate read, as [`value`](Self::value).
+    #[inline]
+    #[track_caller]
+    pub fn value_as<T: Quantity>(&self) -> T {
+        T::from_param(self.meta.unit, self.plain())
     }
 
     /// The value at full precision (always inside the range).

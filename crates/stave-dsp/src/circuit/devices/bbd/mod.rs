@@ -23,6 +23,7 @@ pub use filter::{Filter, SallenKey, MAX_POLES};
 pub use holters_parker::HoltersParker;
 
 use crate::units::{Db, Hz, Volts};
+use crate::units::Seconds;
 
 /// A bucket-brigade chip's parameters, as its datasheet gives them.
 ///
@@ -94,13 +95,14 @@ impl Chip {
         feedthrough: Volts::new(0.003),
     };
 
-    /// The delay at `clock` hertz, `stages / (2·clock)`, in seconds.
-    pub fn delay_s(&self, clock: Hz) -> f64 {
-        f64::from(self.stages) / (2.0 * f64::from(clock.get()))
+    /// The delay at `clock`, `stages / (2·clock)`.
+    pub fn delay(&self, clock: Hz) -> Seconds {
+        Seconds::new(f64::from(self.stages) / (2.0 * f64::from(clock.get())))
     }
 
     /// The clock for a delay of `seconds`, `stages / (2·seconds)`.
-    pub fn clock_for(&self, seconds: f64) -> Hz {
+    pub fn clock_for(&self, delay: Seconds) -> Hz {
+        let seconds = delay.get();
         Hz::new((f64::from(self.stages) / (2.0 * seconds)) as f32)
     }
 

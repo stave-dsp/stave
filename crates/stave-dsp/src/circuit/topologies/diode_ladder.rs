@@ -11,6 +11,7 @@ use super::transistor_ladder::add;
 use crate::circuit::devices::bjt::GummelPoon;
 use crate::circuit::devices::diode::{Shockley, THERMAL_VOLTS_27C};
 use crate::circuit::netlist::{ElementKind, Netlist, Node, Probe, Source};
+use crate::units::Hz;
 
 /// The diode ladder's parts: what [`netlist`](Self::netlist) builds.
 ///
@@ -34,7 +35,7 @@ use crate::circuit::netlist::{ElementKind, Netlist, Node, Probe, Source};
 /// rung passes `(I/2)·tanh(Δv / 2Vt)` and the small-signal response is
 /// Stinchcombe's `2 / (s⁴ + 8s³ + 20s² + 16s + 2)`, `s` in units of
 /// `I / (4·Vt·C)`: it self-oscillates at resonance 17, at `√2` times
-/// that frequency ([`ideal_pitch_hz`](Self::ideal_pitch_hz)).
+/// that frequency ([`ideal_pitch`](Self::ideal_pitch)).
 ///
 /// # Verified
 /// `crates/stave-test/tests/filters_match_ngspice.rs::diode_ladder_matches_ngspice`:
@@ -99,9 +100,11 @@ impl DiodeLadder {
 
     /// The ideal ladder's self-oscillation pitch, `√2 · I / (8π·Vt·C)`
     /// at 27 °C.
-    pub fn ideal_pitch_hz(&self) -> f64 {
-        core::f64::consts::SQRT_2 * self.tail_amps
-            / (8.0 * core::f64::consts::PI * THERMAL_VOLTS_27C * self.capacitor_farads)
+    pub fn ideal_pitch(&self) -> Hz {
+        Hz::new(
+            (core::f64::consts::SQRT_2 * self.tail_amps
+                / (8.0 * core::f64::consts::PI * THERMAL_VOLTS_27C * self.capacitor_farads)) as f32,
+        )
     }
 
     /// The netlist: input `vin` (0 V at rest, AC magnitude 1), the probe

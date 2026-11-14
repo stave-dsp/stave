@@ -33,6 +33,8 @@ use stave_dsp::{
     Oversampled, Oversampled2x, PairSolver, PassiveToneControlPositions, PassiveToneStack,
     PassiveToneStackComponents, Serial, Shockley, Stage, Svf, Triode,
 };
+use stave_dsp::units::Hz;
+use stave_dsp::units::hz;
 
 const RATE: f32 = 48_000.0;
 /// The block most stages run in (a host's typical buffer).
@@ -146,18 +148,42 @@ fn wavenet() -> Process {
     stage(nam::parse(&file).expect("the network loads").network)
 }
 
+/// The swept Svf's loop: a retune and a tick per sample, the shape of a
+/// modulated filter. Out of line so its assembly can be read by name
+/// (`objdump -d --disassemble=<mangled svf_swept>`): DSP.md U4's
+/// zero-cost check compares it before and after the setters took units.
+#[inline(never)]
+fn svf_swept(svf: &mut Svf, phase: &mut f32, block: &mut [f32]) {
+    for x in block {
+        *phase = if *phase >= 1.0 { 0.0 } else { *phase + 1.0 / 4_096.0 };
+        svf.set(Hz::new(200.0 + 4_000.0 * *phase), 0.707);
+        *x = svf.tick(*x);
+    }
+}
+
 const STAGES: &[Entry] = &[
     Entry {
         id: "biquad",
         what: "Biquad lowpass, 1 kHz",
         block: BLOCK,
-        build: || stage(Biquad::new(FilterSpec::Lowpass { hz: 1_000.0, q: 0.707 })),
+        build: || stage(Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(1_000.0), q: 0.707 })),
     },
     Entry {
         id: "svf",
         what: "Svf (ZDF), 1 kHz",
         block: BLOCK,
-        build: || stage(Svf::new(1_000.0, 0.707)),
+        build: || stage(Svf::new(hz(1_000.0), 0.707)),
+    },
+    Entry {
+        id: "svf-swept",
+        what: "Svf (ZDF) retuned every sample, 200 Hz to 4.2 kHz (a setter in the hot loop)",
+        block: BLOCK,
+        build: || {
+            let mut svf = Svf::new(hz(1_000.0), 0.707);
+            svf.prepare(RATE);
+            let mut phase = 0.0f32;
+            Box::new(move |b| svf_swept(&mut svf, &mut phase, b))
+        },
     },
     Entry {
         id: "oversampled2x",
@@ -264,7 +290,7 @@ const STAGES: &[Entry] = &[
         build: || {
             let ir = ImpulseResponse::mono(&noise(1_024));
             stage(Serial((
-                Biquad::new(FilterSpec::Highpass { hz: 80.0, q: 0.707 }),
+                Biquad::new(FilterSpec::Highpass { frequency: Hz::new(80.0), q: 0.707 }),
                 Oversampled2x::front(Serial((Triode::new(), Triode::new()))),
                 tone_stack(),
                 Convolver::uniform(&ir, 256, Head::Partitioned),

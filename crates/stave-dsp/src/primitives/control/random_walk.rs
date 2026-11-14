@@ -21,6 +21,8 @@ use crate::kernel::control::Source;
 use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
 use crate::primitives::random::Xorshift32;
+use crate::units::Seconds;
+use crate::units::ms;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RandomWalk {
@@ -41,7 +43,9 @@ impl RandomWalk {
     /// `interval_ms` is the renewal cadence (the walk's reach);
     /// `ease_ms` the approach time constant (its smoothness). Seeds
     /// must be nonzero (xorshift's absorbing state) — 0 is remapped.
-    pub fn new(interval_ms: f32, ease_ms: f32, seed: u32) -> Self {
+    pub fn new(interval: Seconds, ease: Seconds, seed: u32) -> Self {
+        let interval_ms = interval.to_ms() as f32;
+        let ease_ms = ease.to_ms() as f32;
         let mut w = Self {
             seed,
             rng: Xorshift32::new(seed),
@@ -54,18 +58,20 @@ impl RandomWalk {
             ease: 1.0,
             sample_rate: 48_000.0,
         };
-        w.set_times(interval_ms, ease_ms);
+        w.set_times(ms(f64::from(interval_ms)), ms(f64::from(ease_ms)));
         w.countdown = 0;
         w
     }
 
     /// Retime a live walk (the Lag precedent): cadence and ease
     /// follow a knob without resetting state or sequence.
-    pub fn set_times(&mut self, interval_ms: f32, ease_ms: f32) {
+    pub fn set_times(&mut self, interval: Seconds, ease: Seconds) {
+        let interval_ms = interval.to_ms() as f32;
+        let ease_ms = ease.to_ms() as f32;
         self.interval_ms = interval_ms;
         self.ease_ms = ease_ms;
         self.period = ((interval_ms * 0.001 * self.sample_rate) as u32).max(1);
-        self.ease = tau_coeff(ease_ms * 0.001, self.sample_rate);
+        self.ease = tau_coeff(Seconds::new(f64::from(ease_ms * 0.001)), self.sample_rate);
         self.countdown = self.countdown.min(self.period);
     }
 
@@ -82,7 +88,7 @@ impl Stage for RandomWalk {
     /// Derive rate-dependent constants and come to rest.
     fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
-        self.set_times(self.interval_ms, self.ease_ms);
+        self.set_times(ms(f64::from(self.interval_ms)), ms(f64::from(self.ease_ms)));
         self.reset();
     }
 
@@ -132,7 +138,7 @@ mod tests {
 
     #[test]
     fn bounded_by_construction() {
-        let mut w = RandomWalk::new(40.0, 30.0, 7);
+        let mut w = RandomWalk::new(ms(40.0), ms(30.0), 7);
         w.prepare(48_000.0);
         for (i, v) in run(&mut w, 480_000).iter().enumerate() {
             assert!((-1.0..=1.0).contains(v), "sample {i} escaped: {v}");
@@ -145,8 +151,8 @@ mod tests {
         // real variance; white through the same one-pole alone
         // (renewal every sample) has almost none.
         let sr = 48_000.0;
-        let mut renewing = RandomWalk::new(140.0, 30.0, 7);
-        let mut per_sample = RandomWalk::new(0.0, 30.0, 7); // interval < 1 sample
+        let mut renewing = RandomWalk::new(ms(140.0), ms(30.0), 7);
+        let mut per_sample = RandomWalk::new(ms(0.0), ms(30.0), 7); // interval < 1 sample
         renewing.prepare(sr);
         per_sample.prepare(sr);
         let std = |v: &[f32]| {
@@ -168,8 +174,8 @@ mod tests {
 
     #[test]
     fn deterministic_per_seed_and_across_reset() {
-        let mut a = RandomWalk::new(40.0, 30.0, 42);
-        let mut b = RandomWalk::new(40.0, 30.0, 42);
+        let mut a = RandomWalk::new(ms(40.0), ms(30.0), 42);
+        let mut b = RandomWalk::new(ms(40.0), ms(30.0), 42);
         a.prepare(48_000.0);
         b.prepare(48_000.0);
         assert_eq!(
@@ -178,10 +184,10 @@ mod tests {
             "same seed, same walk"
         );
         a.reset();
-        let mut fresh = RandomWalk::new(40.0, 30.0, 42);
+        let mut fresh = RandomWalk::new(ms(40.0), ms(30.0), 42);
         fresh.prepare(48_000.0);
         assert_eq!(run(&mut a, 10_000), run(&mut fresh, 10_000), "a reset walk walks as a fresh one");
-        let mut c = RandomWalk::new(40.0, 30.0, 43);
+        let mut c = RandomWalk::new(ms(40.0), ms(30.0), 43);
         c.prepare(48_000.0);
         assert_ne!(run(&mut a, 0), run(&mut c, 1), "seeds decorrelate");
     }
@@ -189,7 +195,7 @@ mod tests {
     #[test]
     fn instant_ease_plateaus_at_the_renewal_cadence() {
         let sr = 1_000.0;
-        let mut w = RandomWalk::new(100.0, 0.0, 5); // 100 samples/renewal, no ease
+        let mut w = RandomWalk::new(ms(100.0), ms(0.0), 5); // 100 samples/renewal, no ease
         w.prepare(sr);
         let out = run(&mut w, 1_000);
         let plateaus = 1 + out.windows(2).filter(|p| p[0] != p[1]).count();

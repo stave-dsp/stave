@@ -9,6 +9,8 @@
 use crate::kernel::control::Source;
 use crate::kernel::node::{Generator, Stage};
 use crate::primitives::filters::one_pole::tau_coeff;
+use crate::units::Seconds;
+use crate::units::ms;
 
 /// Default time constant. ~5 ms = no zipper at GUI rate, no audible lag.
 pub const DEFAULT_TIME_MS: f32 = 5.0;
@@ -38,15 +40,16 @@ impl SmoothedParam {
             sample_rate: 48_000.0,
             time_ms: DEFAULT_TIME_MS,
         };
-        s.set_time_ms(DEFAULT_TIME_MS);
+        s.set_time(ms(f64::from(DEFAULT_TIME_MS)));
         s
     }
 
     /// The glide's time constant (state kept).
-    pub fn set_time_ms(&mut self, ms: f32) {
+    pub fn set_time(&mut self, time: Seconds) {
+        let ms = time.to_ms() as f32;
         debug_assert!(ms > 0.0, "time constant must be positive");
         self.time_ms = ms;
-        self.alpha = tau_coeff(ms * 0.001, self.sample_rate);
+        self.alpha = tau_coeff(Seconds::new(f64::from(ms * 0.001)), self.sample_rate);
     }
 
     pub fn set_target(&mut self, v: f32) {
@@ -85,7 +88,7 @@ impl Stage for SmoothedParam {
     fn prepare(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_time_ms(self.time_ms);
+        self.set_time(ms(f64::from(self.time_ms)));
     }
     fn reset(&mut self) {
         self.current = self.target;

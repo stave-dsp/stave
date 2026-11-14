@@ -10,6 +10,8 @@
 use crate::kernel::control::Source;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
+use crate::units::Seconds;
+use crate::units::ms;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Lag {
@@ -22,7 +24,9 @@ pub struct Lag {
 }
 
 impl Lag {
-    pub fn new(rise_ms: f32, fall_ms: f32) -> Self {
+    pub fn new(rise: Seconds, fall: Seconds) -> Self {
+        let rise_ms = rise.to_ms() as f32;
+        let fall_ms = fall.to_ms() as f32;
         let mut lag = Self {
             rise_ms,
             fall_ms,
@@ -31,23 +35,25 @@ impl Lag {
             fall: 1.0,
             y: 0.0,
         };
-        lag.set_times(rise_ms, fall_ms);
+        lag.set_times(ms(f64::from(rise_ms)), ms(f64::from(fall_ms)));
         lag
     }
 
     /// Rise and fall time constants (state kept). Zero is instant.
-    pub fn set_times(&mut self, rise_ms: f32, fall_ms: f32) {
+    pub fn set_times(&mut self, rise: Seconds, fall: Seconds) {
+        let rise_ms = rise.to_ms() as f32;
+        let fall_ms = fall.to_ms() as f32;
         self.rise_ms = rise_ms;
         self.fall_ms = fall_ms;
-        self.rise = tau_coeff(rise_ms * 0.001, self.sample_rate);
-        self.fall = tau_coeff(fall_ms * 0.001, self.sample_rate);
+        self.rise = tau_coeff(Seconds::new(f64::from(rise_ms * 0.001)), self.sample_rate);
+        self.fall = tau_coeff(Seconds::new(f64::from(fall_ms * 0.001)), self.sample_rate);
     }
 }
 
 impl Stage for Lag {
     fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
-        self.set_times(self.rise_ms, self.fall_ms);
+        self.set_times(ms(f64::from(self.rise_ms)), ms(f64::from(self.fall_ms)));
         self.y = 0.0;
     }
     fn reset(&mut self) {
@@ -81,7 +87,7 @@ mod properties {
     #[test]
     fn rise_and_fall_are_independent_taus() {
         let sr = 48_000.0;
-        let mut lag = Lag::new(1.0, 100.0);
+        let mut lag = Lag::new(ms(1.0), ms(100.0));
         lag.prepare(sr);
         // Rise: step 0 → 1; 63% within ~1 ms.
         let mut n = 0;
@@ -113,7 +119,7 @@ mod properties {
     /// Bipolar signals keep their sign — this is NOT a follower.
     #[test]
     fn signed_signals_pass_signed() {
-        let mut lag = Lag::new(5.0, 5.0);
+        let mut lag = Lag::new(ms(5.0), ms(5.0));
         lag.prepare(48_000.0);
         for _ in 0..48_000 {
             lag.tick(-1.0);

@@ -14,6 +14,7 @@
 use crate::circuit::devices::diode::Shockley;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Seconds;
 
 /// Between the reservoir and the filter capacitor.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -141,7 +142,8 @@ impl PowerSupply {
     /// Run from the current state with a steady load for `seconds` and
     /// return the mean B+ over the last mains half-cycle (the ripple's
     /// period): the supply's settled voltage at that load.
-    pub fn settle(&mut self, load_amps: f64, seconds: f64) -> f64 {
+    pub fn settle(&mut self, load_amps: f64, duration: Seconds) -> f64 {
+        let seconds = duration.get();
         let sample_rate = f64::from(self.sample_rate);
         let ripple_period = (sample_rate / (2.0 * self.config.mains_hz)).round() as usize;
         let total = (seconds * sample_rate) as usize;

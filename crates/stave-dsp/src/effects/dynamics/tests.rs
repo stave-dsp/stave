@@ -1,6 +1,9 @@
 use super::*;
 use crate::kernel::node::Stage;
 use stave_measure::loudness::{LevelMeasure, TruePeak};
+use crate::units::ms;
+use crate::units::Db;
+use crate::units::Hz;
 
 const RATE: f32 = 48_000.0;
 
@@ -43,7 +46,7 @@ fn static_curves_match_the_formulas() {
         for k in 0..=288 {
             let x = -60.0 + 0.25 * k as f32;
             let want = eq4(x, g.threshold_db, g.ratio, g.knee_db);
-            assert!((g.output_db(x) - want).abs() < 1e-4, "{g:?} at {x}");
+            assert!((g.output(Db::new(x)).get() - want).abs() < 1e-4, "{g:?} at {x}");
         }
     }
     let mut worst = [0.0f32; 3];
@@ -51,17 +54,17 @@ fn static_curves_match_the_formulas() {
         // Feed-forward, both knees.
         for (i, g) in curves[..2].iter().enumerate() {
             let mut c = Compressor::new(*g, Topology::FeedForward);
-            c.set_attack_ms(1.0);
-            c.set_release_ms(1.0);
-            let err = (settled(&mut c, level) - g.output_db(level)).abs();
+            c.set_attack(ms(1.0));
+            c.set_release(ms(1.0));
+            let err = (settled(&mut c, level) - g.output(Db::new(level)).get()).abs();
             worst[0] = worst[0].max(err);
             assert!(err < 0.01, "feed-forward {i} at {level}: {err}");
         }
         // Feedback, hard knee: the same static curve.
         let mut c = Compressor::new(curves[0], Topology::Feedback);
-        c.set_attack_ms(1.0);
-        c.set_release_ms(1.0);
-        let err = (settled(&mut c, level) - curves[0].output_db(level)).abs();
+        c.set_attack(ms(1.0));
+        c.set_release(ms(1.0));
+        let err = (settled(&mut c, level) - curves[0].output(Db::new(level)).get()).abs();
         worst[1] = worst[1].max(err);
         assert!(err < 0.01, "feedback hard at {level}: {err}");
         // Feedback, soft knee: the implicit solution y = x + c(y).
@@ -69,15 +72,15 @@ fn static_curves_match_the_formulas() {
         let (mut lo, mut hi) = (level - 60.0, level);
         for _ in 0..60 {
             let mid = 0.5 * (lo + hi);
-            if mid - level - g.feedback_gain_db(mid) > 0.0 {
+            if mid - level - g.feedback_gain(Db::new(mid)).get() > 0.0 {
                 hi = mid;
             } else {
                 lo = mid;
             }
         }
         let mut c = Compressor::new(g, Topology::Feedback);
-        c.set_attack_ms(1.0);
-        c.set_release_ms(1.0);
+        c.set_attack(ms(1.0));
+        c.set_release(ms(1.0));
         let err = (settled(&mut c, level) - lo).abs();
         worst[2] = worst[2].max(err);
         assert!(err < 0.05, "feedback soft at {level}: {err}");
@@ -96,7 +99,7 @@ fn crossing(values: &[f32], target: f32) -> usize {
 
 #[test]
 fn detector_times_match_the_settings() {
-    let mut p = Peak::new(5.0, 50.0);
+    let mut p = Peak::new(ms(5.0), ms(50.0));
     p.prepare(RATE);
     let rise: Vec<f32> = (0..4_800).map(|_| p.tick(1.0)).collect();
     let fall: Vec<f32> = (0..24_000).map(|_| p.tick(0.0)).collect();
@@ -114,8 +117,8 @@ fn compressor_times_match_the_settings() {
     for topology in [Topology::FeedForward, Topology::Feedback] {
         let ratio = if topology == Topology::Feedback { 20.0 } else { f32::INFINITY };
         let mut c = Compressor::new(GainComputer { threshold_db: -20.0, ratio, knee_db: 0.0 }, topology);
-        c.set_attack_ms(5.0);
-        c.set_release_ms(80.0);
+        c.set_attack(ms(5.0));
+        c.set_release(ms(80.0));
         c.prepare(RATE);
         let (low, high) = (0.01f32, 1.0f32);
         for _ in 0..4_800 {
@@ -135,7 +138,7 @@ fn compressor_times_match_the_settings() {
 
 #[test]
 fn rms_reads_a_sine_at_its_rms() {
-    let mut rms = Rms::new(10.0);
+    let mut rms = Rms::new(ms(10.0));
     rms.prepare(RATE);
     assert_eq!(rms.window_samples(), 480);
     let mut y = 0.0;
@@ -157,7 +160,7 @@ fn rms_reads_a_sine_at_its_rms() {
 #[cfg_attr(miri, ignore)]
 fn program_dependent_release_follows_history() {
     let fall_time = |burst: usize| {
-        let mut d = ProgramDependent::new(1.0, 50.0, 1_000.0, 500.0);
+        let mut d = ProgramDependent::new(ms(1.0), ms(50.0), ms(1_000.0), ms(500.0));
         d.prepare(RATE);
         let mut top = 0.0;
         for _ in 0..burst {
@@ -184,7 +187,7 @@ fn stereo_link_modes() {
 #[cfg_attr(miri, ignore)]
 fn sidechain_band_limits_the_key() {
     let gain_db = |hz: f32| {
-        let mut s = Sidechain::new(Some(100.0), Some(5_000.0));
+        let mut s = Sidechain::new(Some(Hz::new(100.0)), Some(Hz::new(5_000.0)));
         s.prepare(RATE);
         let (mut i, mut o) = (0.0f64, 0.0f64);
         for n in 0..48_000 {
@@ -245,9 +248,9 @@ fn the_limiter_never_exceeds_its_ceiling() {
     let mut over = Vec::new();
     for (name, x) in hostile() {
         for lookahead in [0.1f32, 0.5, 1.0, 1.5, 5.0] {
-            let mut l = Limiter::new(Peaks::True, ceiling);
-            l.set_lookahead_ms(lookahead);
-            l.set_release_ms(20.0);
+            let mut l = Limiter::new(Peaks::True, Db::new(ceiling));
+            l.set_lookahead(ms(f64::from(lookahead)));
+            l.set_release(ms(20.0));
             l.prepare(RATE);
             // Flushed: the limiter itself sees the signal stop.
             let flush = l.latency() as usize + 64;
@@ -259,8 +262,8 @@ fn the_limiter_never_exceeds_its_ceiling() {
                 over.push(format!("{name}, {lookahead} ms: {tp:.6} dBTP"));
             }
 
-            let mut s = Limiter::new(Peaks::Sample, ceiling);
-            s.set_lookahead_ms(lookahead);
+            let mut s = Limiter::new(Peaks::Sample, Db::new(ceiling));
+            s.set_lookahead(ms(f64::from(lookahead)));
             s.prepare(RATE);
             let peak = x.iter().map(|&v| s.tick(v).abs()).fold(0.0f32, f32::max);
             assert!(db(peak) <= ceiling, "{name}, {lookahead} ms sample: {} dB", db(peak));
@@ -278,8 +281,8 @@ fn limiter_latency_is_exact() {
         (Peaks::Sample, 44_100.0, 1.0),
         (Peaks::Sample, 48_000.0, 0.0),
     ] {
-        let mut l = Limiter::new(peaks, 0.0);
-        l.set_lookahead_ms(lookahead);
+        let mut l = Limiter::new(peaks, Db::new(0.0));
+        l.set_lookahead(ms(lookahead));
         l.prepare(rate);
         let y: Vec<f32> = (0..1_000).map(|n| l.tick(if n == 0 { 0.25 } else { 0.0 })).collect();
         let arrival = y.iter().position(|&v| v != 0.0).unwrap();
@@ -290,9 +293,9 @@ fn limiter_latency_is_exact() {
 
 #[test]
 fn limiter_release_matches_the_setting() {
-    let mut l = Limiter::new(Peaks::Sample, 0.0);
-    l.set_lookahead_ms(1.0);
-    l.set_release_ms(50.0);
+    let mut l = Limiter::new(Peaks::Sample, Db::new(0.0));
+    l.set_lookahead(ms(1.0));
+    l.set_release(ms(50.0));
     l.prepare(RATE);
     let mut gains = Vec::new();
     for n in 0..20_000 {

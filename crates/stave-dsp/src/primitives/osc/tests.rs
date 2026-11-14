@@ -1,4 +1,5 @@
 use super::*;
+use crate::units::{Hz, hz};
 
 const SR: f32 = 48_000.0;
 
@@ -17,7 +18,7 @@ fn mag_at(w: &[f32], hz: f64) -> f64 {
 fn run(shape: Waveform, hz: f32, n: usize, blep: bool) -> Vec<f32> {
     let mut o = Osc::new(shape);
     o.prepare(SR);
-    o.set_hz(hz);
+    o.set_frequency(Hz::new(hz));
     (0..n)
         .map(|_| {
             if blep {
@@ -163,7 +164,7 @@ fn minblep_is_the_naive_wave_away_from_its_edges() {
     let t = MinBlep::get();
     let mut o = Osc::min_blep(Waveform::Saw);
     o.prepare(SR);
-    o.set_hz(100.0);
+    o.set_frequency(hz(100.0));
     let inc = 100.0 / f64::from(SR);
     for n in 0..4_800usize {
         let y = f64::from(o.tick(0.0));
@@ -195,8 +196,8 @@ fn the_edge_list_path_is_the_phase_path() {
         let mut listed = Osc::new(shape);
         free.prepare(SR);
         listed.prepare(SR);
-        free.set_hz(3_137.0);
-        listed.set_hz(3_137.0);
+        free.set_frequency(hz(3_137.0));
+        listed.set_frequency(hz(3_137.0));
         listed.set_sync(Some(Hz::new(0.0)));
         // The phase path reads phase 0 as just past a wrap; the edge
         // list starts with none. From the first edge on they agree.
@@ -217,7 +218,7 @@ fn sync_repeats_at_the_masters_period() {
         for shape in [Waveform::Saw, Waveform::Triangle, Waveform::Square] {
             let mut o = make(shape);
             o.prepare(SR);
-            o.set_hz(1_234.5);
+            o.set_frequency(hz(1_234.5));
             o.set_sync(Some(Hz::new(375.0))); // 128 samples at 48 kHz
             let y: Vec<f32> = (0..2_048).map(|_| o.tick(0.0)).collect();
             for n in 1_024..1_024 + 128 {

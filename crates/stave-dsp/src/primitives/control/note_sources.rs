@@ -6,9 +6,12 @@
 //! the other voices ring (SYMP, sympathetic strings).
 
 use crate::primitives::random::Xorshift32;
+use crate::units::Hz;
+use crate::units::Seconds;
 
 /// Where `hz` sits, ±1 across ±2.5 octaves around middle C.
-pub fn key_position(hz: f32) -> f32 {
+pub fn key_position(pitch: Hz) -> f32 {
+    let hz = pitch.get();
     ((hz / 261.6256).log2() / 2.5).clamp(-1.0, 1.0)
 }
 
@@ -44,9 +47,9 @@ impl<const LFOS: usize> NoteSources<LFOS> {
         }
     }
 
-    pub fn note_on(&mut self, hz: f32, velocity: f32) {
+    pub fn note_on(&mut self, pitch: Hz, velocity: f32) {
         self.velocity = velocity;
-        self.key = key_position(hz);
+        self.key = key_position(pitch);
         self.age = 0;
         self.lfo_phases = [0.0; LFOS];
         self.spread = self.rng.next_bipolar();
@@ -95,14 +98,15 @@ impl Ensemble {
         *self = Self::default();
     }
 
-    pub fn note_on(&mut self, hz: f32, velocity: f32) {
+    pub fn note_on(&mut self, pitch: Hz, velocity: f32) {
         self.last_velocity = velocity;
-        self.last_key = key_position(hz);
+        self.last_key = key_position(pitch);
         self.heat = (self.heat + Self::HEAT_PER_NOTE * velocity).min(1.0);
     }
 
     /// Heat leaks over `seconds`.
-    pub fn leak(&mut self, seconds: f32) {
+    pub fn leak(&mut self, elapsed: Seconds) {
+        let seconds = elapsed.get() as f32;
         self.heat *= (-seconds / Self::HEAT_SECONDS).exp();
     }
 
@@ -131,22 +135,23 @@ impl Ensemble {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::units::{hz, seconds};
 
     #[test]
     fn middle_c_is_the_center_and_two_and_a_half_octaves_the_edge() {
-        assert!(key_position(261.6256).abs() < 1e-6);
-        assert!((key_position(261.6256 * 2f32.powf(2.5)) - 1.0).abs() < 1e-5);
-        assert_eq!(key_position(20_000.0), 1.0);
+        assert!(key_position(hz(261.6256)).abs() < 1e-6);
+        assert!((key_position(Hz::new(261.6256 * 2f32.powf(2.5))) - 1.0).abs() < 1e-5);
+        assert_eq!(key_position(hz(20_000.0)), 1.0);
     }
 
     #[test]
     fn heat_rises_with_playing_and_leaks_away() {
         let mut e = Ensemble::default();
         for _ in 0..20 {
-            e.note_on(440.0, 1.0);
+            e.note_on(hz(440.0), 1.0);
         }
         assert_eq!(e.heat(), 1.0, "bounded");
-        e.leak(8.0);
+        e.leak(seconds(8.0));
         assert!((e.heat() - (-1.0f32).exp()).abs() < 1e-6, "τ = 8 s");
     }
 
@@ -155,7 +160,7 @@ mod tests {
         let mut n = NoteSources::<2>::new(7);
         n.lfo_phases = [1.0, 2.0];
         n.tick();
-        n.note_on(440.0, 0.5);
+        n.note_on(hz(440.0), 0.5);
         assert_eq!((n.age, n.lfo_phases, n.velocity), (0, [0.0, 0.0], 0.5));
         assert!((-1.0..=1.0).contains(&n.spread));
     }

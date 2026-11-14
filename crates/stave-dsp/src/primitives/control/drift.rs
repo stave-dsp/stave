@@ -7,11 +7,12 @@
 //! ```
 //! use stave_dsp::primitives::control::drift::OrnsteinUhlenbeck;
 //! use stave_dsp::circuit::devices::thermal::Expo;
+//! use stave_dsp::units::seconds;
 //! use stave_dsp::Stage;
 //!
 //! // A VCO core wandering ±0.5 °C about 30 °C over tens of seconds,
 //! // uncompensated, two octaves above its reference.
-//! let mut celsius = OrnsteinUhlenbeck::new(30.0, 0.5, 20.0, 7);
+//! let mut celsius = OrnsteinUhlenbeck::new(30.0, 0.5, seconds(20.0), 7);
 //! celsius.prepare(1_000.0); // a control rate
 //! let expo = Expo::uncompensated(30.0);
 //! let ratio = expo.ratio(2.0, celsius.tick_f64());
@@ -20,6 +21,7 @@
 
 use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::random::SplitMix64;
+use crate::units::Seconds;
 
 /// A mean-reverting random process: `dx = −(x − μ)/τ·dt + σ·√(2/τ)·dW`,
 /// stationary at `N(μ, σ²)` with autocorrelation `exp(−|Δt|/τ)`.
@@ -65,7 +67,8 @@ pub struct OrnsteinUhlenbeck {
 impl OrnsteinUhlenbeck {
     /// About `mean`, standard deviation `sigma`, correlation time
     /// `tau_s` seconds; prepared at 48 kHz.
-    pub fn new(mean: f64, sigma: f64, tau_s: f64, seed: u64) -> Self {
+    pub fn new(mean: f64, sigma: f64, tau: Seconds, seed: u64) -> Self {
+        let tau_s = tau.get();
         let mut p = Self {
             mean,
             sigma: sigma.max(0.0),

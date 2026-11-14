@@ -184,7 +184,7 @@ impl Stage for Bank {
         if self.modes.is_empty() {
             Tail::None
         } else {
-            Tail::from_time_constant(longest / 6.907_755, self.sample_rate)
+            Tail::from_time_constant(Seconds::new(longest / 6.907_755), self.sample_rate)
         }
     }
 }

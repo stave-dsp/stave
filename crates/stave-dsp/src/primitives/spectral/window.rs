@@ -2,6 +2,8 @@
 //! them symmetric ([`Window::symmetric`]), the STFT periodic
 //! ([`Window::periodic`]).
 
+use crate::units::Db;
+
 /// A window (taper): the weights that fade a finite stretch of signal or
 /// of an ideal response in and out.
 ///
@@ -14,6 +16,7 @@
 ///
 /// ```
 /// use stave_dsp::primitives::spectral::Window;
+/// use stave_dsp::units::db;
 ///
 /// let close = |a: &[f64], b: &[f64]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-15);
 /// // Periodic, for an STFT: shifted by half its length, it sums to one.
@@ -21,7 +24,7 @@
 /// // Symmetric, for FIR design: both ends included.
 /// assert!(close(&Window::Hann.symmetric(5), &[0.0, 0.5, 1.0, 0.5, 0.0]));
 /// // Kaiser's β for 80 dB of stopband, by Kaiser's formula.
-/// assert_eq!(Window::kaiser_for(80.0), Window::Kaiser { beta: 0.1102 * (80.0 - 8.7) });
+/// assert_eq!(Window::kaiser_for(db(80.0)), Window::Kaiser { beta: 0.1102 * (80.0 - 8.7) });
 /// ```
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Window {
@@ -47,7 +50,8 @@ impl Window {
     /// The Kaiser window for a filter with `attenuation_db` of stopband
     /// (Kaiser's empirical formula: `0.1102·(A − 8.7)` above 50 dB,
     /// `0.5842·(A − 21)^0.4 + 0.07886·(A − 21)` from 21 to 50, 0 below).
-    pub fn kaiser_for(attenuation_db: f64) -> Self {
+    pub fn kaiser_for(attenuation: Db) -> Self {
+        let attenuation_db = f64::from(attenuation.get());
         let a = attenuation_db;
         let beta = if a > 50.0 {
             0.1102 * (a - 8.7)

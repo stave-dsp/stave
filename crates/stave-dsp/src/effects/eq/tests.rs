@@ -3,6 +3,7 @@ use crate::primitives::spectral::{Complex, Fft, Fir};
 use crate::units::{db, hz, ms, Ratio};
 use crate::Stage;
 use stave_measure::zipper::{zipper_report, ZipperConfig};
+use crate::units::Db;
 
 const RATES: [f32; 3] = [44_100.0, 48_000.0, 96_000.0];
 
@@ -296,7 +297,7 @@ fn dynamic_bands_reach_their_static_curve() {
                 ratio: 3.0,
                 knee_db: 0.0,
             };
-            let want = f64::from(static_db + computer.gain_db(rms_db).max(-15.0));
+            let want = f64::from(static_db + computer.gain(Db::new(rms_db)).get().max(-15.0));
             println!("{phase:?} at {level_db} dB, static {static_db}: {got:.3} dB, want {want:.3}");
             assert!((got - want).abs() < 0.1, "{phase:?} {level_db}: {got} vs {want}");
         }

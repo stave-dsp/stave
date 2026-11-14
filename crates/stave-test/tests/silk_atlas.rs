@@ -33,6 +33,7 @@ use std::io::Write as _;
 
 use stave_dsp::{SmoothSat, Stage};
 use stave_measure::spectrum::goertzel;
+use stave_dsp::units::Db;
 
 const FS: f64 = 48_000.0;
 /// Where the CSVs go: $SILK_ATLAS_DIR, else <temp dir>/silk_atlas.
@@ -57,7 +58,7 @@ fn ember_sat(silk_knob: f64, hf: f32) -> SmoothSat {
     // floored decay base).
     let silk_eff = 1.0 - 0.043f64.powf(silk_knob);
     s.set_smoothness(silk_eff as f32);
-    s.set_hf_smoothing(hf);
+    s.set_hf_smoothing(Db::new(hf));
     s
 }
 

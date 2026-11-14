@@ -18,9 +18,10 @@
 //! ```
 //! use stave_dsp::{Coupler, Stage};
 //! use stave_test::reference::{Case, Drive, Metric, Stimulus};
+//! use stave_dsp::units::Hz;
 //!
 //! // 22 nF into a 1 MΩ grid leak.
-//! let mut coupler = Coupler::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32);
+//! let mut coupler = Coupler::new(Hz::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32));
 //! coupler.prepare(48_000.0);
 //! // spice/coupler.cir, simulated into spice/coupler.ngspice.txt
 //! Case::ngspice("coupler")

@@ -8,6 +8,7 @@ use stave_measure::modulation::{
     period_classify, sideband_report, subharmonic_ratio_db, PeriodClass, SidebandConfig,
     SubharmonicConfig,
 };
+use stave_dsp::units::{Hz, ms};
 
 const N: usize = 32_768;
 const FS: f64 = 48_000.0;
@@ -290,7 +291,7 @@ fn lfo_driver_gain_route_makes_gated_ghost_sidebands() {
             )))
             .unwrap();
         ch.prepare(FS as f32);
-        let mut mm = ModMatrix::<1, 2>::new([Driver::lfo_env_scaled(f_lfo as f32, 5.0, 60.0)]);
+        let mut mm = ModMatrix::<1, 2>::new([Driver::lfo_env_scaled(Hz::new(f_lfo as f32), ms(5.0), ms(60.0))]);
         mm.prepare(FS as f32);
         mm.push_route(Route {
             source: 0,

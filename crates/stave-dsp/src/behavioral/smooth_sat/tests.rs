@@ -1,4 +1,5 @@
 use super::*;
+use crate::units::{Db, db};
 
 fn goertzel(buf: &[f32], f: f64, fs: f64) -> f64 {
     let w = 2.0 * core::f64::consts::PI * f / fs;
@@ -43,7 +44,7 @@ fn oversampled_alias_floor_high_input() {
         s.prepare(fs as f32);
         s.set_drive(1.6);
         s.set_smoothness(0.7);
-        s.set_hf_smoothing(4.0);
+        s.set_hf_smoothing(db(4.0));
         let mut os = Oversampler2x::new();
         os.prepare(fs as f32);
         let mut os2 = Oversampler2x::new();
@@ -118,7 +119,7 @@ fn hf_grain_stays_below_the_floor() {
         let mut s = SmoothSat::new();
         s.prepare(fs as f32);
         s.set_drive(drive);
-        s.set_hf_smoothing(hf);
+        s.set_hf_smoothing(Db::new(hf));
         s.set_smoothness(smooth);
         let mut os = Oversampler2x::new();
         os.prepare(fs as f32);
@@ -209,7 +210,7 @@ fn per_block_param_updates_dont_zipper() {
         s.set_even(0.15);
         s.set_odd(0.10);
         s.set_smoothness(0.7);
-        s.set_hf_smoothing(6.0);
+        s.set_hf_smoothing(db(6.0));
     };
     let step = |i: usize, s: &mut SmoothSat, os: &mut Oversampler2x, os2: &mut Oversampler2x| {
         if i % block == 0 {
@@ -264,7 +265,7 @@ fn pushed_high_harmonics_decay() {
     s.prepare(fs as f32);
     s.set_drive(3.0);
     s.set_smoothness(0.7);
-    s.set_hf_smoothing(0.0);
+    s.set_hf_smoothing(db(0.0));
     let out = run(f1, fs, 0.6, n, |x| s.tick(x));
     let h1 = goertzel(&out, f1, fs).max(1e-12);
     let h = |k: usize| 20.0 * (goertzel(&out, k as f64 * f1, fs) / h1).log10();
@@ -318,12 +319,12 @@ fn stereo_width_report() {
         a.prepare(fs as f32);
         a.set_drive(2.5);
         a.set_smoothness(sm);
-        a.set_hf_smoothing(0.0);
+        a.set_hf_smoothing(db(0.0));
         let mut b = SmoothSat::new();
         b.prepare(fs as f32);
         b.set_drive(2.5);
         b.set_smoothness(sm);
-        b.set_hf_smoothing(0.0);
+        b.set_hf_smoothing(db(0.0));
         let (mut ms, mut ss) = (0.0f64, 0.0f64);
         for i in 0..2 * n {
             let (m, s) = (mid(i), side(i));
@@ -350,7 +351,7 @@ fn stereo_width_report() {
             s.prepare(fs as f32);
             s.set_drive(drive);
             s.set_smoothness(sm);
-            s.set_hf_smoothing(0.0);
+            s.set_hf_smoothing(db(0.0));
         }
         let (mut lr, mut ll, mut rr) = (0.0f64, 0.0f64, 0.0f64);
         for i in 0..2 * n {
@@ -394,7 +395,7 @@ fn mid_side_keeps_center_better_than_dual_mono() {
         s.prepare(fs as f32);
         s.set_drive(drive);
         s.set_smoothness(0.3);
-        s.set_hf_smoothing(0.0);
+        s.set_hf_smoothing(db(0.0));
         s
     };
     let corr = |ls: &[f32], rs: &[f32]| -> f64 {
@@ -451,7 +452,7 @@ fn harmonic_profile_is_warm_and_smooth() {
         let mut s = SmoothSat::new();
         s.prepare(fs as f32);
         s.set_drive(1.0); // stays in range ⇒ pure Chebyshev profile
-        s.set_hf_smoothing(0.0); // isolate the Chebyshev profile
+        s.set_hf_smoothing(db(0.0)); // isolate the Chebyshev profile
         s.set_smoothness(smoothness);
         let out = run(f0, fs, 0.9, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
@@ -520,7 +521,7 @@ fn highs_distort_less_than_lows() {
         let mut s = SmoothSat::new();
         s.prepare(fs as f32);
         s.set_drive(1.6);
-        s.set_hf_smoothing(8.0);
+        s.set_hf_smoothing(db(8.0));
         let out = run(f0, fs, 0.6, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
         (2..=5)
@@ -552,7 +553,7 @@ fn companding_reduces_intermod() {
         s.prepare(fs as f32);
         s.set_drive(1.8);
         s.set_smoothness(0.6);
-        s.set_hf_smoothing(hf);
+        s.set_hf_smoothing(Db::new(hf));
         let two = |i: usize| {
             0.4 * ((2.0 * core::f64::consts::PI * f1 * i as f64 / fs).sin()
                 + (2.0 * core::f64::consts::PI * f2 * i as f64 / fs).sin()) as f32
@@ -605,7 +606,7 @@ fn dual_mono_is_coherent() {
         let mut s = SmoothSat::new();
         s.prepare(fs as f32);
         s.set_drive(2.0);
-        s.set_hf_smoothing(6.0);
+        s.set_hf_smoothing(db(6.0));
         s
     };
     let (mut l, mut r) = (mk(), mk());
@@ -638,7 +639,7 @@ fn bias_creates_even_harmonic_asymmetry() {
         s.set_even(0.0); // odd-only → symmetric when bias = 0
         s.set_odd(0.3);
         s.set_smoothness(0.6);
-        s.set_hf_smoothing(0.0);
+        s.set_hf_smoothing(db(0.0));
         s.set_bias(bias);
         let out = run(f0, fs, 0.7, n, |x| s.tick(x));
         let h1 = goertzel(&out, f0, fs).max(1e-12);
@@ -684,7 +685,7 @@ fn stable_and_level_sane() {
     let mut s = SmoothSat::new();
     s.prepare(fs as f32);
     s.set_drive(4.0);
-    s.set_hf_smoothing(12.0);
+    s.set_hf_smoothing(db(12.0));
     let out = run(220.0, fs, 0.95, 16_384, |x| s.tick(x));
     assert!(out.iter().all(|x| x.is_finite()));
     let mx = out.iter().fold(0.0f32, |m, &x| m.max(x.abs()));

@@ -9,6 +9,9 @@ use super::random_walk::RandomWalk;
 use crate::kernel::control::Source;
 use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::osc::Waveform;
+use crate::units::Hz;
+use crate::units::Seconds;
+use crate::units::ms;
 
 /// Beats per cycle of each tempo division: 1/1, 1/2, 1/4, 1/8, 1/16,
 /// 1/4T, 1/8T.
@@ -39,17 +42,18 @@ impl ModLfoShape {
     }
 }
 
-/// The LFO rate: `free_hz`, or the tempo division at `sync` (1-based
+/// The LFO rate: `free`, or the tempo division at `sync` (1-based
 /// into [`SYNC_BEATS`]; 0 = free).
-pub fn mod_lfo_hz(free_hz: f32, sync: usize, tempo_bpm: f32) -> f32 {
+pub fn mod_lfo_rate(free: Hz, sync: usize, tempo_bpm: f32) -> Hz {
     match sync.checked_sub(1).and_then(|i| SYNC_BEATS.get(i)) {
-        Some(beats) => (tempo_bpm / 60.0) / beats,
-        None => free_hz,
+        Some(beats) => Hz::new((tempo_bpm / 60.0) / beats),
+        None => free,
     }
 }
 
 /// The onset ramp: 0 → 1 over `rise_ms` from note-on.
-pub fn rise(age_samples: u32, rise_ms: f32, sample_rate: f32) -> f32 {
+pub fn rise(age_samples: u32, rise: Seconds, sample_rate: f32) -> f32 {
+    let rise_ms = rise.to_ms() as f32;
     if rise_ms <= 0.0 {
         1.0
     } else {
@@ -67,10 +71,10 @@ pub struct ModLfo {
 }
 
 impl ModLfo {
-    pub fn new(walk_interval_ms: f32, seed: u32) -> Self {
+    pub fn new(walk_interval: Seconds, seed: u32) -> Self {
         Self {
             lfo: Lfo::default(),
-            walk: RandomWalk::new(walk_interval_ms, 0.0, seed),
+            walk: RandomWalk::new(ms(f64::from(walk_interval)), ms(f64::from(Seconds::new(0.0))), seed),
             shape: ModLfoShape::Wave(Waveform::Sine),
             hz: 1.0,
             value: 0.0,
@@ -78,10 +82,11 @@ impl ModLfo {
     }
 
     /// Rate and shape (block rate).
-    pub fn set(&mut self, hz: f32, shape: ModLfoShape) {
+    pub fn set(&mut self, rate: Hz, shape: ModLfoShape) {
+        let hz = rate.get();
         self.hz = hz;
         self.shape = shape;
-        self.lfo.set_hz(hz);
+        self.lfo.set_frequency(Hz::new(hz));
         if let ModLfoShape::Wave(w) = shape {
             self.lfo.set_waveform(w);
         }
@@ -91,7 +96,7 @@ impl ModLfo {
         } else {
             0.0
         };
-        self.walk.set_times(interval_ms, ease_ms);
+        self.walk.set_times(ms(f64::from(interval_ms)), ms(f64::from(ease_ms)));
     }
 
     /// Run `frames` samples and return the value at the end (block-rate
@@ -119,7 +124,8 @@ impl ModLfo {
     }
 
     /// `phase` (cycles) moved on by `seconds` at this LFO's rate.
-    pub fn advance_phase(&self, phase: f32, seconds: f32) -> f32 {
+    pub fn advance_phase(&self, phase: f32, elapsed: Seconds) -> f32 {
+        let seconds = elapsed.get() as f32;
         (phase + self.hz * seconds).rem_euclid(1.0)
     }
 }
@@ -157,30 +163,30 @@ mod tests {
 
     #[test]
     fn sync_divides_the_beat() {
-        assert_eq!(mod_lfo_hz(3.0, 0, 120.0), 3.0, "free");
+        assert_eq!(mod_lfo_rate(Hz::new(3.0), 0, 120.0).get(), 3.0, "free");
         assert_eq!(
-            mod_lfo_hz(3.0, 3, 120.0),
+            mod_lfo_rate(Hz::new(3.0), 3, 120.0).get(),
             2.0,
             "1/4 at 120 bpm: two per second"
         );
-        assert_eq!(mod_lfo_hz(3.0, 1, 120.0), 0.5, "1/1: one per bar");
+        assert_eq!(mod_lfo_rate(Hz::new(3.0), 1, 120.0).get(), 0.5, "1/1: one per bar");
     }
 
     #[test]
     fn random_shapes_read_the_shared_walk_at_any_phase() {
-        let mut lfo = ModLfo::new(833.0, 7);
+        let mut lfo = ModLfo::new(ms(833.0), 7);
         lfo.prepare(48_000.0);
-        lfo.set(4.0, ModLfoShape::SampleHold);
+        lfo.set(Hz::new(4.0), ModLfoShape::SampleHold);
         let v = lfo.tick_frames(4_800);
         assert_eq!(lfo.at_phase(0.16), v);
-        lfo.set(4.0, ModLfoShape::Wave(Waveform::Sine));
+        lfo.set(Hz::new(4.0), ModLfoShape::Wave(Waveform::Sine));
         assert_eq!(lfo.at_phase(0.25), Waveform::Sine.eval(0.25));
     }
 
     #[test]
     fn the_rise_ramps_from_note_on() {
-        assert_eq!(rise(0, 0.0, 48_000.0), 1.0, "no rise");
-        assert!((rise(240, 10.0, 48_000.0) - 0.5).abs() < 1e-6);
-        assert_eq!(rise(4_800, 10.0, 48_000.0), 1.0);
+        assert_eq!(rise(0, ms(0.0), 48_000.0), 1.0, "no rise");
+        assert!((rise(240, ms(10.0), 48_000.0) - 0.5).abs() < 1e-6);
+        assert_eq!(rise(4_800, ms(10.0), 48_000.0), 1.0);
     }
 }

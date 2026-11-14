@@ -1,5 +1,6 @@
 use super::*;
 use crate::FilterSpec;
+use crate::units::{Db, Hz};
 
 /// The drive positions these tests were written against — a 0–20 dB
 /// knob on the anchored-exponential law the plugins use — as grid
@@ -667,13 +668,13 @@ fn companding_reduces_tube_hf_thd() {
         let mut os = Oversampler2x::new();
         os.prepare(fs as f32);
         let mut pre = Biquad::new(FilterSpec::HighShelf {
-            hz: 2_500.0,
-            db: -hf,
+            frequency: Hz::new(2_500.0),
+            gain: Db::new(-hf),
         });
         pre.prepare(fs as f32);
         let mut post = Biquad::new(FilterSpec::HighShelf {
-            hz: 2_500.0,
-            db: hf,
+            frequency: Hz::new(2_500.0),
+            gain: Db::new(hf),
         });
         post.prepare(fs as f32);
         let mut step = |x: f32| post.tick(os.tick_with(pre.tick(x), |s| t.tick(s)));
@@ -809,9 +810,9 @@ fn cathode_off_is_static() {
     t.set_grid_drive(knob(10.0));
     run_sine(&mut t, 200.0, fs, 0.6, fs as usize / 2);
     assert!(
-        t.gain_reduction_db().abs() < 0.1,
+        t.gain_reduction().get().abs() < 0.1,
         "static stage drifted: {}",
-        t.gain_reduction_db()
+        t.gain_reduction().get()
     );
     assert!(t.bias_shift().abs() < 1e-6);
 }
@@ -829,7 +830,7 @@ fn cathode_bias_compresses_with_level() {
         t.set_grid_drive(knob(14.0));
         self_biased(&mut t, 30.0);
         run_sine(&mut t, 200.0, fs, amp, fs as usize);
-        t.gain_reduction_db()
+        t.gain_reduction().get()
     };
     let (quiet, loud) = (gr_after(0.05), gr_after(0.8));
     assert!(loud < quiet - 0.3, "quiet {quiet}, loud {loud}");
@@ -992,7 +993,7 @@ fn the_report_is_the_truth() {
             out[i] = t.tick(s);
         }
         let g = goertzel(&out[n / 2..], f0, fs) / 0.001;
-        (20.0 * g.max(1e-12).log10(), t.small_signal_gain_db())
+        (20.0 * g.max(1e-12).log10(), t.small_signal_gain().get())
     };
     for &drive in &[0.0f32, 8.0, 16.0] {
         let (meas, rep) = measure(LevelPolicy::Calibrated, drive);
@@ -1082,7 +1083,7 @@ fn the_ceiling_obeys_the_policy() {
         reference_drive: knob(0.0),
     });
     t.set_grid_drive(knob(16.0));
-    let reported = f64::from(t.ceiling_db());
+    let reported = f64::from(t.ceiling().get());
     let measured = ceiling(
         LevelPolicy::Physical {
             reference_drive: knob(0.0),

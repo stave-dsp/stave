@@ -10,6 +10,7 @@
 use crate::circuit::devices::bjt::GummelPoon;
 use crate::circuit::devices::diode::THERMAL_VOLTS_27C;
 use crate::circuit::netlist::{ElementKind, Netlist, Node, Probe, Source};
+use crate::units::Hz;
 
 /// The transistor ladder's parts: what [`netlist`](Self::netlist) builds.
 ///
@@ -29,7 +30,7 @@ use crate::circuit::netlist::{ElementKind, Netlist, Node, Probe, Source};
 /// ([`GummelPoon::N2N3904`] by default), solved by
 /// [`Circuit<Dk>`](crate::circuit::Circuit). With ideal transistors it
 /// reduces to Huovilainen's four `tanh` stages with corner
-/// `I / (8π·Vt·C)` ([`ideal_cutoff_hz`](Self::ideal_cutoff_hz)).
+/// `I / (8π·Vt·C)` ([`ideal_cutoff`](Self::ideal_cutoff)).
 ///
 /// # Verified
 /// `crates/stave-test/tests/filters_match_ngspice.rs::transistor_ladder_matches_ngspice`:
@@ -81,8 +82,8 @@ impl TransistorLadder {
 
     /// The cutoff of the ideal ladder, `I / (8π·Vt·C)` at 27 °C: what
     /// the circuit's beta, base currents and Early effect move a little.
-    pub fn ideal_cutoff_hz(&self) -> f64 {
-        self.tail_amps / (8.0 * core::f64::consts::PI * THERMAL_VOLTS_27C * self.capacitor_farads)
+    pub fn ideal_cutoff(&self) -> Hz {
+        Hz::new((self.tail_amps / (8.0 * core::f64::consts::PI * THERMAL_VOLTS_27C * self.capacitor_farads)) as f32)
     }
 
     /// The netlist: input `vin` (0 V at rest, AC magnitude 1, for

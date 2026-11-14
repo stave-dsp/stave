@@ -8,6 +8,9 @@ use stave_dsp::{
     LinkwitzRiley4, OnePole, Oversampled2x, Par2, PassiveToneControlPositions, PassiveToneStack,
     PassiveToneStackComponents, PerChannel, Serial, Stage, StageKind, Svf, Tail,
 };
+use stave_dsp::units::{Db, Hz};
+use stave_dsp::units::hz;
+use stave_dsp::units::ms;
 
 const SR: f32 = 48_000.0;
 
@@ -44,25 +47,25 @@ fn check(name: &str, stage: &mut dyn Stage) {
 fn filter_leaves_report_honest_tails() {
     check(
         "biquad lowpass",
-        &mut Biquad::new(FilterSpec::Lowpass { hz: 200.0, q: 0.707 }),
+        &mut Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(200.0), q: 0.707 }),
     );
     check(
         "biquad peak",
         &mut Biquad::new(FilterSpec::Peak {
-            hz: 1_000.0,
-            db: 6.0,
+            frequency: Hz::new(1_000.0),
+            gain: Db::new(6.0),
             q: 2.0,
         }),
     );
-    check("svf", &mut Svf::new(300.0, 0.707));
-    check("one-pole", &mut OnePole::lowpass(50.0));
-    check("dc blocker", &mut DcBlocker::new(20.0));
-    check("allpass1", &mut Allpass1::new(100.0));
-    check("lr4", &mut LinkwitzRiley4::lowpass(150.0));
-    check("crossover3", &mut Crossover3::new(150.0, 2_000.0));
-    check("coupler", &mut Coupler::new(20.0));
-    check("comb", &mut Comb::new(20.0, 5.0, 0.7));
-    check("delay allpass", &mut DelayAllpass::new(20.0, 3.0, 0.6));
+    check("svf", &mut Svf::new(hz(300.0), 0.707));
+    check("one-pole", &mut OnePole::lowpass(hz(50.0)));
+    check("dc blocker", &mut DcBlocker::new(hz(20.0)));
+    check("allpass1", &mut Allpass1::new(hz(100.0)));
+    check("lr4", &mut LinkwitzRiley4::lowpass(hz(150.0)));
+    check("crossover3", &mut Crossover3::new(hz(150.0), hz(2_000.0)));
+    check("coupler", &mut Coupler::new(hz(20.0)));
+    check("comb", &mut Comb::new(ms(20.0), ms(5.0), 0.7));
+    check("delay allpass", &mut DelayAllpass::new(ms(20.0), ms(3.0), 0.6));
     let mut stack = PassiveToneStack::new(PassiveToneStackComponents {
         treble_capacitance_farads: 250e-12,
         bass_capacitance_farads: 100e-9,
@@ -78,7 +81,7 @@ fn filter_leaves_report_honest_tails() {
 
 #[test]
 fn composites_forward_tail_and_latency() {
-    let lp = || Biquad::new(FilterSpec::Lowpass { hz: 200.0, q: 0.707 });
+    let lp = || Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(200.0), q: 0.707 });
     let mut single = lp();
     single.prepare(SR);
     let t = single.tail();

@@ -8,6 +8,7 @@
 use crate::circuit::devices::magnetic::{JilesAtherton, JilesAthertonCore, MU_0};
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Seconds;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TransformerConfig {
@@ -149,6 +150,6 @@ impl Stage for Transformer {
         let chi = c.core.susceptibility(0.0, 0.0, true);
         let inductance =
             c.primary_turns * c.core_area * MU_0 * (c.primary_turns / c.path_length) * (1.0 + chi);
-        Tail::from_time_constant(inductance / c.source_ohms, self.sample_rate)
+        Tail::from_time_constant(Seconds::new(inductance / c.source_ohms), self.sample_rate)
     }
 }

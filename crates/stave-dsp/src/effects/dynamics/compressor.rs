@@ -5,6 +5,8 @@ use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
 use crate::primitives::gain::{amp_to_db, db_to_amp};
+use crate::units::Seconds;
+use crate::units::Db;
 
 /// The static curve of a compressor: the gain, in dB, for a level.
 ///
@@ -47,7 +49,13 @@ pub struct GainComputer {
 impl GainComputer {
     /// The gain (≤ 0 dB) for an input level, feed-forward.
     #[inline]
-    pub fn gain_db(&self, level_db: f32) -> f32 {
+    pub fn gain(&self, level: Db) -> Db {
+        Db::new(self.gain_at(level.get()))
+    }
+
+    /// [`gain`](Self::gain) on the bare dB scalar: the detector loop's form.
+    #[inline]
+    fn gain_at(&self, level_db: f32) -> f32 {
         let over = level_db - self.threshold_db;
         let slope = 1.0 / self.ratio - 1.0;
         let w = self.knee_db;
@@ -61,16 +69,17 @@ impl GainComputer {
         }
     }
 
-    /// The output level for an input level: `level + gain_db(level)`.
+    /// The output level for an input level: `level + gain(level)`.
     #[inline]
-    pub fn output_db(&self, level_db: f32) -> f32 {
-        level_db + self.gain_db(level_db)
+    pub fn output(&self, level: Db) -> Db {
+        level + self.gain(level)
     }
 
-    /// The slope `d(feedback_gain_db)/d(output_db)` at an output level:
-    /// 0 below the knee, `1 − R` above it.
+    /// The slope `d(feedback_gain)/d(output)` at an output level, dB per
+    /// dB: 0 below the knee, `1 − R` above it.
     #[inline]
-    pub fn feedback_slope(&self, output_db: f32) -> f32 {
+    pub fn feedback_slope(&self, output: Db) -> f32 {
+        let output_db = output.get();
         let over = output_db - self.threshold_db;
         let w = self.knee_db;
         if 2.0 * over <= -w {
@@ -85,7 +94,13 @@ impl GainComputer {
     /// The gain (≤ 0 dB) for the *output* level, for a feedback
     /// compressor that reaches the same static curve.
     #[inline]
-    pub fn feedback_gain_db(&self, output_db: f32) -> f32 {
+    pub fn feedback_gain(&self, output: Db) -> Db {
+        Db::new(self.feedback_gain_at(output.get()))
+    }
+
+    /// [`feedback_gain`](Self::feedback_gain) on the bare dB scalar.
+    #[inline]
+    fn feedback_gain_at(&self, output_db: f32) -> f32 {
         let over = output_db - self.threshold_db;
         let slope = 1.0 - self.ratio;
         let w = self.knee_db;
@@ -152,7 +167,7 @@ pub enum Topology {
 ///
 /// # Verified
 /// `crates/stave-dsp/src/effects/dynamics/tests.rs::static_curves_match_the_formulas`: settled levels match
-/// [`GainComputer::output_db`] (feed-forward and feedback); the gain's
+/// [`GainComputer::output`] (feed-forward and feedback); the gain's
 /// measured 63 % attack and release times (from the audio, on a DC
 /// step) match the settings within 1 % feed-forward and 5 % feedback
 /// (`crates/stave-dsp/src/effects/dynamics/tests.rs::compressor_times_match_the_settings`); no allocation after
@@ -209,24 +224,27 @@ impl Compressor {
     }
 
     /// The gain reduction's time constant while it grows.
-    pub fn set_attack_ms(&mut self, ms: f32) {
+    pub fn set_attack(&mut self, attack: Seconds) {
+        let ms = attack.to_ms() as f32;
         self.attack_ms = ms;
         self.update();
     }
 
     /// The gain reduction's time constant while it shrinks.
-    pub fn set_release_ms(&mut self, ms: f32) {
+    pub fn set_release(&mut self, release: Seconds) {
+        let ms = release.to_ms() as f32;
         self.release_ms = ms;
         self.update();
     }
 
-    pub fn set_makeup_db(&mut self, db: f32) {
+    pub fn set_makeup(&mut self, makeup: Db) {
+        let db = makeup.get();
         self.makeup_db = db;
     }
 
-    /// The current gain reduction in dB (≥ 0), for a meter.
-    pub fn reduction_db(&self) -> f32 {
-        self.reduction_db
+    /// The current gain reduction (≥ 0 dB), for a meter.
+    pub fn reduction(&self) -> Db {
+        Db::new(self.reduction_db)
     }
 
     /// Compress `x` keyed by `key` (an external or filtered sidechain);
@@ -235,15 +253,15 @@ impl Compressor {
     #[inline]
     pub fn tick_keyed(&mut self, x: f32, key: f32) -> f32 {
         let (target, loop_gain) = match self.topology {
-            Topology::FeedForward => (-self.computer.gain_db(amp_to_db(key.abs())), 1.0),
+            Topology::FeedForward => (-self.computer.gain_at(amp_to_db(key.abs())), 1.0),
             Topology::Feedback => {
                 let level = amp_to_db(self.last_output.abs());
                 // The loop moves the target by `slope` per dB of
                 // reduction; dividing the step by `1 − slope` makes the
                 // closed loop settle with the set time constant.
                 (
-                    -self.computer.feedback_gain_db(level),
-                    1.0 - self.computer.feedback_slope(level),
+                    -self.computer.feedback_gain_at(level),
+                    1.0 - self.computer.feedback_slope(Db::new(level)),
                 )
             }
         };
@@ -259,8 +277,8 @@ impl Compressor {
     }
 
     fn update(&mut self) {
-        self.attack = tau_coeff(self.attack_ms / 1000.0, self.sample_rate);
-        self.release = tau_coeff(self.release_ms / 1000.0, self.sample_rate);
+        self.attack = tau_coeff(Seconds::new(f64::from(self.attack_ms / 1000.0)), self.sample_rate);
+        self.release = tau_coeff(Seconds::new(f64::from(self.release_ms / 1000.0)), self.sample_rate);
     }
 }
 

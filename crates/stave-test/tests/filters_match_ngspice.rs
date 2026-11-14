@@ -178,7 +178,7 @@ fn transistor_ladder_ac_matches_ngspice() {
     let ladder = TransistorLadder::DEFAULT;
     ac_case("transistor_ladder_ac", &ladder.netlist(), 3e-5);
     let (onset, pitch) = onset_and_pitch(&ladder.netlist());
-    let ideal = ladder.ideal_cutoff_hz();
+    let ideal = ladder.ideal_cutoff().get() as f64;
     println!("transistor ladder: onset at resonance {onset:.4} (ideal 4), pitch {pitch:.2} Hz (ideal {ideal:.2})");
     assert!((onset / 4.0 - 1.0).abs() < 0.01, "onset {onset}");
     assert!((pitch / ideal - 1.0).abs() < 0.04, "pitch {pitch} Hz");
@@ -192,7 +192,7 @@ fn transistor_ladder_ac_matches_ngspice() {
 #[test]
 fn huovilainen_matches_the_transistor_ladder() {
     let ladder = TransistorLadder::DEFAULT;
-    let mut ideal = Huovilainen::new(hz(ladder.ideal_cutoff_hz() as f32), 0.75);
+    let mut ideal = Huovilainen::new(hz(ladder.ideal_cutoff().get() as f64 as f32), 0.75);
     ideal.prepare(4.0 * 48_000.0);
     structure_case(
         "transistor_ladder",
@@ -242,7 +242,7 @@ fn diode_ladder_ac_matches_ngspice() {
     let ladder = DiodeLadder::DEFAULT;
     ac_case("diode_ladder_ac", &ladder.netlist(), 3e-5);
     let (onset, pitch) = onset_and_pitch(&ladder.netlist());
-    let ideal = ladder.ideal_pitch_hz();
+    let ideal = ladder.ideal_pitch().get() as f64;
     println!("diode ladder: onset at resonance {onset:.4} (ideal 17), pitch {pitch:.2} Hz (ideal {ideal:.2})");
     assert!((onset / 17.0 - 1.0).abs() < 0.01, "onset {onset}");
     assert!((pitch / ideal - 1.0).abs() < 0.02, "pitch {pitch} Hz");
@@ -254,7 +254,7 @@ fn diode_ladder_ac_matches_ngspice() {
 #[test]
 fn stinchcombe_matches_the_diode_ladder() {
     let ladder = DiodeLadder::DEFAULT;
-    let mut ideal = Stinchcombe::new(hz(ladder.ideal_pitch_hz() as f32), 10.0 / 17.0);
+    let mut ideal = Stinchcombe::new(hz(ladder.ideal_pitch().get() as f64 as f32), 10.0 / 17.0);
     ideal.prepare(4.0 * 48_000.0);
     structure_case(
         "diode_ladder",

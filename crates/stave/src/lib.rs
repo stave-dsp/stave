@@ -249,10 +249,13 @@ pub mod prelude {
     pub use stave_core::params::Params;
     pub use stave_core::{cost_tap_ids, param_enum};
     pub use stave_core::params::{
-        AnyParam, BoolParam, EnumParam, FloatParam, ModalWatch, NoParams, ParamEnum, Ramp, Range,
-        Smooth, Smoother, Step, Steps, Unit, Watch,
+        AnyParam, BoolParam, EnumParam, FloatParam, ModalWatch, NoParams, ParamEnum, Quantity, Ramp,
+        Range, Smooth, Smoother, Step, Steps, Unit, Watch,
     };
     pub use stave_core::state::Migrations;
+    /// Quantities as types: every stave-dsp setter takes one, and a
+    /// param converts into one with `value_as` (DSP.md U4).
+    pub use stave_dsp::units::{db, hz, khz, ms, seconds, Db, Gain, Hz, Ratio, Seconds};
     pub use stave_dsp::{
         amp_to_db, db_to_amp, soft_clip, Biquad, DcBlocker, DelayLine, FilterSpec, Generator, Lfo,
         OnePole, Oversampled2x, PerChannel, Stage, Svf,

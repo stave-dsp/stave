@@ -5,6 +5,7 @@
 //! at 768 kHz and the plugin output went NaN.)
 
 use stave_dsp::{Biquad, FilterSpec, Stage};
+use stave_dsp::units::{Db, Hz};
 
 const RATES: [f32; 12] = [
     1_000.0, 22_050.0, 44_100.0, 47_999.5, 48_000.0, 96_000.0, 176_400.0, 192_000.0, 352_800.0,
@@ -18,13 +19,13 @@ fn specs() -> Vec<(
 )> {
     let mut out = Vec::new();
     for hz in [7.0, 10.0, 30.0, 1_000.0, 20_000.0] {
-        out.push((FilterSpec::Highpass { hz, q: 0.71 }, f32::INFINITY, 1.0));
-        out.push((FilterSpec::Lowpass { hz, q: 0.71 }, 0.0, 1.0));
-        out.push((FilterSpec::Allpass { hz, q: 0.71 }, 0.0, 1.0));
+        out.push((FilterSpec::Highpass { frequency: Hz::new(hz), q: 0.71 }, f32::INFINITY, 1.0));
+        out.push((FilterSpec::Lowpass { frequency: Hz::new(hz), q: 0.71 }, 0.0, 1.0));
+        out.push((FilterSpec::Allpass { frequency: Hz::new(hz), q: 0.71 }, 0.0, 1.0));
         out.push((
             FilterSpec::Peak {
-                hz,
-                db: 6.0,
+                frequency: Hz::new(hz),
+                gain: Db::new(6.0),
                 q: 0.9,
             },
             0.0,
@@ -32,10 +33,10 @@ fn specs() -> Vec<(
         ));
         for db in [-12.0f32, 8.5] {
             let low = 10f32.powf(db / 20.0);
-            out.push((FilterSpec::LowShelf { hz, db }, 0.0, low));
-            out.push((FilterSpec::LowShelfRbj { hz, db }, 0.0, low));
-            out.push((FilterSpec::HighShelf { hz, db }, 0.0, 1.0));
-            out.push((FilterSpec::HighShelfRbj { hz, db }, 0.0, 1.0));
+            out.push((FilterSpec::LowShelf { frequency: Hz::new(hz), gain: Db::new(db) }, 0.0, low));
+            out.push((FilterSpec::LowShelfRbj { frequency: Hz::new(hz), gain: Db::new(db) }, 0.0, low));
+            out.push((FilterSpec::HighShelf { frequency: Hz::new(hz), gain: Db::new(db) }, 0.0, 1.0));
+            out.push((FilterSpec::HighShelfRbj { frequency: Hz::new(hz), gain: Db::new(db) }, 0.0, 1.0));
         }
     }
     out
@@ -54,18 +55,18 @@ fn every_response_is_stable_and_right_at_every_rate() {
             } else {
                 probe
             };
-            let measured = biquad.magnitude_at(probe);
+            let measured = biquad.magnitude_at(Hz::new(probe));
             // A corner the clamp pins against Nyquist (0.499·fs) is a
             // legitimately slow, Nyquist-ringing section: bounded only.
             let corner_below_nyquist = match spec {
-                FilterSpec::Highpass { hz, .. }
-                | FilterSpec::Lowpass { hz, .. }
-                | FilterSpec::Allpass { hz, .. }
-                | FilterSpec::Peak { hz, .. }
-                | FilterSpec::LowShelf { hz, .. }
-                | FilterSpec::HighShelf { hz, .. }
-                | FilterSpec::LowShelfRbj { hz, .. }
-                | FilterSpec::HighShelfRbj { hz, .. } => hz < rate * 0.45,
+                FilterSpec::Highpass { frequency, .. }
+                | FilterSpec::Lowpass { frequency, .. }
+                | FilterSpec::Allpass { frequency, .. }
+                | FilterSpec::Peak { frequency, .. }
+                | FilterSpec::LowShelf { frequency, .. }
+                | FilterSpec::HighShelf { frequency, .. }
+                | FilterSpec::LowShelfRbj { frequency, .. }
+                | FilterSpec::HighShelfRbj { frequency, .. } => frequency.get() < rate * 0.45,
             };
             if corner_below_nyquist {
                 assert!(

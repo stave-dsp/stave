@@ -29,6 +29,7 @@
 
 use super::{ElementKind, Netlist, NetlistError};
 use crate::circuit::devices::potentiometer::{Bounce, LinearCubic, Tracking, Wiper};
+use crate::units::Seconds;
 
 /// How a pot's resistance follows its rotation: the fraction of the
 /// track between the first leg's ends at `position` (0 to 1).
@@ -209,7 +210,8 @@ impl Variable {
     }
 
     /// The same switch moving over `seconds` (H6's click suppression).
-    pub fn with_ramp(mut self, seconds: f64) -> Self {
+    pub fn with_ramp(mut self, ramp: Seconds) -> Self {
+        let seconds = ramp.get();
         if let Self::Switch { ramp_seconds, .. } = &mut self {
             *ramp_seconds = seconds.max(0.0);
         }

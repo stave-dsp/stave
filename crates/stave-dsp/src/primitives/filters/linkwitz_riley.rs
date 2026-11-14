@@ -9,6 +9,7 @@
 
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
+use crate::units::Hz;
 
 const BUTTERWORTH_Q: f32 = core::f32::consts::FRAC_1_SQRT_2;
 
@@ -57,8 +58,8 @@ pub struct LinkwitzRiley4 {
 }
 
 impl LinkwitzRiley4 {
-    pub fn new(side: CrossoverSide, hz: f32) -> Self {
-        let spec = Self::spec(side, hz);
+    pub fn new(side: CrossoverSide, corner: Hz) -> Self {
+        let spec = Self::spec(side, corner);
         Self {
             side,
             a: Biquad::new(spec),
@@ -66,26 +67,26 @@ impl LinkwitzRiley4 {
         }
     }
 
-    pub fn lowpass(hz: f32) -> Self {
-        Self::new(CrossoverSide::Lowpass, hz)
+    pub fn lowpass(corner: Hz) -> Self {
+        Self::new(CrossoverSide::Lowpass, corner)
     }
 
-    pub fn highpass(hz: f32) -> Self {
-        Self::new(CrossoverSide::Highpass, hz)
+    pub fn highpass(corner: Hz) -> Self {
+        Self::new(CrossoverSide::Highpass, corner)
     }
 
     /// Move the corner (state kept).
-    pub fn set_hz(&mut self, hz: f32) {
-        let spec = Self::spec(self.side, hz);
+    pub fn set_frequency(&mut self, corner: Hz) {
+        let spec = Self::spec(self.side, corner);
         self.a.set(spec);
         self.b.set(spec);
     }
 
-    fn spec(side: CrossoverSide, hz: f32) -> FilterSpec {
+    fn spec(side: CrossoverSide, frequency: Hz) -> FilterSpec {
         let q = BUTTERWORTH_Q;
         match side {
-            CrossoverSide::Lowpass => FilterSpec::Lowpass { hz, q },
-            CrossoverSide::Highpass => FilterSpec::Highpass { hz, q },
+            CrossoverSide::Lowpass => FilterSpec::Lowpass { frequency, q },
+            CrossoverSide::Highpass => FilterSpec::Highpass { frequency, q },
         }
     }
 }
@@ -108,7 +109,7 @@ impl Stage for LinkwitzRiley4 {
     }
 }
 
-/// A three-band Linkwitz-Riley split at `low_hz` and `high_hz`:
+/// A three-band Linkwitz-Riley split at `low` and `high`:
 /// low = LP(low) through an allpass at `high` (so its phase matches the
 /// other two bands), mid = HP(low)·LP(high), high = HP(low)·HP(high).
 /// The bands sum to a flat magnitude; [`split`](Self::split) returns them,
@@ -124,29 +125,29 @@ pub struct Crossover3 {
 }
 
 impl Crossover3 {
-    pub fn new(low_hz: f32, high_hz: f32) -> Self {
-        debug_assert!(low_hz < high_hz, "crossover {low_hz} ≥ {high_hz} Hz");
+    pub fn new(low: Hz, high: Hz) -> Self {
+        debug_assert!(low < high, "crossover {low} ≥ {high}");
         Self {
-            low_lp: LinkwitzRiley4::lowpass(low_hz),
-            low_hp: LinkwitzRiley4::highpass(low_hz),
-            high_lp: LinkwitzRiley4::lowpass(high_hz),
-            high_hp: LinkwitzRiley4::highpass(high_hz),
+            low_lp: LinkwitzRiley4::lowpass(low),
+            low_hp: LinkwitzRiley4::highpass(low),
+            high_lp: LinkwitzRiley4::lowpass(high),
+            high_hp: LinkwitzRiley4::highpass(high),
             low_ap: Biquad::new(FilterSpec::Allpass {
-                hz: high_hz,
+                frequency: high,
                 q: BUTTERWORTH_Q,
             }),
         }
     }
 
     /// Move both corners (state kept).
-    pub fn set_hz(&mut self, low_hz: f32, high_hz: f32) {
-        debug_assert!(low_hz < high_hz, "crossover {low_hz} ≥ {high_hz} Hz");
-        self.low_lp.set_hz(low_hz);
-        self.low_hp.set_hz(low_hz);
-        self.high_lp.set_hz(high_hz);
-        self.high_hp.set_hz(high_hz);
+    pub fn set_corners(&mut self, low: Hz, high: Hz) {
+        debug_assert!(low < high, "crossover {low} ≥ {high}");
+        self.low_lp.set_frequency(low);
+        self.low_hp.set_frequency(low);
+        self.high_lp.set_frequency(high);
+        self.high_hp.set_frequency(high);
         self.low_ap.set(FilterSpec::Allpass {
-            hz: high_hz,
+            frequency: high,
             q: BUTTERWORTH_Q,
         });
     }
@@ -192,6 +193,7 @@ impl Stage for Crossover3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::units::hz;
 
     fn tone_db(f: &mut impl FnMut(f32) -> f32, hz: f32, fs: f32) -> f64 {
         let n = (fs as usize) / 2;
@@ -213,15 +215,15 @@ mod tests {
         let fs = 48_000.0;
         for hz in [60.0f32, 400.0, 1_000.0, 5_000.0, 15_000.0] {
             let (mut lp, mut hp) = (
-                LinkwitzRiley4::lowpass(1_000.0),
-                LinkwitzRiley4::highpass(1_000.0),
+                LinkwitzRiley4::lowpass(Hz::new(1_000.0)),
+                LinkwitzRiley4::highpass(Hz::new(1_000.0)),
             );
             lp.prepare(fs);
             hp.prepare(fs);
             let g = tone_db(&mut |x| lp.tick(x) + hp.tick(x), hz, fs);
             assert!(g.abs() < 0.01, "sum at {hz} Hz: {g:.4} dB");
         }
-        let mut lp = LinkwitzRiley4::lowpass(1_000.0);
+        let mut lp = LinkwitzRiley4::lowpass(hz(1_000.0));
         lp.prepare(fs);
         let g = tone_db(&mut |x| lp.tick(x), 1_000.0, fs);
         assert!((g + 6.02).abs() < 0.05, "corner {g:.3} dB");
@@ -231,7 +233,7 @@ mod tests {
     fn crossover3_bands_sum_flat_and_separate() {
         let fs = 48_000.0;
         for hz in [40.0f32, 200.0, 900.0, 2_500.0, 8_000.0, 18_000.0] {
-            let mut x3 = Crossover3::new(250.0, 2_500.0);
+            let mut x3 = Crossover3::new(Hz::new(250.0), Hz::new(2_500.0));
             x3.prepare(fs);
             let g = tone_db(&mut |x| x3.tick(x), hz, fs);
             assert!(g.abs() < 0.01, "recombined at {hz} Hz: {g:.4} dB");
@@ -240,7 +242,7 @@ mod tests {
         // leaves the other bands ≥ 30 dB down.
         for (hz, band) in [(60.0f32, 0usize), (800.0, 1), (10_000.0, 2)] {
             for other in 0..3 {
-                let mut x3 = Crossover3::new(250.0, 2_500.0);
+                let mut x3 = Crossover3::new(Hz::new(250.0), Hz::new(2_500.0));
                 x3.prepare(fs);
                 let g = tone_db(&mut |x| x3.split(x)[other], hz, fs);
                 if other == band {

@@ -11,6 +11,7 @@ use crate::circuit::audio::Quiescent;
 use crate::circuit::devices::triode::Triode;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Seconds;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CommonCathodeConfig<T> {
@@ -322,7 +323,7 @@ impl<T: Triode> Stage for CommonCathode<T> {
     /// τ ≤ Rk·Ck (feedback through gm only shortens it).
     fn tail(&self) -> Tail {
         let tau = self.config.cathode_ohms * self.config.bypass_farads;
-        Tail::from_time_constant(tau, self.sample_rate)
+        Tail::from_time_constant(Seconds::new(tau), self.sample_rate)
     }
 }
 

@@ -89,7 +89,7 @@ impl Plugin for Echo {
             time: Smoother::new(&params.time),
             tone: ToneSmoothers::new(params),
             hold: Steps::new(&params.hold),
-            wobble: Lfo::new(0.5),
+            wobble: Lfo::new(hz(0.5)),
             shaper: Oversampled2x::front(()),
         }
     }
@@ -112,7 +112,7 @@ impl Plugin for Echo {
         let (wobble, shaper) = (&mut self.wobble, &mut self.shaper);
         let mut peak = 0.0f32;
         block.lanes::<2>().run(|frame| {
-            let _ms = time.next();
+            let _delay: Seconds = time.next_as();
             let Tone { drive, mix } = tone.next();
             let duck = key.as_mut().and_then(Iterator::next).map_or(1.0, |k| 1.0 - k.abs().min(1.0));
             let _depth = wobble.next();

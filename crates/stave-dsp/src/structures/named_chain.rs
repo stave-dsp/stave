@@ -11,7 +11,7 @@
 //!     /// The amp channel, in signal order.
 //!     pub struct AmpChain {
 //!         primary: Curve = CurveStage::from_fn(-12.0, 12.0, 0.0, shapes::knee(1.0)),
-//!         voicing: Filter = Biquad::new(FilterSpec::HighShelf { hz: 900.0, db: 0.0 }),
+//!         voicing: Filter = Biquad::new(FilterSpec::HighShelf { frequency: Hz::new(900.0), gain: Db::new(0.0) }),
 //!     }
 //! }
 //!
@@ -146,11 +146,12 @@ macro_rules! chain {
 mod tests {
     use crate::behavioral::shapes;
     use crate::{Biquad, CurveStage, FilterSpec, Stage, StageKind, SwapPoint};
+    use crate::units::{Db, Hz};
 
     crate::chain! {
         struct TestChain {
             drive: Curve = CurveStage::from_fn(-4.0, 4.0, 0.0, shapes::knee(1.5)),
-            tone: Filter = Biquad::new(FilterSpec::HighShelf { hz: 1_000.0, db: 0.0 }),
+            tone: Filter = Biquad::new(FilterSpec::HighShelf { frequency: Hz::new(1_000.0), gain: Db::new(0.0) }),
         }
     }
 
@@ -163,8 +164,8 @@ mod tests {
         assert_eq!(topo, vec![(ch.drive, "curve"), (ch.tone, "filter")]);
         // Method = the typed stage, no kind ritual.
         ch.tone().set(FilterSpec::HighShelf {
-            hz: 2_000.0,
-            db: 3.0,
+            frequency: Hz::new(2_000.0),
+            gain: Db::new(3.0),
         });
         // Ticks like any Stage (nests in regions).
         let y = ch.tick(0.25);

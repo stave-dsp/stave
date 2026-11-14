@@ -4,13 +4,14 @@
 //! triangle is the classic ensemble chorus, a fast-rise/slow-fall sine
 //! is a photocell lamp's throb.
 //!
-//! A generator [`Stage`]: `set_hz` sets the cycle frequency, `tick`
+//! A generator [`Stage`]: `set_frequency` sets the cycle frequency, `tick`
 //! (input ignored) returns the next sample in [−1, 1]. Phase is in
 //! cycles, `0 ≤ t < 1`, as everywhere in stave-dsp.
 
 use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::osc::Waveform;
 use crate::primitives::random::Xorshift32;
+use crate::units::Hz;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Lfo {
@@ -31,12 +32,13 @@ const DRIFT_SEED: u32 = 0x9E37_79B9;
 impl Default for Lfo {
     /// 1 Hz sine.
     fn default() -> Self {
-        Self::new(1.0)
+        Self::new(Hz::new(1.0))
     }
 }
 
 impl Lfo {
-    pub fn new(hz: f32) -> Self {
+    pub fn new(frequency: Hz) -> Self {
+        let hz = frequency.get();
         let mut lfo = Self {
             sample_rate: 48_000.0,
             hz,
@@ -47,11 +49,12 @@ impl Lfo {
             drift_state: 0.0,
             rng: Xorshift32::new(DRIFT_SEED),
         };
-        lfo.set_hz(hz);
+        lfo.set_frequency(Hz::new(hz));
         lfo
     }
 
-    pub fn set_hz(&mut self, hz: f32) {
+    pub fn set_frequency(&mut self, frequency: Hz) {
+        let hz = frequency.get();
         self.hz = hz;
         self.inc = hz.max(0.0) / self.sample_rate;
     }
@@ -81,7 +84,7 @@ impl Stage for Lfo {
     fn prepare(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_frequency(Hz::new(self.hz));
         self.reset();
     }
     /// Phase 0, no drift, and the drift's draws from their start: a
@@ -117,6 +120,7 @@ impl Generator for Lfo {}
 #[cfg(test)]
 mod properties {
     use super::*;
+    use crate::units::hz;
 
     #[test]
     fn shapes_hit_their_marks() {
@@ -135,7 +139,7 @@ mod properties {
     #[test]
     fn drift_is_bounded_and_zero_when_off() {
         let sr = 48_000.0;
-        let mut clean = Lfo::new(2.0);
+        let mut clean = Lfo::new(hz(2.0));
         clean.prepare(sr);
         let mut intervals = Vec::new();
         let mut last_cross = None;
@@ -159,7 +163,7 @@ mod properties {
             (min - expect as i64).abs() <= 4,
             "clean rate near {expect}: {min}"
         );
-        let mut drifty = Lfo::new(2.0);
+        let mut drifty = Lfo::new(hz(2.0));
         drifty.prepare(sr);
         drifty.set_drift(1.0);
         let mut crossings = 0;

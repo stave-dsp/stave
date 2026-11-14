@@ -71,24 +71,24 @@ impl Band {
     pub fn spec(self) -> FilterSpec {
         match self {
             Band::Bell { frequency, gain, q } => FilterSpec::Peak {
-                hz: frequency.get(),
-                db: gain.get(),
+                frequency,
+                gain,
                 q,
             },
             Band::LowShelf { frequency, gain } => FilterSpec::LowShelfRbj {
-                hz: frequency.get(),
-                db: gain.get(),
+                frequency,
+                gain,
             },
             Band::HighShelf { frequency, gain } => FilterSpec::HighShelfRbj {
-                hz: frequency.get(),
-                db: gain.get(),
+                frequency,
+                gain,
             },
             Band::LowCut { frequency, q } => FilterSpec::Highpass {
-                hz: frequency.get(),
+                frequency,
                 q,
             },
             Band::HighCut { frequency, q } => FilterSpec::Lowpass {
-                hz: frequency.get(),
+                frequency,
                 q,
             },
         }

@@ -5,6 +5,7 @@ use super::Machine;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::control::drift::OrnsteinUhlenbeck;
 use crate::primitives::random::SplitMix64;
+use crate::units::Seconds;
 
 /// The fewest samples the read may sit behind the newest one: the cubic
 /// reads one sample either side of its pair.
@@ -113,7 +114,11 @@ impl Splices {
 
     /// How long the joint takes to cross the gap at `metres_per_second`:
     /// `width / (v · tan θ)` (a butt splice: none).
-    pub fn crossing_s(&self, metres_per_second: f64) -> f64 {
+    pub fn crossing(&self, metres_per_second: f64) -> Seconds {
+        Seconds::new(self.crossing_at(metres_per_second))
+    }
+
+    fn crossing_at(&self, metres_per_second: f64) -> f64 {
         let t = self.angle_deg.to_radians().tan();
         if t.is_finite() && t.abs() < 1e12 {
             self.width_m / (metres_per_second * t)
@@ -236,7 +241,7 @@ impl Capstan {
             pos: 0.0,
             base: 0.0,
             max_lag: 0.0,
-            ou: OrnsteinUhlenbeck::new(0.0, 0.0, 1.0, seed),
+            ou: OrnsteinUhlenbeck::new(0.0, 0.0, Seconds::new(1.0), seed),
             rng: SplitMix64::new(seed),
             state: State::Running,
             m: 1.0,
@@ -268,14 +273,14 @@ impl Capstan {
         self.configure()
     }
 
-    /// The position loop's time constant, seconds (default 10).
-    pub fn with_servo(mut self, seconds: f64) -> Self {
-        self.servo_s = seconds.max(0.1);
+    /// The position loop's time constant (default 10 s, at least 0.1 s).
+    pub fn with_servo(mut self, servo: Seconds) -> Self {
+        self.servo_s = servo.get().max(0.1);
         self.configure()
     }
 
     fn configure(mut self) -> Self {
-        self.ou = OrnsteinUhlenbeck::new(0.0, self.drift.rms, self.drift.tau_s, self.seed);
+        self.ou = OrnsteinUhlenbeck::new(0.0, self.drift.rms, Seconds::new(self.drift.tau_s), self.seed);
         let rate = self.rate as f32;
         self.prepare(rate);
         self
@@ -295,8 +300,9 @@ impl Capstan {
         self.motor
     }
 
-    pub fn servo_s(&self) -> f64 {
-        self.servo_s
+    /// The position loop's time constant.
+    pub fn servo(&self) -> Seconds {
+        Seconds::new(self.servo_s)
     }
 
     /// Whether anything is configured: off, `tick` returns its input.
@@ -399,7 +405,7 @@ impl Capstan {
             self.clamps += 1;
             jump = 0.0;
         }
-        let length = (self.splices.crossing_s(self.speed * self.ratio) * self.rate).round().max(1.0);
+        let length = (self.splices.crossing_at(self.speed * self.ratio) * self.rate).round().max(1.0);
         self.fade = Some((0.0, length, jump));
         self.spliced = true;
     }

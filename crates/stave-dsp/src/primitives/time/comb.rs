@@ -5,6 +5,8 @@
 use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::time::delay::DelayLine;
+use crate::units::Seconds;
+use crate::units::ms;
 
 /// Whole samples in `ms` at `sample_rate`, at least one (a recirculating
 /// delay of zero is a zero-delay loop). Schroeder's elements recirculate
@@ -57,7 +59,9 @@ pub struct Comb {
 impl Comb {
     /// A comb that can reach `max_ms` of delay, set to `delay_ms` with
     /// loop gain `feedback`. The line is allocated in `prepare`.
-    pub fn new(max_ms: f32, delay_ms: f32, feedback: f32) -> Self {
+    pub fn new(max: Seconds, delay: Seconds, feedback: f32) -> Self {
+        let max_ms = max.to_ms() as f32;
+        let delay_ms = delay.to_ms() as f32;
         let mut c = Self {
             line: DelayLine::new(),
             max_ms,
@@ -69,13 +73,14 @@ impl Comb {
             delay: 1,
             lp: 0.0,
         };
-        c.set_delay_ms(delay_ms);
+        c.set_delay(ms(f64::from(delay_ms)));
         c
     }
 
     /// Loop length (rounded to whole samples), held inside
     /// `[1 sample, max_ms]`.
-    pub fn set_delay_ms(&mut self, ms: f32) {
+    pub fn set_delay(&mut self, delay: Seconds) {
+        let ms = delay.to_ms() as f32;
         self.delay_ms = ms.min(self.max_ms);
         self.delay = delay_samples(self.delay_ms, self.sample_rate);
     }
@@ -102,7 +107,7 @@ impl Stage for Comb {
     fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.line.allocate(capacity(self.max_ms, sample_rate));
-        self.set_delay_ms(self.delay_ms);
+        self.set_delay(ms(f64::from(self.delay_ms)));
         self.set_damping(self.damping);
         self.reset();
     }
@@ -139,7 +144,9 @@ impl DelayAllpass {
     /// An allpass that can reach `max_ms` of delay, set to `delay_ms`
     /// with coefficient `gain` (|gain| < 1). The line is allocated in
     /// `prepare`.
-    pub fn new(max_ms: f32, delay_ms: f32, gain: f32) -> Self {
+    pub fn new(max: Seconds, delay: Seconds, gain: f32) -> Self {
+        let max_ms = max.to_ms() as f32;
+        let delay_ms = delay.to_ms() as f32;
         let mut a = Self {
             line: DelayLine::new(),
             max_ms,
@@ -148,13 +155,14 @@ impl DelayAllpass {
             sample_rate: 48_000.0,
             delay: 1,
         };
-        a.set_delay_ms(delay_ms);
+        a.set_delay(ms(f64::from(delay_ms)));
         a
     }
 
     /// Loop length (rounded to whole samples), held inside
     /// `[1 sample, max_ms]`.
-    pub fn set_delay_ms(&mut self, ms: f32) {
+    pub fn set_delay(&mut self, delay: Seconds) {
+        let ms = delay.to_ms() as f32;
         self.delay_ms = ms.min(self.max_ms);
         self.delay = delay_samples(self.delay_ms, self.sample_rate);
     }
@@ -169,7 +177,7 @@ impl Stage for DelayAllpass {
     fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.line.allocate(capacity(self.max_ms, sample_rate));
-        self.set_delay_ms(self.delay_ms);
+        self.set_delay(ms(f64::from(self.delay_ms)));
         self.reset();
     }
     fn reset(&mut self) {
@@ -201,7 +209,7 @@ mod tests {
     #[test]
     fn comb_echoes_every_delay_scaled_by_feedback() {
         // 1 ms at 48 kHz = 48 samples.
-        let mut c = Comb::new(10.0, 1.0, 0.5);
+        let mut c = Comb::new(ms(10.0), ms(1.0), 0.5);
         c.prepare(48_000.0);
         let h = impulse(&mut c, 200);
         for (i, &y) in h.iter().enumerate() {
@@ -218,7 +226,7 @@ mod tests {
 
     #[test]
     fn delay_allpass_is_flat() {
-        let mut a = DelayAllpass::new(10.0, 1.3, 0.7);
+        let mut a = DelayAllpass::new(ms(10.0), ms(1.3), 0.7);
         a.prepare(48_000.0);
         // An allpass preserves energy: Σh² = 1.
         let energy: f64 = impulse(&mut a, 20_000)
@@ -230,7 +238,7 @@ mod tests {
 
     #[test]
     fn recirculating_tails_cover_the_measured_decay() {
-        let mut c = Comb::new(50.0, 7.0, 0.8);
+        let mut c = Comb::new(ms(50.0), ms(7.0), 0.8);
         c.prepare(48_000.0);
         let Tail::Samples(n) = c.tail() else { panic!() };
         let h = impulse(&mut c, 2 * n as usize);
@@ -239,12 +247,12 @@ mod tests {
             last_loud <= n && last_loud > n * 9 / 10,
             "rang {last_loud}, reported {n}"
         );
-        let mut a = DelayAllpass::new(50.0, 7.0, 0.8);
+        let mut a = DelayAllpass::new(ms(50.0), ms(7.0), 0.8);
         a.prepare(48_000.0);
         let Tail::Samples(n) = a.tail() else { panic!() };
         let h = impulse(&mut a, 2 * n as usize);
         let last_loud = h.iter().rposition(|y| y.abs() > 1e-6).unwrap() as u32;
         assert!(last_loud <= n, "rang {last_loud}, reported {n}");
-        assert_eq!(Comb::new(10.0, 1.0, 1.0).tail(), Tail::Infinite);
+        assert_eq!(Comb::new(ms(10.0), ms(1.0), 1.0).tail(), Tail::Infinite);
     }
 }

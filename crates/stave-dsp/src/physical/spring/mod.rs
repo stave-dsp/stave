@@ -234,7 +234,7 @@ impl Spring {
         let fc = self.sample_rate / (2.0 * k as f32);
         // A fourth-order Butterworth at f_C (Q of its two sections).
         for (b, q) in self.lowpass.iter_mut().zip([0.541_196_1, 1.306_563]) {
-            *b = Biquad::new(FilterSpec::Lowpass { hz: fc.min(0.45 * self.sample_rate), q });
+            *b = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(fc.min(0.45 * self.sample_rate)), q });
             b.prepare(self.sample_rate);
         }
         self.set_high_chirps(self.high);

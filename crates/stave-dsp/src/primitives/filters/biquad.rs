@@ -14,6 +14,7 @@
 
 use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
+use crate::units::{Db, Hz};
 
 /// A second-order section: one [`FilterSpec`] at the prepared rate.
 /// Before `prepare` it runs at 48 kHz; `Biquad::default()` is a
@@ -124,14 +125,24 @@ impl Biquad {
         };
         let sample_rate = self.sample_rate;
         match spec {
-            FilterSpec::Lowpass { hz, q } => self.lowpass(hz, q, sample_rate),
-            FilterSpec::Highpass { hz, q } => self.highpass(hz, q, sample_rate),
-            FilterSpec::Allpass { hz, q } => self.allpass(hz, q, sample_rate),
-            FilterSpec::Peak { hz, db, q } => self.peak(hz, db, q, sample_rate),
-            FilterSpec::LowShelf { hz, db } => self.low_shelf(hz, db, sample_rate),
-            FilterSpec::HighShelf { hz, db } => self.high_shelf(hz, db, sample_rate),
-            FilterSpec::LowShelfRbj { hz, db } => self.low_shelf_rbj(hz, db, sample_rate),
-            FilterSpec::HighShelfRbj { hz, db } => self.high_shelf_rbj(hz, db, sample_rate),
+            FilterSpec::Lowpass { frequency, q } => self.lowpass(frequency.get(), q, sample_rate),
+            FilterSpec::Highpass { frequency, q } => self.highpass(frequency.get(), q, sample_rate),
+            FilterSpec::Allpass { frequency, q } => self.allpass(frequency.get(), q, sample_rate),
+            FilterSpec::Peak { frequency, gain, q } => {
+                self.peak(frequency.get(), gain.get(), q, sample_rate)
+            }
+            FilterSpec::LowShelf { frequency, gain } => {
+                self.low_shelf(frequency.get(), gain.get(), sample_rate)
+            }
+            FilterSpec::HighShelf { frequency, gain } => {
+                self.high_shelf(frequency.get(), gain.get(), sample_rate)
+            }
+            FilterSpec::LowShelfRbj { frequency, gain } => {
+                self.low_shelf_rbj(frequency.get(), gain.get(), sample_rate)
+            }
+            FilterSpec::HighShelfRbj { frequency, gain } => {
+                self.high_shelf_rbj(frequency.get(), gain.get(), sample_rate)
+            }
         }
     }
 
@@ -276,7 +287,8 @@ impl Biquad {
     /// Complex frequency response H(e^{jω}) of the current
     /// coefficients at the prepared rate — the display and analysis
     /// read. Touches no state.
-    pub fn response_at(&self, hz: f32) -> (f32, f32) {
+    pub fn response_at(&self, frequency: Hz) -> (f32, f32) {
+        let hz = frequency.get();
         let w = core::f64::consts::TAU
             * (f64::from(hz) / f64::from(self.sample_rate.max(1.0))).clamp(0.0, 0.5);
         let (c1, s1) = (w.cos(), w.sin());
@@ -301,8 +313,8 @@ impl Biquad {
     }
 
     /// |H(e^{jω})| — see [`response_at`](Self::response_at).
-    pub fn magnitude_at(&self, hz: f32) -> f32 {
-        let (re, im) = self.response_at(hz);
+    pub fn magnitude_at(&self, frequency: Hz) -> f32 {
+        let (re, im) = self.response_at(frequency);
         (re * re + im * im).sqrt()
     }
 }
@@ -337,48 +349,58 @@ impl Stage for Biquad {
 
 /// A second-order response in musical units, re-derived at whatever rate
 /// the [`Biquad`] is prepared for. `q` is the quality factor (Butterworth
-/// = 1/√2) everywhere in stave-dsp.
+/// = 1/√2) everywhere in stave-dsp. Frequencies are [`Hz`] and gains
+/// [`Db`]: a dB value cannot land where a frequency belongs.
+///
+/// ```
+/// use stave_dsp::units::{db, hz};
+/// use stave_dsp::{Biquad, FilterSpec};
+///
+/// let bell = Biquad::new(FilterSpec::Peak { frequency: hz(1_000.0), gain: db(6.0), q: 1.0 });
+/// assert!((bell.magnitude_at(hz(1_000.0)) - db(6.0).to_gain().get()).abs() < 1e-3);
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FilterSpec {
     Lowpass {
-        hz: f32,
+        frequency: Hz,
         q: f32,
     },
     Highpass {
-        hz: f32,
+        frequency: Hz,
         q: f32,
     },
-    /// RBJ allpass: unity magnitude, −180° at `hz` (Q shapes the
+    /// RBJ allpass: unity magnitude, −180° at `frequency` (Q shapes the
     /// transition) — phase-aligns parallel paths whose crossovers
     /// rotate differently.
     Allpass {
-        hz: f32,
+        frequency: Hz,
         q: f32,
     },
-    /// Bell — the placed mid-scoop/mid-bump voicing filter.
+    /// Bell — the placed mid-scoop/mid-bump voicing filter: `gain` at
+    /// `frequency`.
     Peak {
-        hz: f32,
-        db: f32,
+        frequency: Hz,
+        gain: Db,
         q: f32,
     },
     /// The stave shelf: a +0.63 dB lip below the corner at +6 dB (see
     /// `Biquad::low_shelf`).
     LowShelf {
-        hz: f32,
-        db: f32,
+        frequency: Hz,
+        gain: Db,
     },
     HighShelf {
-        hz: f32,
-        db: f32,
+        frequency: Hz,
+        gain: Db,
     },
     /// Cookbook RBJ shelf, S = 1 (monotonic).
     LowShelfRbj {
-        hz: f32,
-        db: f32,
+        frequency: Hz,
+        gain: Db,
     },
     HighShelfRbj {
-        hz: f32,
-        db: f32,
+        frequency: Hz,
+        gain: Db,
     },
 }
 

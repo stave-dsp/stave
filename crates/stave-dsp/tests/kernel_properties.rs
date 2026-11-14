@@ -3,6 +3,7 @@
 
 use core::num::NonZeroU32;
 use stave_dsp::{Loop, Oversampled2x, Par2, PerChannel, Serial, Stage, Tail};
+use stave_dsp::units::ms;
 
 /// Zero-latency gain leaf.
 struct Gain(f32);
@@ -386,7 +387,7 @@ fn param_and_detector_sources_are_one_class() {
     }
     let mut knob = SmoothedParam::new(0.0);
     knob.prepare(48_000.0);
-    knob.set_time_ms(5.0);
+    knob.set_time(ms(5.0));
     knob.set_target(1.0); // the block-rate write — the knob's word
     let mut det = EnvelopeFollower::new(EnvelopeTimes {
         attack_ms: 1.0,

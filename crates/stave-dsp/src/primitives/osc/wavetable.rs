@@ -7,6 +7,7 @@ use std::sync::Arc;
 use super::Waveform;
 use crate::kernel::node::{Generator, Stage, Tail};
 use crate::primitives::spectral::{Complex, Fft};
+use crate::units::Hz;
 
 /// Points per table. Every level is the same length, so the highest
 /// harmonic any level holds sits at a quarter of its points (four
@@ -154,7 +155,8 @@ impl Wavetable {
     }
 
     #[inline]
-    pub fn set_hz(&mut self, hz: f32) {
+    pub fn set_frequency(&mut self, frequency: Hz) {
+        let hz = frequency.get();
         self.hz = hz;
         self.inc = f64::from(hz) / f64::from(self.sample_rate);
         // The first level whose top harmonic is at or below Nyquist.
@@ -184,7 +186,7 @@ impl Stage for Wavetable {
     fn prepare(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_frequency(Hz::new(self.hz));
         self.reset();
     }
     fn reset(&mut self) {
@@ -253,7 +255,7 @@ mod tests {
         for hz in [
             20.0f32, 23.0, 50.0, 440.0, 1_000.0, 5_000.0, 11_000.0, 23_000.0,
         ] {
-            w.set_hz(hz);
+            w.set_frequency(Hz::new(hz));
             let top = (TOP >> w.level()) as f32 * hz;
             assert!(
                 top <= 24_000.0,

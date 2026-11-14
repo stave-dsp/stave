@@ -1,6 +1,7 @@
 //! Hysteresis — path-dependent magnetization (tape/transformer).
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::DcBlocker;
+use crate::units::hz;
 
 /// The Jiles-Atherton split, behaviourally: a reversible part follows
 /// the anhysteretic curve instantly; the irreversible part (remanence)
@@ -63,7 +64,7 @@ impl Hysteresis {
             hyst_rate: 30.0,
             mag: 0.0,
             last_x: 0.0,
-            dc: DcBlocker::new(5.0),
+            dc: DcBlocker::new(hz(5.0)),
         };
         h.set_depth(depth);
         h

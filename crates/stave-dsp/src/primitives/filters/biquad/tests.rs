@@ -1,4 +1,5 @@
 use super::*;
+use crate::units::{Db, Hz};
 
 /// RMS gain in dB of `f` on a settled sine at `hz`.
 fn tone_db(f: &mut impl FnMut(f32) -> f32, hz: f64, fs: f64) -> f64 {
@@ -45,8 +46,8 @@ fn lowpass_and_peak_match_the_cookbook() {
         [1.0 + alpha / a, -2.0 * cw, 1.0 - alpha / a],
     );
     let specs = [
-        (FilterSpec::Lowpass { hz: f0 as f32, q: q as f32 }, lp),
-        (FilterSpec::Peak { hz: f0 as f32, db: db as f32, q: q as f32 }, peak),
+        (FilterSpec::Lowpass { frequency: Hz::new(f0 as f32), q: q as f32 }, lp),
+        (FilterSpec::Peak { frequency: Hz::new(f0 as f32), gain: Db::new(db as f32), q: q as f32 }, peak),
     ];
     for (spec, (b, a)) in specs {
         for hz in [50.0, 300.0, 1_000.0, 1_200.0, 2_500.0, 7_000.0, 16_000.0] {

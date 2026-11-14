@@ -6,6 +6,7 @@ use crate::physical::speaker::Driver;
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 use crate::primitives::time::delay::DelayLine;
 use crate::primitives::time::interpolators::{Interpolator, Sinc};
+use crate::units::{Db, Hz};
 
 /// The farthest a [`CloseMic`] may stand from the cone, m.
 pub const MAX_DISTANCE: f64 = 4.0;
@@ -261,7 +262,7 @@ impl CloseMic {
             let sin = (p.offset / (p.offset * p.offset + r * r).sqrt()).max(1e-9);
             let hz = PISTON_MINUS_3_DB * SPEED_OF_SOUND / (core::f64::consts::TAU * a * sin);
             (hz < nyquist).then(|| {
-                let mut b = Biquad::new(FilterSpec::Lowpass { hz: hz as f32, q: core::f32::consts::FRAC_1_SQRT_2 });
+                let mut b = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(hz as f32), q: core::f32::consts::FRAC_1_SQRT_2 });
                 b.prepare(fs as f32);
                 b
             })
@@ -271,7 +272,7 @@ impl CloseMic {
         for (k, b) in self.modes.iter_mut().enumerate() {
             match self.breakup.modes().get(k) {
                 Some(&(hz, q, db)) if f64::from(hz) < nyquist => {
-                    b.set(FilterSpec::Peak { hz, db, q });
+                    b.set(FilterSpec::Peak { frequency: Hz::new(hz), gain: Db::new(db), q });
                     b.prepare(fs as f32);
                 }
                 _ => *b = Biquad::passthrough(),
@@ -279,7 +280,7 @@ impl CloseMic {
         }
         let roll = self.breakup.rolloff;
         self.rolloff = (roll > 0.0 && f64::from(roll) < nyquist).then(|| {
-            let mut b = Biquad::new(FilterSpec::Lowpass { hz: roll, q: core::f32::consts::FRAC_1_SQRT_2 });
+            let mut b = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(roll), q: core::f32::consts::FRAC_1_SQRT_2 });
             b.prepare(fs as f32);
             b
         });

@@ -32,7 +32,7 @@ impl Default for TiltParams {
 
 /// Where the seesaw balances: low enough that "brighter" reads as air,
 /// high enough that "darker" keeps a voice's body.
-const PIVOT_HZ: f32 = 650.0;
+const PIVOT: Hz = hz(650.0);
 
 /// One lane's shelving pair.
 #[derive(Default)]
@@ -101,11 +101,11 @@ impl Plugin for Tilt {
             if t != *voiced {
                 *voiced = t;
                 for lane in shelves.iter_mut() {
-                    lane.low.set(FilterSpec::LowShelf { hz: PIVOT_HZ, db: -t });
-                    lane.high.set(FilterSpec::HighShelf { hz: PIVOT_HZ, db: t });
+                    lane.low.set(FilterSpec::LowShelf { frequency: PIVOT, gain: db(-t) });
+                    lane.high.set(FilterSpec::HighShelf { frequency: PIVOT, gain: db(t) });
                 }
             }
-            let gain = db_to_amp(output.next());
+            let gain: Gain = output.next_as();
             for (lane, s) in shelves.iter_mut().enumerate().take(frame.lanes()) {
                 let x = frame.input(lane);
                 // Flat is bit-exact: no recursion at tilt 0.

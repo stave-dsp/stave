@@ -13,6 +13,8 @@
 
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::time::interpolators::{Interpolator, Linear, MAX_TAPS};
+use crate::units::Seconds;
+use crate::units::ms;
 
 /// A circular buffer of past samples, read at whole or fractional
 /// delays through its interpolator `I`.
@@ -299,25 +301,27 @@ pub struct Delay<I: Interpolator = Linear> {
 }
 
 impl<I: Interpolator> Delay<I> {
-    /// A delay that can reach `max_ms`, set to `ms`. The line is
+    /// A delay that can reach `max`, set to `delay`. The line is
     /// allocated in `prepare`.
-    pub fn new(max_ms: f32, ms: f32) -> Self {
+    pub fn new(max: Seconds, delay: Seconds) -> Self {
+        let max_ms = max.to_ms() as f32;
         debug_assert!(max_ms >= 0.0, "max delay {max_ms} ms");
         let mut d = Self {
             line: DelayLine::default(),
             max_ms,
-            ms,
+            ms: 0.0,
             samples: 0.0,
             sample_rate: 48_000.0,
         };
-        d.set_ms(ms);
+        d.set_delay(delay);
         d
     }
 
-    /// The delay in milliseconds, held inside `[0, max_ms]`. Cheap
+    /// The delay, held inside `[0, max]`. Cheap
     /// enough to call every sample (a modulated delay).
     #[inline]
-    pub fn set_ms(&mut self, ms: f32) {
+    pub fn set_delay(&mut self, delay: Seconds) {
+        let ms = delay.to_ms() as f32;
         self.ms = ms.clamp(0.0, self.max_ms);
         self.samples = self.ms * self.sample_rate / 1000.0;
     }
@@ -334,7 +338,7 @@ impl<I: Interpolator> Stage for Delay<I> {
         self.sample_rate = sample_rate;
         let longest = (self.max_ms * 0.001 * sample_rate).ceil() as usize;
         self.line.allocate(longest + I::NEWER + I::OLDER + 2);
-        self.set_ms(self.ms);
+        self.set_delay(ms(f64::from(self.ms)));
     }
 
     fn reset(&mut self) {
@@ -501,7 +505,7 @@ mod delay_stage_properties {
     use crate::primitives::time::interpolators::{Lagrange3, Lagrange5, Sinc, Thiran};
 
     fn integer_delay_is_exact<I: Interpolator>() {
-        let mut d = Delay::<I>::new(10.0, 0.25); // 12 samples at 48 kHz
+        let mut d = Delay::<I>::new(ms(10.0), ms(0.25)); // 12 samples at 48 kHz
         d.prepare(48_000.0);
         assert_eq!(d.samples(), 12.0);
         let x: Vec<f32> = (0..200).map(|i| (i as f32 * 0.37).sin()).collect();

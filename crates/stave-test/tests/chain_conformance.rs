@@ -12,6 +12,7 @@ use stave_dsp::{
     shapes, Biquad, Chain, CurveStage, FilterSpec, Frame, Hysteresis, NonlinearRc, Stage, StageKind,
 };
 use stave_measure::nonlinear::{GainSurface, HysteresisTest};
+use stave_dsp::units::{Db, Hz};
 
 const FS: f64 = 48_000.0;
 
@@ -25,8 +26,8 @@ fn amp_chain() -> Chain<4> {
     });
     ch.push(StageKind::Curve(a)).unwrap();
     ch.push(StageKind::Filter(Biquad::new(FilterSpec::HighShelf {
-        hz: 900.0,
-        db: -9.0,
+        frequency: Hz::new(900.0),
+        gain: Db::new(-9.0),
     })))
     .unwrap();
     let mut b = CurveStage::from_fn(-6.0, 6.0, 0.0, shapes::knee(8.0));

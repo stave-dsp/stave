@@ -45,7 +45,7 @@ fn guitar_through_the_bucket_brigade() {
     };
     let (plain, companded) = (run(false), run(true));
     assert!(plain.iter().chain(&companded).all(|y| y.is_finite()));
-    let delay = Chip::MN3007.delay_s(hz(40_000.0)) * f64::from(rate);
+    let delay = Chip::MN3007.delay(hz(40_000.0)).get() * f64::from(rate);
     // The correlation over lags about the expected delay.
     let lags = (delay as usize).saturating_sub(48)..delay as usize + 48;
     let correlation: Vec<f64> = lags

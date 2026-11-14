@@ -9,6 +9,7 @@ use stave_dsp::circuit::methods::dk::Dk;
 use stave_dsp::circuit::netlist::{Netlist, Taper, Variable};
 use stave_dsp::circuit::{Circuit, Smoothing};
 use stave_dsp::Stage;
+use stave_dsp::units::{db, seconds, Db};
 
 const ALPHA_A: [(LinearCubic, f64); 6] = [
     (LinearCubic::ALPHA_05A, 0.05),
@@ -109,8 +110,8 @@ fn gangs_track_within_their_spec() {
     let fractions: Vec<f64> = (0..=40).map(|i| 10f64.powf(-f64::from(i) / 20.0)).collect();
     let mut errors = Vec::new();
     for seed in 0..10_000u64 {
-        let gang = Tracking::draw(spec, reference, seed);
-        assert_eq!(gang, Tracking::draw(spec, reference, seed));
+        let gang = Tracking::draw(Db::new(spec as f32), Db::new(reference as f32), seed);
+        assert_eq!(gang, Tracking::draw(Db::new(spec as f32), Db::new(reference as f32), seed));
         for &f in &fractions {
             let db = 20.0 * (gang.fraction(f) / f).log10();
             assert!(db.abs() <= spec + 1e-9, "seed {seed} at {f}: {db} dB");
@@ -144,7 +145,7 @@ fn volume(variable: Variable) -> Circuit<Dk> {
 #[test]
 fn a_dual_gang_volume_mismatches_its_channels() {
     let law = Taper::Curve(LinearCubic::ALPHA_15A);
-    let gang = Tracking::draw(3.0, 40.0, 11);
+    let gang = Tracking::draw(db(3.0), db(40.0), 11);
     let mut left = volume(Variable::pot("vol", ["rb", "ra"], law));
     let mut right = volume(Variable::pot("vol", ["rb", "ra"], law).with_tracking(gang));
     for position in [0.9, 0.6, 0.3, 0.15] {
@@ -292,7 +293,7 @@ fn switches_pop_bounce_and_soften() {
             })
             .sum::<f64>()
     };
-    let soft = 10.0 * (click(hard().with_ramp(0.010)) / click(hard())).log10();
+    let soft = 10.0 * (click(hard().with_ramp(seconds(0.010))) / click(hard())).log10();
     assert!(soft < -18.0, "a 10 ms ramp: {soft} dB of click");
 
     // Bounce: as many edges as drawn, then closed for good.

@@ -3,6 +3,8 @@
 
 use core::num::NonZeroU32;
 use stave_dsp::{Biquad, Chain, FilterSpec, Loop, PerChannel, Stage, StageId, StageKind, Svf};
+use stave_dsp::units::Hz;
+use stave_dsp::units::hz;
 
 const BLOCK: usize = 64;
 
@@ -35,7 +37,7 @@ impl Stage for Gain {
 
 #[test]
 fn svf_recovers_from_one_nan() {
-    let mut f: PerChannel<Svf> = PerChannel::new(|_| Svf::new(1_000.0, 5.0));
+    let mut f: PerChannel<Svf> = PerChannel::new(|_| Svf::new(hz(1_000.0), 5.0));
     f.prepare(48_000.0);
     recovers(|x| f[0].taps(x).lp, "svf taps");
     recovers(|x| f[1].tick(x), "svf tick");
@@ -43,7 +45,7 @@ fn svf_recovers_from_one_nan() {
 
 #[test]
 fn biquad_recovers_from_one_nan() {
-    let mut f = Biquad::new(FilterSpec::Lowpass { hz: 800.0, q: 4.0 });
+    let mut f = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(800.0), q: 4.0 });
     f.prepare(48_000.0);
     recovers(|x| f.tick(x), "biquad");
 }
@@ -68,7 +70,7 @@ fn chain_global_feedback_recovers_from_one_nan() {
     let mut c = Chain::<2>::new();
     let a = c
         .push(StageKind::Filter(Biquad::new(FilterSpec::Lowpass {
-            hz: 2_000.0,
+            frequency: Hz::new(2_000.0),
             q: 0.7,
         })))
         .unwrap();
@@ -76,7 +78,7 @@ fn chain_global_feedback_recovers_from_one_nan() {
         -0.4,
         a,
         StageId(0),
-        Some(FilterSpec::Highpass { hz: 100.0, q: 0.7 }),
+        Some(FilterSpec::Highpass { frequency: Hz::new(100.0), q: 0.7 }),
     );
     c.prepare(48_000.0);
     recovers(|x| c.tick(x), "chain (filtered feedback)");

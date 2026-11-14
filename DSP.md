@@ -466,12 +466,11 @@ other references; a model with a capture is held to it within budget.
 - [x] **U3** (2f061f4) Circuit units for netlists and devices: `Volts`, `Amps`,
   `Ohms`, `Farads`, `Henries`, with SI-prefix constructors (`kohm(4.7)`,
   `nf(22.0)`). Datasheet values read as written.
-- [ ] **U4** Every stave-dsp setter and `FilterSpec` takes the typed unit; `FloatParam`
+- [x] **U4** (PR #32: every stave-dsp setter and constructor that took a frequency, level or time takes `Hz`/`Db`/`Seconds` (`set_hz` is `set_frequency`, `set_t60_s` is `set_t60`, or `set_decay` beside `Fdn`/`VelvetNoise`'s `set_t60(T60)`), `FilterSpec` is `frequency: Hz`/`gain: Db`, dB/Hz getters return the unit; `FloatParam::value_as` and `Ramp::next_as` convert at the boundary through `params::Quantity` (`Unit::Hz` → `Hz`, `Unit::Db` → `Db`/`Gain`, `Unit::Ms` → `Seconds`, `Unit::Ratio` → `Ratio`, debug-checked); the prelude carries the units. Zero-cost: the `svf-swept` stage (a retune and a tick per sample) is 122.78 instructions/sample before and after, its assembly identical but for two constant-pool offsets. The plugins migrate with K3 in stave-plugins, per `releases/v0.5.0.md`; public config fields named `*_ms`/`*_db` (`EnvelopeTimes`, `AdsrConfig`, `GainComputer`) are left for that pass) Every stave-dsp setter and `FilterSpec` takes the typed unit; `FloatParam`
   values convert at the boundary (`Unit::Db` params yield `Db`). Migrate
   the 17 plugins in one pass. Zero-cost: check the assembly of a hot loop
   before and after (P4).
-  Status (audit 2026-11-13): partial — new APIs are born typed (59 public functions take `Hz`/`Db`/`Seconds`/`Gain`/…, e.g. `Fdn::set_t60`, `effects::eq`, `physical::*`), but 58 stave-dsp setters still take bare `f32` (`set_t60_s` among them), `FilterSpec` holds `hz: f32`/`db: f32` (`primitives/filters/biquad.rs`), `FloatParam` does not yield typed values, the plugins are unmigrated and no before/after assembly check exists.
-- [ ] **U5** The vocabulary gate rejects raw `f32` arguments named
+- [x] **U5** (PR #32: `scripts/lib/unit-names.pl`, run by `check-vocabulary.sh` over stave-dsp's source, rejects public functions named `*_hz`/`*_db`/`*_ms`/`*_s`, float parameters named for their unit, and unit setters taking a bare float; `UNIT_ALLOW` lists each exception under its reason (f64 analysis queries, `db_to_amp`/`amp_to_db`, `Slew`'s rates), fails on a stale entry, and a fixture self-test guards the patterns) The vocabulary gate rejects raw `f32` arguments named
   `*_hz`, `*_db`, `*_ms`, `*_s` in public stave-dsp APIs.
 
 ### F — FFT, convolution, spectral

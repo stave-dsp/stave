@@ -13,6 +13,7 @@ use stave_dsp::circuit::methods::dk::{Dk, Health};
 use stave_dsp::circuit::netlist::{ElementKind, Netlist, Node};
 use stave_dsp::circuit::Circuit;
 use stave_test::reference::{assert_converges, Case, Metric, Outcome, Reference};
+use stave_dsp::units::Hz;
 
 fn deck_text(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("spice/{name}.cir"));
@@ -514,7 +515,7 @@ mod agreement {
             "v1",
             48e3,
         );
-        let mut hand = Coupler::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32);
+        let mut hand = Coupler::new(Hz::new((1.0 / (std::f64::consts::TAU * 22e-9 * 1e6)) as f32));
         hand.prepare(48_000.0);
         let x = |n| hot(n, 48e3, 1.0) as f32;
         let w = largest(

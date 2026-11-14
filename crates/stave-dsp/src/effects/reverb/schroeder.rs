@@ -2,6 +2,7 @@
 //! and Moorer's refinement with lowpass combs.
 
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Seconds;
 use crate::primitives::time::comb::{Comb, DelayAllpass};
 
 use super::{decay_tail, loop_gain};
@@ -77,14 +78,16 @@ impl Schroeder {
         let mut s = Self {
             combs: core::array::from_fn(|i| {
                 let ms = combs_ms.get(i).copied().unwrap_or(1.0);
-                let mut c = Comb::new(ms, ms, 0.0);
+                let delay = Seconds::new(f64::from(ms) / 1e3);
+                let mut c = Comb::new(delay, delay, 0.0);
                 c.set_damping(damping);
                 c
             }),
             comb_count: combs_ms.len(),
             allpasses: core::array::from_fn(|i| {
                 let (ms, g) = allpasses.get(i).copied().unwrap_or((1.0, 0.0));
-                DelayAllpass::new(ms, ms, g)
+                let delay = Seconds::new(f64::from(ms) / 1e3);
+                DelayAllpass::new(delay, delay, g)
             }),
             allpass_count: allpasses.len(),
             t60_s: 1.5,
@@ -106,8 +109,8 @@ impl Schroeder {
 
     /// The time for the tail to fall 60 dB (at low frequencies), in
     /// seconds; `f32::INFINITY` freezes it.
-    // TODO(U4): take `units::Seconds` once it lands.
-    pub fn set_t60_s(&mut self, t60_s: f32) {
+    pub fn set_t60(&mut self, t60: Seconds) {
+        let t60_s = t60.get() as f32;
         debug_assert!(t60_s > 0.0, "T60 {t60_s} s");
         self.t60_s = t60_s;
         self.update();

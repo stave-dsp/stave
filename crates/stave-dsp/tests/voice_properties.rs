@@ -10,6 +10,7 @@
 use stave_dsp::{
     hz_of_key, Adsr, AdsrConfig, Osc, Stage, Steal, Voice, VoiceEvent, VoiceRack, Waveform,
 };
+use stave_dsp::units::Hz;
 
 const SR: f32 = 48_000.0;
 
@@ -48,7 +49,7 @@ impl Voice for SineVoice {
         self.vel = 0.0;
     }
     fn note_on(&mut self, hz: f32, velocity: f32) {
-        self.osc.set_hz(hz);
+        self.osc.set_frequency(Hz::new(hz));
         self.osc.reset();
         self.vel = velocity;
         self.env.gate_on();

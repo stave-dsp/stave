@@ -16,6 +16,7 @@ use stave_dsp::units::{db, hz, ms, seconds, semitones};
 use stave_dsp::Stage;
 use stave_host::stages::{CATALOG, REFERENCES};
 use stave_test::solver_fuzz::DECKS;
+use stave_dsp::units::{Db, Hz};
 
 /// How an entry's rate invariance is read.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -273,7 +274,7 @@ fn circuits(out: &mut Vec<Entry>) {
     out.push(stage(F, "PushPull (EL34)", Measure::Response, || {
         let mut p = PushPull::new();
         p.set_pentode(stave_dsp::circuit::topologies::push_pull::PentodePair::EL34);
-        p.set_drive_db(18.0);
+        p.set_drive(db(18.0));
         p
     }));
     out.push(stage(F, "PassiveToneStack", Measure::Response, || {
@@ -290,7 +291,7 @@ fn circuits(out: &mut Vec<Entry>) {
         s
     }));
     out.push(stage(F, "Triode (behavioural)", Measure::Response, stave_dsp::Triode::new));
-    out.push(stage(F, "Coupler (20 Hz)", Measure::Response, || stave_dsp::Coupler::new(20.0)));
+    out.push(stage(F, "Coupler (20 Hz)", Measure::Response, || stave_dsp::Coupler::new(hz(20.0))));
     {
         use stave_dsp::circuit::devices::bbd::{Chip, Filter, HoltersParker};
         use stave_dsp::circuit::devices::compander::{self, Compander, Mode};
@@ -326,8 +327,8 @@ fn circuits(out: &mut Vec<Entry>) {
         out.push(stage(F, "OptoCompressor (VTL5C3)", Measure::Level, || OptoCompressor::new(Najnudel::VTL5C3)).drive(0.0, 0.1, 10.0));
         out.push(stage(F, "Converter (SP-1200)", Measure::Response, || Converter::new(converter::Machine::SP1200)));
         out.push(stage(F, "Digital delay (SP-1200 word)", Measure::Energy, || {
-            let mut d = converter::Delay::new(converter::Machine::SP1200, 0.5, Overflow::Saturate, 8);
-            d.set_seconds(0.3);
+            let mut d = converter::Delay::new(converter::Machine::SP1200, seconds(0.5), Overflow::Saturate, 8);
+            d.set_delay(seconds(0.3));
             d.set_feedback(0.6);
             d
         }));
@@ -531,14 +532,14 @@ fn effects(out: &mut Vec<Entry>) {
     use stave_dsp::units::Ratio;
     const F: &str = "effects";
     let curve = GainComputer { threshold_db: -20.0, ratio: 4.0, knee_db: 6.0 };
-    out.push(stage(F, "Peak detector", Measure::Level, || Peak::new(5.0, 50.0)));
-    out.push(stage(F, "Rms detector", Measure::Level, || Rms::new(10.0)));
-    out.push(stage(F, "ProgramDependent detector", Measure::Level, || ProgramDependent::new(1.0, 50.0, 1_000.0, 500.0)));
-    out.push(stage(F, "Sidechain (HP + LP)", Measure::Response, || Sidechain::new(Some(100.0), Some(8_000.0))));
+    out.push(stage(F, "Peak detector", Measure::Level, || Peak::new(ms(5.0), ms(50.0))));
+    out.push(stage(F, "Rms detector", Measure::Level, || Rms::new(ms(10.0))));
+    out.push(stage(F, "ProgramDependent detector", Measure::Level, || ProgramDependent::new(ms(1.0), ms(50.0), ms(1_000.0), ms(500.0))));
+    out.push(stage(F, "Sidechain (HP + LP)", Measure::Response, || Sidechain::new(Some(hz(100.0)), Some(hz(8_000.0)))));
     out.push(stage(F, "Compressor (feed-forward)", Measure::Response, move || Compressor::new(curve, Topology::FeedForward)));
     out.push(stage(F, "Compressor (feedback)", Measure::Response, move || Compressor::new(curve, Topology::Feedback)));
-    out.push(stage(F, "Limiter (true peak)", Measure::Response, || Limiter::new(Peaks::True, -1.0)));
-    out.push(stage(F, "Limiter (sample peak)", Measure::Response, || Limiter::new(Peaks::Sample, -1.0)));
+    out.push(stage(F, "Limiter (true peak)", Measure::Response, || Limiter::new(Peaks::True, db(-1.0))));
+    out.push(stage(F, "Limiter (sample peak)", Measure::Response, || Limiter::new(Peaks::Sample, db(-1.0))));
     let corners = [hz(120.0), hz(800.0), hz(5_000.0)];
     out.push(stage(F, "Crossover (LR8, 4 bands)", Measure::Response, move || Crossover::<4>::linkwitz_riley(Order::Lr8, &corners)));
     out.push(stage(F, "Crossover (linear phase, 4 bands)", Measure::Response, move || {
@@ -597,7 +598,7 @@ fn effects(out: &mut Vec<Entry>) {
     for (name, mixing) in [("Fdn (Householder)", Mixing::Householder), ("Fdn (Hadamard)", Mixing::Hadamard)] {
         out.push(stage(F, name, Measure::Energy, move || {
             let mut f = Fdn::new(mixing);
-            f.set_t60_s(2.0);
+            f.set_decay(seconds(2.0));
             f
         }));
     }
@@ -605,27 +606,27 @@ fn effects(out: &mut Vec<Entry>) {
         let mut f = Fdn::new(Mixing::Hadamard);
         f.set_kronecker(Kronecker::hadamard());
         f.set_angle_modulation(0.3, hz(0.5));
-        f.set_t60_s(2.0);
+        f.set_decay(seconds(2.0));
         f
     }));
     out.push(stage(F, "VelvetNoise", Measure::Energy, || {
         let mut v = VelvetNoise::new();
-        v.set_t60_s(2.0);
+        v.set_decay(seconds(2.0));
         v
     }));
     out.push(stage(F, "Dattorro (plate)", Measure::Energy, || {
-        let mut d = Dattorro::new(50.0);
-        d.set_t60_s(2.0);
+        let mut d = Dattorro::new(ms(50.0));
+        d.set_t60(seconds(2.0));
         d
     }));
     out.push(stage(F, "Schroeder", Measure::Energy, || {
         let mut s = Schroeder::new();
-        s.set_t60_s(2.0);
+        s.set_t60(seconds(2.0));
         s
     }));
     out.push(stage(F, "Schroeder::moorer", Measure::Energy, || {
         let mut s = Schroeder::moorer();
-        s.set_t60_s(2.0);
+        s.set_t60(seconds(2.0));
         s
     }));
     out.push(stage(F, "Room (live room)", Measure::Energy, || {
@@ -653,12 +654,12 @@ fn primitives(out: &mut Vec<Entry>) {
     };
     const F: &str = "primitives";
     use Measure::{Energy, Generator, Level, Random, Response};
-    out.push(stage(F, "Biquad (peak)", Response, || Biquad::new(FilterSpec::Peak { hz: 1_000.0, db: 6.0, q: 1.0 })));
-    out.push(stage(F, "Allpass1", Response, || Allpass1::new(700.0)));
-    out.push(stage(F, "OnePole (lowpass)", Response, || OnePole::lowpass(2_000.0)));
-    out.push(stage(F, "DcBlocker", Response, || DcBlocker::new(10.0)));
-    out.push(stage(F, "Svf", Response, || Svf::new(1_000.0, 0.707)));
-    out.push(stage(F, "LinkwitzRiley4 (lowpass)", Response, || LinkwitzRiley4::lowpass(2_000.0)));
+    out.push(stage(F, "Biquad (peak)", Response, || Biquad::new(FilterSpec::Peak { frequency: Hz::new(1_000.0), gain: Db::new(6.0), q: 1.0 })));
+    out.push(stage(F, "Allpass1", Response, || Allpass1::new(hz(700.0))));
+    out.push(stage(F, "OnePole (lowpass)", Response, || OnePole::lowpass(hz(2_000.0))));
+    out.push(stage(F, "DcBlocker", Response, || DcBlocker::new(hz(10.0))));
+    out.push(stage(F, "Svf", Response, || Svf::new(hz(1_000.0), 0.707)));
+    out.push(stage(F, "LinkwitzRiley4 (lowpass)", Response, || LinkwitzRiley4::lowpass(hz(2_000.0))));
     out.push(stage(F, "Hilbert", Response, Hilbert::default));
     out.push(stage(F, "Ladder (Huovilainen)", Response, || Huovilainen::new(hz(1_000.0), 0.5)));
     out.push(stage(F, "Ladder (Stinchcombe)", Response, || Stinchcombe::new(hz(1_000.0), 0.5)));
@@ -678,10 +679,10 @@ fn primitives(out: &mut Vec<Entry>) {
     out.push(stage(F, "Oversampled 4x (SmoothSat, linear)", Response, || Oversampled::linear(SmoothSat::new(), 4)));
     out.push(stage(F, "Oversampled 2x (SmoothSat, minimum)", Response, || Oversampled::minimum(SmoothSat::new(), 2)));
     out.push(stage(F, "Quantiser (16-bit TPDF)", Response, || Quantiser::new(16).with_dither(Dither::Triangular, 1)));
-    out.push(stage(F, "Delay<Lagrange3> (7.3 ms)", Response, || Delay::<Lagrange3>::new(20.0, 7.3)));
-    out.push(stage(F, "Delay<Sinc<16>> (7.3 ms)", Response, || Delay::<Sinc<16>>::new(20.0, 7.3)));
-    out.push(stage(F, "Comb (feedback)", Energy, || Comb::new(50.0, 12.3, 0.6)));
-    out.push(stage(F, "DelayAllpass", Energy, || DelayAllpass::new(50.0, 12.3, 0.6)));
+    out.push(stage(F, "Delay<Lagrange3> (7.3 ms)", Response, || Delay::<Lagrange3>::new(ms(20.0), ms(7.3))));
+    out.push(stage(F, "Delay<Sinc<16>> (7.3 ms)", Response, || Delay::<Sinc<16>>::new(ms(20.0), ms(7.3))));
+    out.push(stage(F, "Comb (feedback)", Energy, || Comb::new(ms(50.0), ms(12.3), 0.6)));
+    out.push(stage(F, "DelayAllpass", Energy, || DelayAllpass::new(ms(50.0), ms(12.3), 0.6)));
     out.push(stage(F, "Comb resonator", Energy, || Resonant::<Lagrange3>::new(hz(40.0), hz(110.0), seconds(2.0))));
     out.push(stage(F, "KarplusStrong", Energy, || KarplusStrong::<Thiran>::new(hz(40.0), hz(110.0))));
     out.push(stage(F, "Bank (16 modes)", Energy, || {
@@ -711,7 +712,7 @@ fn primitives(out: &mut Vec<Entry>) {
     }));
     out.push(stage(F, "Fir (Kaiser lowpass)", Response, || {
         // Designed for 48 kHz (a 4.8 kHz cutoff), resampled at prepare.
-        let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, 80.0, 0.04);
+        let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, db(80.0), 0.04);
         Convolver::uniform(&fir.impulse_response().recorded_at(SampleRate::new(48_000.0)), 64, Head::Direct)
     }));
     out.push(stage(F, "Stft (1024/256 Hann, identity)", Response, || {
@@ -720,13 +721,13 @@ fn primitives(out: &mut Vec<Entry>) {
     out.push(stage(F, "EnvelopeFollower", Level, || {
         EnvelopeFollower::new(EnvelopeTimes { attack_ms: 1.0, release_ms: 50.0, slow_release_ms: None })
     }));
-    out.push(stage(F, "Lag", Response, || Lag::new(50.0, 50.0)));
+    out.push(stage(F, "Lag", Response, || Lag::new(ms(50.0), ms(50.0))));
     out.push(stage(F, "SubOctave", Level, SubOctave::new));
     for (name, wave) in [("Osc (sine)", Waveform::Sine), ("Osc (saw, polyBLEP)", Waveform::Saw), ("Osc (triangle)", Waveform::Triangle)] {
         out.push(
             stage(F, name, Generator, move || {
                 let mut o = Osc::new(wave);
-                o.set_hz(220.0);
+                o.set_frequency(hz(220.0));
                 o
             })
             .drive(0.0, 0.0, 0.0),
@@ -735,7 +736,7 @@ fn primitives(out: &mut Vec<Entry>) {
     out.push(
         stage(F, "Osc (saw, minBLEP)", Generator, || {
             let mut o = Osc::min_blep(Waveform::Saw);
-            o.set_hz(220.0);
+            o.set_frequency(hz(220.0));
             o
         })
         .drive(0.0, 0.0, 0.0),
@@ -743,7 +744,7 @@ fn primitives(out: &mut Vec<Entry>) {
     out.push(
         stage(F, "Osc (saw, hard sync)", Generator, || {
             let mut o = Osc::new(Waveform::Saw);
-            o.set_hz(370.0);
+            o.set_frequency(hz(370.0));
             o.set_sync(Some(hz(220.0)));
             o
         })
@@ -752,14 +753,14 @@ fn primitives(out: &mut Vec<Entry>) {
     out.push(
         stage(F, "Wavetable (saw)", Generator, || {
             let mut t = Wavetable::new(Waveform::Saw);
-            t.set_hz(220.0);
+            t.set_frequency(hz(220.0));
             t
         })
         .drive(0.0, 0.0, 0.0),
     );
-    out.push(stage(F, "Lfo (1.3 Hz)", Generator, || Lfo::new(1.3)).drive(0.0, 0.0, 0.0));
-    out.push(stage(F, "ModLfo", Generator, || ModLfo::new(100.0, 7)).drive(0.0, 0.0, 0.0));
-    out.push(stage(F, "RandomWalk", Random, || RandomWalk::new(140.0, 30.0, 7)).drive(0.0, 0.0, 0.0));
+    out.push(stage(F, "Lfo (1.3 Hz)", Generator, || Lfo::new(hz(1.3))).drive(0.0, 0.0, 0.0));
+    out.push(stage(F, "ModLfo", Generator, || ModLfo::new(ms(100.0), 7)).drive(0.0, 0.0, 0.0));
+    out.push(stage(F, "RandomWalk", Random, || RandomWalk::new(ms(140.0), ms(30.0), 7)).drive(0.0, 0.0, 0.0));
     out.push(
         stage(F, "Adsr (held)", Generator, || {
             let mut a = Adsr::new();
@@ -769,7 +770,7 @@ fn primitives(out: &mut Vec<Entry>) {
         })
         .drive(0.0, 0.0, 0.0),
     );
-    out.push(stage(F, "OrnsteinUhlenbeck", Random, || OrnsteinUhlenbeck::new(25.0, 0.5, 30.0, 1)).drive(0.0, 0.0, 0.0));
+    out.push(stage(F, "OrnsteinUhlenbeck", Random, || OrnsteinUhlenbeck::new(25.0, 0.5, seconds(30.0), 1)).drive(0.0, 0.0, 0.0));
     out.push(stage(F, "Wiener", Random, || Wiener::new(1.0, 1e-4, 1e-3, 1)).drive(0.0, 0.0, 0.0));
 }
 

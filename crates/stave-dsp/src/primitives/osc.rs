@@ -269,7 +269,8 @@ impl Osc {
     }
 
     #[inline]
-    pub fn set_hz(&mut self, hz: f32) {
+    pub fn set_frequency(&mut self, frequency: Hz) {
+        let hz = frequency.get();
         self.hz = hz;
         self.inc = f64::from(hz) / f64::from(self.sample_rate);
     }
@@ -440,7 +441,7 @@ impl Stage for Osc {
     fn prepare(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_frequency(Hz::new(self.hz));
         self.set_sync(self.master.map(Hz::new));
         self.reset();
     }

@@ -16,6 +16,8 @@ use crate::primitives::control::sub::SubOctave;
 use crate::primitives::filters::biquad::FilterSpec;
 use crate::structures::chain::StageKind;
 use crate::structures::chain::{Chain, StageId};
+use crate::units::{Db, Hz};
+use crate::units::Seconds;
 
 /// A modulation source — the generalization that makes every sideband
 /// phenomenon a route recipe instead of plugin code.
@@ -53,9 +55,9 @@ impl From<EnvelopeFollower> for Driver {
 
 impl Driver {
     /// Free-running periodic source (bipolar output).
-    pub fn lfo(hz: f32) -> Self {
+    pub fn lfo(rate: Hz) -> Self {
         Driver::Lfo {
-            lfo: Lfo::new(hz),
+            lfo: Lfo::new(rate),
             env_scale: false,
             env: EnvelopeFollower::new(EnvelopeTimes {
                 attack_ms: 5.0,
@@ -67,9 +69,11 @@ impl Driver {
     }
     /// Periodic source scaled by the detector's envelope (attack/release
     /// in ms) — ripple that rides program heat.
-    pub fn lfo_env_scaled(hz: f32, attack_ms: f32, release_ms: f32) -> Self {
+    pub fn lfo_env_scaled(rate: Hz, attack: Seconds, release: Seconds) -> Self {
+        let attack_ms = attack.to_ms() as f32;
+        let release_ms = release.to_ms() as f32;
         Driver::Lfo {
-            lfo: Lfo::new(hz),
+            lfo: Lfo::new(rate),
             env_scale: true,
             env: EnvelopeFollower::new(EnvelopeTimes {
                 attack_ms,
@@ -263,17 +267,17 @@ impl<const D: usize, const R: usize> ModMatrix<D, R> {
             }
             if let Some(StageKind::Filter(filter)) = chain.stage_mut(id) {
                 let spec = match spec {
-                    FilterSpec::HighShelf { hz, db } => FilterSpec::HighShelf {
-                        hz,
-                        db: db + db_add,
+                    FilterSpec::HighShelf { frequency, gain } => FilterSpec::HighShelf {
+                        frequency,
+                        gain: gain + Db::new(db_add),
                     },
-                    FilterSpec::LowShelf { hz, db } => FilterSpec::LowShelf {
-                        hz,
-                        db: db + db_add,
+                    FilterSpec::LowShelf { frequency, gain } => FilterSpec::LowShelf {
+                        frequency,
+                        gain: gain + Db::new(db_add),
                     },
-                    FilterSpec::Peak { hz, db, q } => FilterSpec::Peak {
-                        hz,
-                        db: db + db_add,
+                    FilterSpec::Peak { frequency, gain, q } => FilterSpec::Peak {
+                        frequency,
+                        gain: gain + Db::new(db_add),
                         q,
                     },
                     other => other,

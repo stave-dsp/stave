@@ -13,6 +13,7 @@ use stave_dsp::primitives::spectral::Head;
 use stave_dsp::{
     Biquad, Convolver, FilterSpec, ImpulseResponse, Oversampled2x, Serial, Stage, Tail, Xorshift32,
 };
+use stave_dsp::units::Hz;
 
 const TOLERANCE: f64 = 2e-5;
 
@@ -343,7 +344,7 @@ fn latency_and_tail_are_reported_and_compose() {
     let mut chain = Serial((
         conv.clone(),
         Biquad::new(FilterSpec::Lowpass {
-            hz: 5_000.0,
+            frequency: Hz::new(5_000.0),
             q: 0.7,
         }),
     ));

@@ -296,7 +296,7 @@ impl<const N: usize> Linear<N> {
         let df = f64::from(self.transition) / f64::from(rate);
         let a = f64::from(self.attenuation);
         let taps = (((a - 7.95) / (14.36 * df)).ceil().max(0.0) as usize + 1) | 1;
-        let window = Window::kaiser_for(a);
+        let window = Window::kaiser_for(Db::new(self.attenuation));
         let largest = (taps / 4).next_power_of_two().clamp(64, 8_192);
         self.lowpass = corners[..N - 1]
             .iter()

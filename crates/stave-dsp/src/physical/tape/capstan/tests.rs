@@ -76,7 +76,7 @@ fn a_splice_crosses_the_gap_in_its_time_and_jumps() {
     // cubic is exact on a line).
     let mut c = Capstan::new(5).with_splices(Splices::EDITED);
     c.prepare(48_000.0);
-    let crossing = (Splices::EDITED.crossing_s(Machine::ips(7.5)) * 48_000.0).round() as usize;
+    let crossing = (Splices::EDITED.crossing(Machine::ips(7.5)).get() * 48_000.0).round() as usize;
     assert_eq!(crossing, 1600);
     let mut n = 0.0f32;
     for _ in 0..4_000 {

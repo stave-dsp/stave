@@ -11,6 +11,7 @@
 
 use stave_dsp::{Biquad, FilterSpec, Stage};
 use stave_measure::tone_window::ToneWindow;
+use stave_dsp::units::Hz;
 
 const N: usize = 8192;
 const CUT_HZ: f32 = 1_000.0;
@@ -32,7 +33,7 @@ fn resp_at(stage: &mut Biquad, fs: f64, hz: f64) -> f64 {
 
 fn lowpass() -> Biquad {
     Biquad::new(FilterSpec::Lowpass {
-        hz: CUT_HZ,
+        frequency: Hz::new(CUT_HZ),
         q: core::f32::consts::FRAC_1_SQRT_2,
     })
 }

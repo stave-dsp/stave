@@ -11,6 +11,7 @@ use crate::kernel::control::Source;
 use crate::kernel::denormal::flush;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff;
+use crate::units::{ms, Seconds};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct EnvelopeTimes {
@@ -52,23 +53,26 @@ impl EnvelopeFollower {
 
     /// State kept.
     pub fn set_times(&mut self, times: EnvelopeTimes) {
-        self.set_attack_ms(times.attack_ms);
-        self.set_release_ms(times.release_ms);
-        self.set_slow_release_ms(times.slow_release_ms);
+        self.set_attack(ms(f64::from(times.attack_ms)));
+        self.set_release(ms(f64::from(times.release_ms)));
+        self.set_slow_release(times.slow_release_ms.map(|t| ms(f64::from(t))));
     }
 
-    pub fn set_attack_ms(&mut self, ms: f32) {
+    pub fn set_attack(&mut self, attack: Seconds) {
+        let ms = attack.to_ms() as f32;
         self.times.attack_ms = ms;
         self.attack = self.coefficient(ms);
     }
 
-    pub fn set_release_ms(&mut self, ms: f32) {
+    pub fn set_release(&mut self, release: Seconds) {
+        let ms = release.to_ms() as f32;
         self.times.release_ms = ms;
         self.release = self.coefficient(ms);
     }
 
     /// `None` switches the slow stage off.
-    pub fn set_slow_release_ms(&mut self, ms: Option<f32>) {
+    pub fn set_slow_release(&mut self, slow_release: Option<Seconds>) {
+        let ms = slow_release.map(|t| t.to_ms() as f32);
         self.times.slow_release_ms = ms;
         match ms {
             Some(ms) => self.slow_release = self.coefficient(ms),
@@ -80,7 +84,7 @@ impl EnvelopeFollower {
     /// `ms`. Zero follows instantly.
     fn coefficient(&self, ms: f32) -> f32 {
         debug_assert!(ms >= 0.0, "time constant {ms} ms");
-        tau_coeff(ms * 0.001, self.sample_rate)
+        tau_coeff(Seconds::new(f64::from(ms * 0.001)), self.sample_rate)
     }
 }
 

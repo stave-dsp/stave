@@ -11,6 +11,7 @@ use stave_core::params::{AnyParam, EnumParam, FloatParam, ParamEnum, ParamId, Ra
 use stave_measure::{AUDIBLE_MAX_HZ, AUDIBLE_MIN_HZ};
 
 use super::{BoxedStage, Configurable, StageParams, StageSpec};
+use stave_dsp::units::{Db, Hz};
 
 
 
@@ -132,15 +133,15 @@ fn audio_port(v: &StageParams) -> AudioAdapterConfig {
 
 fn peak(v: &StageParams) -> FilterSpec {
     FilterSpec::Peak {
-        hz: v.f32("hz"),
-        db: v.f32("db"),
+        frequency: Hz::new(v.f32("hz")),
+        gain: Db::new(v.f32("db")),
         q: v.f32("q"),
     }
 }
 
 fn lowpass(v: &StageParams) -> FilterSpec {
     FilterSpec::Lowpass {
-        hz: v.f32("hz"),
+        frequency: Hz::new(v.f32("hz")),
         q: v.f32("q"),
     }
 }
@@ -210,7 +211,7 @@ pub const CATALOG: &[StageSpec] = &[
                 float(0, "hz", 0.1, 500.0, 20.0, Unit::Hz),
             ])
         },
-        build: |v| stage(Coupler::new(v.f32("hz")), |c, v| c.set_hz(v.f32("hz"))),
+        build: |v| stage(Coupler::new(Hz::new(v.f32("hz"))), |c, v| c.set_frequency(Hz::new(v.f32("hz")))),
     },
     StageSpec {
         name: "slew",
