@@ -72,8 +72,8 @@ jobs:
           FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           title="Post-merge recovery needs review: $FAILED_SHA"
-          existing="$(gh issue list --state all --search "$FAILED_SHA in:title" --json title --jq '.[].title')"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search "$FAILED_SHA in:title" --json title --jq '.[].title')"
           if ! grep -Fxq "$title" <<<"$existing"; then
             printf 'Automatic revert preparation or validation failed.\n\nFailing run: %s\nRecovery run: %s/%s/actions/runs/%s\n\nInspect conflicts, build/test errors, or repository token permissions. No automatic merge was attempted.\n' "$FAILED_RUN_URL" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/recovery.md"
-            gh issue create --title "$title" --body-file "$RUNNER_TEMP/recovery.md"
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/recovery.md"
           fi
