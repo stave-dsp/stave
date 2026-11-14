@@ -4,7 +4,9 @@
 the files changed against a base pick the packages to build, lint, test
 and document, and whether the docs site is built. A tree that already
 passed the same gates is not gated again. It is the fast loop while
-working, and the selector CI calls.
+working, and the selector CI calls. `scripts/affected.sh --plan` prints
+the selected gate commands without running anything, so you can see what
+a change will be gated on.
 
 ```sh
 scripts/affected.sh                 # the working tree vs where it left origin/main
