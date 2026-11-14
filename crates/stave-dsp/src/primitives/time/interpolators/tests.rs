@@ -128,7 +128,10 @@ fn modulated_stays_finite<I: Interpolator>(name: &str) {
                 1..=99 => 10.0 * (noise() + 1.0), // random jumps over the range
                 _ => 10.0 + 9.99 * phase.sin(),
             };
-            d.set_delay(crate::units::ms(f64::from(ms)));
+            // A NaN delay arrives the way a modulation computes one (the
+            // arithmetic skips the constructor's debug-build NaN check).
+            let delay = if ms.is_nan() { crate::units::ms(10.0) * f64::NAN } else { crate::units::ms(f64::from(ms)) };
+            d.set_delay(delay);
             let x = if n % 64 < 32 { 1.0 } else { noise() };
             let y = d.tick(x);
             assert!(y.is_finite(), "{name} at {mod_hz} Hz, sample {n}: {y}");

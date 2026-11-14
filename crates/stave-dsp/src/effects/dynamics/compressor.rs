@@ -167,7 +167,7 @@ pub enum Topology {
 ///
 /// # Verified
 /// `crates/stave-dsp/src/effects/dynamics/tests.rs::static_curves_match_the_formulas`: settled levels match
-/// [`GainComputer::output_db`] (feed-forward and feedback); the gain's
+/// [`GainComputer::output`] (feed-forward and feedback); the gain's
 /// measured 63 % attack and release times (from the audio, on a DC
 /// step) match the settings within 1 % feed-forward and 5 % feedback
 /// (`crates/stave-dsp/src/effects/dynamics/tests.rs::compressor_times_match_the_settings`); no allocation after
