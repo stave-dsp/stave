@@ -21,6 +21,8 @@ pub struct Layout {
     pub inspector: bool,
     /// The bottom panel (keyboard, samples).
     pub panel: bool,
+    /// The listening queue beside the Voicing view (Listen mode).
+    pub queue: bool,
     pub theme: ThemeChoice,
     /// The view each mode shows when it is opened again.
     pub last_view: HashMap<Mode, ViewId>,
@@ -35,6 +37,7 @@ impl Default for Layout {
             library: false,
             inspector: true,
             panel: true,
+            queue: true,
             theme: ThemeChoice::System,
             last_view: HashMap::new(),
             focus: false,
@@ -50,6 +53,7 @@ pub struct Regions {
     pub library: bool,
     pub inspector: bool,
     pub panel: bool,
+    pub queue: bool,
 }
 
 impl Layout {
@@ -60,6 +64,7 @@ impl Layout {
             library: open && self.library,
             inspector: open && self.inspector && mode_has_inspector(mode),
             panel: open && self.panel && mode_has_panel(mode),
+            queue: open && self.queue && mode == Mode::Listen,
         }
     }
 
@@ -113,16 +118,16 @@ mod tests {
     fn listen_takes_the_whole_width_and_the_keys() {
         let l = Layout::default();
         let r = l.regions(Mode::Listen);
-        assert!(r.activity && !r.inspector && !r.panel && !r.library);
+        assert!(r.activity && !r.inspector && !r.panel && !r.library && r.queue);
         let r = l.regions(Mode::Play);
-        assert!(r.inspector && r.panel && !r.library, "library opens on demand");
+        assert!(r.inspector && r.panel && !r.library && !r.queue, "library opens on demand");
     }
 
     #[test]
     fn focus_mode_leaves_only_the_editor() {
         let l = Layout { focus: true, library: true, ..Layout::default() };
         let r = l.regions(Mode::Measure);
-        assert_eq!(r, Regions { activity: false, library: false, inspector: false, panel: false });
+        assert_eq!(r, Regions { activity: false, library: false, inspector: false, panel: false, queue: false });
     }
 
     #[test]

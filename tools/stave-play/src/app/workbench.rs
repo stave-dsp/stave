@@ -38,6 +38,8 @@ impl CommandSource for HostApp {
             CommandInfo::new("Input", "Show the keyboard", Invocation::new(id::KEYBOARD)),
             CommandInfo::new("Input", "Show the sample pads", Invocation::new(id::SAMPLES)),
             CommandInfo::new("Layout", "Show command output", Invocation::new(id::OUTPUT)),
+            CommandInfo::new("Layout", toggle(l.queue, "listening queue"), Invocation::new(id::QUEUE)),
+            CommandInfo::new("Listen", "Next audition from the queue", Invocation::new(id::NEXT_AUDITION)),
             CommandInfo::new("Input", "Octave up", Invocation::new(id::OCTAVE_UP)),
             CommandInfo::new("Input", "Octave down", Invocation::new(id::OCTAVE_DOWN)),
         ]);
@@ -103,6 +105,11 @@ impl HostApp {
                 self.layout.focus = false;
             }
             id::FOCUS => self.layout.focus = !self.layout.focus,
+            id::QUEUE => {
+                self.layout.queue = !self.layout.queue;
+                self.layout.focus = false;
+            }
+            id::NEXT_AUDITION => self.next_audition(),
             id::THEME => {
                 if let Some(t) = ThemeChoice::parse(arg) {
                     self.layout.theme = t;

@@ -23,6 +23,7 @@
 //! shell.rs       activity bar, header, status bar
 //! tools.rs       the shared command registry as a palette source; runs
 //! output.rs      the Output panel: a registry run's result
+//! queue.rs       Listen mode's queue of auditions agents asked for
 //! panels.rs      library side bar, params inspector; plugin + project ops
 //! central.rs     the editor area: the active view
 //! keyboard.rs    piano strip + sample chips; held-note bookkeeping
@@ -45,6 +46,7 @@ mod shell;
 pub(crate) mod theme;
 mod tools;
 mod output;
+mod queue;
 mod voicing;
 mod workbench;
 
@@ -130,6 +132,8 @@ pub struct HostApp {
     library_query: String,
     /// The shared command registry and its current / last run.
     tools: tools::Tools,
+    /// The listening queue (Listen mode's side bar).
+    auditions: queue::Auditions,
 }
 
 /// What the command line hands the app.
@@ -249,6 +253,7 @@ impl HostApp {
             plugins: OnceCell::new(),
             library_query: String::new(),
             tools: tools::Tools::default(),
+            auditions: queue::Auditions::new(stave_tools::listen::default_path()),
         };
         if launch.voicing.wants_voicing() {
             // Straight to the comparison: no main plugin to load, but the
@@ -442,6 +447,13 @@ impl eframe::App for HostApp {
                 .width_range(180.0..=420.0)
                 .frame(frame_of(t.chrome).inner_margin(egui::Margin::same(8.0)).stroke(hairline))
                 .show(ctx, |ui| self.draw_library(ui));
+        }
+        if regions.queue {
+            egui::SidePanel::left("queue")
+                .default_width(260.0)
+                .width_range(200.0..=420.0)
+                .frame(frame_of(t.chrome).inner_margin(egui::Margin::same(8.0)).stroke(hairline))
+                .show(ctx, |ui| self.draw_queue(ui));
         }
         if regions.inspector {
             egui::SidePanel::right("inspector")

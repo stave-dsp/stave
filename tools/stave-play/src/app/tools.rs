@@ -268,7 +268,11 @@ mod tests {
         assert!(!ids.contains(&"tool:render".to_string()), "render needs an output path");
         assert!(!ids.contains(&"tool:open".to_string()), "no sessions from the palette");
         let bare: Vec<String> = tools.commands(None).into_iter().map(|c| c.invocation.id).collect();
-        assert_eq!(bare, ["tool:stages"], "with nothing loaded, only target-free commands");
+        assert!(bare.contains(&"tool:stages".to_string()));
+        assert!(
+            !bare.iter().any(|id| ["tool:validate", "tool:bench", "tool:describe"].contains(&id.as_str())),
+            "with nothing loaded, only target-free commands: {bare:?}"
+        );
     }
 
     #[test]

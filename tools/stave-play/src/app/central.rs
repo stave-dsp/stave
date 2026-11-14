@@ -10,6 +10,7 @@ use crate::views;
 impl HostApp {
     pub(super) fn draw_central(&mut self, ui: &mut egui::Ui, dt: f32) {
         if self.project.active_view == ViewId::Voicing {
+            self.draw_audition_banner(ui);
             return self.draw_voicing(ui);
         }
         let rate = self.project.sample_rate.hz() as f32;
