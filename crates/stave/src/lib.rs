@@ -425,6 +425,48 @@ pub mod __export {
             P::face(&self.params)
         }
     }
+
+    #[cfg(feature = "standalone")]
+    pub use stave_standalone as standalone;
+
+    #[cfg(feature = "standalone")]
+    impl<P: Plugin> standalone::Standalone for Shell<P> {
+        fn face(&self) -> Option<Face> {
+            P::face(&self.params)
+        }
+    }
+}
+
+/// Run `$plugin` as its own app (the `standalone` feature): the face is
+/// the window, the audio device the host. The whole of a plugin crate's
+/// `src/main.rs`, beside its `src/lib.rs`:
+///
+/// ```ignore
+/// stave::standalone!(stave_tilt_vst3::Tilt);
+/// ```
+///
+/// with, in its `Cargo.toml`,
+///
+/// ```toml
+/// [features]
+/// standalone = ["stave/standalone"]
+///
+/// [[bin]]
+/// name = "stave-tilt-vst3-standalone"
+/// path = "src/main.rs"
+/// required-features = ["standalone"]
+/// ```
+///
+/// `scripts/package.sh` builds it into a macOS `.app`, a Windows `.exe`
+/// and a Linux binary beside the plugin bundles.
+#[cfg(feature = "standalone")]
+#[macro_export]
+macro_rules! standalone {
+    ($plugin:ty $(,)?) => {
+        fn main() {
+            $crate::__export::standalone::run::<$crate::__export::Shell<$plugin>>();
+        }
+    };
 }
 
 /// Make this crate a VST3 and a CLAP plugin of `$plugin` (a [`Plugin`]).

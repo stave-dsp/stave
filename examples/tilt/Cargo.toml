@@ -14,6 +14,16 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 stave.workspace = true
 
+# The plugin as its own app: `cargo run -p stave-tilt-vst3 --features
+# standalone` (scripts/package.sh bundles it beside the plugins).
+[features]
+standalone = ["stave/standalone"]
+
+[[bin]]
+name = "stave-tilt-vst3-standalone"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [dev-dependencies]
 stave-test = { path = "../../crates/stave-test" }
 

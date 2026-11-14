@@ -19,6 +19,7 @@ members = [
     "crates/stave-measure",
     "crates/stave-model",
     "crates/stave-raster",
+    "crates/stave-standalone",
     "crates/stave-telemetry",
     "crates/stave-test",
     "crates/stave-tools",
@@ -71,6 +72,7 @@ stave-ui-shell = { path = "crates/stave-ui-shell" }
 stave-ui-win32 = { path = "crates/stave-ui-win32" }
 stave-ui-x11 = { path = "crates/stave-ui-x11" }
 stave-raster = { path = "crates/stave-raster" }
+stave-standalone = { path = "crates/stave-standalone" }
 stave-face = { path = "crates/stave-face" }
 stave-font = { path = "crates/stave-font" }
 stave-macros = { path = "crates/stave-macros" }

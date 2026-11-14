@@ -36,4 +36,5 @@ pub mod keys {
     pub const ESCAPE: u16 = 0xff1b;
     pub const LEFT: u16 = 0xff51;
     pub const RIGHT: u16 = 0xff53;
+    pub const TAB: u16 = 0xff09;
 }

@@ -1,0 +1,36 @@
+[package]
+name = "stave-standalone"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+# Nothing is published to crates.io (the guide: Cut a release); unpublished,
+# cargo-deny lets its workspace path dependencies be wildcards.
+publish = false
+description = "Run a stave plugin as its own app: audio device I/O, MIDI input, device settings, saved state, the face as the window"
+
+[dependencies]
+stave-core.workspace = true
+stave-face.workspace = true
+# Audio device I/O on CoreAudio, WASAPI and ALSA (PipeWire and JACK
+# through their ALSA plugins): three backends of thousands of lines each,
+# already the workspace's audio layer (stave-play). The one dependency
+# the standalone takes; MIDI input is our own code (src/midi).
+cpal = "0.15"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+stave-ui-cocoa.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+stave-ui-win32.workspace = true
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+stave-ui-x11.workspace = true
+# ALSA sequencer MIDI input: the binding cpal already builds on Linux
+# (the same version), not a new dependency.
+alsa = "0.9"
+
+[lints]
+workspace = true

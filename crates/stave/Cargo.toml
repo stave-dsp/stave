@@ -15,6 +15,13 @@ stave-face.workspace = true
 stave-macros.workspace = true
 stave-vst3.workspace = true
 stave-clap.workspace = true
+stave-standalone = { workspace = true, optional = true }
+
+[features]
+# `stave::standalone!`: the plugin as its own app (audio device, MIDI,
+# settings). Off for the plugin library itself, so a VST3 or CLAP never
+# links the audio device layer; a plugin's `src/main.rs` turns it on.
+standalone = ["dep:stave-standalone"]
 
 [lints]
 workspace = true

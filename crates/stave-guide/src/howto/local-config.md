@@ -31,6 +31,9 @@ one says which, and how to set it.
 | `STAVE_SAMPLE_LIBRARY` | program-material tests, `scripts/corpus.sh`, `stave-play --material role:NAME`, `stave-fit --program` | reference audio (never committed; tests skip when unset); `crates/stave-test/corpus.spec` names the roles it fills |
 | `STAVE_CORPUS_LOCK` | `scripts/corpus.sh lock`, the corpus readers | the local lock of each corpus pick's SHA-256 (default `~/.config/stave/corpus.lock`; never committed) |
 | `STAVE_CAPTURES` | capture comparisons | hardware captures (never committed; tests skip when unset) |
+| `STAVE_SIGN_IDENTITY` | `scripts/package.sh sign` | the macOS Developer ID Application identity, by name or SHA-1 ([Ship your plugin](crate::howto::ship)); unset, bundles stay ad-hoc signed |
+| `STAVE_NOTARY_PROFILE` | `scripts/package.sh sign` | the `notarytool` keychain profile; unset or missing, no notarisation (the command to make it is printed) |
+| `STAVE_INSTALLER_IDENTITY` | `scripts/package.sh sign` | a Developer ID Installer identity: a `.pkg` beside the `.dmg` |
 
 ## Building on another machine
 

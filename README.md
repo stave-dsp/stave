@@ -30,6 +30,8 @@ The plugins built on Stave live in
 
 ```sh
 bash scripts/install.sh stave-tilt-vst3 release   # build, bundle, validate, install Tilt
+cargo run -p stave-tilt-vst3 --features standalone # Tilt as its own app (Tab: audio settings)
+scripts/package.sh stave-tilt-vst3                 # the signed download strangers install
 scripts/gates.sh                                  # what every commit runs
 scripts/affected.sh                               # only the gates your change affects
 scripts/docsite.sh                                # the docs site, into target/site

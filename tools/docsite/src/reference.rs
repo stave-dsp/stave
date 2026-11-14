@@ -571,8 +571,14 @@ pub fn cli(cx: &Ctx<'_>) -> Result<Generated> {
     let mut body = String::from("<p>Every binary in the workspace, and its own <code>--help</code>, captured by running it when this page was built.</p>");
     let mut n = 0;
     for p in &cx.ws.packages {
-        for bin in &p.bins {
-            let out = Command::new(env!("CARGO")).args(["run", "-q", "--locked", "-p", &p.name, "--bin", bin, "--", "--help"]).current_dir(cx.repo).output()?;
+        for (i, bin) in p.bins.iter().enumerate() {
+            let features = p.bin_features.get(i).map(|f| f.join(",")).unwrap_or_default();
+            let mut cmd = Command::new(env!("CARGO"));
+            cmd.args(["run", "-q", "--locked", "-p", &p.name, "--bin", bin]);
+            if !features.is_empty() {
+                cmd.args(["--features", &features]);
+            }
+            let out = cmd.args(["--", "--help"]).current_dir(cx.repo).output()?;
             if !out.status.success() {
                 return Err(format!("`{bin} --help` failed: {}", String::from_utf8_lossy(&out.stderr)).into());
             }
