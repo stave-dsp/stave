@@ -949,3 +949,69 @@ mod otas {
         check("LM13700", BipolarPair::LM13700);
     }
 }
+
+mod compandors {
+    use stave_dsp::circuit::devices::compander::{Chip, Compander, Mode};
+    use stave_dsp::Stage;
+    use stave_test::reference::Datasheet;
+
+    use super::{limit, linear, pass, Measured, LOG_TOLERANCE};
+
+    /// 0 dBm, volts RMS.
+    const DBM_0: f64 = 0.774_6;
+    /// The rectifier's input resistor, `R1` (Figure 1).
+    const R1: f64 = 10e3;
+
+    /// The NE570's output stage, cell and rectifier against its table
+    /// and text figures, and its cell against Figure 15.
+    #[test]
+    fn ne570() {
+        let chip = Chip::NE570;
+        let model = "Compander NE570";
+        // Figure 15: the cell's largest output at each gain, in dBm.
+        let cell = Compander::new(chip, Mode::Expand);
+        pass(
+            linear("ne570_max_signal", |_, gain_db| {
+                let peak = cell.vca(1e3, 10f64.powf(gain_db / 20.0));
+                20.0 * (peak / std::f64::consts::SQRT_2 / DBM_0).log10()
+            })
+            .of("NE570", model),
+        );
+        let sheet = Datasheet::load("ne570_figures");
+        let figure = |key: &str| sheet.curve(&[(key, 1.0)]).reference.values()[0];
+        let printed = |what: &str, value: f64, want: f64| {
+            let error = (value / want - 1.0).abs();
+            pass(Measured {
+                what: format!("NE570 | {model} | ne570_figures {what} (sheet {want:e}, model {value:e})"),
+                error: 100.0 * error,
+                budget: 100.0 * LOG_TOLERANCE,
+                unit: "% of value",
+            });
+        };
+        // Slew: a hot step from rest at 768 kHz, the output's climb.
+        let rate = 768_000.0f32;
+        let mut c = Compander::new(chip, Mode::Compress);
+        c.prepare(rate);
+        let y: Vec<f64> = (0..4).map(|_| c.tick_f64(1.0)).collect();
+        printed("slew rate", (y[3] - y[0]) / 3.0 * f64::from(rate), figure("slew"));
+        // Cell: the cell at unity gain, driven far past saturation.
+        printed("cell saturation", cell.vca(1e3, 1.0), figure("cell"));
+        // Rectifier: the expander's averaged input under 20 V DC, as a
+        // current into R1.
+        let mut e = Compander::new(chip, Mode::Expand);
+        e.prepare(48_000.0);
+        for _ in 0..48_000 {
+            e.tick_f64(20.0);
+        }
+        let average = e.gain() * chip.unity.get() * 2.0 * std::f64::consts::SQRT_2 / std::f64::consts::PI;
+        printed("rectifier saturation", average / R1, figure("rectifier"));
+        // Swing: a hot square after silence, its peak; at least the
+        // sheet's +13 dBm into 300 Ω, at most half the 15 V supply.
+        let mut c = Compander::new(chip, Mode::Compress);
+        c.prepare(48_000.0);
+        let peak = (0..4_800)
+            .map(|i| c.tick_f64(if i % 48 < 24 { 20.0 } else { -20.0 }).abs())
+            .fold(0.0, f64::max);
+        limit("NE570", model, "output swing, peak (V)", 15.0, peak, figure("swing"), 7.5);
+    }
+}

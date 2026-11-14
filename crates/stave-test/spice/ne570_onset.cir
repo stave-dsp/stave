@@ -1,0 +1,42 @@
+* NE570 compressor, a hot onset from rest: 2 V DC switched on at t = 0
+* with the rectifier discharged, the compressor at its 80 dB maximum gain.
+* stave's compander::Compander (Chip::NE570) written out as a
+* continuous-time loop around a 741 (the sheet: "equivalent to a 741"),
+* volts about the operating point.
+*
+* The op-amp is stave's opamp::Macromodel LM741 as behavioural sources
+* (as opamp_slew.cir: gm = 2 pi GBW cc, isl = SR cc, g0 = gm/a0; GBW
+* 1.17 MHz, SR 0.5 V/us, a0 2e5), its rails at the NE570's +/-6.5 V
+* swing. It inverts: the input arrives as -2 V through R3 = 20k into the
+* summing node s, and the dG cell feeds back the current
+* clamp(V(out), +/-2.8 V) / (G(r) R3), G(r) = avg_unity / max(V(r), floor),
+* the cell's input saturating at 2.8 V (I1 R2: 140 uA, 20k). The
+* rectifier: node r averages min(|V(out)|, 2.5 V) (its 250 uA limit into
+* R1 = 10k) through 10k and C_RECT = 2.2 uF (22 ms). avg_unity is the
+* full-wave mean of a 775 mV RMS sine; floor is 80 dB below it.
+* While the cell is saturated the summing node leaves ground and the op-amp
+* rides its rail; the loop closes when G(r) x reaches 2.8 V.
+.param cc=1e-9 vos=0 vhi=6.5 vlo=-6.5 vmid=0 vk=0.02 kc=10
+.param gm={6.283185307179586*1.17e6*1e-9} isl={0.5e6*1e-9} g0={gm/200e3}
+.param avgu={0.775*2*1.4142135623730951/3.141592653589793} vfl={avgu*1e-4}
+.param rthree=20k vcell=2.8 vrlim=2.5
+VIN in 0 PWL(0 0 1n -2)
+RIN in s {rthree}
+BF 0 s I = {max(V(r),vfl)/avgu*max(min(V(out),vcell),-vcell)/rthree}
+BG 0 n I = {isl*tanh(gm*(0-V(s)+vos)/isl) + g0*vmid - kc*isl*(max((V(n)-vhi)/vk,0) + ln(1+exp(-abs((V(n)-vhi)/vk))) - max((vlo-V(n))/vk,0) - ln(1+exp(-abs((vlo-V(n))/vk))))}
+RG n 0 {1/g0}
+CC n 0 {cc}
+EO out 0 n 0 1
+BR 0 r I = {min(abs(V(out)),vrlim)/10k}
+RR r 0 10k
+CR r 0 2.2u
+.ic V(r)=0 V(n)=0 V(s)=0
+.options interp reltol=1e-9 abstol=1e-15 vntol=1e-12
+.tran 20.8333333333u 20m 0 0.5u uic
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

@@ -1,0 +1,23 @@
+# title: NE570 output stage, gain cell and rectifier limits from the electrical characteristics table and the circuit description, at VCC = 15 V and 25 °C.
+# document: onsemi, NE570 Compandor, NE570/D Rev. 4 (May 2006)
+# url: https://www.onsemi.com/pdf/datasheet/ne570-d.pdf
+# figure: Electrical Characteristics table (output slew rate, output current capability), page 2; Circuit Description (+13 dBm into 300 Ohm), page 3; Circuit Details - Rectifier (250 uA), page 6; Variable Gain Cell (+8.0 dBm), page 7
+# method: transcribed from the table and the text
+# x: supply voltage (V)
+# y: output slew rate (V/s) on curve slew; output swing, peak (V) on curve swing; gain cell saturation, peak input (V) on curve cell; rectifier input current at saturation (A) on curve rectifier
+# scale-x: linear
+# scale-y: linear
+# full-scale-x: 15
+# full-scale-y: 5e5
+# uncertainty-x: 0
+# uncertainty-y: 0
+# conditions: vcc=15 t=25
+# notes: typical values. Slew: 0.5 V/us typical (printed "V/ms", the table's font for micro). Swing: "+13 dBm (3.5 VRMS) output into a 300 Ohm load", 4.95 V peak, a level the output reaches (at 16.5 mA, inside the 20 mA output current capability), so a floor on the swing, not the swing itself; the output amplifier is "equivalent to a 741". Cell: "+8.0 dBm", 1.95 V RMS, 2.76 V peak, which is the cell's bias current I1 = 140 uA (Figure 12) through R2 = 20 kOhm (2.8 V). Rectifier: "Saturation can be avoided by limiting the current into the rectifier input to 250 uA" (into R1 = 10 kOhm: 2.5 V peak).
+# curve slew=1
+15 5e5
+# curve swing=1
+15 4.95
+# curve cell=1
+15 2.76
+# curve rectifier=1
+15 250e-6

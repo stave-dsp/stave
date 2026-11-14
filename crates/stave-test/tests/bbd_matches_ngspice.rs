@@ -67,6 +67,41 @@ fn filters_match_ngspice() {
     }
 }
 
+/// The NE570 compressor's hot onset from rest (`spice/ne570_onset.cir`:
+/// the same rectifier, cell and limits as a continuous-time loop around
+/// the LM741 macromodel, the sheet's "equivalent to a 741"): 2 V DC after
+/// silence rides the rail while the rectifier charges, then the loop
+/// closes and the 2:1 law takes over. The sample model at 48 kHz against
+/// ngspice: the time on the rail within a sample (measured: both 4.90
+/// ms), and the waveform within 4.5 % normalized RMS (measured 2.9 %,
+/// nearly all of it the two samples where the 741 recovers from
+/// saturation (its loop, slower than the slew) while the sample model
+/// closes at once), within 0.5 % pointwise from 5 ms on (measured 0.31 %).
+#[test]
+fn ne570_onset_matches_ngspice() {
+    use stave_dsp::circuit::devices::compander::{Chip, Compander, Mode};
+    use stave_dsp::Stage;
+    let mut c = Compander::new(Chip::NE570, Mode::Compress);
+    c.prepare(48_000.0);
+    let case = Case::ngspice("ne570_onset").budget(Metric::NormalizedRms, 0.045);
+    let run: Vec<f64> = case.reference().values().iter().map(|_| c.tick_f64(2.0)).collect();
+    // The rail: above 6 V (the macromodel's soft clamp sits 45 mV
+    // inside the swing).
+    let railed = |v: &[f64]| v.iter().filter(|&&y| y > 6.0).count();
+    let (spice, model) = (railed(case.reference().values()), railed(&run));
+    println!("ne570_onset: on the rail {spice} samples (ngspice), {model} (model)");
+    assert!(spice.abs_diff(model) <= 1, "on the rail: ngspice {spice} samples, model {model}");
+    let tail = case.reference().values().len() / 4;
+    let late: f64 = case.reference().values()[tail..]
+        .iter()
+        .zip(&run[tail..])
+        .map(|(a, b)| ((a - b) / a).abs())
+        .fold(0.0, f64::max);
+    println!("ne570_onset: after the loop closes, within {late:.2e} of ngspice");
+    assert!(late < 5e-3, "after the loop closes: {late}");
+    case.named("ne570_onset/compander").compare(&run).assert();
+}
+
 /// The partial fractions' phase is the circuit's too (ngspice gives the
 /// magnitude; `Circuit<Dk>` the full phasor, at every decade point).
 #[test]
