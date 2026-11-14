@@ -1,0 +1,21 @@
+name: runner-canary
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  canary:
+    name: canary (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [linux-build, macos-build, reference, ngspice]
+    runs-on: [self-hosted, '${{ matrix.label }}']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check installed capabilities
+        env:
+          CANARY_LABEL: ${{ matrix.label }}
+        run: bash scripts/runner-canary.sh
