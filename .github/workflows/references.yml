@@ -172,7 +172,7 @@ jobs:
           --keep target/fresh-tables --costs-out target/ngspice-costs/costs.tsv
       # The restored stamps and this shard's new ones, for `stamps`.
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ngspice-stamps-${{ matrix.shard }}
           path: target/ngspice-stamps
@@ -182,14 +182,14 @@ jobs:
       # A stale table's fresh simulation under the pinned ngspice: download
       # it to commit (DSP.md R16: fixtures regenerated under ngspice 42).
       - if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fresh-tables-${{ matrix.shard }}
           path: target/fresh-tables
           if-no-files-found: ignore
       # What each deck cost, to rebalance the shards (costs.tsv).
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ngspice-costs-${{ matrix.shard }}
           path: target/ngspice-costs
