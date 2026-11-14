@@ -8,7 +8,9 @@
 //!
 //! ```text
 //! mod.rs       the voicing state: setup, preparing, the live session
-//! ui.rs        the Voicing view: setup, transport, keys
+//! ui.rs        the Voicing view: setup, transport, keys, Advanced
+//! simple.rs    the default screen: Dry / A / B, which sounds better,
+//!              the guided blind test
 //! modes.rs     the listening modes' panels (and the null test's)
 //! null.rs      null tests against the reference: alignment, NMR, residual
 //! builtin.rs   built-in program material (synthesised, deterministic)
@@ -31,6 +33,7 @@ mod modes;
 pub(crate) mod null;
 mod player;
 mod rng;
+mod simple;
 use stave_test::sha256;
 mod takes;
 #[cfg(test)]
@@ -156,7 +159,9 @@ struct Preparing {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Mode {
-    Sighted,
+    /// The default screen: switch sources, say which sounds better (the
+    /// guided blind test lives here too).
+    Listen,
     Abx,
     Rating,
     /// Each candidate nulled against the reference (DSP.md G5).
@@ -183,6 +188,19 @@ pub struct Live {
     pref_notes: String,
     /// The rating slot last played (arrow keys move its slider).
     rating_focus: usize,
+    /// The unprocessed input's candidate (always present: added when
+    /// the setup had none).
+    dry: usize,
+    /// The other candidates in letter order (A, B, …): the reference
+    /// first.
+    letters: Vec<usize>,
+    /// The guided blind test, while it runs.
+    blind: Option<simple::Blind>,
+    /// Whether the Advanced disclosure is open.
+    advanced_open: bool,
+    /// The last "Unclear" answer (an index into the preferences), whose
+    /// reason the field below it edits.
+    unclear: Option<usize>,
 }
 
 pub struct Voicing {
@@ -200,6 +218,9 @@ pub struct Voicing {
     /// The last attempt to open the device failed: wait for a retry
     /// instead of trying every frame.
     audio_failed: bool,
+    /// Start playing as soon as the next session is live (the material
+    /// changed while playing).
+    play_when_live: bool,
 }
 
 /// What the Voicing view needs from the app around it.
@@ -252,7 +273,13 @@ impl Voicing {
             autostart: launch.wants_voicing(),
             start_audio: true,
             audio_failed: false,
+            play_when_live: false,
         })
+    }
+
+    /// Whether candidates are being prepared (or about to be).
+    pub fn is_preparing(&self) -> bool {
+        self.preparing.is_some() || self.autostart
     }
 
     /// Whether a comparison holds the audio device.
@@ -276,15 +303,19 @@ impl Voicing {
 
     /// Start preparing the setup's candidates on a worker thread.
     fn prepare(&mut self, ctx: &mut Ctx) {
-        if self.setup.rows.len() < 2 {
-            return self.set_status("add at least two candidates", true);
+        let mut candidates: Vec<Candidate> = self.setup.rows.iter().map(|r| r.candidate.clone()).collect();
+        // Dry, the control, is always there to switch to.
+        if !candidates.iter().any(|c| matches!(c.source, candidate::Source::Dry)) {
+            candidates.push(Candidate::dry());
+        }
+        if candidates.len() < 2 {
+            return self.set_status("add something to compare with the dry sound", true);
         }
         let rate = ctx.config.sample_rate.hz();
         let material = match self.material(rate) {
             Ok(m) => m.clone(),
             Err(e) => return self.set_status(e, true),
         };
-        let candidates: Vec<Candidate> = self.setup.rows.iter().map(|r| r.candidate.clone()).collect();
         let jobs = match takes::open_jobs(&candidates, &material, self.setup.trim_db, ctx.config) {
             Ok(j) => j,
             Err(e) => return self.set_status(crate::errors::with_causes(&e), true),
@@ -370,10 +401,11 @@ impl Voicing {
         let overview = overview(&prepared.material.channels, 1_200);
         let id = format!("{}-{:04x}", log::compact_stamp(), rng::Rng::seed_from_clock() & 0xffff);
         let n = prepared.candidates.len();
+        let (dry, letters) = simple::sources(&prepared);
         let mut live = Live {
             transport,
             stream: None,
-            mode: Mode::Sighted,
+            mode: Mode::Listen,
             abx_pair: (0, 1.min(n - 1)),
             abx: None,
             rating: None,
@@ -392,8 +424,16 @@ impl Voicing {
             show_score: true,
             pref_notes: String::new(),
             rating_focus: 0,
+            dry,
+            letters,
+            blind: None,
+            advanced_open: false,
+            unclear: None,
             prepared,
         };
+        // Start on Dry, the control.
+        live.transport.select(live.take_of(dry));
+        live.transport.set_playing(std::mem::take(&mut self.play_when_live));
         let warnings: usize = live.prepared.takes.iter().map(|t| t.warnings.len()).sum();
         self.set_status(
             if warnings > 0 {
@@ -443,6 +483,30 @@ impl Voicing {
                 self.set_status(msg, true);
             }
         }
+    }
+
+    /// Listen on other material: end this session (its log is written)
+    /// and prepare the same candidates over `choice`.
+    fn change_material(&mut self, choice: MaterialChoice) {
+        if self.setup.material == choice && self.live.is_some() {
+            return;
+        }
+        let was_playing = self.live.as_ref().is_some_and(|l| l.transport.is_playing());
+        self.end_session();
+        self.setup.material = choice;
+        self.autostart = true;
+        self.play_when_live = was_playing;
+    }
+
+    /// The material after the current one (built-ins, then any scanned
+    /// library files), for "try another clip".
+    fn next_material(&self) -> MaterialChoice {
+        let mut all: Vec<MaterialChoice> = BUILTINS.iter().map(|b| MaterialChoice::Builtin(b.name.into())).collect();
+        if let Some(files) = &self.library {
+            all.extend(files.iter().map(|(_, p)| MaterialChoice::File(p.clone())));
+        }
+        let at = all.iter().position(|m| *m == self.setup.material);
+        all[at.map_or(0, |i| (i + 1) % all.len())].clone()
     }
 
     /// End the live session: write its log, back to the setup.

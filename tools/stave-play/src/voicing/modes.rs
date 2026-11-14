@@ -8,7 +8,7 @@ use std::path::Path;
 use eframe::egui::{self, Color32, RichText};
 use stave_measure::listening::{Abx, AbxVerdict, ALPHA, ASSUMED_HIT_RATE};
 
-use super::log::{self, BlessedRef, Preference};
+use super::log::{self, BlessedRef};
 use super::null::NullTest;
 use super::takes::TakeKind;
 use super::trials::{AbxListen, AbxRun, RatingRun, Stimulus};
@@ -45,7 +45,7 @@ impl Live {
         self.prepared.candidates.len()
     }
 
-    fn take_of(&self, index: usize) -> usize {
+    pub(super) fn take_of(&self, index: usize) -> usize {
         self.prepared
             .takes
             .iter()
@@ -53,7 +53,7 @@ impl Live {
             .unwrap_or(index)
     }
 
-    fn bless_candidate(&mut self, index: usize, dir: &Path) -> Status {
+    pub(super) fn bless_candidate(&mut self, index: usize, dir: &Path) -> Status {
         let notes = self.pref_notes.clone();
         match bless::bless(&self.prepared, index, &self.meta.id, &notes, &log::blessed_dir(dir)) {
             Ok(path) => {
@@ -71,73 +71,6 @@ impl Live {
             }
             Err(e) => Some((format!("bless failed: {}", crate::errors::with_causes(&e)), true)),
         }
-    }
-
-    // ---- sighted -------------------------------------------------------
-
-    pub(super) fn sighted_ui(&mut self, ui: &mut egui::Ui, dir: &Path) -> Status {
-        let mut status = None;
-        let selected = self.transport.selected();
-        ui.label(
-            RichText::new("Sighted: you know what you hear. Use it to find a sound, then confirm it blind.")
-                .weak(),
-        );
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            for i in 0..self.candidate_count() {
-                let take = self.take_of(i);
-                let label = format!("{}  {}", i + 1, self.prepared.candidates[i].label);
-                if ui.add(big(label, selected == take)).clicked() {
-                    self.select(take);
-                }
-            }
-        });
-        ui.label(RichText::new("1–9 select · A/B the first two · space plays").weak().small());
-        ui.add_space(8.0);
-        let current = (0..self.candidate_count()).find(|&i| self.take_of(i) == selected);
-        if let Some(i) = current {
-            let label = self.prepared.candidates[i].label.clone();
-            let can_bless = !matches!(self.prepared.candidates[i].source, super::candidate::Source::Dry);
-            let (mut prefer, mut bless) = (false, false);
-            section(ui, "Verdict", |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("notes");
-                    ui.add(egui::TextEdit::singleline(&mut self.pref_notes).desired_width(360.0));
-                });
-                ui.horizontal(|ui| {
-                    prefer = ui.button(format!("Prefer “{label}”")).clicked();
-                    bless = ui
-                        .add_enabled(can_bless, egui::Button::new(format!("Bless “{label}”")))
-                        .on_hover_text("pin its settings, material and take so a later change shows up")
-                        .clicked();
-                });
-            });
-            if prefer {
-                self.history.preferences.push(Preference {
-                    at: log::now_iso(),
-                    candidate: i,
-                    label: label.clone(),
-                    sighted: true,
-                    notes: std::mem::take(&mut self.pref_notes),
-                });
-                self.save(dir, &mut status);
-                status = status.or(Some((format!("preferred {label} (sighted)"), false)));
-            }
-            if bless {
-                status = self.bless_candidate(i, dir);
-            }
-        }
-        if !self.history.preferences.is_empty() || !self.history.blessed.is_empty() {
-            ui.add_space(6.0);
-            for p in &self.history.preferences {
-                let how = if p.sighted { "sighted" } else { "blind" };
-                ui.label(RichText::new(format!("preferred ({how}) {}  {}", p.label, p.notes)).weak());
-            }
-            for b in &self.history.blessed {
-                ui.label(RichText::new(format!("blessed {} → {}", b.label, b.record.display())).color(GOOD));
-            }
-        }
-        status
     }
 
     // ---- ABX -----------------------------------------------------------
