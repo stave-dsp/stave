@@ -14,7 +14,14 @@
 #     Host is the DAW);
 #   * an implementation word as the prefix or suffix of a name in
 #     stave-dsp's public API (DSP.md naming rule 1): `Model`, `Impl`,
-#     `Processor`, `Engine`, `Helper`, `V2`, `New`, `Simple`, `Fast`.
+#     `Processor`, `Engine`, `Helper`, `V2`, `New`, `Simple`, `Fast`;
+#   * a quantity carried as a bare float in stave-dsp's public API
+#     (DSP.md U5, units are types): a public function named `*_hz`,
+#     `*_db`, `*_ms`, `*_s`, a float parameter named for its unit
+#     (`hz: f32`, `attack_ms: f32`), or a unit setter (`set_cutoff`,
+#     `set_t60`, `set_attack` …) taking a bare float. The patterns live in
+#     scripts/lib/unit-names.pl; the justified exceptions in UNIT_ALLOW
+#     below, each under its reason.
 #
 # Every word a rule below rejects must be listed in the "Never call it"
 # column of the glossary's Terms table (checked first), so the gate
@@ -123,5 +130,90 @@ IMPL='(Model|Impl|Processor|Engine|Helper|V2|New|Simple|Fast)'
 NAME="(${IMPL}(?:[A-Z0-9]\\w*)?|\\w*[a-z0-9]${IMPL})\\b"
 report "stave-dsp names the thing, not the implementation (DSP.md naming rule 1)" \
   "\\bpub +(struct|enum|trait|type|union) +${NAME}|\\bpub +use +[^;]*\\bas +${NAME}|^ *[\\w:]+ +as +${NAME} *[,}]" -- crates/stave-dsp/src/
+
+# Units are types in stave-dsp's public API (DSP.md U4/U5): a frequency
+# is `Hz`, a level `Db`, a time `Seconds`, never an `f32` whose name says
+# which. The units layer itself (`units/`, where the scales are defined)
+# and test code are exempt. An exception is `path:function` (relative to
+# crates/stave-dsp/src), listed under the reason that justifies it; an
+# entry that matches nothing fails too, so the list cannot rot.
+UNIT_ALLOW=(
+  # Analyses evaluated in f64 hertz: responses, impedances and losses the
+  # verification compares to f64 references (ngspice, closed forms).
+  # `Hz` is f32 — the setters' precision — so these keep the f64 scalar.
+  circuit/devices/bbd/filter.rs:response
+  circuit/methods/dk/mod.rs:frequency_response
+  circuit/methods/dk/mod.rs:analog_response
+  circuit/methods/dk/noise.rs:supply_response
+  circuit/methods/prewarp.rs:digital_angle
+  circuit/methods/wdf/circuit.rs:frequency_response
+  circuit/methods/wdf/circuit.rs:analog_response
+  circuit/topologies/tone_stack.rs:circuit_magnitude_at
+  circuit/topologies/tone_stack.rs:magnitude_at
+  effects/eq/band.rs:gain_db
+  effects/eq/minimum_phase.rs:gain_db
+  learned/block/linear.rs:response
+  physical/plate/geometry.rs:t60
+  physical/rotary/mod.rs:response
+  physical/speaker/mod.rs:electrical
+  physical/speaker/mod.rs:mechanical
+  physical/speaker/mod.rs:impedance
+  physical/speaker/mod.rs:velocity
+  physical/speaker/mod.rs:acceleration
+  physical/speaker/mod.rs:excursion
+  physical/speaker/mod.rs:spl
+  physical/tape/playback.rs:loss
+  physical/tape/recording.rs:bias_hz
+  primitives/spectral/fir.rs:gain_db
+  # The scalar conversions `Db::to_gain` and `Gain::to_db` are held to,
+  # bit for bit (units/tests.rs): the definition beneath the types.
+  primitives/gain.rs:db_to_amp
+  primitives/gain.rs:amp_to_db
+  # A slew rate (full scale per millisecond): a rate, not a duration, and
+  # the units layer has no type for one.
+  behavioral/slew.rs:new
+  behavioral/slew.rs:set_rates
+)
+# unit_hits FILE...: `path:function` and the reason, one per line.
+unit_hits() {
+  perl scripts/lib/unit-names.pl "$@" | sed -E 's|^crates/stave-dsp/src/||; s|^([^:]+):[0-9]+: fn ([[:alnum:]_]+) — |\1:\2\t|'
+}
+units_rule() {
+  local files hits bad entry
+  files=$(git ls-files 'crates/stave-dsp/src/*.rs' \
+    | grep -v -e '^crates/stave-dsp/src/units/' -e '/tests\.rs$' -e '/tests/' -e '/proofs\.rs$')
+  # shellcheck disable=SC2086 # one path a word: the tree has no spaces in them
+  hits=$(unit_hits $files)
+  bad=$(awk -F'\t' 'NR == FNR { allow[$0] = 1; next } !($1 in allow) { print "  " $1 " — " $2 }' \
+    <(printf '%s\n' "${UNIT_ALLOW[@]}") <(printf '%s\n' "$hits" | sed '/^$/d'))
+  if [[ -n "$bad" ]]; then
+    printf 'vocabulary: a quantity as a bare float in stave-dsp'"'"'s public API: take Hz, Db, Seconds (DSP.md U4/U5), or justify it in UNIT_ALLOW\n%s\n\n' "$bad" >&2
+    fail=1
+  fi
+  for entry in "${UNIT_ALLOW[@]}"; do
+    if ! cut -f1 <<<"$hits" | grep -qxF -- "$entry"; then
+      printf 'vocabulary: UNIT_ALLOW lists %s, which no longer needs an exception: remove it\n' "$entry" >&2
+      fail=1
+    fi
+  done
+}
+# The rule must catch what it claims to: a fixture through the same
+# script, so a broken pattern cannot pass everything silently.
+units_selftest() {
+  local got
+  got=$(perl scripts/lib/unit-names.pl <(printf '%s\n' \
+    'pub fn set_cutoff_hz(&mut self, hz: f32) {}' \
+    'pub fn set_attack(&mut self, attack: f32) {}' \
+    'pub fn new(max_ms: f32, x: impl Fn(f64) -> f64) -> Self {}' \
+    'pub fn key(highpass_hz: Option<f32>) {}' \
+    'pub fn set_cutoff(&mut self, cutoff: Hz) {}' \
+    'pub fn set_mix(&mut self, s: f32) {}') | wc -l | tr -d ' ')
+  if [[ "$got" != 4 ]]; then
+    printf 'vocabulary: scripts/lib/unit-names.pl flagged %s lines of its fixture, not the 4 violations\n' "$got" >&2
+    fail=1
+  fi
+}
+units_selftest
+units_rule
 
 exit "$fail"
