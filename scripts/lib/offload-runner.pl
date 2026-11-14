@@ -5,13 +5,16 @@
 # empty value survives the remote shell).
 #
 #   probe ROOT BUILD LONG CLASS             free slots, cores and load per core
-#   hold  ROOT BUILD LONG CLASS HOSTNAME LABEL
+#   hold  ROOT BUILD LONG CLASS HOSTNAME LABEL JOBID
 #                                           take a free slot (or say 'busy'); hold it
 #                                           until stdin ends
 #   sync  SLOTDIR                           update SLOTDIR/tree from a tarball on stdin
 #   exec  ROOT SLOT DIR TIMEOUT JOBS NICE HOSTNAME RUN FETCH
 #                                           run RUN as its own session
 #   gc    DIR DRYRUN                        remove legacy per-name workspaces
+#   reap  DIR DRYRUN LEGACY PGIDS GRACE HOSTNAME FORWARD
+#                                           stop offload jobs nobody owns any more
+#   install-reaper DIR EVERY RUNNER ARGS... schedule `reap` in this account
 #
 # Slots: ROOT/<id>.lock is a flock; the build slots are 1..BUILD, the long
 # slot (when LONG is 1) is L1; ROOT/long.lock admits one `long` job per host.
@@ -36,6 +39,7 @@ use File::Find;
 use File::Basename qw(dirname);
 use Cwd ();
 use MIME::Base64;
+use JSON::PP;
 $| = 1;
 
 my $mode = shift @ARGV;
@@ -109,7 +113,7 @@ if ($mode eq 'probe') {
 }
 
 if ($mode eq 'hold') {
-  my ($root, $want, $long, $class, $hostname, $label) = @arg;
+  my ($root, $want, $long, $class, $hostname, $label, $jobid) = @arg;
   $root = home_path($root);
   make_path($root);
   my $ppid = getppid();
@@ -133,6 +137,9 @@ if ($mode eq 'hold') {
   spew("$root/$id.owner", $own);
   spew("$root/$gate.owner", "$own in slot $id") if $gate;
   unlink map { "$root/$id.$_" } qw(pgid runner result release);
+  # The job's id in the client's event stream, so a reap of this slot can
+  # finish the same job.
+  spew("$root/$id.job", $jobid // '');
   make_path("$root/$id/tree");
   my $jobs = int($cores / $build) || 1;
   print "slot $id slots $build cores $cores jobs $jobs\n";
@@ -152,7 +159,7 @@ if ($mode eq 'hold') {
   }
   my $result = slurp("$root/$id.result");
   print "result $result\n" if $result ne '';
-  unlink map { "$root/$id.$_" } qw(owner pgid runner result release);
+  unlink map { "$root/$id.$_" } qw(owner pgid runner result release job);
   unlink "$root/$gate.owner" if $gate;
   exit 0;
 }
@@ -361,6 +368,300 @@ if ($mode eq 'gc') {
     $removed++;
   }
   printf "%s %d legacy workspaces, %.1f GB; kept %d\n", $dry ? 'would remove' : 'removed', $removed, $freed / 1048576, $kept;
+  exit 0;
+}
+
+# Elapsed time from ps (`[[dd-]hh:]mm:ss`) in seconds.
+sub etime_s {
+  my ($e) = @_;
+  my $d = $e =~ s/^(\d+)-// ? $1 : 0;
+  my @p = split /:/, $e;
+  unshift @p, 0 while @p < 3;
+  return (($d * 24 + $p[0]) * 60 + $p[1]) * 60 + $p[2];
+}
+
+# This user's processes: pid → {pid ppid pgid age cpu args cwd}. Only the
+# calling user's processes are ever listed (in a container, ps sees only
+# the container's), so a reap can never reach anyone else's.
+sub own_processes {
+  my %p;
+  for (`ps -A -o pid= -o ppid= -o pgid= -o uid= -o etime= -o pcpu= -o args= 2>/dev/null`) {
+    my ($pid, $ppid, $pgid, $uid, $et, $cpu, $args) = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*?)\s*$/ or next;
+    next unless $uid == $<;
+    $p{$pid} = { pid => $pid, ppid => $ppid, pgid => $pgid, age => etime_s($et), cpu => $cpu + 0, args => $args };
+  }
+  # Working directory and session where they can be read: undef when not
+  # (a locked-down container may refuse another process's cwd even to its
+  # owner; its session id, in /proc/PID/stat, stays readable).
+  if (-d '/proc/self') {
+    for my $pid (keys %p) {
+      $p{$pid}{cwd} = readlink "/proc/$pid/cwd";
+      my $st = slurp("/proc/$pid/stat");
+      $p{$pid}{sid} = $1 if $st =~ /\)\s+\S+\s+\d+\s+\d+\s+(\d+)/;
+    }
+  } else {
+    my $cur;
+    for (`lsof -a -d cwd -u $< -Fpn 2>/dev/null`) {
+      chomp;
+      if (/^p(\d+)/) { $cur = $1 } elsif (/^n(.*)/ && $cur && $p{$cur}) { $p{$cur}{cwd} = $1 }
+    }
+  }
+  return \%p;
+}
+
+# Reap: find offload jobs nobody owns any more and stop each one's whole
+# process group (TERM, GRACE seconds, KILL). A job is orphaned when
+#   slot    its slot's lock is free: the holder (alive exactly as long as
+#           the client's ssh session) is gone, yet the job runs on;
+#   stray   a process left the group of an idle slot's job but not its
+#           session, or sits in an idle slot's workspace (the job's stop,
+#           which signals its group, missed it);
+#   legacy  a job of the pre-slots script (DIR/<name>, DIR/<name>.lock)
+#           whose ssh session is gone — or any of them with LEGACY set, for
+#           when no client of that script remains.
+# PGIDS (space-separated) restricts the reap to those groups (and reaps them
+# even if a client still seems connected). Every reap is appended to
+# DIR/reaped.jsonl; with FORWARD, entries not yet shown to a client are
+# printed first (`logged`), so a scheduled run's reaps reach the client's
+# job log and event stream.
+if ($mode eq 'reap') {
+  my ($dir, $dry, $legacy, $pgids, $grace, $hostname, $forward) = @arg;
+  # As command lines spell it, and resolved (as working directories are:
+  # a host may keep the directory behind a symlink).
+  my $named = home_path($dir);
+  (my $base = $named) =~ s{.*/}{};
+  $dir = Cwd::abs_path($named) // $named;
+  my $slots = "$dir/slots";
+  my $home = Cwd::abs_path($ENV{HOME}) // $ENV{HOME};
+  $grace = 10 unless defined $grace && $grace =~ /^\d+$/;
+  my %want = map { $_ => 1 } grep { /^\d+$/ } split /[\s,]+/, $pgids // '';
+  my $json = JSON::PP->new->canonical;
+  my $log = "$dir/reaped.jsonl";
+  if ($forward && !$dry && -f $log) {
+    my $off = slurp("$dir/reaped.forwarded") || 0;
+    if (open my $f, '<', $log) {
+      seek $f, $off, 0 if $off <= -s $log;
+      while (<$f>) { chomp; print "logged $_\n" if length }
+    }
+  }
+  my $procs = own_processes();
+  # Never ourselves, nor the session (ssh, shell) that started us.
+  my %spare;
+  for (my $p = $$; $p && $procs->{$p}; $p = $procs->{$p}{ppid}) {
+    $spare{ $procs->{$p}{pgid} } = 1;
+    last if $p == $procs->{$p}{ppid};
+  }
+  my %group;
+  push @{ $group{ $_->{pgid} } }, $_ for values %$procs;
+  # Each slot's recorded job: its group, its runner, who took it.
+  my (%slot_of_pgid, %slot_of_runner, %slotinfo);
+  if (opendir my $sd, $slots) {
+    for my $f (readdir $sd) {
+      my ($id) = $f =~ /^(\w+)\.lock$/ or next;
+      next if $id eq 'long';
+      my %s = (pgid => slurp("$slots/$id.pgid"), runner => slurp("$slots/$id.runner"),
+        owner => slurp("$slots/$id.owner"), job => slurp("$slots/$id.job"));
+      $slotinfo{$id} = \%s;
+      $slot_of_pgid{ $s{pgid} } = $id if $s{pgid} =~ /^\d+$/;
+      $slot_of_runner{ $s{runner} } = $id if $s{runner} =~ /^\d+$/;
+    }
+  }
+  # A free slot's lock stays taken until we exit, so no job starts there
+  # while we reap it.
+  my %taken;
+  my $is_free = sub {
+    my $id = shift;
+    return 1 if $taken{$id};
+    my $fh = try_lock("$slots/$id.lock") or return 0;
+    $taken{$id} = $fh;
+    return 1;
+  };
+  my @found;
+  for my $pg (sort { $a <=> $b } keys %group) {
+    next if $spare{$pg};
+    my @ps = @{ $group{$pg} };
+    my ($slot, $name, $kind, $why, $reap);
+    $slot = $slot_of_pgid{$pg} if exists $slot_of_pgid{$pg};
+    for my $pr (@ps) { $slot //= $slot_of_runner{ $pr->{pid} } if exists $slot_of_runner{ $pr->{pid} } }
+    if (defined $slot) {
+      $kind = 'slot';
+    } else {
+      # Left the job's group but not its session (the runner makes the job
+      # a session leader), or sits in a slot's workspace.
+      for my $pr (@ps) {
+        if (defined $pr->{sid} && exists $slot_of_pgid{ $pr->{sid} }) { ($slot, $kind) = ($slot_of_pgid{ $pr->{sid} }, 'stray'); last }
+        if (($pr->{cwd} // '') =~ m{^\Q$slots\E/(\w+)(/|$)}) { ($slot, $kind) = ($1, 'stray'); last }
+      }
+    }
+    if (!$kind) {
+      my $legacy_path = qr{([A-Za-z0-9._-]+?)(?:\.lock|\.target|\.git)?(?:['"/\s]|$)};
+      for my $pr (@ps) {
+        my $cwd = $pr->{cwd};
+        if (($cwd // '') =~ m{^\Q$dir\E/([^/]+?)(?:\.target|\.git)?(?:/|$)} && $1 ne 'slots' && $1 ne 'bin') { $name = $1; last }
+        # The pre-slots script named its paths absolutely or relative to
+        # the home directory, where its commands started (relative ones
+        # count from anywhere else only when the cwd cannot be read).
+        if ($pr->{args} =~ m{(?:\Q$dir\E|\Q$named\E)/$legacy_path} && $1 ne 'slots' && $1 ne 'bin') { $name = $1; last }
+        if ((!defined $cwd || $cwd eq $home)
+          && $pr->{args} =~ m{(?:^|[\s'"=])\Q$base\E/$legacy_path} && $1 ne 'slots' && $1 ne 'bin') { $name = $1; last }
+      }
+      $kind = 'legacy' if defined $name;
+    }
+    next unless $kind;
+    my $leader = $procs->{$pg} // (sort { $b->{age} <=> $a->{age} } @ps)[0];
+    my $cpu = 0;
+    $cpu += $_->{cpu} for @ps;
+    my %o = (pgid => $pg + 0, kind => $kind, host => $hostname, age_s => $leader->{age},
+      cpu => sprintf('%.1f', $cpu) + 0, procs => scalar @ps,
+      command => $leader->{args} =~ /decode_base64\(shift\)/ ? '(the offload runner)' : $leader->{args});
+    if ($kind ne 'legacy') {
+      my $s = $slotinfo{$slot} // {};
+      $o{slot} = $slot;
+      ($o{label} = $s->{owner} // '') =~ s/ \(since .*\)$//;
+      $o{job} = $s->{job} if length($s->{job} // '');
+      if ($is_free->($slot)) {
+        $why = $kind eq 'slot' ? "slot ${slot}'s holder is gone (its lock is free)" : "outside its job's process group; slot $slot is idle";
+        $reap = 1;
+      } else {
+        $why = $kind eq 'slot' ? "slot $slot is held: its client is connected" : "slot $slot is busy: may belong to its job";
+      }
+    } else {
+      $o{label} = $name;
+      # The pre-slots script ran the job under the ssh session that sent it.
+      my $sshd;
+      for (my $p = $pg; $p && $procs->{$p} && $p != 1; $p = $procs->{$p}{ppid}) {
+        if ($procs->{$p}{args} =~ /^sshd/) { $sshd = $procs->{$p}; last }
+        last if $p == $procs->{$p}{ppid};
+      }
+      if (!$sshd) { ($why, $reap) = ('pre-slots job; its ssh session is gone', 1) }
+      elsif ($legacy) { ($why, $reap) = ("pre-slots job (--legacy); its ssh session $sshd->{pid} is $sshd->{age}s old", 1) }
+      else { $why = "pre-slots job; its ssh session $sshd->{pid} ($sshd->{age}s old) is open: --legacy or --pgid $pg reaps it" }
+    }
+    if (%want) {
+      if ($want{$pg}) {
+        ($why =~ s/: --legacy or --pgid \d+ reaps it$//, $why .= '; selected by --pgid') unless $reap;
+        $reap = 1;
+      }
+      else { ($why, $reap) = ("$why [not selected]", 0) }
+    }
+    $o{why} = $why;
+    $o{action} = !$reap ? 'kept' : $dry ? 'would reap' : 'reap';
+    push @found, \%o;
+  }
+  for my $pg (sort keys %want) {
+    print "note pgid $pg is not an offload job of this user here; left alone\n" unless grep { $_->{pgid} == $pg } @found;
+  }
+  for my $o (@found) {
+    if ($o->{action} eq 'reap') {
+      my $pg = $o->{pgid};
+      my $sent = kill 'TERM', -$pg;
+      my $err = $sent ? '' : "$!";
+      my $t = time;
+      select(undef, undef, undef, 0.2) while alive(-$pg) && time - $t < $grace;
+      if (alive(-$pg)) {
+        kill 'KILL', -$pg;
+        $t = time;
+        select(undef, undef, undef, 0.2) while alive(-$pg) && time - $t < 5;
+      }
+      if (alive(-$pg)) {
+        $o->{action} = $sent ? 'survived TERM and KILL' : "refused: $err";
+      } else {
+        $o->{action} = 'reaped';
+        $o->{at} = time;
+        unlink map { "$slots/$o->{slot}.$_" } qw(owner pgid runner result release job) if $o->{kind} eq 'slot';
+        if (open my $f, '>>', $log) { print $f $json->encode($o), "\n" }
+      }
+    }
+    print "found ", $json->encode($o), "\n";
+  }
+  spew("$dir/reaped.forwarded", -s $log) if $forward && !$dry && -f $log;
+  printf "summary %d offload job groups: %d %s, %d kept\n", scalar @found,
+    scalar(grep { $_->{action} =~ /reap/ } @found), $dry ? 'to reap' : 'reaped',
+    scalar(grep { $_->{action} eq 'kept' } @found);
+  exit 0;
+}
+
+# Schedule `reap` in this account: a systemd user timer (Linux) or a launchd
+# agent (macOS), every EVERY minutes (0 removes it). RUNNER is this file
+# (base64), installed as DIR/bin/offload-runner.pl beside a DIR/bin/reap
+# wrapper that holds reap's arguments (ARGS, already encoded).
+if ($mode eq 'install-reaper') {
+  my ($dir, $every, $runner, @reap) = @arg;
+  $dir = home_path($dir);
+  $every =~ /^\d+$/ or die "offload: --every takes whole minutes\n";
+  my ($bin, $wrap) = ("$dir/bin/offload-runner.pl", "$dir/bin/reap");
+  my $say = sub { my $r = system(@_); print "ran @_: ", ($r == 0 ? 'ok' : 'exit ' . ($? >> 8)), "\n"; $r == 0 };
+  my $install = sub {
+    make_path("$dir/bin");
+    spew($bin, decode_base64($runner));
+    spew($wrap, "#!/bin/sh\n# stave offload reaper (installed by scripts/offload.sh reap HOST --install)\n"
+      . "cd \"\$HOME\" || exit 1\nexec nice -n 19 perl '$bin' reap " . join(" ", map { encode_base64("x$_", "") } @reap) . "\n");
+    chmod 0755, $wrap;
+  };
+  if ($^O eq 'linux') {
+    my $u = "$ENV{HOME}/.config/systemd/user";
+    my $unit = 'stave-offload-reap';
+    if ($every == 0) {
+      $say->('systemctl', '--user', 'disable', '--now', "$unit.timer");
+      unlink "$u/$unit.service", "$u/$unit.timer", $wrap, $bin;
+      $say->('systemctl', '--user', 'daemon-reload');
+      print "removed the reaper\n";
+      exit 0;
+    }
+    $install->();
+    make_path($u);
+    spew("$u/$unit.service", "[Unit]\nDescription=stave offload: stop jobs nobody owns any more\n\n"
+      . "[Service]\nType=oneshot\nExecStart=/bin/sh $wrap\n");
+    spew("$u/$unit.timer", "[Unit]\nDescription=stave offload reaper\n\n"
+      . "[Timer]\nOnBootSec=5min\nOnUnitActiveSec=${every}min\n\n[Install]\nWantedBy=timers.target\n");
+    $say->('systemctl', '--user', 'daemon-reload') or exit 1;
+    $say->('systemctl', '--user', 'enable', '--now', "$unit.timer") or exit 1;
+    print "warning: lingering is off for this user, so the timer runs only while one of its sessions is open; "
+      . "an administrator of this machine (or container) can run: loginctl enable-linger " . getpwuid($<) . "\n"
+      if `loginctl show-user "\$(id -un)" -p Linger 2>/dev/null` =~ /=no/;
+    print "installed $unit.timer: every $every min, runs $wrap\n";
+  } elsif ($^O eq 'darwin') {
+    # launchd first. An account with no login session (a hidden build
+    # account reached only by ssh) may not be allowed to bootstrap an agent
+    # into its own domain; then the account's crontab.
+    my $plist = "$ENV{HOME}/Library/LaunchAgents/dev.stave.offload-reap.plist";
+    my $tag = '# stave-offload-reap';
+    my $cron = sub {
+      my ($line) = @_;
+      my @all = `crontab -l 2>/dev/null`;
+      my @keep = grep { index($_, $tag) < 0 } @all;
+      return 1 if !defined $line && @keep == @all;
+      open my $c, '|-', 'crontab', '-' or return 0;
+      print $c @keep, defined $line ? "$line\n" : ();
+      return close $c;
+    };
+    for my $domain ("gui/$<", "user/$<") { system("launchctl bootout $domain '$plist' >/dev/null 2>&1") if -e $plist }
+    $cron->(undef);
+    if ($every == 0) { unlink $plist, $wrap, $bin; print "removed the reaper\n"; exit 0 }
+    $install->();
+    make_path(dirname($plist));
+    spew($plist, qq{<?xml version="1.0" encoding="UTF-8"?>\n}
+      . qq{<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n}
+      . qq{<plist version="1.0"><dict>\n<key>Label</key><string>dev.stave.offload-reap</string>\n}
+      . qq{<key>ProgramArguments</key><array><string>/bin/sh</string><string>$wrap</string></array>\n}
+      . qq{<key>StartInterval</key><integer>} . ($every * 60) . qq{</integer>\n<key>RunAtLoad</key><true/>\n}
+      . qq{<key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string></dict>\n}
+      . qq{<key>StandardOutPath</key><string>$dir/reaper.out</string>\n}
+      . qq{<key>StandardErrorPath</key><string>$dir/reaper.out</string>\n</dict></plist>\n});
+    for my $domain ("gui/$<", "user/$<") {
+      next unless system("launchctl bootstrap $domain '$plist' >/dev/null 2>&1") == 0;
+      print "installed dev.stave.offload-reap: every $every min (launchd $domain), runs $wrap\n";
+      exit 0;
+    }
+    unlink $plist;
+    print "launchd refused an agent in this account (no login session); using its crontab\n";
+    my $when = $every < 60 ? "*/$every * * * *" : $every % 60 == 0 && $every < 1440 ? '0 */' . ($every / 60) . ' * * *'
+      : die "offload: crontab takes --every under 60 minutes, or whole hours under a day\n";
+    $cron->("$when /bin/sh '$wrap' >> '$dir/reaper.out' 2>&1 $tag") or die "offload: crontab refused the entry\n";
+    print "installed a crontab entry: every $every min, runs $wrap\n";
+  } else {
+    die "offload: no scheduler for $^O\n";
+  }
   exit 0;
 }
 

@@ -16,7 +16,8 @@ Each assumes you know the [concepts](crate::concepts).
 - [Lay out a plugin project](crate::howto::project_layout): the shape,
   the tree rules, and the gates that hold them.
 - [Local configuration](crate::howto::local_config): per-machine hosts,
-  sample libraries and captures, and building on another machine.
+  sample libraries and captures, building on another machine, and
+  cleaning up after jobs and agents.
 - [Gate what a change affects](crate::howto::affected): only the
   packages and gates a change can reach, and a tree never gated twice.
 - [Measure performance](crate::howto::performance): the CPU budget

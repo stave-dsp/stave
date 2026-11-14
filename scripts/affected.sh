@@ -58,7 +58,7 @@ FULL=(Cargo.lock Cargo.toml rust-toolchain.toml .cargo/ .config/ deny.toml scrip
 SITE=(crates/stave-guide/ tools/docsite/ releases/ crates/stave-dsp/datasheet.json
   crates/stave-dsp/benches/ crates/stave-dsp/tests/datasheet crates/stave-test/src/plugin_checks.rs
   crates/stave-face/src/theme.rs crates/stave-core/src/params/display.rs)
-RULES=(check-file-sizes check-view-bindings check-plugin-rules check-vocabulary check-purity check-golden-sizes)
+RULES=(check-file-sizes check-view-bindings check-plugin-rules check-vocabulary check-purity check-golden-sizes check-offload-reap)
 
 base_ref="" plan_only=0 outputs=0 full=0 cache=1
 while (($#)); do

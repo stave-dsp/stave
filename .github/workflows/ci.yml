@@ -211,8 +211,9 @@ jobs:
 
   rules:
     # The tree rules and hygiene: file sizes, view bindings, plugin
-    # rules, the glossary, purity, golden-image sizes; licences,
-    # duplicate versions and sources (deny.toml); unused dependencies.
+    # rules, the glossary, purity, golden-image sizes, the offload reaper;
+    # licences, duplicate versions and sources (deny.toml); unused
+    # dependencies.
     name: tree rules + hygiene
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -235,7 +236,8 @@ jobs:
       - name: local configuration leaks
         run: |
           scripts/check-local-leaks.sh
-          if git grep -nE '/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/|[.]claude/worktrees/'; then
+          # Generic worktree globs are portable; concrete agent IDs are local paths.
+          if git grep -nE '/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/|[.]claude/worktrees/agent-[[:xdigit:]]+'; then
             echo "a machine path is written into the repo (use the config keys, stave.env.example)" >&2
             exit 1
           fi
@@ -253,6 +255,7 @@ jobs:
           STAVE_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
           STAVE_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
           STAVE_NOTARY_PROFILE: ${{ secrets.STAVE_NOTARY_PROFILE }}
+      - run: scripts/check-offload-reap.sh
       - run: scripts/hygiene.sh deps
 
   plugins:

@@ -12,6 +12,7 @@
 #   STAVE_OFFLOAD_CLASS=long scripts/offload.sh linux -- scripts/kani.sh
 #   scripts/offload.sh gc linux [--dry-run]   # remove pre-slot per-name workspaces
 #   scripts/offload.sh stats [HOURS]          # utilisation, waits, run times
+#   scripts/offload.sh reap linux [--dry-run] # stop jobs nobody owns any more
 #
 # HOST is `linux` or `macos` (the hosts named by STAVE_LINUX_HOST and
 # STAVE_MACOS_HOST in your local configuration — see stave.env.example),
@@ -52,8 +53,33 @@
 # Every job appends a line to ${XDG_STATE_HOME:-~/.local/state}/stave/offload.jsonl
 # (host, slot, queue wait, sync and run seconds, exit status, timeout);
 # `stats` summarises it.
+#
+# Job events. STAVE_OFFLOAD_EVENTS, if set, is a command fed one JSON line
+# per event (e.g. a dashboard's ingest CLI): job.started when a job takes its
+# slot, job.heartbeat every STAVE_OFFLOAD_HEARTBEAT seconds while it holds
+# it (default 60; 0: none), job.finished when it ends. It runs in the
+# background and its failure never fails a job.
+#
+# Reaping. `reap HOST` finds offload jobs on HOST that nobody owns any more
+# (a slot job whose holder is gone, a process left in an idle slot, a
+# pre-slots job whose ssh session is gone) and stops each one's process
+# group: TERM, then KILL after --grace seconds (default 10). It touches only
+# the ssh user's own processes tied to its offload directory, reports each
+# job (age, CPU, command, why), and records each reap in the job log and as
+# a job.finished event. --dry-run lists without stopping; --legacy also
+# reaps pre-slots jobs whose ssh session is still open; --pgid N (repeat)
+# reaps exactly those groups. `reap HOST --install [--every MIN]` schedules
+# it inside the host account itself (a systemd user timer on Linux; on
+# macOS a launchd agent, or the account's crontab where launchd refuses
+# one; default every 10 minutes), `--uninstall` removes it; the next
+# `reap HOST` forwards what the schedule reaped.
 set -euo pipefail
-usage() { echo "usage: $0 HOST -- COMMAND...   |   $0 gc HOST [--dry-run]   |   $0 stats [HOURS]" >&2; exit 2; }
+usage() {
+  echo "usage: $0 HOST -- COMMAND...   |   $0 gc HOST [--dry-run]   |   $0 stats [HOURS]" >&2
+  echo "       $0 reap HOST [--dry-run] [--legacy] [--pgid N]... [--grace S]" >&2
+  echo "       $0 reap HOST --install [--every MIN]   |   $0 reap HOST --uninstall" >&2
+  exit 2
+}
 HOST="${1:-}"
 [[ -n "$HOST" ]] || usage
 shift
@@ -71,9 +97,9 @@ source "$LIB/config.sh"
 stave_config_load "$ROOT"
 RUNNER="$(base64 < "$LIB/offload-runner.pl" | tr -d '\n')"
 
-GC=0
-if [[ "$HOST" == gc ]]; then
-  GC=1
+GC=0 REAP=0
+if [[ "$HOST" == gc || "$HOST" == reap ]]; then
+  if [[ "$HOST" == gc ]]; then GC=1; else REAP=1; fi
   HOST="${1:-}"
   [[ -n "$HOST" ]] || usage
   shift
@@ -139,6 +165,50 @@ if ((GC)); then
   exit
 fi
 
+# Send one event (a JSON object) to STAVE_OFFLOAD_EVENTS, in the background,
+# holding none of our descriptors (the slot holder's pipes must close when
+# we close them).
+emit() {
+  [[ -n "${STAVE_OFFLOAD_EVENTS:-}" ]] || return 0
+  { printf '%s\n' "$1" | bash -c "$STAVE_OFFLOAD_EVENTS" > /dev/null 2>&1; } 3>&- 4>&- 5>&- < /dev/null &
+  disown $! 2> /dev/null || true
+}
+
+if ((REAP)); then
+  HOST="$(resolve "$HOST")"
+  HOST="${HOST%%:*}"
+  [[ "$HOST" != local ]] || { echo "offload: reap is for build hosts" >&2; exit 2; }
+  DRY="" LEGACY="" PGIDS="" GRACE=10 INSTALL="" EVERY=10
+  while (($#)); do
+    case "$1" in
+      --dry-run) DRY=1 ;;
+      --legacy) LEGACY=1 ;;
+      --pgid) PGIDS+=" ${2:?--pgid needs a process group id}"; shift ;;
+      --grace) GRACE="${2:?--grace needs seconds}"; shift ;;
+      --install) INSTALL=1 ;;
+      --uninstall) INSTALL=1 EVERY=0 ;;
+      --every) EVERY="${2:?--every needs minutes}"; shift ;;
+      *) usage ;;
+    esac
+    shift
+  done
+  if [[ -n "$INSTALL" ]]; then
+    # The schedule reaps slot orphans and pre-slots jobs whose session is
+    # gone, never --legacy or --pgid; it keeps its reaps in the host's
+    # reaped.jsonl until the next `reap HOST` forwards them.
+    (runner "$HOST" install-reaper stave-offload "$EVERY" "$RUNNER" stave-offload "" "" "" "$GRACE" "$HOST" "")
+    exit
+  fi
+  mkdir -p "$(dirname "$LOG")"
+  OUT="$(runner "$HOST" reap stave-offload "$DRY" "$LEGACY" "$PGIDS" "$GRACE" "$HOST" "$([[ -z "$DRY" ]] && echo 1)")" \
+    || { echo "offload: reap on $HOST failed" >&2; exit 1; }
+  REPORT="$(printf '%s\n' "$OUT" | perl "$LIB/offload-reap.pl" "$LOG")"
+  while IFS= read -r line; do
+    if [[ "$line" == event\ * ]]; then emit "${line#event }"; else printf '%s\n' "$line"; fi
+  done <<< "$REPORT"
+  exit 0
+fi
+
 CLASS="${STAVE_OFFLOAD_CLASS:-build}"
 case "$CLASS" in build | long) ;; *) echo "offload: STAVE_OFFLOAD_CLASS is build or long, not $CLASS" >&2; exit 2 ;; esac
 NAME="${STAVE_OFFLOAD_NAME:-$(basename "$ROOT")}"
@@ -146,23 +216,38 @@ NAME="${NAME//[^A-Za-z0-9._-]/_}"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/offload.XXXXXX")"
 exec 5<&0   # the command's stdin (background jobs would get /dev/null)
-HOLD_PID="" JOB_PID="" SLOT="" RESULT="" LOGGED=0
+HOLD_PID="" JOB_PID="" BEAT_PID="" SLOT="" RESULT="" LOGGED=0
 T0="$(date +%s)" T_SLOT="" T_SYNC="" T_END=""
+JOBID="offload-$T0-$$-$NAME"
 
-# STAVE_OFFLOAD_EVENTS, if set, is a command that receives one JSON line on
-# stdin when a job takes its slot and when it ends (e.g. a dashboard's
-# ingest CLI). It runs in the background and its failure never fails a job.
 event() { # kind [outcome: ok|failed] [why]
   [[ -n "${STAVE_OFFLOAD_EVENTS:-}" ]] || return 0
-  perl -MJSON::PP -e '
-    my ($kind, $label, $host, $class, $slot, $t0, $pid, $outcome, $why) = @ARGV;
-    my %e = (kind => $kind, project => "stave", id => "offload-$t0-$pid-$label",
-      title => $label, host => $host, slot => $slot, detail => length $why ? "$class slot, $why" : "$class slot", at => time() * 1000);
+  emit "$(perl -MJSON::PP -e '
+    my ($kind, $id, $label, $host, $class, $slot, $outcome, $why) = @ARGV;
+    my %e = (kind => $kind, project => "stave", id => $id, title => $label, host => $host, slot => $slot, at => time() * 1000);
+    $e{detail} = length $why ? "$class slot, $why" : "$class slot" unless $kind eq "job.heartbeat";
     $e{outcome} = $outcome if length $outcome;
-    print JSON::PP->new->canonical->encode(\%e), "\n";
-  ' "$1" "$NAME" "$HOST" "$CLASS" "$SLOT" "$T0" "$$" "${2:-}" "${3:-}" \
-    | bash -c "$STAVE_OFFLOAD_EVENTS" >/dev/null 2>&1 &
-  disown $! 2>/dev/null || true
+    print JSON::PP->new->canonical->encode(\%e);
+  ' "$1" "$JOBID" "$NAME" "$HOST" "$CLASS" "$SLOT" "${2:-}" "${3:-}")"
+}
+# While the job holds its slot: a job.heartbeat every STAVE_OFFLOAD_HEARTBEAT
+# seconds, from a background loop that holds none of our descriptors and
+# ends with the slot (release) or when this script is gone.
+heartbeat() {
+  local every="${STAVE_OFFLOAD_HEARTBEAT:-60}" me=$$
+  [[ -n "${STAVE_OFFLOAD_EVENTS:-}" ]] || return 0
+  [[ "$every" =~ ^[0-9]+$ ]] || { echo "offload: STAVE_OFFLOAD_HEARTBEAT is whole seconds (0: none), not $every" >&2; return 0; }
+  ((every > 0)) || return 0
+  {
+    trap 'kill "$nap" 2> /dev/null; exit 0' TERM
+    while kill -0 "$me" 2> /dev/null; do
+      sleep "$every" &
+      nap=$!
+      wait "$nap"
+      kill -0 "$me" 2> /dev/null && event job.heartbeat
+    done
+  } 3>&- 4>&- 5>&- < /dev/null &
+  BEAT_PID=$!
 }
 
 log_job() {
@@ -190,6 +275,11 @@ log_job() {
 # Give the slot back: closing the holder's stdin ends it; it stops anything
 # still running in the slot and reports the job's result.
 release() {
+  if [[ -n "$BEAT_PID" ]]; then
+    kill "$BEAT_PID" 2> /dev/null || true
+    wait "$BEAT_PID" 2> /dev/null || true
+    BEAT_PID=""
+  fi
   [[ -n "$HOLD_PID" ]] || return 0
   exec 3>&-
   IFS= read -r line <&4 && [[ "$line" == result\ * ]] && RESULT="${line#result }"
@@ -231,7 +321,7 @@ take_slot() {
   local host="$1" want="$2" line=""
   rm -f "$WORK/ctl" "$WORK/out"
   mkfifo "$WORK/ctl" "$WORK/out"
-  runner "$host" hold "$(slot_root "$host")" "$want" "$(long_slot "$host")" "$CLASS" "$host" "$NAME" \
+  runner "$host" hold "$(slot_root "$host")" "$want" "$(long_slot "$host")" "$CLASS" "$host" "$NAME" "$JOBID" \
     < "$WORK/ctl" > "$WORK/out" &
   HOLD_PID=$!
   exec 3> "$WORK/ctl" 4< "$WORK/out"
@@ -304,6 +394,7 @@ esac
 T_SLOT="$(date +%s)"
 echo "offload: $NAME → $HOST slot $SLOT ($CLASS, $JOBS of $CORES cores, queued $((T_SLOT - T0))s)" >&2
 event job.started
+heartbeat
 
 NICE=10
 [[ "$CLASS" == long ]] && NICE=19
