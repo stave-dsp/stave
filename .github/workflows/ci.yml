@@ -202,7 +202,8 @@ jobs:
       - name: local configuration leaks
         run: |
           scripts/check-local-leaks.sh
-          if git grep -nE '/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/|[.]claude/worktrees/'; then
+          # Generic worktree globs are portable; concrete agent IDs are local paths.
+          if git grep -nE '/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/|[.]claude/worktrees/agent-[[:xdigit:]]+'; then
             echo "a machine path is written into the repo (use the config keys, stave.env.example)" >&2
             exit 1
           fi
