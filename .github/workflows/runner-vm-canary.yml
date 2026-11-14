@@ -13,7 +13,7 @@ jobs:
   canary:
     runs-on: [self-hosted, fleet-tart-canary]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Verify VM boundary and capabilities
         env:
           CANARY_LABEL: macos-build
