@@ -13,7 +13,7 @@
 # blocks every other pull request. The models themselves are held to the
 # fixtures by the test jobs in ci.yml and platforms.yml, on every change.
 #
-# Every job aims at five minutes. ngspice's share — about three hours of
+# Every job aims at five minutes. ngspice's share — about four hours of
 # one core — is split by deck into NGSPICE_SHARDS jobs, balanced by each
 # deck's measured ngspice time (crates/stave-test/spice/costs.tsv; refresh
 # it from a full run's `ngspice-costs-*` artifacts:
@@ -26,8 +26,8 @@
 # files) in the Actions cache, and a pull request skips a deck whose stamp
 # is there — unchanged since a passing check. A push to main or a release
 # branch, or a dispatch, checks every deck afresh and records the stamps.
-# T1 is split into four nextest partitions; the classics' T1 (two long
-# piano sweeps) is a job of its own.
+# T1 is split into four nextest partitions and the piano sweep; the
+# classics' T1 (their knees and piano sweep) is a job of its own.
 name: references
 
 on:
@@ -85,7 +85,7 @@ env:
   NGSPICE_PACKAGE: "42+ds-3build1"
   NGSPICE_VERSION: "42"
   # How many jobs share the decks.
-  NGSPICE_SHARDS: "12"
+  NGSPICE_SHARDS: "16"
 
 jobs:
   changes:
@@ -242,9 +242,11 @@ jobs:
   characterise:
     # T1 (DSP.md R17): every circuit's whole matrix against the committed
     # tables — the grid of levels and frequencies, IMD, bursts —
-    # oversampled and at 44.1, 48 and 96 kHz, in four nextest partitions.
+    # oversampled and at 44.1, 48 and 96 kHz, in four nextest partitions,
+    # and the piano's ANMR sweep (one test, about seven minutes, its
+    # circuits on par_map) in a job of its own.
     # The tables' freshness is the shards' above.
-    name: characterise (T1 ${{ matrix.part }}/4)
+    name: characterise (T1 ${{ matrix.part }})
     needs: changes
     if: needs.changes.outputs.t1 == 'true'
     timeout-minutes: 15
@@ -252,20 +254,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4]
+        part: [1/4, 2/4, 3/4, 4/4, piano]
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: characterise
-          save-if: "${{ github.ref == 'refs/heads/main' && matrix.part == 1 }}"
+          save-if: "${{ github.ref == 'refs/heads/main' && matrix.part == '1/4' }}"
       - uses: taiki-e/install-action@v2.90.3
         with: { tool: nextest@0.9.148 }
-      - run: >-
-          cargo nextest run -p stave-test --locked --profile t1 --test characterise_t1
-          --run-ignored only --partition count:${{ matrix.part }}/4
-          -E 'not test(/^classics::/)'
+      - env:
+          PART: ${{ matrix.part }}
+        run: |
+          if [[ "$PART" == piano ]]; then
+            select=(-E 'test(=anmr_over_the_piano)')
+          else
+            select=(--partition "count:$PART" -E 'not test(/^classics::/) and not test(=anmr_over_the_piano)')
+          fi
+          cargo nextest run -p stave-test --locked --profile t1 --test characterise_t1 --run-ignored only "${select[@]}"
 
   characterise-classics:
     # The classics' T1 (`classics::` in characterise_t1.rs).

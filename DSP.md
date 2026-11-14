@@ -956,11 +956,11 @@ other references; a model with a capture is held to it within budget.
   the nine in release on three cores (past the tier's half second a
   circuit), T1 344 s; ngspice ~45 min for the nine tables on three cores
   (on CI's runners 14 and 26 min before P7; 19 and 27 min after R27),
-  so CI splits every deck's check across twelve shards balanced by
-  measured ngspice time (`references (ngspice i/12)`,
+  so CI splits every deck's check across sixteen shards balanced by
+  measured ngspice time (`references (ngspice i/16)`,
   `ngspice-simulate.py --shard i/n`, `spice/costs.tsv`), skips on a pull
   request the decks unchanged since a passing check (`--stamps`), and
-  runs T1 in four nextest partitions plus the classics' own job
+  runs T1 in four nextest partitions, the piano sweep and the classics' own job
   (`characterise classics (T1)`, `characterise_t1 classics::`);
   the piano sweeps run on `par_map`, held to `RAYON_NUM_THREADS`.
 
