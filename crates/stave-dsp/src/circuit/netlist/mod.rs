@@ -5,7 +5,8 @@
 //! the SPICE subset `stave-test/spice/*.cir` uses,
 //! [`Netlist::parse_kicad`] a KiCad schematic's netlist export
 //! ([`kicad`]), and a circuit method solves it. [`tolerance`] draws
-//! built units of a netlist from its parts' tolerances (DSP.md E10).
+//! built units of a netlist from its parts' tolerances; [`ageing`] applies
+//! explicit per-part drift assumptions to those units (DSP.md E10).
 //!
 //! ```
 //! use stave_dsp::circuit::netlist::Netlist;
@@ -23,6 +24,7 @@
 //! assert!(netlist.node("out").is_some());
 //! ```
 
+pub mod ageing;
 pub mod expr;
 pub mod kicad;
 pub mod spice;

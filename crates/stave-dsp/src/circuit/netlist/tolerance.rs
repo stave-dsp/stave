@@ -1,5 +1,4 @@
-//! Component tolerances (DSP.md E10, its tolerance half; ageing is not
-//! done): each part of a [`Netlist`] built off its marked value by a
+//! Component tolerances (DSP.md E10; [`super::ageing`] handles drift): each part of a [`Netlist`] built off its marked value by a
 //! seeded draw, so two built units differ as two pedals off one line
 //! differ — and the same seed builds the same unit on every machine.
 //!
