@@ -1712,6 +1712,7 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (Response, Shipping, 20.0, 100.0), // 6.64 / 23.5 — FINDING: bilinear warping at 1× (no prewarp)
             (ThdN, Oversampled, 50.0, NAN), // 8.9
             (ThdN, Shipping, 500.0, NAN), // 99.7 — aliasing as it ships
+        ],
         // Cathode bias and blocking (DSP.md R15), measured 2026-11-13. The
         // hand topologies' rows are the tabulated stages under
         // `Bias::Cathode` held to the circuit: their findings are marked.

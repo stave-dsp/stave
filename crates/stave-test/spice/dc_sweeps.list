@@ -34,6 +34,7 @@ sweep big_muff_rams_head/supply big_muff_rams_head va 6 12 25 probe v(c1) v(c2) 
 sweep boss_ds1/supply boss_ds1 va 6 12 25 probe v(c2) v(e3)
 sweep proco_rat/bias proco_rat vb 3.5 5.5 21 probe v(s) v(o)
 sweep tube_screamer_ts808/supply tube_screamer_ts808 va 6 12 25 probe v(e1) v(e2) v(o1)
+sweep mxr_distortion_plus/supply mxr_distortion_plus va 6 12 25 probe v(vb) v(o)
 sweep marshall_jcm800_2203/supply marshall_jcm800_2203 vb5 280 400 25 probe v(p1) v(p2) v(k1) v(k2)
 # Operating point against a bias source or a bias pot/trim.
 sweep tube_screamer/reference tube_screamer v1 3.5 5.5 21 probe v(out)

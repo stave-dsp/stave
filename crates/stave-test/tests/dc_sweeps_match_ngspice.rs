@@ -163,6 +163,7 @@ const BUDGETS: &[(&str, f64)] = &[
     ("boss_ds1/supply", 5e-6), // 1.11e-6
     ("proco_rat/bias", 1e-9), // 2.26e-12
     ("tube_screamer_ts808/supply", 1e-6), // 2.01e-7
+    ("mxr_distortion_plus/supply", 1e-9), // 4.46e-13
     ("marshall_jcm800_2203/supply", 5e-8), // 1.52e-8
     ("tube_screamer/reference", 5e-5), // 8.57e-6
     ("pentode_stage_ac/bias", 5e-8), // 8.4e-9
