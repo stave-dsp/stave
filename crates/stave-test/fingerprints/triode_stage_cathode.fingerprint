@@ -3,1256 +3,1256 @@
 model Circuit<Dk> on spice/triode_stage_cathode.cir
 tier t0
 reference ngspice 42, spice/triode_stage_cathode.cir through spice/triode_stage_cathode.plan (scripts/ngspice-simulate.py)
-playback 92 9.96666692e1
+playback 92 9.95851142e1
 versions nmr-bs1387-basic/1 anmr-kahles2019/1 erb-band-error/1 rnonlin-tan2004/1 gedlee-2003/1 null-nmr/1
-metric 192000 alignment null_gain_db -3.12845708e-5
-metric 192000 alignment null_delay_s -5.84286586e-11
-metric 192000 multisine/-40/r1 nmr_total_db -8.74190231e1
-metric 192000 multisine/-40/r1 nmr_max_db -7.0817432e1
+metric 192000 alignment null_gain_db -3.13569402e-5
+metric 192000 alignment null_delay_s -5.85371098e-11
+metric 192000 multisine/-40/r1 nmr_total_db -8.74206586e1
+metric 192000 multisine/-40/r1 nmr_max_db -7.08209522e1
 metric 192000 multisine/-40/r1 nmr_disturbed 0e0
-metric 192000 multisine/-40/r1 erb_max_db 9.68531806e-4
-metric 192000 multisine/-40/r1 erb_rms_db 2.48915486e-4
-metric 192000 multisine/-40/r1 null_nmr_total_db -8.81070497e1
-metric 192000 multisine/-40/r1 null_nmr_max_db -7.12738942e1
-metric 192000 multisine/+0/r1 nmr_total_db -8.14443943e1
-metric 192000 multisine/+0/r1 nmr_max_db -6.40764574e1
+metric 192000 multisine/-40/r1 erb_max_db 9.68579176e-4
+metric 192000 multisine/-40/r1 erb_rms_db 2.48940285e-4
+metric 192000 multisine/-40/r1 null_nmr_total_db -8.81103099e1
+metric 192000 multisine/-40/r1 null_nmr_max_db -7.12785189e1
+metric 192000 multisine/+0/r1 nmr_total_db -8.14455969e1
+metric 192000 multisine/+0/r1 nmr_max_db -6.40779215e1
 metric 192000 multisine/+0/r1 nmr_disturbed 0e0
-metric 192000 multisine/+0/r1 erb_max_db 9.67726602e-4
-metric 192000 multisine/+0/r1 erb_rms_db 2.41082512e-4
-metric 192000 multisine/+0/r1 null_nmr_total_db -8.19255919e1
-metric 192000 multisine/+0/r1 null_nmr_max_db -6.43618674e1
-metric 192000 multisine/+12/r1 nmr_total_db -8.31307308e1
-metric 192000 multisine/+12/r1 nmr_max_db -6.59628886e1
+metric 192000 multisine/+0/r1 erb_max_db 9.67483306e-4
+metric 192000 multisine/+0/r1 erb_rms_db 2.410813e-4
+metric 192000 multisine/+0/r1 null_nmr_total_db -8.19280292e1
+metric 192000 multisine/+0/r1 null_nmr_max_db -6.43640825e1
+metric 192000 multisine/+12/r1 nmr_total_db -8.31319277e1
+metric 192000 multisine/+12/r1 nmr_max_db -6.59605439e1
 metric 192000 multisine/+12/r1 nmr_disturbed 0e0
-metric 192000 multisine/+12/r1 erb_max_db 1.49720749e-3
-metric 192000 multisine/+12/r1 erb_rms_db 3.63209149e-4
-metric 192000 multisine/+12/r1 null_nmr_total_db -8.36095614e1
-metric 192000 multisine/+12/r1 null_nmr_max_db -6.62556076e1
-metric 192000 tone/1k/-20 nmr_total_db -1.17008493e2
-metric 192000 tone/1k/-20 nmr_max_db -1.08875035e2
+metric 192000 multisine/+12/r1 erb_max_db 1.35792263e-3
+metric 192000 multisine/+12/r1 erb_rms_db 3.42705135e-4
+metric 192000 multisine/+12/r1 null_nmr_total_db -8.36124446e1
+metric 192000 multisine/+12/r1 null_nmr_max_db -6.62539056e1
+metric 192000 tone/1k/-20 nmr_total_db -1.17003363e2
+metric 192000 tone/1k/-20 nmr_max_db -1.08636936e2
 metric 192000 tone/1k/-20 nmr_disturbed 0e0
-metric 192000 tone/1k/-20 erb_max_db 3.61468702e-6
-metric 192000 tone/1k/-20 erb_rms_db 3.61468702e-6
-metric 192000 tone/1k/-20 null_nmr_total_db -1.12959872e2
-metric 192000 tone/1k/-20 null_nmr_max_db -9.68455928e1
-metric 192000 tone/1k/-20 gedlee 3.98842281e-3
-metric 192000 tone/1k/+0 nmr_total_db -9.04937674e1
-metric 192000 tone/1k/+0 nmr_max_db -7.04021537e1
+metric 192000 tone/1k/-20 erb_max_db 3.85984372e-5
+metric 192000 tone/1k/-20 erb_rms_db 2.74015704e-5
+metric 192000 tone/1k/-20 null_nmr_total_db -1.12894417e2
+metric 192000 tone/1k/-20 null_nmr_max_db -9.67694686e1
+metric 192000 tone/1k/-20 gedlee 4.01335348e-3
+metric 192000 tone/1k/+0 nmr_total_db -9.02542628e1
+metric 192000 tone/1k/+0 nmr_max_db -7.01507429e1
 metric 192000 tone/1k/+0 nmr_disturbed 0e0
-metric 192000 tone/1k/+0 erb_max_db 3.8704633e-5
-metric 192000 tone/1k/+0 erb_rms_db 2.74774826e-5
-metric 192000 tone/1k/+0 null_nmr_total_db -8.37414839e1
-metric 192000 tone/1k/+0 null_nmr_max_db -6.95371037e1
-metric 192000 tone/1k/+0 gedlee 3.99737857e-2
-metric 192000 tone/1k/+12 nmr_total_db -6.79551888e1
-metric 192000 tone/1k/+12 nmr_max_db -5.11418985e1
+metric 192000 tone/1k/+0 erb_max_db 3.91109756e-5
+metric 192000 tone/1k/+0 erb_rms_db 2.77558855e-5
+metric 192000 tone/1k/+0 null_nmr_total_db -8.34955356e1
+metric 192000 tone/1k/+0 null_nmr_max_db -6.92898805e1
+metric 192000 tone/1k/+0 gedlee 4.02241137e-2
+metric 192000 tone/1k/+12 nmr_total_db -6.80676548e1
+metric 192000 tone/1k/+12 nmr_max_db -5.11445476e1
 metric 192000 tone/1k/+12 nmr_disturbed 0e0
-metric 192000 tone/1k/+12 erb_max_db 6.74392955e-5
-metric 192000 tone/1k/+12 erb_rms_db 4.49003738e-5
-metric 192000 tone/1k/+12 null_nmr_total_db -6.23202484e1
-metric 192000 tone/1k/+12 null_nmr_max_db -5.0189868e1
-metric 192000 tone/1k/+12 gedlee 1.64628889e-1
-metric 192000 burst/+20 nmr_total_db -8.13052053e1
-metric 192000 burst/+20 nmr_max_db -6.20735483e1
+metric 192000 tone/1k/+12 erb_max_db 6.80876154e-5
+metric 192000 tone/1k/+12 erb_rms_db 4.53798969e-5
+metric 192000 tone/1k/+12 null_nmr_total_db -6.20699427e1
+metric 192000 tone/1k/+12 null_nmr_max_db -4.99408546e1
+metric 192000 tone/1k/+12 gedlee 1.65691087e-1
+metric 192000 burst/+20 nmr_total_db -8.13077648e1
+metric 192000 burst/+20 nmr_max_db -6.20761565e1
 metric 192000 burst/+20 nmr_disturbed 0e0
-metric 192000 burst/+20 erb_max_db 1.24012318e-3
-metric 192000 burst/+20 erb_rms_db 1.24012318e-3
-metric 192000 alignment null_gain_db -3.12845708e-5
-metric 192000 alignment null_delay_s -5.84286586e-11
-metric 192000 multisine/-40/r1 nmr_total_db -8.74190231e1
-metric 192000 multisine/-40/r1 nmr_max_db -7.0817432e1
+metric 192000 burst/+20 erb_max_db 1.23980038e-3
+metric 192000 burst/+20 erb_rms_db 1.23980038e-3
+metric 192000 alignment null_gain_db -3.13569402e-5
+metric 192000 alignment null_delay_s -5.85371098e-11
+metric 192000 multisine/-40/r1 nmr_total_db -8.74206586e1
+metric 192000 multisine/-40/r1 nmr_max_db -7.08209522e1
 metric 192000 multisine/-40/r1 nmr_disturbed 0e0
-metric 192000 multisine/-40/r1 erb_max_db 9.68531806e-4
-metric 192000 multisine/-40/r1 erb_rms_db 2.48915486e-4
-metric 192000 multisine/-40/r1 null_nmr_total_db -8.81070497e1
-metric 192000 multisine/-40/r1 null_nmr_max_db -7.12738942e1
-metric 192000 multisine/-40/r1 rnonlin 9.8623033e-1
-metric 192000 multisine/+0/r1 nmr_total_db -8.14443943e1
-metric 192000 multisine/+0/r1 nmr_max_db -6.40764574e1
+metric 192000 multisine/-40/r1 erb_max_db 9.68579176e-4
+metric 192000 multisine/-40/r1 erb_rms_db 2.48940285e-4
+metric 192000 multisine/-40/r1 null_nmr_total_db -8.81103099e1
+metric 192000 multisine/-40/r1 null_nmr_max_db -7.12785189e1
+metric 192000 multisine/-40/r1 rnonlin 9.86230025e-1
+metric 192000 multisine/+0/r1 nmr_total_db -8.14455969e1
+metric 192000 multisine/+0/r1 nmr_max_db -6.40779215e1
 metric 192000 multisine/+0/r1 nmr_disturbed 0e0
-metric 192000 multisine/+0/r1 erb_max_db 9.67726602e-4
-metric 192000 multisine/+0/r1 erb_rms_db 2.41082512e-4
-metric 192000 multisine/+0/r1 null_nmr_total_db -8.19255919e1
-metric 192000 multisine/+0/r1 null_nmr_max_db -6.43618674e1
-metric 192000 multisine/+0/r1 rnonlin 9.86248493e-1
-metric 192000 multisine/+12/r1 nmr_total_db -8.31307308e1
-metric 192000 multisine/+12/r1 nmr_max_db -6.59628886e1
+metric 192000 multisine/+0/r1 erb_max_db 9.67483306e-4
+metric 192000 multisine/+0/r1 erb_rms_db 2.410813e-4
+metric 192000 multisine/+0/r1 null_nmr_total_db -8.19280292e1
+metric 192000 multisine/+0/r1 null_nmr_max_db -6.43640825e1
+metric 192000 multisine/+0/r1 rnonlin 9.86248337e-1
+metric 192000 multisine/+12/r1 nmr_total_db -8.31319277e1
+metric 192000 multisine/+12/r1 nmr_max_db -6.59605439e1
 metric 192000 multisine/+12/r1 nmr_disturbed 0e0
-metric 192000 multisine/+12/r1 erb_max_db 1.49720749e-3
-metric 192000 multisine/+12/r1 erb_rms_db 3.63209149e-4
-metric 192000 multisine/+12/r1 null_nmr_total_db -8.36095614e1
-metric 192000 multisine/+12/r1 null_nmr_max_db -6.62556076e1
-metric 192000 multisine/+12/r1 rnonlin 9.86286825e-1
-metric 192000 tone/1k/-20 nmr_total_db -1.17008493e2
-metric 192000 tone/1k/-20 nmr_max_db -1.08875035e2
+metric 192000 multisine/+12/r1 erb_max_db 1.35792263e-3
+metric 192000 multisine/+12/r1 erb_rms_db 3.42705135e-4
+metric 192000 multisine/+12/r1 null_nmr_total_db -8.36124446e1
+metric 192000 multisine/+12/r1 null_nmr_max_db -6.62539056e1
+metric 192000 multisine/+12/r1 rnonlin 9.86284907e-1
+metric 192000 tone/1k/-20 nmr_total_db -1.17003363e2
+metric 192000 tone/1k/-20 nmr_max_db -1.08636936e2
 metric 192000 tone/1k/-20 nmr_disturbed 0e0
-metric 192000 tone/1k/-20 erb_max_db 3.61468702e-6
-metric 192000 tone/1k/-20 erb_rms_db 3.61468702e-6
-metric 192000 tone/1k/-20 null_nmr_total_db -1.12959872e2
-metric 192000 tone/1k/-20 null_nmr_max_db -9.68455928e1
-metric 192000 tone/1k/-20 gedlee 3.98842281e-3
-metric 192000 tone/1k/+0 nmr_total_db -9.04937674e1
-metric 192000 tone/1k/+0 nmr_max_db -7.04021537e1
+metric 192000 tone/1k/-20 erb_max_db 3.85984372e-5
+metric 192000 tone/1k/-20 erb_rms_db 2.74015704e-5
+metric 192000 tone/1k/-20 null_nmr_total_db -1.12894417e2
+metric 192000 tone/1k/-20 null_nmr_max_db -9.67694686e1
+metric 192000 tone/1k/-20 gedlee 4.01335348e-3
+metric 192000 tone/1k/+0 nmr_total_db -9.02542628e1
+metric 192000 tone/1k/+0 nmr_max_db -7.01507429e1
 metric 192000 tone/1k/+0 nmr_disturbed 0e0
-metric 192000 tone/1k/+0 erb_max_db 3.8704633e-5
-metric 192000 tone/1k/+0 erb_rms_db 2.74774826e-5
-metric 192000 tone/1k/+0 null_nmr_total_db -8.37414839e1
-metric 192000 tone/1k/+0 null_nmr_max_db -6.95371037e1
-metric 192000 tone/1k/+0 gedlee 3.99737857e-2
-metric 192000 tone/1k/+12 nmr_total_db -6.79551888e1
-metric 192000 tone/1k/+12 nmr_max_db -5.11418985e1
+metric 192000 tone/1k/+0 erb_max_db 3.91109756e-5
+metric 192000 tone/1k/+0 erb_rms_db 2.77558855e-5
+metric 192000 tone/1k/+0 null_nmr_total_db -8.34955356e1
+metric 192000 tone/1k/+0 null_nmr_max_db -6.92898805e1
+metric 192000 tone/1k/+0 gedlee 4.02241137e-2
+metric 192000 tone/1k/+12 nmr_total_db -6.80676548e1
+metric 192000 tone/1k/+12 nmr_max_db -5.11445476e1
 metric 192000 tone/1k/+12 nmr_disturbed 0e0
-metric 192000 tone/1k/+12 erb_max_db 6.74392955e-5
-metric 192000 tone/1k/+12 erb_rms_db 4.49003738e-5
-metric 192000 tone/1k/+12 null_nmr_total_db -6.23202484e1
-metric 192000 tone/1k/+12 null_nmr_max_db -5.0189868e1
-metric 192000 tone/1k/+12 gedlee 1.64628889e-1
-metric 192000 burst/+20 nmr_total_db -8.13052053e1
-metric 192000 burst/+20 nmr_max_db -6.20735483e1
+metric 192000 tone/1k/+12 erb_max_db 6.80876154e-5
+metric 192000 tone/1k/+12 erb_rms_db 4.53798969e-5
+metric 192000 tone/1k/+12 null_nmr_total_db -6.20699427e1
+metric 192000 tone/1k/+12 null_nmr_max_db -4.99408546e1
+metric 192000 tone/1k/+12 gedlee 1.65691087e-1
+metric 192000 burst/+20 nmr_total_db -8.13077648e1
+metric 192000 burst/+20 nmr_max_db -6.20761565e1
 metric 192000 burst/+20 nmr_disturbed 0e0
-metric 192000 burst/+20 erb_max_db 1.24012318e-3
-metric 192000 burst/+20 erb_rms_db 1.24012318e-3
-plot response 192000 2e1 3.50987616e1
-plot response 192000 1e2 3.56561436e1
-plot response 192000 1.8e2 3.56742001e1
-plot response 192000 2.6e2 3.56784159e1
-plot response 192000 3.4e2 3.56800289e1
-plot response 192000 4.2e2 3.56808123e1
-plot response 192000 5e2 3.56812509e1
-plot response 192000 5.8e2 3.56815209e1
-plot response 192000 6.6e2 3.56816988e1
-plot response 192000 7.4e2 3.56818223e1
-plot response 192000 8.2e2 3.56819114e1
-plot response 192000 9e2 3.56819778e1
-plot response 192000 9.8e2 3.56820286e1
-plot response 192000 1.06e3 3.56820684e1
-plot response 192000 1.14e3 3.56821001e1
-plot response 192000 1.22e3 3.56821257e1
-plot response 192000 1.3e3 3.56821468e1
-plot response 192000 1.38e3 3.56821643e1
-plot response 192000 1.46e3 3.5682179e1
-plot response 192000 1.62e3 3.56822022e1
-plot response 192000 2.02e3 3.56822379e1
-plot response 192000 2.5e3 3.56822603e1
-plot response 192000 3.22e3 3.5682277e1
-plot response 192000 4.02e3 3.56822861e1
-plot response 192000 5.06e3 3.56822921e1
-plot response 192000 6.42e3 3.5682296e1
-plot response 192000 8.1e3 3.56822984e1
-plot response 192000 1.018e4 3.56822998e1
-plot response 192000 1.29e4 3.56823008e1
-plot response 192000 1.626e4 3.56823014e1
-plot compression 192000 -2e1 3.56819492e1
-plot harmonics 192000 -2e1 2e0 -6.00252088e1
-plot harmonics 192000 -2e1 3e0 -1.14725921e2
-plot harmonics 192000 -2e1 4e0 -1.48523879e2
-plot harmonics 192000 -2e1 5e0 -1.50475059e2
-plot harmonics 192000 -2e1 6e0 -1.52053038e2
-plot harmonics 192000 -2e1 7e0 -1.53387426e2
-plot harmonics 192000 -2e1 8e0 -1.54542014e2
-plot harmonics 192000 -2e1 9e0 -1.55559112e2
-plot harmonics 192000 -2e1 1e1 -1.56467606e2
-plot harmonics 192000 -2e1 1.1e1 -1.57288099e2
-plot harmonics 192000 -2e1 1.2e1 -1.5803581e2
-plot harmonics 192000 -2e1 1.3e1 -1.58722283e2
-plot harmonics 192000 -2e1 1.4e1 -1.59356505e2
-plot harmonics 192000 -2e1 1.5e1 -1.59945589e2
-plot aliasing 192000 -2e1 -1.08875096e2
-plot compression 192000 0e0 3.56756947e1
-plot harmonics 192000 0e0 2e0 -4.00116683e1
-plot harmonics 192000 0e0 3e0 -7.49180598e1
-plot harmonics 192000 0e0 4e0 -1.20786497e2
-plot harmonics 192000 0e0 5e0 -1.32473863e2
-plot harmonics 192000 0e0 6e0 -1.3203149e2
-plot harmonics 192000 0e0 7e0 -1.33365814e2
-plot harmonics 192000 0e0 8e0 -1.34522524e2
-plot harmonics 192000 0e0 9e0 -1.3553982e2
-plot harmonics 192000 0e0 1e1 -1.36448343e2
-plot harmonics 192000 0e0 1.1e1 -1.37268921e2
-plot harmonics 192000 0e0 1.2e1 -1.38016694e2
-plot harmonics 192000 0e0 1.3e1 -1.38703218e2
-plot harmonics 192000 0e0 1.4e1 -1.39337478e2
-plot harmonics 192000 0e0 1.5e1 -1.39926594e2
-plot aliasing 192000 0e0 -8.88541814e1
-plot compression 192000 1.2e1 3.55790759e1
-plot harmonics 192000 1.2e1 2e0 -2.7810969e1
-plot harmonics 192000 1.2e1 3e0 -5.05410386e1
-plot harmonics 192000 1.2e1 4e0 -8.89186426e1
-plot harmonics 192000 1.2e1 5e0 -9.25410638e1
-plot harmonics 192000 1.2e1 6e0 -1.03406697e2
-plot harmonics 192000 1.2e1 7e0 -1.08060951e2
-plot harmonics 192000 1.2e1 8e0 -1.15344395e2
-plot harmonics 192000 1.2e1 9e0 -1.45029834e2
-plot harmonics 192000 1.2e1 1e1 -1.2292371e2
-plot harmonics 192000 1.2e1 1.1e1 -1.23340547e2
-plot harmonics 192000 1.2e1 1.2e1 -1.25641167e2
-plot harmonics 192000 1.2e1 1.3e1 -1.26507428e2
-plot harmonics 192000 1.2e1 1.4e1 -1.26901962e2
-plot harmonics 192000 1.2e1 1.5e1 -1.27479656e2
-plot aliasing 192000 1.2e1 -7.64957255e1
-plot response 192000 2e1 3.50987616e1
-plot response 192000 1e2 3.56561436e1
-plot response 192000 1.8e2 3.56742002e1
-plot response 192000 2.6e2 3.56784159e1
-plot response 192000 3.4e2 3.5680029e1
-plot response 192000 4.2e2 3.56808123e1
-plot response 192000 5e2 3.56812509e1
-plot response 192000 5.8e2 3.56815209e1
-plot response 192000 6.6e2 3.56816989e1
-plot response 192000 7.4e2 3.56818223e1
-plot response 192000 8.2e2 3.56819114e1
-plot response 192000 9e2 3.56819778e1
-plot response 192000 9.8e2 3.56820287e1
-plot response 192000 1.06e3 3.56820684e1
-plot response 192000 1.14e3 3.56821001e1
-plot response 192000 1.22e3 3.56821258e1
-plot response 192000 1.3e3 3.56821468e1
-plot response 192000 1.38e3 3.56821644e1
-plot response 192000 1.46e3 3.56821791e1
-plot response 192000 1.62e3 3.56822022e1
-plot response 192000 2.02e3 3.5682238e1
-plot response 192000 2.5e3 3.56822604e1
-plot response 192000 3.22e3 3.56822771e1
-plot response 192000 4.02e3 3.56822862e1
-plot response 192000 5.06e3 3.56822922e1
-plot response 192000 6.42e3 3.5682296e1
-plot response 192000 8.1e3 3.56822984e1
-plot response 192000 1.018e4 3.56822999e1
-plot response 192000 1.29e4 3.56823008e1
-plot response 192000 1.626e4 3.56823014e1
-plot compression 192000 -2e1 3.56819492e1
-plot harmonics 192000 -2e1 2e0 -6.00252088e1
-plot harmonics 192000 -2e1 3e0 -1.14725921e2
-plot harmonics 192000 -2e1 4e0 -1.48523879e2
-plot harmonics 192000 -2e1 5e0 -1.50475059e2
-plot harmonics 192000 -2e1 6e0 -1.52053038e2
-plot harmonics 192000 -2e1 7e0 -1.53387426e2
-plot harmonics 192000 -2e1 8e0 -1.54542014e2
-plot harmonics 192000 -2e1 9e0 -1.55559112e2
-plot harmonics 192000 -2e1 1e1 -1.56467606e2
-plot harmonics 192000 -2e1 1.1e1 -1.57288099e2
-plot harmonics 192000 -2e1 1.2e1 -1.5803581e2
-plot harmonics 192000 -2e1 1.3e1 -1.58722283e2
-plot harmonics 192000 -2e1 1.4e1 -1.59356505e2
-plot harmonics 192000 -2e1 1.5e1 -1.59945589e2
-plot aliasing 192000 -2e1 -1.08875096e2
-plot anmr 192000 -2e1 -5.67050136e1
-plot compression 192000 0e0 3.56756947e1
-plot harmonics 192000 0e0 2e0 -4.00116683e1
-plot harmonics 192000 0e0 3e0 -7.49180598e1
-plot harmonics 192000 0e0 4e0 -1.20786497e2
-plot harmonics 192000 0e0 5e0 -1.32473863e2
-plot harmonics 192000 0e0 6e0 -1.3203149e2
-plot harmonics 192000 0e0 7e0 -1.33365814e2
-plot harmonics 192000 0e0 8e0 -1.34522524e2
-plot harmonics 192000 0e0 9e0 -1.3553982e2
-plot harmonics 192000 0e0 1e1 -1.36448343e2
-plot harmonics 192000 0e0 1.1e1 -1.37268921e2
-plot harmonics 192000 0e0 1.2e1 -1.38016694e2
-plot harmonics 192000 0e0 1.3e1 -1.38703218e2
-plot harmonics 192000 0e0 1.4e1 -1.39337478e2
-plot harmonics 192000 0e0 1.5e1 -1.39926594e2
-plot aliasing 192000 0e0 -8.88541814e1
-plot anmr 192000 0e0 -3.67360668e1
-plot compression 192000 1.2e1 3.55790759e1
-plot harmonics 192000 1.2e1 2e0 -2.7810969e1
-plot harmonics 192000 1.2e1 3e0 -5.05410386e1
-plot harmonics 192000 1.2e1 4e0 -8.89186426e1
-plot harmonics 192000 1.2e1 5e0 -9.25410638e1
-plot harmonics 192000 1.2e1 6e0 -1.03406697e2
-plot harmonics 192000 1.2e1 7e0 -1.08060951e2
-plot harmonics 192000 1.2e1 8e0 -1.15344395e2
-plot harmonics 192000 1.2e1 9e0 -1.45029834e2
-plot harmonics 192000 1.2e1 1e1 -1.2292371e2
-plot harmonics 192000 1.2e1 1.1e1 -1.23340547e2
-plot harmonics 192000 1.2e1 1.2e1 -1.25641167e2
-plot harmonics 192000 1.2e1 1.3e1 -1.26507428e2
-plot harmonics 192000 1.2e1 1.4e1 -1.26901962e2
-plot harmonics 192000 1.2e1 1.5e1 -1.27479656e2
-plot aliasing 192000 1.2e1 -7.64957255e1
-plot anmr 192000 1.2e1 -2.46183518e1
-plot response reference 2e1 3.50987616e1
-plot response reference 1e2 3.56561436e1
-plot response reference 1.8e2 3.56742001e1
-plot response reference 2.6e2 3.56784159e1
-plot response reference 3.4e2 3.56800289e1
-plot response reference 4.2e2 3.56808123e1
-plot response reference 5e2 3.56812509e1
-plot response reference 5.8e2 3.56815209e1
-plot response reference 6.6e2 3.56816988e1
-plot response reference 7.4e2 3.56818223e1
-plot response reference 8.2e2 3.56819114e1
-plot response reference 9e2 3.56819778e1
-plot response reference 9.8e2 3.56820286e1
-plot response reference 1.06e3 3.56820684e1
-plot response reference 1.14e3 3.56821001e1
-plot response reference 1.22e3 3.56821257e1
-plot response reference 1.3e3 3.56821468e1
-plot response reference 1.38e3 3.56821643e1
-plot response reference 1.46e3 3.5682179e1
-plot response reference 1.62e3 3.56822022e1
-plot response reference 2.02e3 3.56822379e1
-plot response reference 2.5e3 3.56822603e1
-plot response reference 3.22e3 3.5682277e1
-plot response reference 4.02e3 3.56822861e1
-plot response reference 5.06e3 3.56822921e1
-plot response reference 6.42e3 3.5682296e1
-plot response reference 8.1e3 3.56822984e1
-plot response reference 1.018e4 3.56822998e1
-plot response reference 1.29e4 3.56823008e1
-plot response reference 1.626e4 3.56823014e1
-plot compression reference -2e1 3.56819456e1
-plot harmonics reference -2e1 2e0 -6.00251665e1
-plot harmonics reference -2e1 3e0 -1.14725773e2
-plot harmonics reference -2e1 4e0 -1.48539532e2
-plot harmonics reference -2e1 5e0 -1.50482931e2
-plot harmonics reference -2e1 6e0 -1.52064774e2
-plot harmonics reference -2e1 7e0 -1.53403709e2
-plot harmonics reference -2e1 8e0 -1.54563544e2
-plot harmonics reference -2e1 9e0 -1.55586573e2
-plot harmonics reference -2e1 1e1 -1.56501692e2
-plot harmonics reference -2e1 1.1e1 -1.57329528e2
-plot harmonics reference -2e1 1.2e1 -1.58085276e2
-plot harmonics reference -2e1 1.3e1 -1.58780486e2
-plot harmonics reference -2e1 1.4e1 -1.59424136e2
-plot harmonics reference -2e1 1.5e1 -1.6e2
-plot compression reference 0e0 3.56756912e1
-plot harmonics reference 0e0 2e0 -4.00116261e1
-plot harmonics reference 0e0 3e0 -7.49179839e1
-plot harmonics reference 0e0 4e0 -1.20975374e2
-plot harmonics reference 0e0 5e0 -1.32482738e2
-plot harmonics reference 0e0 6e0 -1.32042371e2
-plot harmonics reference 0e0 7e0 -1.33378829e2
-plot harmonics reference 0e0 8e0 -1.34540732e2
-plot harmonics reference 0e0 9e0 -1.35564046e2
-plot harmonics reference 0e0 1e1 -1.36479212e2
-plot harmonics reference 0e0 1.1e1 -1.37307128e2
-plot harmonics reference 0e0 1.2e1 -1.38062939e2
-plot harmonics reference 0e0 1.3e1 -1.387582e2
-plot harmonics reference 0e0 1.4e1 -1.394019e2
-plot harmonics reference 0e0 1.5e1 -1.40001158e2
-plot compression reference 1.2e1 3.5579073e1
-plot harmonics reference 1.2e1 2e0 -2.78109274e1
-plot harmonics reference 1.2e1 3e0 -5.05409682e1
-plot harmonics reference 1.2e1 4e0 -8.89405771e1
-plot harmonics reference 1.2e1 5e0 -9.25410166e1
-plot harmonics reference 1.2e1 6e0 -1.03523319e2
-plot harmonics reference 1.2e1 7e0 -1.08059787e2
-plot harmonics reference 1.2e1 8e0 -1.1493676e2
-plot harmonics reference 1.2e1 9e0 -1.48564631e2
-plot harmonics reference 1.2e1 1e1 -1.23405057e2
-plot harmonics reference 1.2e1 1.1e1 -1.23355193e2
-plot harmonics reference 1.2e1 1.2e1 -1.25560612e2
-plot harmonics reference 1.2e1 1.3e1 -1.2654978e2
-plot harmonics reference 1.2e1 1.4e1 -1.26966546e2
-plot harmonics reference 1.2e1 1.5e1 -1.2753863e2
+metric 192000 burst/+20 erb_max_db 1.23980038e-3
+metric 192000 burst/+20 erb_rms_db 1.23980038e-3
+plot response 192000 2e1 3.50885708e1
+plot response 192000 1e2 3.56417254e1
+plot response 192000 1.8e2 3.56596175e1
+plot response 192000 2.6e2 3.56637946e1
+plot response 192000 3.4e2 3.56653929e1
+plot response 192000 4.2e2 3.56661691e1
+plot response 192000 5e2 3.56666036e1
+plot response 192000 5.8e2 3.56668712e1
+plot response 192000 6.6e2 3.56670475e1
+plot response 192000 7.4e2 3.56671698e1
+plot response 192000 8.2e2 3.56672581e1
+plot response 192000 9e2 3.56673239e1
+plot response 192000 9.8e2 3.56673742e1
+plot response 192000 1.06e3 3.56674136e1
+plot response 192000 1.14e3 3.5667445e1
+plot response 192000 1.22e3 3.56674704e1
+plot response 192000 1.3e3 3.56674913e1
+plot response 192000 1.38e3 3.56675087e1
+plot response 192000 1.46e3 3.56675233e1
+plot response 192000 1.62e3 3.56675462e1
+plot response 192000 2.02e3 3.56675816e1
+plot response 192000 2.5e3 3.56676038e1
+plot response 192000 3.22e3 3.56676203e1
+plot response 192000 4.02e3 3.56676293e1
+plot response 192000 5.06e3 3.56676353e1
+plot response 192000 6.42e3 3.56676391e1
+plot response 192000 8.1e3 3.56676415e1
+plot response 192000 1.018e4 3.56676429e1
+plot response 192000 1.29e4 3.56676439e1
+plot response 192000 1.626e4 3.56676445e1
+plot compression 192000 -2e1 3.56672946e1
+plot harmonics 192000 -2e1 2e0 -5.99710839e1
+plot harmonics 192000 -2e1 3e0 -1.14691033e2
+plot harmonics 192000 -2e1 4e0 -1.48270114e2
+plot harmonics 192000 -2e1 5e0 -1.50221206e2
+plot harmonics 192000 -2e1 6e0 -1.51799246e2
+plot harmonics 192000 -2e1 7e0 -1.53133632e2
+plot harmonics 192000 -2e1 8e0 -1.54288219e2
+plot harmonics 192000 -2e1 9e0 -1.55305318e2
+plot harmonics 192000 -2e1 1e1 -1.5621381e2
+plot harmonics 192000 -2e1 1.1e1 -1.57034307e2
+plot harmonics 192000 -2e1 1.2e1 -1.57782014e2
+plot harmonics 192000 -2e1 1.3e1 -1.5846849e2
+plot harmonics 192000 -2e1 1.4e1 -1.5910271e2
+plot harmonics 192000 -2e1 1.5e1 -1.59691797e2
+plot aliasing 192000 -2e1 -1.08620207e2
+plot compression 192000 0e0 3.56609976e1
+plot harmonics 192000 0e0 2e0 -3.99573901e1
+plot harmonics 192000 0e0 3e0 -7.4888737e1
+plot harmonics 192000 0e0 4e0 -1.20503696e2
+plot harmonics 192000 0e0 5e0 -1.32144173e2
+plot harmonics 192000 0e0 6e0 -1.31777591e2
+plot harmonics 192000 0e0 7e0 -1.3311221e2
+plot harmonics 192000 0e0 8e0 -1.3426853e2
+plot harmonics 192000 0e0 9e0 -1.35285821e2
+plot harmonics 192000 0e0 1e1 -1.36194355e2
+plot harmonics 192000 0e0 1.1e1 -1.37014934e2
+plot harmonics 192000 0e0 1.2e1 -1.37762707e2
+plot harmonics 192000 0e0 1.3e1 -1.38449231e2
+plot harmonics 192000 0e0 1.4e1 -1.39083491e2
+plot harmonics 192000 0e0 1.5e1 -1.39672608e2
+plot aliasing 192000 0e0 -8.85990715e1
+plot compression 192000 1.2e1 3.55637422e1
+plot harmonics 192000 1.2e1 2e0 -2.77537932e1
+plot harmonics 192000 1.2e1 3e0 -5.05189105e1
+plot harmonics 192000 1.2e1 4e0 -8.8159914e1
+plot harmonics 192000 1.2e1 5e0 -9.2969324e1
+plot harmonics 192000 1.2e1 6e0 -1.04163535e2
+plot harmonics 192000 1.2e1 7e0 -1.0873018e2
+plot harmonics 192000 1.2e1 8e0 -1.15991831e2
+plot harmonics 192000 1.2e1 9e0 -1.38970358e2
+plot harmonics 192000 1.2e1 1e1 -1.22866029e2
+plot harmonics 192000 1.2e1 1.1e1 -1.23255396e2
+plot harmonics 192000 1.2e1 1.2e1 -1.25381083e2
+plot harmonics 192000 1.2e1 1.3e1 -1.26223055e2
+plot harmonics 192000 1.2e1 1.4e1 -1.26646846e2
+plot harmonics 192000 1.2e1 1.5e1 -1.27225795e2
+plot aliasing 192000 1.2e1 -7.62377239e1
+plot response 192000 2e1 3.50885708e1
+plot response 192000 1e2 3.56417254e1
+plot response 192000 1.8e2 3.56596176e1
+plot response 192000 2.6e2 3.56637947e1
+plot response 192000 3.4e2 3.56653929e1
+plot response 192000 4.2e2 3.56661691e1
+plot response 192000 5e2 3.56666037e1
+plot response 192000 5.8e2 3.56668712e1
+plot response 192000 6.6e2 3.56670475e1
+plot response 192000 7.4e2 3.56671698e1
+plot response 192000 8.2e2 3.56672581e1
+plot response 192000 9e2 3.56673239e1
+plot response 192000 9.8e2 3.56673743e1
+plot response 192000 1.06e3 3.56674137e1
+plot response 192000 1.14e3 3.56674451e1
+plot response 192000 1.22e3 3.56674705e1
+plot response 192000 1.3e3 3.56674914e1
+plot response 192000 1.38e3 3.56675087e1
+plot response 192000 1.46e3 3.56675233e1
+plot response 192000 1.62e3 3.56675462e1
+plot response 192000 2.02e3 3.56675817e1
+plot response 192000 2.5e3 3.56676038e1
+plot response 192000 3.22e3 3.56676204e1
+plot response 192000 4.02e3 3.56676294e1
+plot response 192000 5.06e3 3.56676353e1
+plot response 192000 6.42e3 3.56676392e1
+plot response 192000 8.1e3 3.56676415e1
+plot response 192000 1.018e4 3.5667643e1
+plot response 192000 1.29e4 3.56676439e1
+plot response 192000 1.626e4 3.56676445e1
+plot compression 192000 -2e1 3.56672946e1
+plot harmonics 192000 -2e1 2e0 -5.99710839e1
+plot harmonics 192000 -2e1 3e0 -1.14691033e2
+plot harmonics 192000 -2e1 4e0 -1.48270114e2
+plot harmonics 192000 -2e1 5e0 -1.50221206e2
+plot harmonics 192000 -2e1 6e0 -1.51799246e2
+plot harmonics 192000 -2e1 7e0 -1.53133632e2
+plot harmonics 192000 -2e1 8e0 -1.54288219e2
+plot harmonics 192000 -2e1 9e0 -1.55305318e2
+plot harmonics 192000 -2e1 1e1 -1.5621381e2
+plot harmonics 192000 -2e1 1.1e1 -1.57034307e2
+plot harmonics 192000 -2e1 1.2e1 -1.57782014e2
+plot harmonics 192000 -2e1 1.3e1 -1.5846849e2
+plot harmonics 192000 -2e1 1.4e1 -1.5910271e2
+plot harmonics 192000 -2e1 1.5e1 -1.59691797e2
+plot aliasing 192000 -2e1 -1.08620207e2
+plot anmr 192000 -2e1 -5.64512169e1
+plot compression 192000 0e0 3.56609976e1
+plot harmonics 192000 0e0 2e0 -3.99573901e1
+plot harmonics 192000 0e0 3e0 -7.4888737e1
+plot harmonics 192000 0e0 4e0 -1.20503696e2
+plot harmonics 192000 0e0 5e0 -1.32144173e2
+plot harmonics 192000 0e0 6e0 -1.31777591e2
+plot harmonics 192000 0e0 7e0 -1.3311221e2
+plot harmonics 192000 0e0 8e0 -1.3426853e2
+plot harmonics 192000 0e0 9e0 -1.35285821e2
+plot harmonics 192000 0e0 1e1 -1.36194355e2
+plot harmonics 192000 0e0 1.1e1 -1.37014934e2
+plot harmonics 192000 0e0 1.2e1 -1.37762707e2
+plot harmonics 192000 0e0 1.3e1 -1.38449231e2
+plot harmonics 192000 0e0 1.4e1 -1.39083491e2
+plot harmonics 192000 0e0 1.5e1 -1.39672608e2
+plot aliasing 192000 0e0 -8.85990715e1
+plot anmr 192000 0e0 -3.64823972e1
+plot compression 192000 1.2e1 3.55637422e1
+plot harmonics 192000 1.2e1 2e0 -2.77537932e1
+plot harmonics 192000 1.2e1 3e0 -5.05189105e1
+plot harmonics 192000 1.2e1 4e0 -8.8159914e1
+plot harmonics 192000 1.2e1 5e0 -9.2969324e1
+plot harmonics 192000 1.2e1 6e0 -1.04163535e2
+plot harmonics 192000 1.2e1 7e0 -1.0873018e2
+plot harmonics 192000 1.2e1 8e0 -1.15991831e2
+plot harmonics 192000 1.2e1 9e0 -1.38970358e2
+plot harmonics 192000 1.2e1 1e1 -1.22866029e2
+plot harmonics 192000 1.2e1 1.1e1 -1.23255396e2
+plot harmonics 192000 1.2e1 1.2e1 -1.25381083e2
+plot harmonics 192000 1.2e1 1.3e1 -1.26223055e2
+plot harmonics 192000 1.2e1 1.4e1 -1.26646846e2
+plot harmonics 192000 1.2e1 1.5e1 -1.27225795e2
+plot aliasing 192000 1.2e1 -7.62377239e1
+plot anmr 192000 1.2e1 -2.43634339e1
+plot response reference 2e1 3.50885708e1
+plot response reference 1e2 3.56417254e1
+plot response reference 1.8e2 3.56596175e1
+plot response reference 2.6e2 3.56637946e1
+plot response reference 3.4e2 3.56653929e1
+plot response reference 4.2e2 3.56661691e1
+plot response reference 5e2 3.56666036e1
+plot response reference 5.8e2 3.56668712e1
+plot response reference 6.6e2 3.56670475e1
+plot response reference 7.4e2 3.56671698e1
+plot response reference 8.2e2 3.56672581e1
+plot response reference 9e2 3.56673239e1
+plot response reference 9.8e2 3.56673742e1
+plot response reference 1.06e3 3.56674136e1
+plot response reference 1.14e3 3.5667445e1
+plot response reference 1.22e3 3.56674704e1
+plot response reference 1.3e3 3.56674913e1
+plot response reference 1.38e3 3.56675087e1
+plot response reference 1.46e3 3.56675233e1
+plot response reference 1.62e3 3.56675462e1
+plot response reference 2.02e3 3.56675816e1
+plot response reference 2.5e3 3.56676038e1
+plot response reference 3.22e3 3.56676203e1
+plot response reference 4.02e3 3.56676293e1
+plot response reference 5.06e3 3.56676353e1
+plot response reference 6.42e3 3.56676391e1
+plot response reference 8.1e3 3.56676415e1
+plot response reference 1.018e4 3.56676429e1
+plot response reference 1.29e4 3.56676439e1
+plot response reference 1.626e4 3.56676445e1
+plot compression reference -2e1 3.56672911e1
+plot harmonics reference -2e1 2e0 -5.99710419e1
+plot harmonics reference -2e1 3e0 -1.14690884e2
+plot harmonics reference -2e1 4e0 -1.48285841e2
+plot harmonics reference -2e1 5e0 -1.50229113e2
+plot harmonics reference -2e1 6e0 -1.51811001e2
+plot harmonics reference -2e1 7e0 -1.53149941e2
+plot harmonics reference -2e1 8e0 -1.54309774e2
+plot harmonics reference -2e1 9e0 -1.55332809e2
+plot harmonics reference -2e1 1e1 -1.56247939e2
+plot harmonics reference -2e1 1.1e1 -1.57075765e2
+plot harmonics reference -2e1 1.2e1 -1.57831506e2
+plot harmonics reference -2e1 1.3e1 -1.58526723e2
+plot harmonics reference -2e1 1.4e1 -1.59170377e2
+plot harmonics reference -2e1 1.5e1 -1.59769601e2
+plot compression reference 0e0 3.56609943e1
+plot harmonics reference 0e0 2e0 -3.99573476e1
+plot harmonics reference 0e0 3e0 -7.48886611e1
+plot harmonics reference 0e0 4e0 -1.20692128e2
+plot harmonics reference 0e0 5e0 -1.3215281e2
+plot harmonics reference 0e0 6e0 -1.31788297e2
+plot harmonics reference 0e0 7e0 -1.33125191e2
+plot harmonics reference 0e0 8e0 -1.3428671e2
+plot harmonics reference 0e0 9e0 -1.35310012e2
+plot harmonics reference 0e0 1e1 -1.3622519e2
+plot harmonics reference 0e0 1.1e1 -1.37053106e2
+plot harmonics reference 0e0 1.2e1 -1.37808917e2
+plot harmonics reference 0e0 1.3e1 -1.38504179e2
+plot harmonics reference 0e0 1.4e1 -1.39147878e2
+plot harmonics reference 0e0 1.5e1 -1.39747137e2
+plot compression reference 1.2e1 3.55637393e1
+plot harmonics reference 1.2e1 2e0 -2.77537512e1
+plot harmonics reference 1.2e1 3e0 -5.05188396e1
+plot harmonics reference 1.2e1 4e0 -8.81806207e1
+plot harmonics reference 1.2e1 5e0 -9.29692947e1
+plot harmonics reference 1.2e1 6e0 -1.04294293e2
+plot harmonics reference 1.2e1 7e0 -1.08728931e2
+plot harmonics reference 1.2e1 8e0 -1.15553284e2
+plot harmonics reference 1.2e1 9e0 -1.39618755e2
+plot harmonics reference 1.2e1 1e1 -1.23307279e2
+plot harmonics reference 1.2e1 1.1e1 -1.23270725e2
+plot harmonics reference 1.2e1 1.2e1 -1.25313948e2
+plot harmonics reference 1.2e1 1.3e1 -1.26264942e2
+plot harmonics reference 1.2e1 1.4e1 -1.26709484e2
+plot harmonics reference 1.2e1 1.5e1 -1.27284673e2
 table 192000 oversampled
 # stave characterisation table v1: triode_stage_cathode
 # source: the model at 192000 Hz
 op b 3.000000000e2
 op char_x 0.000000000e0
-op g -5.457007137e-3
+op g -5.457006441e-3
 op in 0.000000000e0
-op k 1.492105469e0
-op p 2.055350942e2
-ac 2.000000000e1 -5.575562063e1 -1.123942671e1
-ac 1.000000000e2 -6.058727367e1 -2.684132057e0
-ac 1.800000000e2 -6.075440273e1 -1.499567793e0
-ac 2.600000000e2 -6.079352306e1 -1.039520837e0
-ac 3.400000000e2 -6.080850174e1 -7.953254679e-1
-ac 4.200000000e2 -6.081577798e1 -6.439913232e-1
-ac 5.000000000e2 -6.081985238e1 -5.410262864e-1
-ac 5.800000000e2 -6.082236101e1 -4.664410232e-1
-ac 6.600000000e2 -6.082401429e1 -4.099253347e-1
-ac 7.400000000e2 -6.082516109e1 -3.656230747e-1
-ac 8.200000000e2 -6.082598898e1 -3.299616466e-1
-ac 9.000000000e2 -6.082660611e1 -3.006379136e-1
-ac 9.800000000e2 -6.082707839e1 -2.761003943e-1
-ac 1.060000000e3 -6.082744784e1 -2.552657756e-1
-ac 1.140000000e3 -6.082774228e1 -2.373547198e-1
-ac 1.220000000e3 -6.082798072e1 -2.217922406e-1
-ac 1.300000000e3 -6.082817652e1 -2.081448472e-1
-ac 1.380000000e3 -6.082833927e1 -1.960795440e-1
-ac 1.460000000e3 -6.082847600e1 -1.853363050e-1
-ac 1.620000000e3 -6.082869121e1 -1.670326842e-1
-ac 2.020000000e3 -6.082902339e1 -1.339583899e-1
-ac 2.500000000e3 -6.082923124e1 -1.082391297e-1
-ac 3.220000000e3 -6.082938651e1 -8.403702680e-2
-ac 4.020000000e3 -6.082947097e1 -6.731343006e-2
-ac 5.060000000e3 -6.082952673e1 -5.347835816e-2
-ac 6.420000000e3 -6.082956288e1 -4.214966023e-2
-ac 8.100000000e3 -6.082958492e1 -3.340753304e-2
-ac 1.018000000e4 -6.082959858e1 -2.658164450e-2
-ac 1.290000000e4 -6.082960747e1 -2.097683886e-2
-ac 1.626000000e4 -6.082961291e1 -1.664214455e-2
-run burst/+20 steady 3.413460116e-5 thdn - floor -
-0 2.0553448e2 0.0000000e0
-2 -1.5707458e-7 3.2205633e-6
-23 -2.2150671e-3 1.1458000e0
+op k 1.499999854e0
+op p 2.060201273e2
+ac 2.000000000e1 -5.569055288e1 -1.122471092e1
+ac 1.000000000e2 -6.048697541e1 -2.675371580e0
+ac 1.800000000e2 -6.065254992e1 -1.494572323e0
+ac 2.600000000e2 -6.069130315e1 -1.036041494e0
+ac 3.400000000e2 -6.070614094e1 -7.926586536e-1
+ac 4.200000000e2 -6.071334867e1 -6.418300575e-1
+ac 5.000000000e2 -6.071738469e1 -5.392096865e-1
+ac 5.800000000e2 -6.071986968e1 -4.648743854e-1
+ac 6.600000000e2 -6.072150739e1 -4.085482428e-1
+ac 7.400000000e2 -6.072264338e1 -3.643946414e-1
+ac 8.200000000e2 -6.072346347e1 -3.288529196e-1
+ac 9.000000000e2 -6.072407478e1 -2.996276444e-1
+ac 9.800000000e2 -6.072454260e1 -2.751725287e-1
+ac 1.060000000e3 -6.072490857e1 -2.544078890e-1
+ac 1.140000000e3 -6.072520023e1 -2.365569998e-1
+ac 1.220000000e3 -6.072543643e1 -2.210468028e-1
+ac 1.300000000e3 -6.072563038e1 -2.074452614e-1
+ac 1.380000000e3 -6.072579159e1 -1.954204975e-1
+ac 1.460000000e3 -6.072592704e1 -1.847133576e-1
+ac 1.620000000e3 -6.072614022e1 -1.664712439e-1
+ac 2.020000000e3 -6.072646927e1 -1.335081030e-1
+ac 2.500000000e3 -6.072667516e1 -1.078752863e-1
+ac 3.220000000e3 -6.072682897e1 -8.375453290e-2
+ac 4.020000000e3 -6.072691263e1 -6.708715092e-2
+ac 5.060000000e3 -6.072696786e1 -5.329858545e-2
+ac 6.420000000e3 -6.072700367e1 -4.200796942e-2
+ac 8.100000000e3 -6.072702550e1 -3.329522958e-2
+ac 1.018000000e4 -6.072703903e1 -2.649228694e-2
+ac 1.290000000e4 -6.072704784e1 -2.090632249e-2
+ac 1.626000000e4 -6.072705323e1 -1.658619978e-2
+run burst/+20 steady 3.479027731e-5 thdn - floor -
+0 2.0601951e2 0.0000000e0
+2 -1.5925767e-7 3.2836853e-6
+23 -2.2076213e-3 1.1438682e0
 period 1
-0 2.0553449e2 0.0000000e0
-2 -8.9069858e-8 1.8262324e-6
-23 -2.2150617e-3 1.1457998e0
+0 2.0601953e2 0.0000000e0
+2 -9.0620174e-8 1.8684680e-6
+23 -2.2076158e-3 1.1438680e0
 period 2
-0 2.0157986e2 0.0000000e0
-2 -1.8390514e0 9.6644357e1
-23 -1.9507305e-3 7.3629756e-1
+0 2.0190556e2 0.0000000e0
+2 -1.8397245e0 9.6646799e1
+23 -1.7899881e-3 7.3746238e-1
 period 3
-0 2.0180251e2 0.0000000e0
-2 -1.8370136e0 9.6630791e1
-23 -1.7913053e-3 7.3462711e-1
+0 2.0215151e2 0.0000000e0
+2 -1.8373846e0 9.6629769e1
+23 -1.6338936e-3 7.3560475e-1
 period 4
-0 2.0194200e2 0.0000000e0
-2 -1.8356854e0 9.6621624e1
-23 -1.7086059e-3 7.3355594e-1
+0 2.0230606e2 0.0000000e0
+2 -1.8358515e0 9.6618247e1
+23 -1.5572440e-3 7.3440771e-1
 period 5
-0 2.0202937e2 0.0000000e0
-2 -1.8348333e0 9.6615620e1
-23 -1.6636417e-3 7.3287546e-1
+0 2.0240314e2 0.0000000e0
+2 -1.8348638e0 9.6610684e1
+23 -1.5176513e-3 7.3364418e-1
 period 6
-0 2.0208409e2 0.0000000e0
-2 -1.8342918e0 9.6611757e1
-23 -1.6381838e-3 7.3244560e-1
+0 2.0246411e2 0.0000000e0
+2 -1.8342337e0 9.6605806e1
+23 -1.4961798e-3 7.3316013e-1
 period 7
-0 2.0633539e2 0.0000000e0
-2 3.4980116e-3 -7.1998845e-2
-23 -1.9358306e-3 1.1363329e0
+0 2.0690510e2 0.0000000e0
+2 3.8202695e-3 -7.9109652e-2
+23 -1.9007883e-3 1.1334199e0
 period 8
-0 2.0598907e2 0.0000000e0
-2 1.9905513e-3 -4.0902248e-2
-23 -2.0564353e-3 1.1404274e0
+0 2.0652396e2 0.0000000e0
+2 2.1823134e-3 -4.5106605e-2
+23 -2.0326748e-3 1.1379177e0
 period 9
-0 2.0579241e2 0.0000000e0
-2 1.1309941e-3 -2.3217876e-2
-23 -2.1250176e-3 1.1427519e0
+0 2.0630673e2 0.0000000e0
+2 1.2445246e-3 -2.5696110e-2
+23 -2.1079559e-3 1.1404805e0
 period 10
-0 2.0568080e2 0.0000000e0
-2 6.4205557e-4 -1.3173530e-2
-23 -2.1639694e-3 1.1440710e0
+0 2.0618301e2 0.0000000e0
+2 7.0904482e-4 -1.4631113e-2
+23 -2.1508682e-3 1.1419398e0
 period 11
-0 2.0561748e2 0.0000000e0
-2 3.6431180e-4 -7.4725904e-3
-23 -2.1860771e-3 1.1448192e0
+0 2.0611258e2 0.0000000e0
+2 4.0374586e-4 -8.3284467e-3
+23 -2.1753107e-3 1.1427705e0
 period 12
-0 2.0558156e2 0.0000000e0
-2 2.0665890e-4 -4.2381613e-3
-23 -2.1986198e-3 1.1452436e0
+0 2.0607249e2 0.0000000e0
+2 2.2983101e-4 -4.7400245e-3
+23 -2.1892267e-3 1.1432434e0
 period 13
-0 2.0556120e2 0.0000000e0
-2 1.1721067e-4 -2.4035229e-3
-23 -2.2057342e-3 1.1454843e0
+0 2.0604967e2 0.0000000e0
+2 1.3080763e-4 -2.6974743e-3
+23 -2.1971478e-3 1.1435124e0
 period 14
-0 2.0554964e2 0.0000000e0
-2 6.6472457e-5 -1.3630096e-3
-23 -2.2097691e-3 1.1456208e0
+0 2.0603669e2 0.0000000e0
+2 7.4441362e-5 -1.5350106e-3
+23 -2.2016558e-3 1.1436656e0
 period 15
-0 2.0554309e2 0.0000000e0
-2 3.7695936e-5 -7.7292639e-4
-23 -2.2120573e-3 1.1456982e0
+0 2.0602930e2 0.0000000e0
+2 4.2361461e-5 -8.7347919e-4
+23 -2.2042213e-3 1.1437527e0
 period 16
-0 2.0553938e2 0.0000000e0
-2 2.1376421e-5 -4.3829942e-4
-23 -2.2133549e-3 1.1457421e0
+0 2.0602510e2 0.0000000e0
+2 2.4105357e-5 -4.9703435e-4
+23 -2.2056811e-3 1.1438023e0
 period 17
-0 2.0553727e2 0.0000000e0
-2 1.2121837e-5 -2.4854211e-4
-23 -2.2140908e-3 1.1457670e0
+0 2.0602271e2 0.0000000e0
+2 1.3716656e-5 -2.8282388e-4
+23 -2.2065118e-3 1.1438305e0
 period 18
-0 2.0553608e2 0.0000000e0
-2 6.8738164e-6 -1.4093764e-4
-23 -2.2145081e-3 1.1457811e0
+0 2.0602134e2 0.0000000e0
+2 7.8050983e-6 -1.6093236e-4
+23 -2.2069845e-3 1.1438465e0
 period 19
-0 2.0553540e2 0.0000000e0
-2 3.8978503e-6 -7.9919510e-5
-23 -2.2147447e-3 1.1457891e0
+0 2.0602057e2 0.0000000e0
+2 4.4412573e-6 -9.1573395e-5
+23 -2.2072535e-3 1.1438557e0
 period 20
-0 2.0553502e2 0.0000000e0
-2 2.2102994e-6 -4.5318755e-5
-23 -2.2148788e-3 1.1457936e0
+0 2.0602013e2 0.0000000e0
+2 2.5271559e-6 -5.2106810e-5
+23 -2.2074065e-3 1.1438609e0
 period 21
-0 2.0553480e2 0.0000000e0
-2 1.2533614e-6 -2.5698202e-5
-23 -2.2149549e-3 1.1457962e0
-run multisine/+0/r1 steady 1.387396202e-3 thdn - floor -
-0 2.0547789e2 0.0000000e0
-1 1.1303746e0 -1.5942552e0
-2 8.0194724e-4 2.9522982e-3
-3 3.0630638e-4 -3.5974467e-5
-5 2.0832456e0 3.6794882e-2
-6 -4.4006919e-3 5.4802733e-3
-7 1.2531769e-4 9.7235871e-5
-9 3.2754776e-1 2.0617786e0
-10 -1.0094486e-2 -3.5617989e-3
-11 1.0730589e-4 -1.9376488e-4
-13 -6.8160764e-1 -1.9740054e0
-14 5.8738813e-3 -5.4616847e-3
-15 -4.4757145e-5 -4.6099072e-4
-17 -6.9120598e-1 -1.9717739e0
-18 1.2730609e-2 8.1416578e-3
-19 -5.1088864e-5 3.5029508e-4
-21 2.0804883e0 1.9151495e-1
-22 -9.1293188e-3 1.6109565e-2
-23 1.6041458e-5 3.8680845e-4
-25 1.4423652e0 1.5116058e0
-26 -1.8334538e-2 1.2958592e-3
-27 -7.6040919e-4 1.5386955e-4
-29 3.1765291e-1 -2.0650822e0
-30 5.5440837e-3 -1.2935775e-2
-31 -1.6820930e-5 -5.8744012e-4
-33 -2.0341419e0 -4.7572385e-1
-34 1.3462151e-2 1.7971753e-3
-35 2.1612692e-4 -4.5441149e-4
-37 2.0066349e0 5.8246888e-1
-38 -7.5920681e-3 2.0453029e-2
-39 -7.0562079e-5 6.4560850e-4
-41 -1.1743513e0 -1.7282051e0
-42 -4.4702874e-4 1.0209516e-2
-43 -1.2069180e-4 7.9762448e-4
-45 1.2933027e0 -1.6413433e0
-46 9.1512517e-3 -9.2781095e-3
-47 -3.5988425e-4 -2.1743014e-4
-49 -5.7516294e-1 -2.0087701e0
-50 -5.8010275e-3 1.7055737e-2
-51 -1.6724369e-5 -2.8928510e-4
-53 4.0048874e-1 -2.0516613e0
-54 6.1221916e-3 1.7077728e-2
-55 3.8286409e-4 -1.5204887e-4
-57 -8.1065026e-1 -1.9258112e0
-58 1.0561057e-2 1.3532241e-2
-59 5.3113159e-4 -3.1128106e-4
-61 -1.8159004e0 1.0340934e0
-62 1.2427498e-2 -9.3513277e-3
-63 3.1900490e-4 -2.4117126e-4
-65 1.6577349e0 -1.2711821e0
-66 6.9211761e-4 2.0252207e-2
-67 1.2372084e-4 4.7494977e-4
-69 1.9131498e0 8.4079621e-1
-70 1.3059389e-2 1.6665134e-2
-71 4.8107020e-4 2.8814924e-4
-73 1.9028287e0 -8.6368122e-1
-74 -2.0608565e-2 -1.3222174e-3
-75 -1.2147937e-4 -4.1473173e-4
-81 1.3842234e0 1.5654758e0
-82 3.6074194e-4 5.8783233e-3
-83 6.6322869e-4 -2.7319214e-4
-101 -8.4604237e-1 1.9105569e0
-102 9.8666138e-4 4.2244497e-4
-103 -1.9653536e-4 -2.2002636e-5
-125 -1.0259671e0 1.8198879e0
-126 1.1184061e-3 -5.9073695e-4
-127 1.8020694e-4 -8.9448718e-4
-161 -5.0852491e-2 -2.0886141e0
-162 1.2605964e-2 2.4612649e-3
-163 1.2499375e-4 -1.0649281e-4
-201 -1.4614089e0 1.4929324e0
-202 7.4939265e-3 -8.6342307e-3
-203 1.4830519e-4 2.5991899e-4
-253 -2.0327630e0 -4.8192483e-1
-254 1.0512275e-3 -1.0998766e-2
-255 3.4258549e-4 1.0590863e-4
-321 -6.2071325e-1 1.9948732e0
-322 5.5598282e-3 -1.2643998e-3
-323 -4.4192530e-4 -4.2234227e-4
-405 2.0438604e-1 -2.0792592e0
-406 5.3879347e-3 4.6759261e-3
-407 -9.9563689e-5 4.9938193e-4
-509 2.0354403e0 -4.7029557e-1
-510 -2.7093982e-3 6.6038807e-3
-511 -8.2683931e-5 -1.4233062e-4
-645 -5.6760473e-1 2.0107700e0
-646 -4.4795541e-3 -5.5532613e-3
-647 -1.6236680e-4 1.9810863e-4
-813 2.9088167e-2 2.0890877e0
-814 -5.8788111e-3 -4.0465684e-3
-815 1.3517450e-4 -7.0514837e-5
-run multisine/+12/r1 steady 1.814634709e-4 thdn - floor -
-0 2.0464655e2 0.0000000e0
-1 4.3069931e0 -6.2509292e0
-2 3.4180246e-2 3.7960717e-2
-3 2.6124581e-2 1.5116637e-2
-5 8.1706547e0 1.3747292e-1
-6 -8.9624400e-2 8.7584132e-2
-7 2.0411551e-2 -1.9057652e-2
-9 1.2907837e0 7.9997998e0
-10 -1.6967522e-1 -1.6158666e-2
-11 1.5947203e-2 -1.5737769e-2
-13 -2.6287246e0 -7.6487063e0
-14 7.4385058e-2 -1.2287458e-1
-15 -3.2582359e-3 -2.7925713e-2
-17 -2.7158953e0 -7.6957379e0
-18 1.8109250e-1 8.2401566e-2
-19 1.6552735e-2 7.4747942e-2
-21 8.0981890e0 8.0470144e-1
-22 -1.1232374e-1 2.2665378e-1
-23 -2.4121135e-2 2.6940750e-2
-25 5.6355329e0 5.8391838e0
-26 -2.4450694e-1 4.7047987e-2
-27 -1.1671780e-1 2.4379937e-2
-29 1.2185011e0 -8.0349587e0
-30 9.2979768e-2 -2.1631536e-1
-31 1.9281316e-2 -6.2815049e-2
-33 -7.8569295e0 -1.8508286e0
-34 1.5268211e-1 4.1511240e-2
-35 4.7353147e-2 -5.8799118e-2
-37 7.8091765e0 2.2704098e0
-38 -8.8172347e-2 3.1048875e-1
-39 -1.1834265e-2 7.6190741e-2
-41 -4.5500733e0 -6.6951524e0
-42 -2.0493593e-2 1.1074085e-1
-43 -1.9465947e-2 1.0751837e-1
-45 5.0504688e0 -6.3958607e0
-46 1.5617086e-1 -1.3591511e-1
-47 -4.1832259e-2 -3.6282084e-2
-49 -2.3040851e0 -7.8081531e0
-50 -7.6008412e-2 2.5380033e-1
-51 -2.5433655e-2 -4.1487498e-2
-53 1.4790906e0 -8.1234095e0
-54 1.1405337e-1 2.9257247e-1
-55 3.5964868e-2 -2.1899777e-2
-57 -3.1319440e0 -7.4877366e0
-58 1.3330495e-1 1.9371201e-1
-59 7.9117929e-2 -2.9136428e-2
-61 -7.0529895e0 4.0276251e0
-62 1.4533785e-1 -1.1561188e-1
-63 5.1632130e-2 -4.3402425e-2
-65 6.3973654e0 -4.8837694e0
-66 4.9156647e-2 2.5138044e-1
-67 -7.6353233e-5 8.5547968e-2
-69 7.4769099e0 3.3589239e0
-70 1.8422993e-1 2.3115666e-1
-71 7.1540919e-2 4.1071248e-2
-73 7.4028290e0 -3.3995354e0
-74 -2.7579466e-1 1.0350387e-2
-75 -4.3773365e-2 -6.3233164e-2
-81 5.4023878e0 6.1123911e0
-82 -7.8677516e-3 1.0470166e-1
-83 8.8415886e-2 -3.3349290e-2
-101 -3.3516262e0 7.4036378e0
-102 5.0100960e-2 3.1713651e-2
-103 -4.7758133e-2 -1.0732879e-2
-125 -3.9849487e0 7.0350893e0
-126 1.8641394e-2 5.6623654e-2
-127 8.6473750e-3 -1.4548131e-1
-161 -1.3433950e-1 -8.0637546e0
-162 1.6664017e-1 1.5772216e-2
-163 2.3585226e-2 -2.6210803e-2
-201 -5.6731342e0 5.7374574e0
-202 9.9927559e-2 -9.1041625e-2
-203 3.0571693e-2 9.5334200e-3
-253 -7.8433105e0 -1.8721831e0
-254 -5.7061041e-2 -1.6286061e-1
-255 8.9233008e-2 -1.4182064e-3
-321 -2.3807461e0 7.7023968e0
-322 8.2195342e-2 3.7071734e-2
-323 -6.6749341e-2 -5.6662102e-2
-405 7.6335723e-1 -8.0613865e0
-406 1.0068627e-1 5.1504284e-2
-407 -2.1564590e-2 5.5545251e-2
-509 7.8491255e0 -1.7822635e0
-510 -1.3725384e-2 7.5425081e-2
-511 3.9623484e-3 -5.4829496e-4
-645 -2.1678449e0 7.7908337e0
-646 -8.0527381e-2 -5.8925476e-2
-647 -2.8393072e-2 1.7981899e-2
-813 1.1949325e-1 8.0909093e0
-814 -8.8888948e-2 -2.3605574e-2
-815 1.4707942e-2 -2.2458784e-2
-run multisine/-40/r1 steady 1.796112413e-3 thdn - floor -
-0 2.0553510e2 0.0000000e0
-1 1.1322066e-2 -1.5957624e-2
-2 7.7098363e-7 -2.7568827e-6
-3 3.1942960e-7 -2.1069042e-6
-5 2.0853569e-2 3.6929989e-4
-6 -3.5788735e-7 -5.1587015e-7
-7 6.1527480e-8 -9.1934245e-7
-9 3.2785839e-3 2.0640680e-2
-10 -9.7729792e-7 -9.9562744e-7
-11 2.6008662e-8 -5.8670838e-7
-13 -6.8253264e-3 -1.9765490e-2
-14 6.0318214e-7 -1.0037540e-6
-15 1.4963004e-8 -4.3093177e-7
-17 -6.9177212e-3 -1.9737344e-2
-18 1.2822295e-6 4.5661547e-7
-19 1.0213304e-8 -3.3976877e-7
-21 2.0828371e-2 1.9130613e-3
-22 -9.0369080e-7 1.3171083e-6
-23 7.6284515e-9 -2.8049427e-7
-25 1.4436706e-2 1.5136042e-2
-26 -1.8244988e-6 -1.1699501e-7
-27 5.1115437e-9 -2.3903215e-7
-29 3.1797632e-3 -2.0674898e-2
-30 5.5909532e-7 -1.5060590e-6
-31 5.1612283e-9 -2.0885388e-7
-33 -2.0368071e-2 -4.7659542e-3
-34 1.3485106e-6 -8.8979107e-9
-35 4.7090017e-9 -1.8523801e-7
-37 2.0089616e-2 5.8299968e-3
-38 -7.5404933e-7 1.8739450e-6
-39 3.7767505e-9 -1.6489404e-7
-41 -1.1757460e-2 -1.7302020e-2
-42 -4.1135321e-8 8.6669685e-7
-43 3.5088566e-9 -1.4953199e-7
-45 1.2946303e-2 -1.6431589e-2
-46 9.1765750e-7 -1.0660435e-6
-47 3.0329353e-9 -1.3756348e-7
-49 -5.7528222e-3 -2.0112546e-2
-50 -5.7627346e-7 1.5753420e-6
-51 3.2467534e-9 -1.2695817e-7
-53 4.0162285e-3 -2.0530056e-2
-54 6.1463544e-7 1.5875504e-6
-55 3.5597438e-9 -1.1752616e-7
-57 -8.1162285e-3 -1.9280627e-2
-58 1.0574968e-6 1.2409692e-6
-59 3.7405590e-9 -1.0981142e-7
-61 -1.8178595e-2 1.0351348e-2
-62 1.2435604e-6 -1.0370277e-6
-63 3.1590550e-9 -1.0304320e-7
-65 1.6600046e-2 -1.2730168e-2
-66 7.2274625e-8 1.9249228e-6
-67 3.0070012e-9 -9.6046752e-8
-69 1.9153444e-2 8.4120145e-3
-70 1.3069923e-6 1.5724866e-6
-71 3.1221402e-9 -9.0711901e-8
-73 1.9049156e-2 -8.6458467e-3
-74 -2.0554695e-6 -2.1838123e-7
-75 2.6017568e-9 -8.6429026e-8
-81 1.3857757e-2 1.5671052e-2
-82 3.8307967e-8 5.0894702e-7
-83 3.1469840e-9 -7.8009934e-8
-101 -8.4659416e-3 1.9129837e-2
-102 1.0173689e-7 -2.0409258e-8
-103 2.1214999e-9 -6.2779214e-8
-125 -1.0273036e-2 1.8223346e-2
-126 1.1420609e-7 -1.0898108e-7
-127 2.3870919e-9 -5.1809966e-8
-161 -5.1261795e-4 -2.0913348e-2
-162 1.2608438e-6 2.0611445e-7
-163 2.4611801e-9 -3.9684133e-8
-201 -1.4632120e-2 1.4950926e-2
-202 7.5089807e-7 -8.9370392e-7
-203 2.2763994e-9 -3.1617621e-8
-253 -2.0355310e-2 -4.8262034e-3
-254 1.0598672e-7 -1.1234802e-6
-255 2.5506996e-9 -2.5281511e-8
-321 -6.2153872e-3 1.9974966e-2
-322 5.5758743e-7 -1.4534249e-7
-323 1.6043853e-9 -2.0414655e-8
-405 2.0481036e-3 -2.0819158e-2
-406 5.4030647e-7 4.5119153e-7
-407 2.1404958e-9 -1.5255737e-8
-509 2.0382022e-2 -4.7122071e-3
-510 -2.6835171e-7 6.4667197e-7
-511 2.0477075e-9 -1.2557967e-8
-645 -5.6850574e-3 2.0132345e-2
-646 -4.4543645e-7 -5.6431786e-7
-647 1.8633484e-9 -9.6944773e-9
-813 2.9042677e-4 2.0917624e-2
-814 -5.8497056e-7 -4.1156697e-7
-815 2.1421669e-9 -7.8337440e-9
-run tone/1k/+0 steady 2.473199817e-4 thdn 9.988253931e-3 floor 3.608202713e-5
-0 2.0547619e2 0.0000000e0
-19 -5.3573210e-2 1.1449328e1
-38 1.1433296e-1 1.3408712e-3
-57 -2.6830034e-5 2.0551557e-3
-76 -9.5307406e-6 4.3058580e-6
-95 -2.3050363e-7 2.7135028e-6
-114 -2.6109469e-7 2.8536451e-6
-133 -2.5601800e-7 2.4441308e-6
-152 -2.5845114e-7 2.1355069e-6
-171 -2.6036398e-7 1.8955493e-6
-190 -2.6161958e-7 1.7033525e-6
-209 -2.6253893e-7 1.5458375e-6
-228 -2.6323715e-7 1.4143448e-6
-247 -2.6377887e-7 1.3028684e-6
-266 -2.6420767e-7 1.2071178e-6
-285 -2.6455291e-7 1.1239471e-6
-run tone/1k/+12 steady 1.017686907e-3 thdn 4.079526422e-2 floor 1.496972169e-4
-0 2.0459000e2 0.0000000e0
-19 -2.0892881e-1 4.5076390e1
-38 1.8339026e0 2.1225746e-2
-57 -1.7158203e-3 1.3392641e-1
-76 -1.6117584e-3 9.2996474e-5
-95 2.1677878e-5 -1.0636786e-3
-114 -3.0214590e-4 3.7968781e-5
-133 -8.2148937e-6 1.7800995e-4
-152 6.7028522e-5 3.7984531e-5
-171 -2.5105576e-6 2.8039474e-7
-190 -1.6779046e-5 2.7475181e-5
-209 -4.3036392e-6 3.0381727e-5
-228 -2.3634761e-6 2.3425898e-5
-247 -4.1072348e-6 2.0910393e-5
-266 -4.3550215e-6 1.9892516e-5
-285 -4.2103912e-6 1.8582308e-5
-run tone/1k/-20 steady 2.468557856e-5 thdn 9.971101279e-4 floor 3.599525215e-6
-0 2.0553451e2 0.0000000e0
-19 -5.3644677e-3 1.1457575e0
-38 1.1423708e-3 1.3408932e-5
-57 -2.9364026e-8 2.1026117e-6
-76 -3.6520265e-9 4.2788532e-8
-95 -2.7005694e-9 3.4197514e-8
-114 -2.6897231e-9 2.8478500e-8
-133 -2.6829747e-9 2.4384459e-8
-152 -2.6785600e-9 2.1310467e-8
-171 -2.6755130e-9 1.8916500e-8
-190 -2.6733243e-9 1.6998546e-8
-209 -2.6717013e-9 1.5426780e-8
-228 -2.6704648e-9 1.4114642e-8
-247 -2.6694961e-9 1.3002225e-8
-266 -2.6687313e-9 1.2046716e-8
-285 -2.6681138e-9 1.1216736e-8
+0 2.0601988e2 0.0000000e0
+2 1.4379947e-6 -2.9649627e-5
+23 -2.2074936e-3 1.1438638e0
+run multisine/+0/r1 steady 1.398197739e-3 thdn - floor -
+0 2.0596292e2 0.0000000e0
+1 1.1289982e0 -1.5924181e0
+2 8.0761728e-4 2.9655676e-3
+3 3.0715192e-4 -3.9252290e-5
+5 2.0797804e0 3.6582832e-2
+6 -4.4222889e-3 5.5078982e-3
+7 1.2564919e-4 9.6072163e-5
+9 3.2708052e-1 2.0582922e0
+10 -1.0144639e-2 -3.5794275e-3
+11 1.0731330e-4 -1.9486960e-4
+13 -6.8051253e-1 -1.9706529e0
+14 5.9035199e-3 -5.4866631e-3
+15 -4.4904202e-5 -4.6262227e-4
+17 -6.9008170e-1 -1.9684278e0
+18 1.2793556e-2 8.1788150e-3
+19 -5.1098074e-5 3.5022166e-4
+21 2.0769736e0 1.9115519e-1
+22 -9.1721989e-3 1.6186717e-2
+23 1.6293542e-5 3.8694263e-4
+25 1.4399489e0 1.5090261e0
+26 -1.8422473e-2 1.3033576e-3
+27 -7.6172569e-4 1.5388770e-4
+29 3.1708918e-1 -2.0615929e0
+30 5.5708415e-3 -1.2992911e-2
+31 -1.6827095e-5 -5.8867939e-4
+33 -2.0307046e0 -4.7489528e-1
+34 1.3527177e-2 1.8021755e-3
+35 2.1653119e-4 -4.5549558e-4
+37 2.0032453e0 5.8146328e-1
+38 -7.6286028e-3 2.0549029e-2
+39 -7.0636738e-5 6.4649510e-4
+41 -1.1723797e0 -1.7252703e0
+42 -4.4507548e-4 1.0256613e-2
+43 -1.2093654e-4 7.9862646e-4
+45 1.2911011e0 -1.6385769e0
+46 9.1939639e-3 -9.3177443e-3
+47 -3.6054710e-4 -2.1792247e-4
+49 -5.7420665e-1 -2.0053659e0
+50 -5.8232058e-3 1.7135660e-2
+51 -1.6590004e-5 -2.8992344e-4
+53 3.9979426e-1 -2.0481956e0
+54 6.1536116e-3 1.7158219e-2
+55 3.8368813e-4 -1.5245688e-4
+57 -8.0929079e-1 -1.9225469e0
+58 1.0613943e-2 1.3594905e-2
+59 5.3213191e-4 -3.1191128e-4
+61 -1.8128213e0 1.0323547e0
+62 1.2485031e-2 -9.3983693e-3
+63 3.1950642e-4 -2.4185352e-4
+65 1.6549208e0 -1.2690392e0
+66 6.9596603e-4 2.0348259e-2
+67 1.2398116e-4 4.7558845e-4
+69 1.9099166e0 8.3936472e-1
+70 1.3116754e-2 1.6743253e-2
+71 4.8195903e-4 2.8843425e-4
+73 1.8996043e0 -8.6222970e-1
+74 -2.0704279e-2 -1.3239065e-3
+75 -1.2162368e-4 -4.1543322e-4
+81 1.3818880e0 1.5628204e0
+82 3.5892338e-4 5.9055966e-3
+83 6.6427779e-4 -2.7362389e-4
+101 -8.4460483e-1 1.9073255e0
+102 9.8898174e-4 4.2110408e-4
+103 -1.9678842e-4 -2.2180334e-5
+125 -1.0242247e0 1.8168096e0
+126 1.1217919e-3 -5.9712260e-4
+127 1.8055610e-4 -8.9602919e-4
+161 -5.0770003e-2 -2.0850780e0
+162 1.2666937e-2 2.4743397e-3
+163 1.2527561e-4 -1.0674100e-4
+201 -1.4589321e0 1.4904068e0
+202 7.5272951e-3 -8.6776102e-3
+203 1.4850602e-4 2.6025911e-4
+253 -2.0293217e0 -4.8110580e-1
+254 1.0589719e-3 -1.1051743e-2
+255 3.4312333e-4 1.0602834e-4
+321 -6.1965998e-1 1.9914964e0
+322 5.5828928e-3 -1.2733417e-3
+323 -4.4266752e-4 -4.2305251e-4
+405 2.0403760e-1 -2.0757392e0
+406 5.4154820e-3 4.6996395e-3
+407 -9.9638508e-5 5.0019881e-4
+509 2.0319935e0 -4.6949980e-1
+510 -2.7230858e-3 6.6377065e-3
+511 -8.2797312e-5 -1.4252349e-4
+645 -5.6664207e-1 2.0073664e0
+646 -4.5024656e-3 -5.5814988e-3
+647 -1.6266198e-4 1.9842297e-4
+813 2.9040128e-2 2.0855508e0
+814 -5.9088804e-3 -4.0671446e-3
+815 1.3533877e-4 -7.0616935e-5
+run multisine/+12/r1 steady 1.589400378e-4 thdn - floor -
+0 2.0512892e2 0.0000000e0
+1 4.3040293e0 -6.2440136e0
+2 3.4028702e-2 3.8780598e-2
+3 2.5760284e-2 1.5115959e-2
+5 8.1572029e0 1.3683457e-1
+6 -8.9599738e-2 8.8696420e-2
+7 2.0095313e-2 -1.8439921e-2
+9 1.2885209e0 7.9878130e0
+10 -1.7041729e-1 -1.7746217e-2
+11 1.5780724e-2 -1.5612565e-2
+13 -2.6257637e0 -7.6373591e0
+14 7.6215121e-2 -1.2202707e-1
+15 -3.3526692e-3 -2.7269165e-2
+17 -2.7113026e0 -7.6837700e0
+18 1.8337360e-1 8.5181006e-2
+19 1.5934353e-2 7.3060776e-2
+21 8.0861432e0 8.0242954e-1
+22 -1.1462231e-1 2.3003182e-1
+23 -2.3201649e-2 2.6246572e-2
+25 5.6265046e0 5.8306474e0
+26 -2.4811680e-1 4.6287146e-2
+27 -1.1421622e-1 2.3763598e-2
+29 1.2166497e0 -8.0223360e0
+30 9.3565109e-2 -2.1729634e-1
+31 1.8899409e-2 -6.1317100e-2
+33 -7.8454958e0 -1.8479068e0
+34 1.5625028e-1 4.1810627e-2
+35 4.6211070e-2 -5.7804142e-2
+37 7.7968321e0 2.2667441e0
+38 -8.9986695e-2 3.1363460e-1
+39 -1.1791561e-2 7.4890937e-2
+41 -4.5434717e0 -6.6852702e0
+42 -2.0337991e-2 1.1317977e-1
+43 -1.8624574e-2 1.0561842e-1
+45 5.0422339e0 -6.3861675e0
+46 1.5677084e-1 -1.3709267e-1
+47 -4.0993989e-2 -3.5317461e-2
+49 -2.2991345e0 -7.7963342e0
+50 -7.6831120e-2 2.5654771e-1
+51 -2.4993966e-2 -4.0545907e-2
+53 1.4781016e0 -8.1081950e0
+54 1.1427439e-1 2.9390465e-1
+55 3.5310071e-2 -2.1332371e-2
+57 -3.1276814e0 -7.4758929e0
+58 1.3544936e-1 1.9563886e-1
+59 7.7734521e-2 -2.8577936e-2
+61 -7.0423896e0 4.0207889e0
+62 1.4867209e-1 -1.1748405e-1
+63 5.0285186e-2 -4.2337251e-2
+65 6.3885668e0 -4.8776225e0
+66 4.8208616e-2 2.5610040e-1
+67 -4.3958102e-4 8.4034757e-2
+69 7.4649614e0 3.3519364e0
+70 1.8568625e-1 2.3434226e-1
+71 7.0034690e-2 4.0071752e-2
+73 7.3915480e0 -3.3933228e0
+74 -2.7968812e-1 9.3327424e-3
+75 -4.2879735e-2 -6.2215204e-2
+81 5.3936484e0 6.1024830e0
+82 -7.0316546e-3 1.0517530e-1
+83 8.6405912e-2 -3.2697009e-2
+101 -3.3453127e0 7.3926127e0
+102 4.9023129e-2 3.0990533e-2
+103 -4.7237199e-2 -1.0757379e-2
+125 -3.9787258e0 7.0251680e0
+126 1.8644512e-2 5.4315643e-2
+127 8.5922059e-3 -1.4273467e-1
+161 -1.3530566e-1 -8.0526918e0
+162 1.6907534e-1 1.6814487e-2
+163 2.3218684e-2 -2.5537629e-2
+201 -5.6642373e0 5.7301091e0
+202 1.0073659e-1 -9.3151218e-2
+203 3.0139184e-2 8.9802893e-3
+253 -7.8324040e0 -1.8693173e0
+254 -5.4360701e-2 -1.6445154e-1
+255 8.7376280e-2 -1.3921957e-3
+321 -2.3779443e0 7.6915122e0
+322 8.3016895e-2 3.4782528e-2
+323 -6.5422140e-2 -5.5633036e-2
+405 7.6287262e-1 -8.0493803e0
+406 1.0109113e-1 5.2448555e-2
+407 -2.0935493e-2 5.4707863e-2
+509 7.8386348e0 -1.7802635e0
+510 -1.4763580e-2 7.7324929e-2
+511 3.4788963e-3 -6.2896643e-4
+645 -2.1651842e0 7.7793313e0
+646 -8.0722529e-2 -6.0241547e-2
+647 -2.7714865e-2 1.7394258e-2
+813 1.1937423e-1 8.0789463e0
+814 -8.9847794e-2 -2.5158332e-2
+815 1.4389075e-2 -2.2107092e-2
+run multisine/-40/r1 steady 1.816769545e-3 thdn - floor -
+0 2.0602013e2 0.0000000e0
+1 1.1308402e-2 -1.5939373e-2
+2 7.8450170e-7 -2.8317508e-6
+3 3.2530531e-7 -2.1587539e-6
+5 2.0819010e-2 3.6717094e-4
+6 -3.5854063e-7 -5.3909702e-7
+7 6.2655280e-8 -9.4176248e-7
+9 3.2739275e-3 2.0605903e-2
+10 -9.8171544e-7 -1.0129789e-6
+11 2.6487370e-8 -6.0099255e-7
+13 -6.8144092e-3 -1.9732065e-2
+14 6.0643779e-7 -1.0174140e-6
+15 1.5246887e-8 -4.4141275e-7
+17 -6.9065052e-3 -1.9703973e-2
+18 1.2886946e-6 4.5161019e-7
+19 1.0413378e-8 -3.4804815e-7
+21 2.0793321e-2 1.9094622e-3
+22 -9.0778755e-7 1.3176650e-6
+23 7.7797267e-9 -2.8732978e-7
+25 1.4412607e-2 1.5110317e-2
+26 -1.8331001e-6 -1.2224485e-7
+27 5.2264325e-9 -2.4485211e-7
+29 3.1741395e-3 -2.0640103e-2
+30 5.6186759e-7 -1.5169535e-6
+31 5.2684907e-9 -2.1392226e-7
+33 -2.0333797e-2 -4.7576971e-3
+34 1.3550475e-6 -1.2995988e-8
+35 4.8039584e-9 -1.8973693e-7
+37 2.0055814e-2 5.8199636e-3
+38 -7.5758656e-7 1.8793745e-6
+39 3.8570985e-9 -1.6892032e-7
+41 -1.1737799e-2 -1.7272753e-2
+42 -4.0862174e-8 8.6764327e-7
+43 3.5866709e-9 -1.5318956e-7
+45 1.2924344e-2 -1.6404002e-2
+46 9.2198711e-7 -1.0733740e-6
+47 3.1063013e-9 -1.4090543e-7
+49 -5.7432774e-3 -2.0078601e-2
+50 -5.7840147e-7 1.5801616e-6
+51 3.3194439e-9 -1.3004122e-7
+53 4.0093139e-3 -2.0495478e-2
+54 6.1783707e-7 1.5926766e-6
+55 3.6325081e-9 -1.2038215e-7
+57 -8.1026721e-3 -1.9248073e-2
+58 1.0628157e-6 1.2444985e-6
+59 3.8161483e-9 -1.1247647e-7
+61 -1.8147885e-2 1.0334005e-2
+62 1.2493216e-6 -1.0442143e-6
+63 3.2240239e-9 -1.0554705e-7
+65 1.6571988e-2 -1.2708805e-2
+66 7.2738396e-8 1.9320802e-6
+67 3.0744410e-9 -9.8395176e-8
+69 1.9121200e-2 8.3977271e-3
+70 1.3127521e-6 1.5780082e-6
+71 3.1836640e-9 -9.2925784e-8
+73 1.9016997e-2 -8.6313703e-3
+74 -2.0649089e-6 -2.2064065e-7
+75 2.6653404e-9 -8.8521853e-8
+81 1.3834466e-2 1.5644566e-2
+82 3.8173741e-8 5.0975680e-7
+83 3.2056553e-9 -7.9901084e-8
+101 -8.4515978e-3 1.9097614e-2
+102 1.0204613e-7 -2.2066922e-8
+103 2.1752883e-9 -6.4306552e-8
+125 -1.0255662e-2 1.8192651e-2
+126 1.1459895e-7 -1.1082739e-7
+127 2.4393149e-9 -5.3050869e-8
+161 -5.1180199e-4 -2.0878088e-2
+162 1.2669464e-6 2.0644399e-7
+163 2.5184409e-9 -4.0647357e-8
+201 -1.4607423e-2 1.4925745e-2
+202 7.5426983e-7 -8.9877775e-7
+203 2.3274654e-9 -3.2393420e-8
+253 -2.0320998e-2 -4.8180371e-3
+254 1.0677030e-7 -1.1293553e-6
+255 2.6050032e-9 -2.5899877e-8
+321 -6.2048848e-3 1.9941295e-2
+322 5.5993027e-7 -1.4668954e-7
+323 1.6524306e-9 -2.0902163e-8
+405 2.0446314e-3 -2.0784058e-2
+406 5.4310300e-7 4.5316108e-7
+407 2.1955541e-9 -1.5638128e-8
+509 2.0347654e-2 -4.7042773e-3
+510 -2.6965393e-7 6.4971987e-7
+511 2.0995473e-9 -1.2859488e-8
+645 -5.6754608e-3 2.0098405e-2
+646 -4.4767182e-7 -5.6735903e-7
+647 1.9115357e-9 -9.9350646e-9
+813 2.8994652e-4 2.0882357e-2
+814 -5.8790987e-7 -4.1378864e-7
+815 2.1903710e-9 -8.0227727e-9
+run tone/1k/+0 steady 2.534761064e-4 thdn 1.005085988e-2 floor 3.715749472e-5
+0 2.0596117e2 0.0000000e0
+19 -5.3392729e-2 1.1429971e1
+38 1.1485518e-1 1.3449550e-3
+57 -2.6784980e-5 2.0586204e-3
+76 -9.8382975e-6 4.4213356e-6
+95 -2.3730816e-7 2.8138585e-6
+114 -2.6769173e-7 2.9333876e-6
+133 -2.6305380e-7 2.5123011e-6
+152 -2.6560317e-7 2.1951666e-6
+171 -2.6756991e-7 1.9485082e-6
+190 -2.6887312e-7 1.7509394e-6
+209 -2.6982799e-7 1.5890238e-6
+228 -2.7055295e-7 1.4538575e-6
+247 -2.7111542e-7 1.3392668e-6
+266 -2.7156066e-7 1.2408412e-6
+285 -2.7191913e-7 1.1553469e-6
+run tone/1k/+12 steady 1.043348013e-3 thdn 4.106382845e-2 floor 1.542104499e-4
+0 2.0507409e2 0.0000000e0
+19 -2.0819917e-1 4.4996886e1
+38 1.8427586e0 2.1294313e-2
+57 -1.7103937e-3 1.3403130e-1
+76 -1.7562627e-3 9.2530724e-5
+95 2.0261925e-5 -1.0107265e-3
+114 -2.7571974e-4 4.0087822e-5
+133 -7.8026902e-6 1.6450920e-4
+152 5.9980225e-5 3.8703005e-5
+171 -2.7523105e-6 4.2531893e-6
+190 -1.5622585e-5 2.8328647e-5
+209 -4.3888767e-6 3.0619721e-5
+228 -2.6455641e-6 2.4072768e-5
+247 -4.2255518e-6 2.1570348e-5
+266 -4.4546693e-6 2.0454177e-5
+285 -4.3271016e-6 1.9099794e-5
+run tone/1k/-20 steady 2.529942945e-5 thdn 1.003343176e-3 floor 3.706718672e-6
+0 2.0601954e2 0.0000000e0
+19 -5.3464398e-3 1.1438261e0
+38 1.1475740e-3 1.3449669e-5
+57 -2.9390021e-8 2.1075159e-6
+76 -3.7570144e-9 4.3982541e-8
+95 -2.7753693e-9 3.5152405e-8
+114 -2.7643961e-9 2.9273496e-8
+133 -2.7575717e-9 2.5065171e-8
+152 -2.7531026e-9 2.1905368e-8
+171 -2.7500180e-9 1.9444569e-8
+190 -2.7478056e-9 1.7473077e-8
+209 -2.7461600e-9 1.5857428e-8
+228 -2.7449094e-9 1.4508666e-8
+247 -2.7439292e-9 1.3365191e-8
+266 -2.7431547e-9 1.2383011e-8
+285 -2.7425302e-9 1.1529857e-8
 end
 table 192000 shipping
 # stave characterisation table v1: triode_stage_cathode
 # source: the model at 192000 Hz
 op b 3.000000000e2
 op char_x 0.000000000e0
-op g -5.457007137e-3
+op g -5.457006441e-3
 op in 0.000000000e0
-op k 1.492105469e0
-op p 2.055350942e2
-ac 2.000000000e1 -5.575562093e1 -1.123942645e1
-ac 1.000000000e2 -6.058727410e1 -2.684129700e0
-ac 1.800000000e2 -6.075440316e1 -1.499563479e0
-ac 2.600000000e2 -6.079352350e1 -1.039514581e0
-ac 3.400000000e2 -6.080850218e1 -7.953172745e-1
-ac 4.200000000e2 -6.081577841e1 -6.439811945e-1
-ac 5.000000000e2 -6.081985281e1 -5.410142235e-1
-ac 5.800000000e2 -6.082236145e1 -4.664270267e-1
-ac 6.600000000e2 -6.082401473e1 -4.099094049e-1
-ac 7.400000000e2 -6.082516153e1 -3.656052119e-1
-ac 8.200000000e2 -6.082598942e1 -3.299418511e-1
-ac 9.000000000e2 -6.082660655e1 -3.006161854e-1
-ac 9.800000000e2 -6.082707882e1 -2.760767335e-1
-ac 1.060000000e3 -6.082744827e1 -2.552401823e-1
-ac 1.140000000e3 -6.082774271e1 -2.373271941e-1
-ac 1.220000000e3 -6.082798116e1 -2.217627824e-1
-ac 1.300000000e3 -6.082817696e1 -2.081134566e-1
-ac 1.380000000e3 -6.082833970e1 -1.960462210e-1
-ac 1.460000000e3 -6.082847643e1 -1.853010496e-1
-ac 1.620000000e3 -6.082869165e1 -1.669935641e-1
-ac 2.020000000e3 -6.082902383e1 -1.339096076e-1
-ac 2.500000000e3 -6.082923168e1 -1.081787519e-1
-ac 3.220000000e3 -6.082938695e1 -8.395925323e-2
-ac 4.020000000e3 -6.082947141e1 -6.721632300e-2
-ac 5.060000000e3 -6.082952717e1 -5.335610758e-2
-ac 6.420000000e3 -6.082956331e1 -4.199450795e-2
-ac 8.100000000e3 -6.082958535e1 -3.321169433e-2
-ac 1.018000000e4 -6.082959901e1 -2.633534844e-2
-ac 1.290000000e4 -6.082960791e1 -2.066438306e-2
-ac 1.626000000e4 -6.082961335e1 -1.624761041e-2
-run burst/+20 steady 3.413460116e-5 thdn - floor -
-0 2.0553448e2 0.0000000e0
-2 -1.5707458e-7 3.2205633e-6
-23 -2.2150671e-3 1.1458000e0
+op k 1.499999854e0
+op p 2.060201273e2
+ac 2.000000000e1 -5.569055318e1 -1.122471065e1
+ac 1.000000000e2 -6.048697584e1 -2.675369230e0
+ac 1.800000000e2 -6.065255035e1 -1.494568023e0
+ac 2.600000000e2 -6.069130358e1 -1.036035258e0
+ac 3.400000000e2 -6.070614137e1 -7.926504875e-1
+ac 4.200000000e2 -6.071334910e1 -6.418199627e-1
+ac 5.000000000e2 -6.071738512e1 -5.391976640e-1
+ac 5.800000000e2 -6.071987012e1 -4.648604358e-1
+ac 6.600000000e2 -6.072150782e1 -4.085323665e-1
+ac 7.400000000e2 -6.072264381e1 -3.643768386e-1
+ac 8.200000000e2 -6.072346390e1 -3.288331905e-1
+ac 9.000000000e2 -6.072407521e1 -2.996059891e-1
+ac 9.800000000e2 -6.072454303e1 -2.751489474e-1
+ac 1.060000000e3 -6.072490900e1 -2.543823817e-1
+ac 1.140000000e3 -6.072520067e1 -2.365295665e-1
+ac 1.220000000e3 -6.072543686e1 -2.210174435e-1
+ac 1.300000000e3 -6.072563081e1 -2.074139763e-1
+ac 1.380000000e3 -6.072579202e1 -1.953872865e-1
+ac 1.460000000e3 -6.072592747e1 -1.846782206e-1
+ac 1.620000000e3 -6.072614065e1 -1.664322552e-1
+ac 2.020000000e3 -6.072646970e1 -1.334594846e-1
+ac 2.500000000e3 -6.072667559e1 -1.078151114e-1
+ac 3.220000000e3 -6.072682940e1 -8.367702076e-2
+ac 4.020000000e3 -6.072691306e1 -6.699037028e-2
+ac 5.060000000e3 -6.072696829e1 -5.317674582e-2
+ac 6.420000000e3 -6.072700410e1 -4.185333869e-2
+ac 8.100000000e3 -6.072702593e1 -3.310004920e-2
+ac 1.018000000e4 -6.072703946e1 -2.624681884e-2
+ac 1.290000000e4 -6.072704827e1 -2.059491705e-2
+ac 1.626000000e4 -6.072705366e1 -1.619299191e-2
+run burst/+20 steady 3.479027731e-5 thdn - floor -
+0 2.0601951e2 0.0000000e0
+2 -1.5925767e-7 3.2836853e-6
+23 -2.2076213e-3 1.1438682e0
 period 1
-0 2.0553449e2 0.0000000e0
-2 -8.9069858e-8 1.8262324e-6
-23 -2.2150617e-3 1.1457998e0
+0 2.0601953e2 0.0000000e0
+2 -9.0620174e-8 1.8684680e-6
+23 -2.2076158e-3 1.1438680e0
 period 2
-0 2.0157986e2 0.0000000e0
-2 -1.8390514e0 9.6644357e1
-23 -1.9507305e-3 7.3629756e-1
+0 2.0190556e2 0.0000000e0
+2 -1.8397245e0 9.6646799e1
+23 -1.7899881e-3 7.3746238e-1
 period 3
-0 2.0180251e2 0.0000000e0
-2 -1.8370136e0 9.6630791e1
-23 -1.7913053e-3 7.3462711e-1
+0 2.0215151e2 0.0000000e0
+2 -1.8373846e0 9.6629769e1
+23 -1.6338936e-3 7.3560475e-1
 period 4
-0 2.0194200e2 0.0000000e0
-2 -1.8356854e0 9.6621624e1
-23 -1.7086059e-3 7.3355594e-1
+0 2.0230606e2 0.0000000e0
+2 -1.8358515e0 9.6618247e1
+23 -1.5572440e-3 7.3440771e-1
 period 5
-0 2.0202937e2 0.0000000e0
-2 -1.8348333e0 9.6615620e1
-23 -1.6636417e-3 7.3287546e-1
+0 2.0240314e2 0.0000000e0
+2 -1.8348638e0 9.6610684e1
+23 -1.5176513e-3 7.3364418e-1
 period 6
-0 2.0208409e2 0.0000000e0
-2 -1.8342918e0 9.6611757e1
-23 -1.6381838e-3 7.3244560e-1
+0 2.0246411e2 0.0000000e0
+2 -1.8342337e0 9.6605806e1
+23 -1.4961798e-3 7.3316013e-1
 period 7
-0 2.0633539e2 0.0000000e0
-2 3.4980116e-3 -7.1998845e-2
-23 -1.9358306e-3 1.1363329e0
+0 2.0690510e2 0.0000000e0
+2 3.8202695e-3 -7.9109652e-2
+23 -1.9007883e-3 1.1334199e0
 period 8
-0 2.0598907e2 0.0000000e0
-2 1.9905513e-3 -4.0902248e-2
-23 -2.0564353e-3 1.1404274e0
+0 2.0652396e2 0.0000000e0
+2 2.1823134e-3 -4.5106605e-2
+23 -2.0326748e-3 1.1379177e0
 period 9
-0 2.0579241e2 0.0000000e0
-2 1.1309941e-3 -2.3217876e-2
-23 -2.1250176e-3 1.1427519e0
+0 2.0630673e2 0.0000000e0
+2 1.2445246e-3 -2.5696110e-2
+23 -2.1079559e-3 1.1404805e0
 period 10
-0 2.0568080e2 0.0000000e0
-2 6.4205557e-4 -1.3173530e-2
-23 -2.1639694e-3 1.1440710e0
+0 2.0618301e2 0.0000000e0
+2 7.0904482e-4 -1.4631113e-2
+23 -2.1508682e-3 1.1419398e0
 period 11
-0 2.0561748e2 0.0000000e0
-2 3.6431180e-4 -7.4725904e-3
-23 -2.1860771e-3 1.1448192e0
+0 2.0611258e2 0.0000000e0
+2 4.0374586e-4 -8.3284467e-3
+23 -2.1753107e-3 1.1427705e0
 period 12
-0 2.0558156e2 0.0000000e0
-2 2.0665890e-4 -4.2381613e-3
-23 -2.1986198e-3 1.1452436e0
+0 2.0607249e2 0.0000000e0
+2 2.2983101e-4 -4.7400245e-3
+23 -2.1892267e-3 1.1432434e0
 period 13
-0 2.0556120e2 0.0000000e0
-2 1.1721067e-4 -2.4035229e-3
-23 -2.2057342e-3 1.1454843e0
+0 2.0604967e2 0.0000000e0
+2 1.3080763e-4 -2.6974743e-3
+23 -2.1971478e-3 1.1435124e0
 period 14
-0 2.0554964e2 0.0000000e0
-2 6.6472457e-5 -1.3630096e-3
-23 -2.2097691e-3 1.1456208e0
+0 2.0603669e2 0.0000000e0
+2 7.4441362e-5 -1.5350106e-3
+23 -2.2016558e-3 1.1436656e0
 period 15
-0 2.0554309e2 0.0000000e0
-2 3.7695936e-5 -7.7292639e-4
-23 -2.2120573e-3 1.1456982e0
+0 2.0602930e2 0.0000000e0
+2 4.2361461e-5 -8.7347919e-4
+23 -2.2042213e-3 1.1437527e0
 period 16
-0 2.0553938e2 0.0000000e0
-2 2.1376421e-5 -4.3829942e-4
-23 -2.2133549e-3 1.1457421e0
+0 2.0602510e2 0.0000000e0
+2 2.4105357e-5 -4.9703435e-4
+23 -2.2056811e-3 1.1438023e0
 period 17
-0 2.0553727e2 0.0000000e0
-2 1.2121837e-5 -2.4854211e-4
-23 -2.2140908e-3 1.1457670e0
+0 2.0602271e2 0.0000000e0
+2 1.3716656e-5 -2.8282388e-4
+23 -2.2065118e-3 1.1438305e0
 period 18
-0 2.0553608e2 0.0000000e0
-2 6.8738164e-6 -1.4093764e-4
-23 -2.2145081e-3 1.1457811e0
+0 2.0602134e2 0.0000000e0
+2 7.8050983e-6 -1.6093236e-4
+23 -2.2069845e-3 1.1438465e0
 period 19
-0 2.0553540e2 0.0000000e0
-2 3.8978503e-6 -7.9919510e-5
-23 -2.2147447e-3 1.1457891e0
+0 2.0602057e2 0.0000000e0
+2 4.4412573e-6 -9.1573395e-5
+23 -2.2072535e-3 1.1438557e0
 period 20
-0 2.0553502e2 0.0000000e0
-2 2.2102994e-6 -4.5318755e-5
-23 -2.2148788e-3 1.1457936e0
+0 2.0602013e2 0.0000000e0
+2 2.5271559e-6 -5.2106810e-5
+23 -2.2074065e-3 1.1438609e0
 period 21
-0 2.0553480e2 0.0000000e0
-2 1.2533614e-6 -2.5698202e-5
-23 -2.2149549e-3 1.1457962e0
-run multisine/+0/r1 steady 1.387396202e-3 thdn - floor -
-0 2.0547789e2 0.0000000e0
-1 1.1303746e0 -1.5942552e0
-2 8.0194724e-4 2.9522982e-3
-3 3.0630638e-4 -3.5974467e-5
-5 2.0832456e0 3.6794882e-2
-6 -4.4006919e-3 5.4802733e-3
-7 1.2531769e-4 9.7235871e-5
-9 3.2754776e-1 2.0617786e0
-10 -1.0094486e-2 -3.5617989e-3
-11 1.0730589e-4 -1.9376488e-4
-13 -6.8160764e-1 -1.9740054e0
-14 5.8738813e-3 -5.4616847e-3
-15 -4.4757145e-5 -4.6099072e-4
-17 -6.9120598e-1 -1.9717739e0
-18 1.2730609e-2 8.1416578e-3
-19 -5.1088864e-5 3.5029508e-4
-21 2.0804883e0 1.9151495e-1
-22 -9.1293188e-3 1.6109565e-2
-23 1.6041458e-5 3.8680845e-4
-25 1.4423652e0 1.5116058e0
-26 -1.8334538e-2 1.2958592e-3
-27 -7.6040919e-4 1.5386955e-4
-29 3.1765291e-1 -2.0650822e0
-30 5.5440837e-3 -1.2935775e-2
-31 -1.6820930e-5 -5.8744012e-4
-33 -2.0341419e0 -4.7572385e-1
-34 1.3462151e-2 1.7971753e-3
-35 2.1612692e-4 -4.5441149e-4
-37 2.0066349e0 5.8246888e-1
-38 -7.5920681e-3 2.0453029e-2
-39 -7.0562079e-5 6.4560850e-4
-41 -1.1743513e0 -1.7282051e0
-42 -4.4702874e-4 1.0209516e-2
-43 -1.2069180e-4 7.9762448e-4
-45 1.2933027e0 -1.6413433e0
-46 9.1512517e-3 -9.2781095e-3
-47 -3.5988425e-4 -2.1743014e-4
-49 -5.7516294e-1 -2.0087701e0
-50 -5.8010275e-3 1.7055737e-2
-51 -1.6724369e-5 -2.8928510e-4
-53 4.0048874e-1 -2.0516613e0
-54 6.1221916e-3 1.7077728e-2
-55 3.8286409e-4 -1.5204887e-4
-57 -8.1065026e-1 -1.9258112e0
-58 1.0561057e-2 1.3532241e-2
-59 5.3113159e-4 -3.1128106e-4
-61 -1.8159004e0 1.0340934e0
-62 1.2427498e-2 -9.3513277e-3
-63 3.1900490e-4 -2.4117126e-4
-65 1.6577349e0 -1.2711821e0
-66 6.9211761e-4 2.0252207e-2
-67 1.2372084e-4 4.7494977e-4
-69 1.9131498e0 8.4079621e-1
-70 1.3059389e-2 1.6665134e-2
-71 4.8107020e-4 2.8814924e-4
-73 1.9028287e0 -8.6368122e-1
-74 -2.0608565e-2 -1.3222174e-3
-75 -1.2147937e-4 -4.1473173e-4
-81 1.3842234e0 1.5654758e0
-82 3.6074194e-4 5.8783233e-3
-83 6.6322869e-4 -2.7319214e-4
-101 -8.4604237e-1 1.9105569e0
-102 9.8666138e-4 4.2244497e-4
-103 -1.9653536e-4 -2.2002636e-5
-125 -1.0259671e0 1.8198879e0
-126 1.1184061e-3 -5.9073695e-4
-127 1.8020694e-4 -8.9448718e-4
-161 -5.0852491e-2 -2.0886141e0
-162 1.2605964e-2 2.4612649e-3
-163 1.2499375e-4 -1.0649281e-4
-201 -1.4614089e0 1.4929324e0
-202 7.4939265e-3 -8.6342307e-3
-203 1.4830519e-4 2.5991899e-4
-253 -2.0327630e0 -4.8192483e-1
-254 1.0512275e-3 -1.0998766e-2
-255 3.4258549e-4 1.0590863e-4
-321 -6.2071325e-1 1.9948732e0
-322 5.5598282e-3 -1.2643998e-3
-323 -4.4192530e-4 -4.2234227e-4
-405 2.0438604e-1 -2.0792592e0
-406 5.3879347e-3 4.6759261e-3
-407 -9.9563689e-5 4.9938193e-4
-509 2.0354403e0 -4.7029557e-1
-510 -2.7093982e-3 6.6038807e-3
-511 -8.2683931e-5 -1.4233062e-4
-645 -5.6760473e-1 2.0107700e0
-646 -4.4795541e-3 -5.5532613e-3
-647 -1.6236680e-4 1.9810863e-4
-813 2.9088167e-2 2.0890877e0
-814 -5.8788111e-3 -4.0465684e-3
-815 1.3517450e-4 -7.0514837e-5
-run multisine/+12/r1 steady 1.814634709e-4 thdn - floor -
-0 2.0464655e2 0.0000000e0
-1 4.3069931e0 -6.2509292e0
-2 3.4180246e-2 3.7960717e-2
-3 2.6124581e-2 1.5116637e-2
-5 8.1706547e0 1.3747292e-1
-6 -8.9624400e-2 8.7584132e-2
-7 2.0411551e-2 -1.9057652e-2
-9 1.2907837e0 7.9997998e0
-10 -1.6967522e-1 -1.6158666e-2
-11 1.5947203e-2 -1.5737769e-2
-13 -2.6287246e0 -7.6487063e0
-14 7.4385058e-2 -1.2287458e-1
-15 -3.2582359e-3 -2.7925713e-2
-17 -2.7158953e0 -7.6957379e0
-18 1.8109250e-1 8.2401566e-2
-19 1.6552735e-2 7.4747942e-2
-21 8.0981890e0 8.0470144e-1
-22 -1.1232374e-1 2.2665378e-1
-23 -2.4121135e-2 2.6940750e-2
-25 5.6355329e0 5.8391838e0
-26 -2.4450694e-1 4.7047987e-2
-27 -1.1671780e-1 2.4379937e-2
-29 1.2185011e0 -8.0349587e0
-30 9.2979768e-2 -2.1631536e-1
-31 1.9281316e-2 -6.2815049e-2
-33 -7.8569295e0 -1.8508286e0
-34 1.5268211e-1 4.1511240e-2
-35 4.7353147e-2 -5.8799118e-2
-37 7.8091765e0 2.2704098e0
-38 -8.8172347e-2 3.1048875e-1
-39 -1.1834265e-2 7.6190741e-2
-41 -4.5500733e0 -6.6951524e0
-42 -2.0493593e-2 1.1074085e-1
-43 -1.9465947e-2 1.0751837e-1
-45 5.0504688e0 -6.3958607e0
-46 1.5617086e-1 -1.3591511e-1
-47 -4.1832259e-2 -3.6282084e-2
-49 -2.3040851e0 -7.8081531e0
-50 -7.6008412e-2 2.5380033e-1
-51 -2.5433655e-2 -4.1487498e-2
-53 1.4790906e0 -8.1234095e0
-54 1.1405337e-1 2.9257247e-1
-55 3.5964868e-2 -2.1899777e-2
-57 -3.1319440e0 -7.4877366e0
-58 1.3330495e-1 1.9371201e-1
-59 7.9117929e-2 -2.9136428e-2
-61 -7.0529895e0 4.0276251e0
-62 1.4533785e-1 -1.1561188e-1
-63 5.1632130e-2 -4.3402425e-2
-65 6.3973654e0 -4.8837694e0
-66 4.9156647e-2 2.5138044e-1
-67 -7.6353233e-5 8.5547968e-2
-69 7.4769099e0 3.3589239e0
-70 1.8422993e-1 2.3115666e-1
-71 7.1540919e-2 4.1071248e-2
-73 7.4028290e0 -3.3995354e0
-74 -2.7579466e-1 1.0350387e-2
-75 -4.3773365e-2 -6.3233164e-2
-81 5.4023878e0 6.1123911e0
-82 -7.8677516e-3 1.0470166e-1
-83 8.8415886e-2 -3.3349290e-2
-101 -3.3516262e0 7.4036378e0
-102 5.0100960e-2 3.1713651e-2
-103 -4.7758133e-2 -1.0732879e-2
-125 -3.9849487e0 7.0350893e0
-126 1.8641394e-2 5.6623654e-2
-127 8.6473750e-3 -1.4548131e-1
-161 -1.3433950e-1 -8.0637546e0
-162 1.6664017e-1 1.5772216e-2
-163 2.3585226e-2 -2.6210803e-2
-201 -5.6731342e0 5.7374574e0
-202 9.9927559e-2 -9.1041625e-2
-203 3.0571693e-2 9.5334200e-3
-253 -7.8433105e0 -1.8721831e0
-254 -5.7061041e-2 -1.6286061e-1
-255 8.9233008e-2 -1.4182064e-3
-321 -2.3807461e0 7.7023968e0
-322 8.2195342e-2 3.7071734e-2
-323 -6.6749341e-2 -5.6662102e-2
-405 7.6335723e-1 -8.0613865e0
-406 1.0068627e-1 5.1504284e-2
-407 -2.1564590e-2 5.5545251e-2
-509 7.8491255e0 -1.7822635e0
-510 -1.3725384e-2 7.5425081e-2
-511 3.9623484e-3 -5.4829496e-4
-645 -2.1678449e0 7.7908337e0
-646 -8.0527381e-2 -5.8925476e-2
-647 -2.8393072e-2 1.7981899e-2
-813 1.1949325e-1 8.0909093e0
-814 -8.8888948e-2 -2.3605574e-2
-815 1.4707942e-2 -2.2458784e-2
-run multisine/-40/r1 steady 1.796112413e-3 thdn - floor -
-0 2.0553510e2 0.0000000e0
-1 1.1322066e-2 -1.5957624e-2
-2 7.7098363e-7 -2.7568827e-6
-3 3.1942960e-7 -2.1069042e-6
-5 2.0853569e-2 3.6929989e-4
-6 -3.5788735e-7 -5.1587015e-7
-7 6.1527480e-8 -9.1934245e-7
-9 3.2785839e-3 2.0640680e-2
-10 -9.7729792e-7 -9.9562744e-7
-11 2.6008662e-8 -5.8670838e-7
-13 -6.8253264e-3 -1.9765490e-2
-14 6.0318214e-7 -1.0037540e-6
-15 1.4963004e-8 -4.3093177e-7
-17 -6.9177212e-3 -1.9737344e-2
-18 1.2822295e-6 4.5661547e-7
-19 1.0213304e-8 -3.3976877e-7
-21 2.0828371e-2 1.9130613e-3
-22 -9.0369080e-7 1.3171083e-6
-23 7.6284515e-9 -2.8049427e-7
-25 1.4436706e-2 1.5136042e-2
-26 -1.8244988e-6 -1.1699501e-7
-27 5.1115437e-9 -2.3903215e-7
-29 3.1797632e-3 -2.0674898e-2
-30 5.5909532e-7 -1.5060590e-6
-31 5.1612283e-9 -2.0885388e-7
-33 -2.0368071e-2 -4.7659542e-3
-34 1.3485106e-6 -8.8979107e-9
-35 4.7090017e-9 -1.8523801e-7
-37 2.0089616e-2 5.8299968e-3
-38 -7.5404933e-7 1.8739450e-6
-39 3.7767505e-9 -1.6489404e-7
-41 -1.1757460e-2 -1.7302020e-2
-42 -4.1135321e-8 8.6669685e-7
-43 3.5088566e-9 -1.4953199e-7
-45 1.2946303e-2 -1.6431589e-2
-46 9.1765750e-7 -1.0660435e-6
-47 3.0329353e-9 -1.3756348e-7
-49 -5.7528222e-3 -2.0112546e-2
-50 -5.7627346e-7 1.5753420e-6
-51 3.2467534e-9 -1.2695817e-7
-53 4.0162285e-3 -2.0530056e-2
-54 6.1463544e-7 1.5875504e-6
-55 3.5597438e-9 -1.1752616e-7
-57 -8.1162285e-3 -1.9280627e-2
-58 1.0574968e-6 1.2409692e-6
-59 3.7405590e-9 -1.0981142e-7
-61 -1.8178595e-2 1.0351348e-2
-62 1.2435604e-6 -1.0370277e-6
-63 3.1590550e-9 -1.0304320e-7
-65 1.6600046e-2 -1.2730168e-2
-66 7.2274625e-8 1.9249228e-6
-67 3.0070012e-9 -9.6046752e-8
-69 1.9153444e-2 8.4120145e-3
-70 1.3069923e-6 1.5724866e-6
-71 3.1221402e-9 -9.0711901e-8
-73 1.9049156e-2 -8.6458467e-3
-74 -2.0554695e-6 -2.1838123e-7
-75 2.6017568e-9 -8.6429026e-8
-81 1.3857757e-2 1.5671052e-2
-82 3.8307967e-8 5.0894702e-7
-83 3.1469840e-9 -7.8009934e-8
-101 -8.4659416e-3 1.9129837e-2
-102 1.0173689e-7 -2.0409258e-8
-103 2.1214999e-9 -6.2779214e-8
-125 -1.0273036e-2 1.8223346e-2
-126 1.1420609e-7 -1.0898108e-7
-127 2.3870919e-9 -5.1809966e-8
-161 -5.1261795e-4 -2.0913348e-2
-162 1.2608438e-6 2.0611445e-7
-163 2.4611801e-9 -3.9684133e-8
-201 -1.4632120e-2 1.4950926e-2
-202 7.5089807e-7 -8.9370392e-7
-203 2.2763994e-9 -3.1617621e-8
-253 -2.0355310e-2 -4.8262034e-3
-254 1.0598672e-7 -1.1234802e-6
-255 2.5506996e-9 -2.5281511e-8
-321 -6.2153872e-3 1.9974966e-2
-322 5.5758743e-7 -1.4534249e-7
-323 1.6043853e-9 -2.0414655e-8
-405 2.0481036e-3 -2.0819158e-2
-406 5.4030647e-7 4.5119153e-7
-407 2.1404958e-9 -1.5255737e-8
-509 2.0382022e-2 -4.7122071e-3
-510 -2.6835171e-7 6.4667197e-7
-511 2.0477075e-9 -1.2557967e-8
-645 -5.6850574e-3 2.0132345e-2
-646 -4.4543645e-7 -5.6431786e-7
-647 1.8633484e-9 -9.6944773e-9
-813 2.9042677e-4 2.0917624e-2
-814 -5.8497056e-7 -4.1156697e-7
-815 2.1421669e-9 -7.8337440e-9
-run tone/1k/+0 steady 2.473199817e-4 thdn 9.988253931e-3 floor 3.608202713e-5 anmr -3.673607e1
-0 2.0547619e2 0.0000000e0
-19 -5.3573210e-2 1.1449328e1
-38 1.1433296e-1 1.3408712e-3
-57 -2.6830034e-5 2.0551557e-3
-76 -9.5307406e-6 4.3058580e-6
-95 -2.3050363e-7 2.7135028e-6
-114 -2.6109469e-7 2.8536451e-6
-133 -2.5601800e-7 2.4441308e-6
-152 -2.5845114e-7 2.1355069e-6
-171 -2.6036398e-7 1.8955493e-6
-190 -2.6161958e-7 1.7033525e-6
-209 -2.6253893e-7 1.5458375e-6
-228 -2.6323715e-7 1.4143448e-6
-247 -2.6377887e-7 1.3028684e-6
-266 -2.6420767e-7 1.2071178e-6
-285 -2.6455291e-7 1.1239471e-6
-run tone/1k/+12 steady 1.017686907e-3 thdn 4.079526422e-2 floor 1.496972169e-4 anmr -2.461835e1
-0 2.0459000e2 0.0000000e0
-19 -2.0892881e-1 4.5076390e1
-38 1.8339026e0 2.1225746e-2
-57 -1.7158203e-3 1.3392641e-1
-76 -1.6117584e-3 9.2996474e-5
-95 2.1677878e-5 -1.0636786e-3
-114 -3.0214590e-4 3.7968781e-5
-133 -8.2148937e-6 1.7800995e-4
-152 6.7028522e-5 3.7984531e-5
-171 -2.5105576e-6 2.8039474e-7
-190 -1.6779046e-5 2.7475181e-5
-209 -4.3036392e-6 3.0381727e-5
-228 -2.3634761e-6 2.3425898e-5
-247 -4.1072348e-6 2.0910393e-5
-266 -4.3550215e-6 1.9892516e-5
-285 -4.2103912e-6 1.8582308e-5
-run tone/1k/-20 steady 2.468557856e-5 thdn 9.971101279e-4 floor 3.599525207e-6 anmr -5.670501e1
-0 2.0553451e2 0.0000000e0
-19 -5.3644677e-3 1.1457575e0
-38 1.1423708e-3 1.3408932e-5
-57 -2.9364026e-8 2.1026117e-6
-76 -3.6520265e-9 4.2788532e-8
-95 -2.7005694e-9 3.4197514e-8
-114 -2.6897231e-9 2.8478500e-8
-133 -2.6829747e-9 2.4384459e-8
-152 -2.6785600e-9 2.1310467e-8
-171 -2.6755130e-9 1.8916500e-8
-190 -2.6733243e-9 1.6998546e-8
-209 -2.6717013e-9 1.5426780e-8
-228 -2.6704648e-9 1.4114642e-8
-247 -2.6694961e-9 1.3002225e-8
-266 -2.6687313e-9 1.2046716e-8
-285 -2.6681138e-9 1.1216736e-8
+0 2.0601988e2 0.0000000e0
+2 1.4379947e-6 -2.9649627e-5
+23 -2.2074936e-3 1.1438638e0
+run multisine/+0/r1 steady 1.398197739e-3 thdn - floor -
+0 2.0596292e2 0.0000000e0
+1 1.1289982e0 -1.5924181e0
+2 8.0761728e-4 2.9655676e-3
+3 3.0715192e-4 -3.9252290e-5
+5 2.0797804e0 3.6582832e-2
+6 -4.4222889e-3 5.5078982e-3
+7 1.2564919e-4 9.6072163e-5
+9 3.2708052e-1 2.0582922e0
+10 -1.0144639e-2 -3.5794275e-3
+11 1.0731330e-4 -1.9486960e-4
+13 -6.8051253e-1 -1.9706529e0
+14 5.9035199e-3 -5.4866631e-3
+15 -4.4904202e-5 -4.6262227e-4
+17 -6.9008170e-1 -1.9684278e0
+18 1.2793556e-2 8.1788150e-3
+19 -5.1098074e-5 3.5022166e-4
+21 2.0769736e0 1.9115519e-1
+22 -9.1721989e-3 1.6186717e-2
+23 1.6293542e-5 3.8694263e-4
+25 1.4399489e0 1.5090261e0
+26 -1.8422473e-2 1.3033576e-3
+27 -7.6172569e-4 1.5388770e-4
+29 3.1708918e-1 -2.0615929e0
+30 5.5708415e-3 -1.2992911e-2
+31 -1.6827095e-5 -5.8867939e-4
+33 -2.0307046e0 -4.7489528e-1
+34 1.3527177e-2 1.8021755e-3
+35 2.1653119e-4 -4.5549558e-4
+37 2.0032453e0 5.8146328e-1
+38 -7.6286028e-3 2.0549029e-2
+39 -7.0636738e-5 6.4649510e-4
+41 -1.1723797e0 -1.7252703e0
+42 -4.4507548e-4 1.0256613e-2
+43 -1.2093654e-4 7.9862646e-4
+45 1.2911011e0 -1.6385769e0
+46 9.1939639e-3 -9.3177443e-3
+47 -3.6054710e-4 -2.1792247e-4
+49 -5.7420665e-1 -2.0053659e0
+50 -5.8232058e-3 1.7135660e-2
+51 -1.6590004e-5 -2.8992344e-4
+53 3.9979426e-1 -2.0481956e0
+54 6.1536116e-3 1.7158219e-2
+55 3.8368813e-4 -1.5245688e-4
+57 -8.0929079e-1 -1.9225469e0
+58 1.0613943e-2 1.3594905e-2
+59 5.3213191e-4 -3.1191128e-4
+61 -1.8128213e0 1.0323547e0
+62 1.2485031e-2 -9.3983693e-3
+63 3.1950642e-4 -2.4185352e-4
+65 1.6549208e0 -1.2690392e0
+66 6.9596603e-4 2.0348259e-2
+67 1.2398116e-4 4.7558845e-4
+69 1.9099166e0 8.3936472e-1
+70 1.3116754e-2 1.6743253e-2
+71 4.8195903e-4 2.8843425e-4
+73 1.8996043e0 -8.6222970e-1
+74 -2.0704279e-2 -1.3239065e-3
+75 -1.2162368e-4 -4.1543322e-4
+81 1.3818880e0 1.5628204e0
+82 3.5892338e-4 5.9055966e-3
+83 6.6427779e-4 -2.7362389e-4
+101 -8.4460483e-1 1.9073255e0
+102 9.8898174e-4 4.2110408e-4
+103 -1.9678842e-4 -2.2180334e-5
+125 -1.0242247e0 1.8168096e0
+126 1.1217919e-3 -5.9712260e-4
+127 1.8055610e-4 -8.9602919e-4
+161 -5.0770003e-2 -2.0850780e0
+162 1.2666937e-2 2.4743397e-3
+163 1.2527561e-4 -1.0674100e-4
+201 -1.4589321e0 1.4904068e0
+202 7.5272951e-3 -8.6776102e-3
+203 1.4850602e-4 2.6025911e-4
+253 -2.0293217e0 -4.8110580e-1
+254 1.0589719e-3 -1.1051743e-2
+255 3.4312333e-4 1.0602834e-4
+321 -6.1965998e-1 1.9914964e0
+322 5.5828928e-3 -1.2733417e-3
+323 -4.4266752e-4 -4.2305251e-4
+405 2.0403760e-1 -2.0757392e0
+406 5.4154820e-3 4.6996395e-3
+407 -9.9638508e-5 5.0019881e-4
+509 2.0319935e0 -4.6949980e-1
+510 -2.7230858e-3 6.6377065e-3
+511 -8.2797312e-5 -1.4252349e-4
+645 -5.6664207e-1 2.0073664e0
+646 -4.5024656e-3 -5.5814988e-3
+647 -1.6266198e-4 1.9842297e-4
+813 2.9040128e-2 2.0855508e0
+814 -5.9088804e-3 -4.0671446e-3
+815 1.3533877e-4 -7.0616935e-5
+run multisine/+12/r1 steady 1.589400378e-4 thdn - floor -
+0 2.0512892e2 0.0000000e0
+1 4.3040293e0 -6.2440136e0
+2 3.4028702e-2 3.8780598e-2
+3 2.5760284e-2 1.5115959e-2
+5 8.1572029e0 1.3683457e-1
+6 -8.9599738e-2 8.8696420e-2
+7 2.0095313e-2 -1.8439921e-2
+9 1.2885209e0 7.9878130e0
+10 -1.7041729e-1 -1.7746217e-2
+11 1.5780724e-2 -1.5612565e-2
+13 -2.6257637e0 -7.6373591e0
+14 7.6215121e-2 -1.2202707e-1
+15 -3.3526692e-3 -2.7269165e-2
+17 -2.7113026e0 -7.6837700e0
+18 1.8337360e-1 8.5181006e-2
+19 1.5934353e-2 7.3060776e-2
+21 8.0861432e0 8.0242954e-1
+22 -1.1462231e-1 2.3003182e-1
+23 -2.3201649e-2 2.6246572e-2
+25 5.6265046e0 5.8306474e0
+26 -2.4811680e-1 4.6287146e-2
+27 -1.1421622e-1 2.3763598e-2
+29 1.2166497e0 -8.0223360e0
+30 9.3565109e-2 -2.1729634e-1
+31 1.8899409e-2 -6.1317100e-2
+33 -7.8454958e0 -1.8479068e0
+34 1.5625028e-1 4.1810627e-2
+35 4.6211070e-2 -5.7804142e-2
+37 7.7968321e0 2.2667441e0
+38 -8.9986695e-2 3.1363460e-1
+39 -1.1791561e-2 7.4890937e-2
+41 -4.5434717e0 -6.6852702e0
+42 -2.0337991e-2 1.1317977e-1
+43 -1.8624574e-2 1.0561842e-1
+45 5.0422339e0 -6.3861675e0
+46 1.5677084e-1 -1.3709267e-1
+47 -4.0993989e-2 -3.5317461e-2
+49 -2.2991345e0 -7.7963342e0
+50 -7.6831120e-2 2.5654771e-1
+51 -2.4993966e-2 -4.0545907e-2
+53 1.4781016e0 -8.1081950e0
+54 1.1427439e-1 2.9390465e-1
+55 3.5310071e-2 -2.1332371e-2
+57 -3.1276814e0 -7.4758929e0
+58 1.3544936e-1 1.9563886e-1
+59 7.7734521e-2 -2.8577936e-2
+61 -7.0423896e0 4.0207889e0
+62 1.4867209e-1 -1.1748405e-1
+63 5.0285186e-2 -4.2337251e-2
+65 6.3885668e0 -4.8776225e0
+66 4.8208616e-2 2.5610040e-1
+67 -4.3958102e-4 8.4034757e-2
+69 7.4649614e0 3.3519364e0
+70 1.8568625e-1 2.3434226e-1
+71 7.0034690e-2 4.0071752e-2
+73 7.3915480e0 -3.3933228e0
+74 -2.7968812e-1 9.3327424e-3
+75 -4.2879735e-2 -6.2215204e-2
+81 5.3936484e0 6.1024830e0
+82 -7.0316546e-3 1.0517530e-1
+83 8.6405912e-2 -3.2697009e-2
+101 -3.3453127e0 7.3926127e0
+102 4.9023129e-2 3.0990533e-2
+103 -4.7237199e-2 -1.0757379e-2
+125 -3.9787258e0 7.0251680e0
+126 1.8644512e-2 5.4315643e-2
+127 8.5922059e-3 -1.4273467e-1
+161 -1.3530566e-1 -8.0526918e0
+162 1.6907534e-1 1.6814487e-2
+163 2.3218684e-2 -2.5537629e-2
+201 -5.6642373e0 5.7301091e0
+202 1.0073659e-1 -9.3151218e-2
+203 3.0139184e-2 8.9802893e-3
+253 -7.8324040e0 -1.8693173e0
+254 -5.4360701e-2 -1.6445154e-1
+255 8.7376280e-2 -1.3921957e-3
+321 -2.3779443e0 7.6915122e0
+322 8.3016895e-2 3.4782528e-2
+323 -6.5422140e-2 -5.5633036e-2
+405 7.6287262e-1 -8.0493803e0
+406 1.0109113e-1 5.2448555e-2
+407 -2.0935493e-2 5.4707863e-2
+509 7.8386348e0 -1.7802635e0
+510 -1.4763580e-2 7.7324929e-2
+511 3.4788963e-3 -6.2896643e-4
+645 -2.1651842e0 7.7793313e0
+646 -8.0722529e-2 -6.0241547e-2
+647 -2.7714865e-2 1.7394258e-2
+813 1.1937423e-1 8.0789463e0
+814 -8.9847794e-2 -2.5158332e-2
+815 1.4389075e-2 -2.2107092e-2
+run multisine/-40/r1 steady 1.816769545e-3 thdn - floor -
+0 2.0602013e2 0.0000000e0
+1 1.1308402e-2 -1.5939373e-2
+2 7.8450170e-7 -2.8317508e-6
+3 3.2530531e-7 -2.1587539e-6
+5 2.0819010e-2 3.6717094e-4
+6 -3.5854063e-7 -5.3909702e-7
+7 6.2655280e-8 -9.4176248e-7
+9 3.2739275e-3 2.0605903e-2
+10 -9.8171544e-7 -1.0129789e-6
+11 2.6487370e-8 -6.0099255e-7
+13 -6.8144092e-3 -1.9732065e-2
+14 6.0643779e-7 -1.0174140e-6
+15 1.5246887e-8 -4.4141275e-7
+17 -6.9065052e-3 -1.9703973e-2
+18 1.2886946e-6 4.5161019e-7
+19 1.0413378e-8 -3.4804815e-7
+21 2.0793321e-2 1.9094622e-3
+22 -9.0778755e-7 1.3176650e-6
+23 7.7797267e-9 -2.8732978e-7
+25 1.4412607e-2 1.5110317e-2
+26 -1.8331001e-6 -1.2224485e-7
+27 5.2264325e-9 -2.4485211e-7
+29 3.1741395e-3 -2.0640103e-2
+30 5.6186759e-7 -1.5169535e-6
+31 5.2684907e-9 -2.1392226e-7
+33 -2.0333797e-2 -4.7576971e-3
+34 1.3550475e-6 -1.2995988e-8
+35 4.8039584e-9 -1.8973693e-7
+37 2.0055814e-2 5.8199636e-3
+38 -7.5758656e-7 1.8793745e-6
+39 3.8570985e-9 -1.6892032e-7
+41 -1.1737799e-2 -1.7272753e-2
+42 -4.0862174e-8 8.6764327e-7
+43 3.5866709e-9 -1.5318956e-7
+45 1.2924344e-2 -1.6404002e-2
+46 9.2198711e-7 -1.0733740e-6
+47 3.1063013e-9 -1.4090543e-7
+49 -5.7432774e-3 -2.0078601e-2
+50 -5.7840147e-7 1.5801616e-6
+51 3.3194439e-9 -1.3004122e-7
+53 4.0093139e-3 -2.0495478e-2
+54 6.1783707e-7 1.5926766e-6
+55 3.6325081e-9 -1.2038215e-7
+57 -8.1026721e-3 -1.9248073e-2
+58 1.0628157e-6 1.2444985e-6
+59 3.8161483e-9 -1.1247647e-7
+61 -1.8147885e-2 1.0334005e-2
+62 1.2493216e-6 -1.0442143e-6
+63 3.2240239e-9 -1.0554705e-7
+65 1.6571988e-2 -1.2708805e-2
+66 7.2738396e-8 1.9320802e-6
+67 3.0744410e-9 -9.8395176e-8
+69 1.9121200e-2 8.3977271e-3
+70 1.3127521e-6 1.5780082e-6
+71 3.1836640e-9 -9.2925784e-8
+73 1.9016997e-2 -8.6313703e-3
+74 -2.0649089e-6 -2.2064065e-7
+75 2.6653404e-9 -8.8521853e-8
+81 1.3834466e-2 1.5644566e-2
+82 3.8173741e-8 5.0975680e-7
+83 3.2056553e-9 -7.9901084e-8
+101 -8.4515978e-3 1.9097614e-2
+102 1.0204613e-7 -2.2066922e-8
+103 2.1752883e-9 -6.4306552e-8
+125 -1.0255662e-2 1.8192651e-2
+126 1.1459895e-7 -1.1082739e-7
+127 2.4393149e-9 -5.3050869e-8
+161 -5.1180199e-4 -2.0878088e-2
+162 1.2669464e-6 2.0644399e-7
+163 2.5184409e-9 -4.0647357e-8
+201 -1.4607423e-2 1.4925745e-2
+202 7.5426983e-7 -8.9877775e-7
+203 2.3274654e-9 -3.2393420e-8
+253 -2.0320998e-2 -4.8180371e-3
+254 1.0677030e-7 -1.1293553e-6
+255 2.6050032e-9 -2.5899877e-8
+321 -6.2048848e-3 1.9941295e-2
+322 5.5993027e-7 -1.4668954e-7
+323 1.6524306e-9 -2.0902163e-8
+405 2.0446314e-3 -2.0784058e-2
+406 5.4310300e-7 4.5316108e-7
+407 2.1955541e-9 -1.5638128e-8
+509 2.0347654e-2 -4.7042773e-3
+510 -2.6965393e-7 6.4971987e-7
+511 2.0995473e-9 -1.2859488e-8
+645 -5.6754608e-3 2.0098405e-2
+646 -4.4767182e-7 -5.6735903e-7
+647 1.9115357e-9 -9.9350646e-9
+813 2.8994652e-4 2.0882357e-2
+814 -5.8790987e-7 -4.1378864e-7
+815 2.1903710e-9 -8.0227727e-9
+run tone/1k/+0 steady 2.534761064e-4 thdn 1.005085988e-2 floor 3.715749474e-5 anmr -3.648240e1
+0 2.0596117e2 0.0000000e0
+19 -5.3392729e-2 1.1429971e1
+38 1.1485518e-1 1.3449550e-3
+57 -2.6784980e-5 2.0586204e-3
+76 -9.8382975e-6 4.4213356e-6
+95 -2.3730816e-7 2.8138585e-6
+114 -2.6769173e-7 2.9333876e-6
+133 -2.6305380e-7 2.5123011e-6
+152 -2.6560317e-7 2.1951666e-6
+171 -2.6756991e-7 1.9485082e-6
+190 -2.6887312e-7 1.7509394e-6
+209 -2.6982799e-7 1.5890238e-6
+228 -2.7055295e-7 1.4538575e-6
+247 -2.7111542e-7 1.3392668e-6
+266 -2.7156066e-7 1.2408412e-6
+285 -2.7191913e-7 1.1553469e-6
+run tone/1k/+12 steady 1.043348013e-3 thdn 4.106382845e-2 floor 1.542104499e-4 anmr -2.436343e1
+0 2.0507409e2 0.0000000e0
+19 -2.0819917e-1 4.4996886e1
+38 1.8427586e0 2.1294313e-2
+57 -1.7103937e-3 1.3403130e-1
+76 -1.7562627e-3 9.2530724e-5
+95 2.0261925e-5 -1.0107265e-3
+114 -2.7571974e-4 4.0087822e-5
+133 -7.8026902e-6 1.6450920e-4
+152 5.9980225e-5 3.8703005e-5
+171 -2.7523105e-6 4.2531893e-6
+190 -1.5622585e-5 2.8328647e-5
+209 -4.3888767e-6 3.0619721e-5
+228 -2.6455641e-6 2.4072768e-5
+247 -4.2255518e-6 2.1570348e-5
+266 -4.4546693e-6 2.0454177e-5
+285 -4.3271016e-6 1.9099794e-5
+run tone/1k/-20 steady 2.529942945e-5 thdn 1.003343176e-3 floor 3.706718719e-6 anmr -5.645122e1
+0 2.0601954e2 0.0000000e0
+19 -5.3464398e-3 1.1438261e0
+38 1.1475740e-3 1.3449669e-5
+57 -2.9390021e-8 2.1075159e-6
+76 -3.7570144e-9 4.3982541e-8
+95 -2.7753693e-9 3.5152405e-8
+114 -2.7643961e-9 2.9273496e-8
+133 -2.7575717e-9 2.5065171e-8
+152 -2.7531026e-9 2.1905368e-8
+171 -2.7500180e-9 1.9444569e-8
+190 -2.7478056e-9 1.7473077e-8
+209 -2.7461600e-9 1.5857428e-8
+228 -2.7449094e-9 1.4508666e-8
+247 -2.7439292e-9 1.3365191e-8
+266 -2.7431547e-9 1.2383011e-8
+285 -2.7425302e-9 1.1529857e-8
 end

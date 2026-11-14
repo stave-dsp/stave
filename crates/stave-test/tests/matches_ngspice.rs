@@ -193,7 +193,8 @@ fn coupler_matches_ngspice() {
 /// current through the 68 kΩ stopper, fixed bias) against an ngspice
 /// sweep of the grid from −10 V to +10 V. The operating point must agree
 /// absolutely; the curve agrees up to the stage's level calibration, one
-/// fitted scale factor.
+/// fitted scale factor. Measured 1.6e-8 on the Hermite table (5e-7 was
+/// Catmull-Rom's budget).
 #[test]
 fn triode_stage_static_transfer_matches_ngspice() {
     use stave_dsp::{Stage, Triode};
@@ -218,7 +219,7 @@ fn triode_stage_static_transfer_matches_ngspice() {
     );
     Case::new("triode_stage", r)
         .stimulus(grid)
-        .budget(Metric::NormalizedRms, 5e-7)
+        .budget(Metric::NormalizedRms, 5e-8)
         .map_reference("the plate's fall from its operating point", move |v| {
             plate - v
         })
@@ -230,6 +231,7 @@ fn triode_stage_static_transfer_matches_ngspice() {
 /// The push-pull pair's static transfer — two halves at the class point,
 /// grids driven in antiphase through the phase inverter's 40 kΩ — against
 /// the ngspice plate difference, up to the pair's level calibration.
+/// Measured 4.4e-8 on the Hermite tables (2e-6 was Catmull-Rom's budget).
 #[test]
 fn push_pull_static_transfer_matches_ngspice() {
     use stave_dsp::{PushPull, Stage};
@@ -237,7 +239,7 @@ fn push_pull_static_transfer_matches_ngspice() {
     pair.prepare(48_000.0);
     Case::ngspice("push_pull")
         .stimulus(Stimulus::ramp(-16.0, 1_600.0))
-        .budget(Metric::NormalizedRms, 2e-6)
+        .budget(Metric::NormalizedRms, 2e-7)
         .up_to_scale()
         .pointwise(|swing| pair.static_transfer(swing))
         .assert();
@@ -245,8 +247,8 @@ fn push_pull_static_transfer_matches_ngspice() {
 
 /// E3: the push-pull pair with real pentodes (`PushPull::set_pentode`,
 /// the EL34 at its sheet's fixed-bias conditions) against ngspice's
-/// EL34 pair, up to the pair's level calibration. Measured 2.6e-7 (the
-/// tables' interpolation over 116 grid volts).
+/// EL34 pair, up to the pair's level calibration. Measured 1.7e-8 on the
+/// Hermite tables over 116 grid volts (2.6e-7 on Catmull-Rom's).
 #[test]
 fn push_pull_pentode_static_transfer_matches_ngspice() {
     use stave_dsp::circuit::topologies::push_pull::PentodePair;
@@ -256,7 +258,7 @@ fn push_pull_pentode_static_transfer_matches_ngspice() {
     pair.prepare(48_000.0);
     Case::ngspice("push_pull_pentode")
         .stimulus(Stimulus::ramp(-54.0, 5_400.0))
-        .budget(Metric::NormalizedRms, 1e-6)
+        .budget(Metric::NormalizedRms, 1e-7)
         .up_to_scale()
         .pointwise(|swing| pair.static_transfer(swing))
         .assert();

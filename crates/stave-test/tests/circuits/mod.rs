@@ -477,13 +477,14 @@ pub fn piano_anmr(name: &str, host: f64, s: Shipping, offset: f64) -> (f64, f64)
 
 /// `spice/triode_stage_cathode.cir`'s cathode: the tabulated `Triode`'s
 /// own RK under `Bias::Cathode` (its −1.5 V design bias over its idle
-/// plate current), and the bypass.
-pub const TRIODE_CATHODE_OHMS: f64 = 1579.40;
+/// cathode current, the plate seeing B+ less the cathode), and the
+/// bypass.
+pub const TRIODE_CATHODE_OHMS: f64 = 1595.95;
 pub const TRIODE_CATHODE_FARADS: f64 = 22e-6;
 /// `spice/push_pull_cathode.cir`'s shared cathode: `PushPull`'s RK (its
-/// −3.5 V class point over both halves' idle cathode current), and the
-/// bypass.
-pub const PUSH_PULL_CATHODE_OHMS: f64 = 17384.1;
+/// −3.5 V class point over both halves' idle cathode current, the plates
+/// seeing B+ less the cathode), and the bypass.
+pub const PUSH_PULL_CATHODE_OHMS: f64 = 19087.8;
 pub const PUSH_PULL_CATHODE_FARADS: f64 = 2.2e-6;
 
 /// A fresh hand stage at a rate.
@@ -604,8 +605,8 @@ pub fn hand(case: &str, tier: Tier) {
             .operating_point("k", -t.frame_params().0)
         }
         // The pair under `Bias::Cathode`, one grid volt a unit, its output
-        // (normalised to its fixed-bias swing at ±16 V) read back as the
-        // plate difference by that swing, ngspice's on the fixed-bias deck.
+        // (normalised to its own swing at ±16 V) read back as the plate
+        // difference by that swing.
         "push_pull_cathode/hand" => {
             let make = |rate: f64| {
                 let mut p = PushPull::new();
@@ -619,8 +620,7 @@ pub fn hand(case: &str, tier: Tier) {
                 "the deck's RK {PUSH_PULL_CATHODE_OHMS} is not the pair's {}",
                 p.cathode_ohms()
             );
-            let fixed = stave_test::reference::Reference::ngspice("push_pull");
-            let volts = fixed.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            let volts = p.plate_volts_per_unit();
             base.stage(move |rate| {
                 let mut p = make(rate);
                 move |x| f64::from(p.tick(x as f32)) * volts
