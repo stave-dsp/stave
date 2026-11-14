@@ -67,8 +67,8 @@ more proof. An honest comparison, November 2026:
 ### Where stave trails
 
 - **Formats.** JUCE ships VST3, AU v2, AUv3 (macOS and iOS), AAX, LV2,
-  standalone and Unity. Stave ships VST3 and CLAP, and AU v2 is in
-  progress (F-AU); no standalone, LV2, AAX or AUv3 yet.
+  standalone and Unity. Stave ships VST3, CLAP and AU v2 (F-AU); no
+  standalone, LV2, AAX or AUv3 yet.
 - **GUI maturity.** JUCE has a full widget toolkit with text editing,
   accessibility (VoiceOver, UIA), OpenGL and per-monitor DPI handled in
   years of hosts. Stave's faces are a small, verified design system
@@ -128,7 +128,26 @@ bundle that AudioToolbox registers.
   - Manual: GarageBand loads both, automation records and plays back,
     a saved song reopens with its settings (procedure in the guide's
     formats page).
-- **Status:** In progress.
+- **Status:** Done (PR #53): `stave-au` and `stave-au-sys`;
+  `export_au!` in `stave::export!`; `Info::au` and `stave::identity`'s
+  `au`; `scripts/bundle-au.sh` (the entry from the binary's
+  `__DATA,__stave_au`), `install.sh`, `bundle-all.sh`,
+  `validate-formats.sh au`. `auval -v` SUCCEEDED for Tilt (`aufx 2br5
+  Ryan`) and the new instrument example Pluck (`aumu 2ran Ryan`) in CI's
+  `validators (auval)` job, which also runs `stave-bench <bundle>
+  --validate` on each `.component` (0 failures). stave-host's AU backend
+  gained instruments (`MusicDeviceMIDIEvent`), `ClassInfo` state,
+  in-process registration of linked plugins and of `.component` paths,
+  and `cocoa_view`; `tests/au_effect.rs` and `tests/au_instrument.rs` pass
+  the validation suite through AudioToolbox, and `plugin_checks!` now
+  does the same for every plugin's Audio Unit on macOS. The face: the
+  view factory (`stave_ui_cocoa::view_factory`) is tested in
+  `real_window.rs`, and `cocoa_view` finds it on the bundled binary; auval
+  on the CI runner reports "Cocoa Views Available: 0" (headless), so the
+  view in a real host is the GarageBand pass below. Gaps: automation is
+  block-accurate (the table, not `ParamBlock`); MIDI beyond notes is
+  ignored; no `AudioChannelLayout`; the GarageBand smoke test
+  (guide: Plugin formats) has not been recorded yet.
 
 ### F-DAW — Real-DAW compatibility matrix
 

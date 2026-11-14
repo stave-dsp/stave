@@ -16,6 +16,7 @@ stave-measure.workspace = true
 stave-model.workspace = true
 stave-dsp.workspace = true
 stave-vst3-sys.workspace = true
+stave-au-sys.workspace = true
 stave-telemetry.workspace = true
 stave-core.workspace = true
 crossbeam-queue = "0.3"
@@ -26,6 +27,8 @@ serde_json = "1"
 assert_no_alloc = "1"
 # A real stave plugin, hosted in-process through the full VST3 path.
 stave-tilt-vst3 = { path = "../../examples/tilt" }
+# An instrument, for the hosts' note paths.
+stave-pluck = { path = "../../examples/pluck" }
 
 [lints]
 workspace = true

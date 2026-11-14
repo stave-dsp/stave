@@ -10,6 +10,9 @@ Each assumes you know the [concepts](crate::concepts).
 - [Use the host tools](crate::howto::host_tools): measure, validate and
   play any VST3 with `stave-host`, `stave-bench`, `stave-play` and
   `stave-events`.
+- [Plugin formats](crate::howto::formats): VST3, CLAP and Audio Unit
+  from one crate, each format's identity, bundling, validators, and a
+  GarageBand smoke test.
 - [Lay out a plugin project](crate::howto::project_layout): the shape,
   the tree rules, and the gates that hold them.
 - [Local configuration](crate::howto::local_config): per-machine hosts,

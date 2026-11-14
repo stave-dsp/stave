@@ -81,8 +81,8 @@
 //! stave::export!(Invert);
 //! ```
 //!
-//! `stave::export!` makes the crate (a `cdylib`) a VST3 and a CLAP plugin
-//! at once. The framework owns everything around `process`: bypass
+//! `stave::export!` makes the crate (a `cdylib`) a VST3, a CLAP plugin
+//! and (on macOS) an Audio Unit at once. The framework owns everything around `process`: bypass
 //! (click-free, latency matched), parameter automation and state,
 //! presets, the face's window, denormals, panics at the host boundary.
 //!
@@ -110,7 +110,7 @@ pub use stave_core::{
     process, solver_taps, state, telemetry, units,
 };
 pub use stave_core::{
-    Aux, Block, Budget, Channels, Controller, CostTapIds, CostTaps, Environment, Event, EventCursor,
+    AuCodes, Aux, Block, Budget, Channels, Controller, CostTapIds, CostTaps, Environment, Event, EventCursor,
     EventKind, Feature, Info,
     InputBuffer, LaneFrame, Lanes, Layout, NoteEvent, NoteKind, Normalized, OutputBuffer, ParamId,
     Peaks, Preset, SolverTapIds, SolverTaps, Tail, Tap, TapId, Telemetry, Transport,
@@ -263,7 +263,7 @@ pub mod prelude {
     pub use stave_face::prelude::*;
 }
 
-/// A [`Plugin`] [`export!`] made a VST3 and a CLAP plugin: the facts only
+/// A [`Plugin`] [`export!`] made a VST3, CLAP and Audio Unit plugin: the facts only
 /// the exporting crate knows. `export!` implements it; an author never
 /// does.
 pub trait Exported: Plugin {
@@ -287,11 +287,15 @@ pub struct Identity {
     pub vst3_component: [u8; 16],
     /// The VST3 edit-controller class id.
     pub vst3_controller: [u8; 16],
+    /// The Audio Unit's type, subtype and manufacturer codes (`aufx`,
+    /// `aumu` or `aumf` first), as `auval -v` takes them.
+    pub au: [[u8; 4]; 3],
 }
 
-/// The identity [`export!`] gives plugin `P`: its CLAP id and VST3 class
-/// ids, derived from `INFO.id` or pinned by `export!`'s
-/// `vst3_class_ids`. Pin it in a test, so a change that would orphan
+/// The identity [`export!`] gives plugin `P`: its CLAP id, VST3 class
+/// ids (derived from `INFO.id` or pinned by `export!`'s
+/// `vst3_class_ids`) and Audio Unit codes (derived from `INFO.vendor`
+/// and `INFO.id`, or pinned by `INFO.au`). Pin it in a test, so a change that would orphan
 /// every saved session fails the build:
 ///
 /// ```ignore
@@ -305,6 +309,10 @@ pub const fn identity<P: Exported>() -> Identity {
         clap: P::INFO.id,
         vst3_component: canonical_tuid(__export::class_id::<P>(0, "component")),
         vst3_controller: canonical_tuid(__export::class_id::<P>(1, "controller")),
+        au: {
+            let id = __export::au::component::Identity::from_info(&P::INFO, P::LAYOUTS);
+            [id.kind, id.subtype, id.manufacturer]
+        },
     }
 }
 
@@ -316,6 +324,7 @@ pub mod __export {
     use stave_core::params::IndexedParams;
     use stave_core::runtime::Erased;
 
+    pub use stave_au as au;
     pub use stave_clap as clap;
     pub use stave_vst3 as vst3;
 
@@ -426,6 +435,13 @@ pub mod __export {
         }
     }
 
+    impl<P: Export> au::AuExport for Shell<P> {
+        const VERSION: &'static str = version::<P>();
+        fn face(&self) -> Option<Face> {
+            P::face(&self.params)
+        }
+    }
+
     #[cfg(feature = "standalone")]
     pub use stave_standalone as standalone;
 
@@ -469,8 +485,8 @@ macro_rules! standalone {
     };
 }
 
-/// Make this crate a VST3 and a CLAP plugin of `$plugin` (a [`Plugin`]).
-/// Once per `cdylib` crate.
+/// Make this crate a VST3, a CLAP plugin and (on macOS) an Audio Unit of
+/// `$plugin` (a [`Plugin`]). Once per `cdylib` crate.
 ///
 /// ```ignore
 /// stave::export!(Tilt);
@@ -508,5 +524,6 @@ macro_rules! export {
     (@entries $plugin:ty) => {
         $crate::__export::vst3::export_vst3!($crate::__export::Shell<$plugin>);
         $crate::__export::clap::export_clap!($crate::__export::Shell<$plugin>);
+        $crate::__export::au::export_au!($crate::__export::Shell<$plugin>);
     };
 }

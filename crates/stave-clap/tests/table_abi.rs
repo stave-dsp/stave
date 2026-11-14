@@ -53,6 +53,7 @@ impl Erased for TableGain {
         url: "",
         description: "param-table ABI fixture",
         features: &[],
+        au: None,
     };
 
     fn new(_telemetry: &Telemetry) -> Self {

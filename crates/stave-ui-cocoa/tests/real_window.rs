@@ -168,6 +168,90 @@ mod real {
         assert_eq!((table.knob.normalized(), table.foot.normalized()), (knob, foot), "replayed:\n{text}");
     }
 
+    /// Set when the hosted face's controller (and so the face) is dropped.
+    static HOSTED_DROPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    struct Watched;
+    impl GestureSink for Watched {
+        fn begin(&self, _: ParamId) {}
+        fn perform(&self, _: ParamId, _: f64) {}
+        fn end(&self, _: ParamId) {}
+    }
+    impl Drop for Watched {
+        fn drop(&mut self) {
+            HOSTED_DROPPED.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn hosted_face(_unit: *mut core::ffi::c_void) -> Option<FaceView> {
+        let table = Arc::new(Table {
+            knob: FloatParam::new(ParamId(1), "Knob", Range::linear(0.0, 1.0)).default(0.5),
+            foot: BoolParam::new(ParamId(2), "Foot", false),
+        });
+        let controller = PluginController::new(table.clone(), Telemetry::new(), Vec::new().into(), Box::new(Watched));
+        Some(FaceView::new(face(&table), Box::new(controller)))
+    }
+
+    #[link(name = "objc")]
+    extern "C" {
+        fn objc_getClass(name: *const core::ffi::c_char) -> *mut core::ffi::c_void;
+        fn sel_registerName(name: *const core::ffi::c_char) -> *mut core::ffi::c_void;
+        fn objc_msgSend();
+        fn objc_autoreleasePoolPush() -> *mut core::ffi::c_void;
+        fn objc_autoreleasePoolPop(pool: *mut core::ffi::c_void);
+    }
+
+    /// `#[repr(C)]` `NSSize`/`NSRect`.
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug, PartialEq)]
+    struct Size(f64, f64);
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug, PartialEq)]
+    struct Rect(f64, f64, f64, f64);
+
+    /// An Audio Unit host's way to the face: the view-factory class by
+    /// the name `view_factory` gave, instantiated, asked for a view; the
+    /// view has the face's size, holds the face, and drops it when the
+    /// host lets the view go.
+    pub fn a_hosted_view_holds_its_face_until_the_host_lets_go() {
+        type Id = *mut core::ffi::c_void;
+        let found = stave_ui_cocoa::view_factory(hosted_face);
+        let name = found.class;
+        assert!(std::path::Path::new(found.bundle).exists(), "{found:?}");
+        // SAFETY: Objective-C runtime calls with the C signatures of the
+        // messages sent (`new`, the factory's own method, `frame`,
+        // `subviews`/`count`), on the main thread (this harness).
+        unsafe {
+            let send0: unsafe extern "C" fn(Id, Id) -> Id = core::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            let make: unsafe extern "C" fn(Id, Id, Id, Size) -> Id = core::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            #[cfg(target_arch = "aarch64")]
+            let frame: unsafe extern "C" fn(Id, Id) -> Rect = core::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            let count: unsafe extern "C" fn(Id, Id) -> usize = core::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            let class = objc_getClass(name.as_ptr());
+            assert!(!class.is_null(), "{name:?} is registered");
+            let factory = send0(class, sel_registerName(c"new".as_ptr()));
+            let pool = objc_autoreleasePoolPush();
+            let view = make(factory, sel_registerName(c"uiViewForAudioUnit:withSize:".as_ptr()), core::ptr::null_mut(), Size(0.0, 0.0));
+            assert!(!view.is_null(), "a view for the host");
+            #[cfg(target_arch = "aarch64")]
+            {
+                let r = frame(view, sel_registerName(c"frame".as_ptr()));
+                let rt = Runtime::new(face(&Table {
+                    knob: FloatParam::new(ParamId(1), "Knob", Range::linear(0.0, 1.0)),
+                    foot: BoolParam::new(ParamId(2), "Foot", false),
+                }), &stave_ui_cocoa::text::SystemFonts);
+                assert_eq!((r.2, r.3), rt.size(), "the face's own size");
+            }
+            let subviews = send0(view, sel_registerName(c"subviews".as_ptr()));
+            assert_eq!(count(subviews, sel_registerName(c"count".as_ptr())), 1, "the face is inside");
+            assert!(!HOSTED_DROPPED.load(std::sync::atomic::Ordering::SeqCst));
+            // The host never retained it: draining the pool lets it go.
+            objc_autoreleasePoolPop(pool);
+            assert!(HOSTED_DROPPED.load(std::sync::atomic::Ordering::SeqCst), "the face went with its view");
+            send0(factory, sel_registerName(c"release".as_ptr()));
+        }
+    }
+
     /// The view's snapshot is the face drawn offscreen at the asked
     /// scale (what `STAVE_FACE_SNAPSHOT` and stave-play's editor
     /// screenshots write), not a capture of the screen.
@@ -181,6 +265,7 @@ mod real {
     }
 
     pub const TESTS: &[(&str, fn())] = &[
+        ("a_hosted_view_holds_its_face_until_the_host_lets_go", a_hosted_view_holds_its_face_until_the_host_lets_go),
         ("a_snapshot_is_the_face_at_its_scale", a_snapshot_is_the_face_at_its_scale),
         ("a_recorded_session_replays_to_the_same_values", a_recorded_session_replays_to_the_same_values),
         ("a_click_lands_on_the_part_under_it", a_click_lands_on_the_part_under_it),

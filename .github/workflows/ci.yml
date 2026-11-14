@@ -10,9 +10,8 @@
 # success, so every required check reports on every change. Main,
 # release branches and a dispatched run gate everything. Builds are --locked against the committed
 # Cargo.lock; every tool is pinned. macOS runners only where macOS is
-# needed (Cocoa, bundles, the validators) — three jobs, so they never
-# queue behind each other; everything else is Linux. Two of the macOS
-# jobs run on a self-hosted runner for trusted events (a push, a merge
+# needed (Cocoa, bundles, the validators, auval) — four jobs. Two of the
+# macOS jobs run on a self-hosted runner for trusted events (a push, a merge
 # group, a pull request from a branch here) and on GitHub's for a fork's
 # pull request; GitHub's free plan runs only five macOS jobs at once.
 #
@@ -175,6 +174,41 @@ jobs:
         env:
           VALIDATOR: vst3sdk/build/bin/Release/validator
 
+  audio-units:
+    # Apple's auval against every plugin's Audio Unit, installed into
+    # ~/Library/Audio/Plug-Ins/Components on the runner (auval finds only
+    # registered components), and stave-host's validation suite on each
+    # .component bundle, opened as itself. The full auval reports are
+    # uploaded either way.
+    name: validators (auval)
+    timeout-minutes: 10
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
+      - run: rustup toolchain install
+      - name: What the change affects
+        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+      - if: env.AFFECTED_SCOPE != 'none'
+        uses: Swatinem/rust-cache@v2
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
+      - if: env.AFFECTED_SCOPE != 'none'
+        run: scripts/validate-formats.sh au
+      - name: The validation suite on each .component
+        if: env.AFFECTED_SCOPE != 'none'
+        run: |
+          cargo build --release --locked -p stave-bench
+          for b in target/validate/*.component; do
+            echo "== $b"
+            target/release/stave-bench "$b" --validate > /dev/null
+          done
+      - if: always() && env.AFFECTED_SCOPE != 'none'
+        uses: actions/upload-artifact@v4
+        with:
+          name: auval
+          path: target/validate/*.auval.txt
+          if-no-files-found: ignore
+
   rules:
     # The tree rules and hygiene: file sizes, view bindings, plugin
     # rules, the glossary, purity, golden-image sizes; licences,
@@ -299,7 +333,7 @@ jobs:
           cargo check --all-targets --locked
           -p stave-core -p stave-dsp -p stave-telemetry -p stave-measure -p stave-macros
           -p stave-ui -p stave-raster -p stave-face -p stave-clap -p stave-clap-sys
-          -p stave-vst3 -p stave-vst3-sys -p stave-model
+          -p stave-vst3 -p stave-vst3-sys -p stave-au -p stave-au-sys -p stave-model
       - if: env.AFFECTED_SCOPE != 'none'
         run: cargo test -p stave-core -p stave-telemetry --test loom --release --locked
         env:
