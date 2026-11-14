@@ -66,7 +66,7 @@ jobs:
           scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: nextest@0.9.148 }
@@ -123,7 +123,7 @@ jobs:
         run: rustup toolchain install 1.86.0 --profile minimal
       - if: env.AFFECTED_SCOPE != 'none'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
       - if: env.AFFECTED_SCOPE != 'none'
         run: |
@@ -164,7 +164,7 @@ jobs:
           scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - name: Cache the validators
         if: env.AFFECTED_SCOPE != 'none'
         id: tools-cache
@@ -211,7 +211,7 @@ jobs:
           scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         run: scripts/validate-formats.sh au
       - name: The validation suite on each .component
@@ -330,9 +330,6 @@ jobs:
       - if: env.AFFECTED_SCOPE != 'none'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          # Never on persistent self-hosted runners: its cleanBin deletes the
-          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
-          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           workspaces: stave-plugins
           save-if: "${{ github.ref == 'refs/heads/main' }}"
       - if: env.AFFECTED_SCOPE != 'none'
@@ -358,7 +355,7 @@ jobs:
           scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { save-if: "${{ github.ref == 'refs/heads/main' }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         run: >-
           cargo check --all-targets --locked
