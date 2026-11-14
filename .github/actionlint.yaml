@@ -1,0 +1,9 @@
+# actionlint: the self-hosted runners' capability labels (a job asks for a
+# capability, never a machine).
+self-hosted-runner:
+  labels:
+    - reference     # the timing machine (reference.yml)
+    - macos-build   # a macOS build runner
+    - linux-build   # a Linux build runner: rustup, nextest, a C toolchain, X11/ALSA dev libraries
+    - xvfb          # xvfb-run
+    - ngspice       # the pinned ngspice package

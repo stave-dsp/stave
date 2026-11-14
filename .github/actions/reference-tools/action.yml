@@ -20,12 +20,15 @@ runs:
         cache-dependency-path: scripts/reference-requirements.txt
     - shell: bash
       run: pip install -q -r scripts/reference-requirements.txt
+    # A self-hosted runner with the `ngspice` capability has the pinned
+    # package installed and no sudo: it is only checked, below.
     - id: debs
+      if: runner.environment == 'github-hosted'
       uses: actions/cache@v4
       with:
         path: ~/ngspice-debs
         key: ngspice-debs-${{ runner.os }}-${{ runner.arch }}-ubuntu-24.04-${{ inputs.ngspice-package }}
-    - if: steps.debs.outputs.cache-hit != 'true'
+    - if: runner.environment == 'github-hosted' && steps.debs.outputs.cache-hit != 'true'
       shell: bash
       env:
         PACKAGE: ${{ inputs.ngspice-package }}
@@ -38,8 +41,11 @@ runs:
     - shell: bash
       env:
         PACKAGE: ${{ inputs.ngspice-package }}
+        HOSTED: ${{ runner.environment == 'github-hosted' }}
       run: |
-        sudo dpkg -i ~/ngspice-debs/*.deb > /dev/null
+        if [[ "$HOSTED" == true ]]; then
+          sudo dpkg -i ~/ngspice-debs/*.deb > /dev/null
+        fi
         installed="$(dpkg-query -W -f '${Version}' ngspice)"
         test "$installed" = "$PACKAGE" || { echo "::error::ngspice $installed installed, pinned $PACKAGE"; exit 1; }
         echo "ngspice $installed"

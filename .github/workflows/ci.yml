@@ -11,7 +11,10 @@
 # release branches and a dispatched run gate everything. Builds are --locked against the committed
 # Cargo.lock; every tool is pinned. macOS runners only where macOS is
 # needed (Cocoa, bundles, the validators) — three jobs, so they never
-# queue behind each other; everything else is Linux.
+# queue behind each other; everything else is Linux. Two of the macOS
+# jobs run on a self-hosted runner for trusted events (a push, a merge
+# group, a pull request from a branch here) and on GitHub's for a fork's
+# pull request; GitHub's free plan runs only five macOS jobs at once.
 #
 # The slow tools (Kani, sanitizers, long fuzzing, the simulated host's
 # wide sweep, advisories, semver-checks) are in deep.yml: nightly and on
@@ -89,7 +92,14 @@ jobs:
     # cache.
     name: clippy + rustdoc + MSRV (macOS)
     timeout-minutes: 10
-    runs-on: macos-latest
+    # A self-hosted macOS runner (the `macos-build` capability) for trusted
+    # events — a push, a merge group, a pull request from a branch of this
+    # repository; a fork's pull request gets GitHub's runner.
+    runs-on: >-
+      ${{ (github.event_name != 'pull_request'
+           || github.event.pull_request.head.repo.full_name == github.repository)
+          && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
+          || 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
@@ -118,7 +128,12 @@ jobs:
     # Steinberg's VST3 validator (the SDK is MIT; its build is cached).
     name: validators (clap-validator, VST3)
     timeout-minutes: 10
-    runs-on: macos-latest
+    # Self-hosted for trusted events, as `lint` above.
+    runs-on: >-
+      ${{ (github.event_name != 'pull_request'
+           || github.event.pull_request.head.repo.full_name == github.repository)
+          && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
+          || 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh

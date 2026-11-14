@@ -28,6 +28,11 @@
 # branch, or a dispatch, checks every deck afresh and records the stamps.
 # T1 is split into four nextest partitions and the piano sweep; the
 # classics' T1 (their knees and piano sweep) is a job of its own.
+#
+# Every job but `changes` runs on a self-hosted Linux runner for trusted
+# events and on GitHub's ubuntu-24.04 for a fork's pull request (`changes`
+# picks; see its `runner` output). The self-hosted runners carry the same
+# pinned ngspice package and run the same scripts.
 name: references
 
 on:
@@ -93,6 +98,18 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-24.04
     outputs:
+      # Where every other job runs: a self-hosted Linux runner with the
+      # pinned ngspice (the `linux-build` and `ngspice` capabilities) for
+      # trusted events (a push, a dispatch, a pull request from a branch
+      # of this repository), GitHub's ubuntu-24.04 for a fork's pull
+      # request. A full run is ~25 jobs: on GitHub's runners it took most
+      # of the free plan's 20 concurrent jobs, and every other workflow
+      # queued behind it.
+      runner: >-
+        ${{ toJSON((github.event_name != 'pull_request'
+                    || github.event.pull_request.head.repo.full_name == github.repository)
+                   && fromJSON('["self-hosted","Linux","X64","linux-build","ngspice"]')
+                   || 'ubuntu-24.04') }}
       shards: ${{ steps.pick.outputs.shards }}
       total: ${{ steps.pick.outputs.total }}
       t1: ${{ steps.pick.outputs.t1 }}
@@ -136,7 +153,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.shards != '[]'
     timeout-minutes: 20
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     strategy:
       fail-fast: false
       matrix:
@@ -192,7 +209,7 @@ jobs:
     needs: [changes, ngspice]
     if: ${{ !cancelled() && needs.changes.outputs.shards != '[]' }}
     timeout-minutes: 5
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -209,8 +226,9 @@ jobs:
     # The check's teeth (a 1% netlist change must fail it) and the solved
     # references (scripts/ja-reference.py), on every run.
     name: references (perturbation, SciPy)
+    needs: changes
     timeout-minutes: 5
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/reference-tools
@@ -250,7 +268,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.t1 == 'true'
     timeout-minutes: 15
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     strategy:
       fail-fast: false
       matrix:
@@ -280,7 +298,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.t1 == 'true'
     timeout-minutes: 30
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install
