@@ -133,7 +133,12 @@ impl Stream<'_> {
             if res != K_RESULT_OK || read <= 0 {
                 return Ok(out);
             }
-            out.extend_from_slice(&chunk[..read as usize]);
+            // A host claiming more bytes than it was asked for is lying
+            // about the buffer: refused, never sliced past its end.
+            let Some(bytes) = chunk.get(..read as usize) else {
+                return Err(CallError::StreamRead);
+            };
+            out.extend_from_slice(bytes);
             if out.len() > limit {
                 return Err(CallError::StateTooLarge { limit });
             }
