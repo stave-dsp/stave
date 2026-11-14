@@ -57,7 +57,7 @@ jobs:
         shard: [1, 2, 3]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - name: What the change affects
@@ -112,7 +112,7 @@ jobs:
           && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
           || 'macos-latest' }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
@@ -155,7 +155,7 @@ jobs:
           && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
           || 'macos-latest' }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
@@ -202,7 +202,7 @@ jobs:
     timeout-minutes: 10
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
@@ -238,7 +238,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: "cargo-deny@0.20.2,cargo-machete@0.9.2" }
       - run: scripts/check-file-sizes.sh
@@ -292,7 +292,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { path: stave, fetch-depth: 0 }
       - run: rustup toolchain install
         working-directory: stave
@@ -322,7 +322,7 @@ jobs:
           fi
           scripts/plugins-ref.sh --text "$text" --branch "$branch" | tee -a "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { repository: stave-dsp/stave-plugins, path: stave-plugins, ref: "${{ env.PLUGINS_REF }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         run: rustup toolchain install
@@ -349,7 +349,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
