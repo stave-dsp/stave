@@ -3,6 +3,7 @@
 //! capacitor (trapezoidal), so it matches ngspice to 6e-7 normalized RMS
 //! (stave-test `matches_ngspice`).
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Hz;
 
 /// `y = (x − x₁ + (1 − g)·y₁) / (1 + g)`, g = ωc·T/2: unity gain at
 /// Nyquist, zero at DC. Coefficient and state are f64: low corners at 4×
@@ -43,7 +44,8 @@ pub struct Coupler {
 }
 
 impl Coupler {
-    pub fn new(hz: f32) -> Self {
+    pub fn new(corner: Hz) -> Self {
+        let hz = corner.get();
         debug_assert!(hz > 0.0, "corner must be positive");
         let mut c = Self {
             hz,
@@ -52,12 +54,13 @@ impl Coupler {
             x1: 0.0,
             y1: 0.0,
         };
-        c.set_hz(hz);
+        c.set_frequency(Hz::new(hz));
         c
     }
     /// Corner change keeps state (a knob move must not re-charge the
     /// cap).
-    pub fn set_hz(&mut self, hz: f32) {
+    pub fn set_frequency(&mut self, corner: Hz) {
+        let hz = corner.get();
         debug_assert!(hz > 0.0, "corner must be positive");
         self.hz = hz;
         self.g = core::f64::consts::PI * f64::from(hz) / f64::from(self.sample_rate);
@@ -68,7 +71,7 @@ impl Stage for Coupler {
     fn prepare(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_frequency(Hz::new(self.hz));
         self.reset();
     }
     fn reset(&mut self) {

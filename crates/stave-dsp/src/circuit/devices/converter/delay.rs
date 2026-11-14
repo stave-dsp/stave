@@ -4,6 +4,7 @@
 use super::{Clock, Machine};
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::fixed::{Fixed, Overflow};
+use crate::units::Seconds;
 
 /// A digital delay of the early-1980s kind: ADC, a RAM of `bits`-bit
 /// words, one feedback multiply by a short coefficient, the sum
@@ -58,7 +59,8 @@ impl Delay {
     /// Memory for `max_seconds` at the machine's rate, allocated here;
     /// a delay of half of it, no feedback. `coefficient_bits` is clamped
     /// to 2–16.
-    pub fn new(machine: Machine, max_seconds: f64, overflow: Overflow, coefficient_bits: u32) -> Self {
+    pub fn new(machine: Machine, max: Seconds, overflow: Overflow, coefficient_bits: u32) -> Self {
+        let max_seconds = max.get();
         let capacity = (max_seconds.max(0.0) * machine.rate_hz).ceil().max(2.0) as usize;
         let bits = machine.bits.clamp(2, 32);
         Self {
@@ -78,7 +80,8 @@ impl Delay {
         self.length = samples.clamp(1, self.memory.len());
     }
 
-    pub fn set_seconds(&mut self, seconds: f64) {
+    pub fn set_delay(&mut self, delay: Seconds) {
+        let seconds = delay.get();
         self.set_samples((seconds * self.clock.machine.rate_hz).round().max(1.0) as usize);
     }
 

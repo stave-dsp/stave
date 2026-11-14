@@ -32,6 +32,8 @@ use crate::circuit::methods::load_line::LoadLine;
 use crate::circuit::methods::newton::NewtonSettings;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff64;
+use crate::units::Seconds;
+use crate::units::Db;
 
 /// Koren constants + circuit. Defaults are a classic 12AX7 gain stage
 /// (300 V supply, 100 kΩ plate load, −1.5 V grid bias).
@@ -101,7 +103,7 @@ const INITIAL_GRID_DRIVE: f64 = 0.4;
 ///   amp feel / bloom lives.
 ///
 /// Under either policy the stage REPORTS its small-signal insertion
-/// gain (`small_signal_gain_db`) — consumers compute makeup, never
+/// gain (`small_signal_gain`) — consumers compute makeup, never
 /// fit it.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum LevelPolicy {
@@ -192,7 +194,7 @@ pub struct Triode {
     // the quantity behind the reported small-signal gain.
     gain_q: f64,
     // Max |plate swing| over the tabulated grid range — the raw
-    // ceiling behind the reported `ceiling_db`.
+    // ceiling behind the reported `ceiling`.
     curve_max_f: f64,
 
     // === Antiderivative anti-aliasing (ADAA) ===
@@ -274,7 +276,7 @@ impl Triode {
         self.cathode_coeff = match self.bias {
             Bias::Fixed => 0.0,
             Bias::Cathode { bypass_farads } => {
-                tau_coeff64(self.rk * bypass_farads, self.sample_rate)
+                tau_coeff64(Seconds::new(self.rk * bypass_farads), self.sample_rate)
             }
         };
     }
@@ -282,12 +284,12 @@ impl Triode {
     /// Instantaneous gain reduction (dB, ≤ 0) from the current bias drift —
     /// for metering and tube-compressor use. Compares the small-signal
     /// slope at the current operating point to the quiescent slope.
-    pub fn gain_reduction_db(&self) -> f32 {
+    pub fn gain_reduction(&self) -> Db {
         let d = 0.05;
         let slope = |v: f64| (self.core_at(v + d) - self.core_at(v - d)).abs() / (2.0 * d);
         let now = slope(self.p.grid_bias - self.extra_bias).max(1e-9);
         let rest = slope(self.p.grid_bias).max(1e-9);
-        (20.0 * (now / rest).log10()) as f32
+        Db::new((20.0 * (now / rest).log10()) as f32)
     }
 
     /// Koren plate current and its derivative wrt plate voltage.
@@ -319,7 +321,7 @@ impl Triode {
             core_transfer_at(&p, vpk0, vg)
         });
         // The raw output ceiling: max |plate swing| over the table —
-        // behind `ceiling_db`, the third reported quantity (gain +
+        // behind `ceiling`, the third reported quantity (gain +
         // ceiling = the knee, so consumers can COMPUTE their staging).
         let mut m = 0.0f64;
         for i in 0..=256 {
@@ -435,21 +437,21 @@ impl Triode {
     /// operating point — REPORTED, so consumers compute makeup instead
     /// of fitting ladders. Calibrated ≈ 0 dB by construction; Physical
     /// follows drive.
-    pub fn small_signal_gain_db(&self) -> f32 {
+    pub fn small_signal_gain(&self) -> Db {
         let g = (self.gain_q * self.grid_drive * self.output_scale).max(1e-9);
-        (20.0 * g.log10()) as f32
+        Db::new((20.0 * g.log10()) as f32)
     }
 
     /// The stage's REPORTED output ceiling (dBFS): the largest swing
     /// the plate can deliver at the current output scale. Together
-    /// with `small_signal_gain_db` this locates the knee — the two
+    /// with `small_signal_gain` this locates the knee — the two
     /// numbers a consumer needs to compute staging and makeup rather
     /// than fit them. Drive-invariant under `Physical` (the contract
     /// `the_ceiling_obeys_the_policy` pins); falls with drive under
     /// `Calibrated`.
-    pub fn ceiling_db(&self) -> f32 {
+    pub fn ceiling(&self) -> Db {
         let c = (self.curve_max_f * self.output_scale).max(1e-9);
-        (20.0 * c.log10()) as f32
+        Db::new((20.0 * c.log10()) as f32)
     }
 
     /// Level policy (default `Calibrated` — existing consumers keep
@@ -708,7 +710,7 @@ impl Stage for Triode {
         match self.bias {
             Bias::Fixed => Tail::None,
             Bias::Cathode { bypass_farads } => {
-                Tail::from_time_constant(self.rk * bypass_farads, self.sample_rate as f32)
+                Tail::from_time_constant(Seconds::new(self.rk * bypass_farads), self.sample_rate as f32)
             }
         }
     }

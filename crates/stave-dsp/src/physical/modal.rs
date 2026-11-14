@@ -7,6 +7,7 @@
 use crate::kernel::node::Tail;
 use crate::physical::lanes::{Lanes, BLOCK};
 use crate::physical::plate::Output;
+use crate::units::Seconds;
 
 /// One mode of a body, in SI units: it rings at `√(natural² − sigma²)`
 /// rad/s, decays at `sigma` 1/s, and an impulse of force at the drive
@@ -125,7 +126,7 @@ impl Body {
         if self.modes == 0 || !self.slowest.is_finite() {
             Tail::None
         } else {
-            Tail::from_time_constant(1.0 / self.slowest, sample_rate)
+            Tail::from_time_constant(Seconds::new(1.0 / self.slowest), sample_rate)
         }
     }
 }

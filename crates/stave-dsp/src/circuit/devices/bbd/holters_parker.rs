@@ -214,7 +214,7 @@ impl HoltersParker {
     /// The clock for a delay of `delay` (`stages / (2·delay)`), clamped
     /// to the chip's range.
     pub fn set_delay(&mut self, delay: Seconds) {
-        self.set_clock(self.chip.clock_for(delay.get().max(1e-6)));
+        self.set_clock(self.chip.clock_for(Seconds::new(delay.get().max(1e-6))));
     }
 
     /// The clock in use.
@@ -225,7 +225,7 @@ impl HoltersParker {
     /// The delay at the current clock, `stages / (2·clock)`, in seconds
     /// (the filters add their group delay on top).
     pub fn delay(&self) -> Seconds {
-        Seconds::new(self.chip.delay_s(self.clock))
+        self.chip.delay(self.clock)
     }
 
     /// The clock's residue on the output pin, in volts (peak of the
@@ -345,8 +345,8 @@ impl Stage for HoltersParker {
 
     fn tail(&self) -> Tail {
         // The longest delay (the slowest clock) and both filters' decay.
-        let longest = self.chip.delay_s(self.chip.clock_min) * self.sample_rate;
-        let decay = |f: &Filter| Tail::from_time_constant(1.0 / f.slowest_decay(), self.sample_rate as f32);
+        let longest = self.chip.delay(self.chip.clock_min).get() * self.sample_rate;
+        let decay = |f: &Filter| Tail::from_time_constant(Seconds::new(1.0 / f.slowest_decay()), self.sample_rate as f32);
         decay(&self.input).then(decay(&self.output)).plus(longest.ceil() as u32)
     }
 }

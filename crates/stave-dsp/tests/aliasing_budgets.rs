@@ -509,10 +509,10 @@ fn measure_oscillator(name: &str, rate: f64, mode: Mode) -> Measured {
             o.prepare(fs);
             if sync {
                 // The output repeats at the master: the measured tone.
-                o.set_hz((hz * 1.7) as f32);
+                o.set_frequency(Hz::new((hz * 1.7) as f32));
                 o.set_sync(Some(Hz::new(hz as f32)));
             } else {
-                o.set_hz(hz as f32);
+                o.set_frequency(Hz::new(hz as f32));
             }
             move |_: f32| o.tick(0.0)
         })
@@ -531,7 +531,7 @@ fn measure_oscillator(name: &str, rate: f64, mode: Mode) -> Measured {
             generated(&sweep, mode, move |hz| {
                 let mut w = table.clone();
                 w.prepare(fs);
-                w.set_hz(hz as f32);
+                w.set_frequency(Hz::new(hz as f32));
                 move |_: f32| w.tick(0.0)
             })
         }

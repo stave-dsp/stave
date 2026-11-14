@@ -23,7 +23,7 @@
 //!
 //! Level policy: Physical from birth — drive scales grid volts
 //! honestly into a FIXED ceiling; small-signal gain and ceiling
-//! are REPORTED (`small_signal_gain_db`, `ceiling_db`).
+//! are REPORTED (`small_signal_gain`, `ceiling`).
 //!
 //! **The halves.** By default each half is a 12AX7 triode (Koren's plate
 //! law, `set_tube` for another) at 300 V through 100 kΩ: a preamp tube
@@ -49,6 +49,8 @@ use crate::circuit::topologies::triode_stage::{
 };
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::tau_coeff64;
+use crate::units::Seconds;
+use crate::units::Db;
 
 /// Grid-volt domain of the tabulated triode halves (absolute): deep
 /// cutoff to well into grid conduction, for any class point and drive.
@@ -417,7 +419,8 @@ impl PushPull {
     }
 
     /// Grid drive in dB re 1 V-per-unit input (idempotent).
-    pub fn set_drive_db(&mut self, db: f32) {
+    pub fn set_drive(&mut self, drive: Db) {
+        let db = drive.get();
         if db == self.drive_db_last {
             return;
         }
@@ -470,7 +473,7 @@ impl PushPull {
         self.cathode_coeff = match self.bias {
             Bias::Fixed => 0.0,
             Bias::Cathode { bypass_farads } => {
-                tau_coeff64(self.rk * bypass_farads, f64::from(self.sample_rate))
+                tau_coeff64(Seconds::new(self.rk * bypass_farads), f64::from(self.sample_rate))
             }
         };
     }
@@ -484,7 +487,8 @@ impl PushPull {
     /// gain collapses, the loop loses grip, and the knee arrives
     /// all at once; a sagged supply lowers the loop gain WITH the
     /// rail, so a drooped amp genuinely plays looser.
-    pub fn set_feedback_db(&mut self, db: f32) {
+    pub fn set_feedback(&mut self, feedback: Db) {
+        let db = feedback.get();
         debug_assert!(
             db >= 0.0,
             "feedback {db} dB: negative feedback reduces gain"
@@ -550,15 +554,16 @@ impl PushPull {
         };
     }
 
-    pub fn small_signal_gain_db(&self) -> f32 {
+    /// The closed-loop small-signal gain at the current operating point.
+    pub fn small_signal_gain(&self) -> Db {
         let g = (self.gain_q * self.grid_drive * self.out_scale * self.supply_scale).max(1e-9);
         let g_cl = g / (1.0 + self.nfb_beta * g);
-        (20.0 * g_cl.log10()) as f32
+        Db::new((20.0 * g_cl.log10()) as f32)
     }
 
     /// Output ceiling (dBFS) at the current supply (0 dBFS stiff).
-    pub fn ceiling_db(&self) -> f32 {
-        (20.0 * self.supply_scale.max(1e-9).log10()) as f32
+    pub fn ceiling(&self) -> Db {
+        Db::new((20.0 * self.supply_scale.max(1e-9).log10()) as f32)
     }
 
     /// The pair's composed transfer at bias `b`, grid swing `x`.
@@ -691,7 +696,7 @@ impl Stage for PushPull {
         match self.bias {
             Bias::Fixed => Tail::None,
             Bias::Cathode { bypass_farads } => {
-                Tail::from_time_constant(self.rk * bypass_farads, self.sample_rate)
+                Tail::from_time_constant(Seconds::new(self.rk * bypass_farads), self.sample_rate)
             }
         }
     }
@@ -701,6 +706,7 @@ impl Stage for PushPull {
 mod tests {
     use super::*;
     use crate::circuit::topologies::triode_stage::Bias;
+    use crate::units::db;
 
     fn run(pp: &mut PushPull, amp: f64, n: usize) -> Vec<f32> {
         let fs = 48_000.0f64;
@@ -731,7 +737,7 @@ mod tests {
         let mut pp = PushPull::new();
         pp.prepare(48_000.0);
         pp.set_class_ab(2.0);
-        pp.set_drive_db(12.0);
+        pp.set_drive(db(12.0));
         let out = run(&mut pp, 0.5, 16_384);
         let h2 = goertzel(&out[8_192..], 440.0, 48_000.0);
         let h3 = goertzel(&out[8_192..], 660.0, 48_000.0);
@@ -746,7 +752,7 @@ mod tests {
         let mut pp2 = PushPull::new();
         pp2.prepare(48_000.0);
         pp2.set_class_ab(2.0);
-        pp2.set_drive_db(12.0);
+        pp2.set_drive(db(12.0));
         pp2.set_imbalance(0.12);
         let out2 = run(&mut pp2, 0.5, 16_384);
         let h2b = goertzel(&out2[8_192..], 440.0, 48_000.0);
@@ -765,7 +771,7 @@ mod tests {
             let mut pp = PushPull::new();
             pp.prepare(48_000.0);
             pp.set_class_ab(cold);
-            pp.set_drive_db(12.0);
+            pp.set_drive(db(12.0));
             let n = 4_800;
             let mut acc = 0.0f64;
             for i in 0..n {
@@ -791,11 +797,11 @@ mod tests {
             let mut pp = PushPull::new();
             pp.prepare(48_000.0);
             pp.set_class_ab(1.0);
-            pp.set_drive_db(12.0);
-            pp.set_feedback_db(fb);
+            pp.set_drive(db(12.0));
+            pp.set_feedback(Db::new(fb));
             // Land the fundamental near -14 dBFS either way (fair
             // fight: same OUTPUT level, not same input).
-            let amp = 10f64.powf((-14.0 - f64::from(pp.small_signal_gain_db())) / 20.0);
+            let amp = 10f64.powf((-14.0 - f64::from(pp.small_signal_gain().get())) / 20.0);
             let out = run(&mut pp, amp, 16_384);
             let h1 = goertzel(&out[8_192..], 220.0, 48_000.0);
             let h3 = goertzel(&out[8_192..], 660.0, 48_000.0);
@@ -811,9 +817,9 @@ mod tests {
         let mut pp = PushPull::new();
         pp.prepare(48_000.0);
         pp.set_class_ab(1.0);
-        pp.set_drive_db(12.0);
-        pp.set_feedback_db(10.0);
-        let reported = f64::from(pp.small_signal_gain_db());
+        pp.set_drive(db(12.0));
+        pp.set_feedback(db(10.0));
+        let reported = f64::from(pp.small_signal_gain().get());
         let out = run(&mut pp, 0.0005, 16_384);
         let g = goertzel(&out[8_192..], 220.0, 48_000.0) / 0.0005;
         let measured = 20.0 * g.max(1e-12).log10();
@@ -834,9 +840,9 @@ mod tests {
                 let mut pp = PushPull::new();
                 pp.prepare(48_000.0);
                 pp.set_class_ab(1.0);
-                pp.set_drive_db(12.0);
-                pp.set_feedback_db(fb);
-                let amp = 10f64.powf((out_db - f64::from(pp.small_signal_gain_db())) / 20.0);
+                pp.set_drive(db(12.0));
+                pp.set_feedback(Db::new(fb));
+                let amp = 10f64.powf((out_db - f64::from(pp.small_signal_gain().get())) / 20.0);
                 let out = run(&mut pp, amp, 16_384);
                 let h1 = goertzel(&out[8_192..], 220.0, 48_000.0);
                 20.0 * (h1 / amp).max(1e-12).log10()
@@ -869,7 +875,7 @@ mod tests {
         let mut pp = PushPull::new();
         pp.prepare(48_000.0);
         pp.set_class_ab(2.5);
-        pp.set_drive_db(12.0);
+        pp.set_drive(db(12.0));
         self_biased(&mut pp, 40.0);
         for _ in 0..4_800 {
             pp.tick(0.0);
@@ -907,7 +913,7 @@ mod tests {
             let mut pp = PushPull::new();
             pp.prepare(48_000.0);
             pp.set_class_ab(class);
-            pp.set_drive_db(12.0);
+            pp.set_drive(db(12.0));
             if cathode {
                 self_biased(&mut pp, 30.0);
             }
@@ -982,7 +988,7 @@ mod tests {
             let mut pp = PushPull::new();
             pp.set_pentode(PentodePair::EL34);
             pp.prepare(48_000.0);
-            pp.set_drive_db(30.0);
+            pp.set_drive(db(30.0));
             let mut acc = 0.0;
             for i in 0..4_800 {
                 let x = amp * (2.0 * core::f64::consts::PI * 220.0 * i as f64 / 48_000.0).sin();
@@ -1008,8 +1014,8 @@ mod tests {
         let mut pp = PushPull::new();
         pp.prepare(48_000.0);
         pp.set_class_ab(1.0);
-        pp.set_drive_db(6.0);
-        let reported = f64::from(pp.small_signal_gain_db());
+        pp.set_drive(db(6.0));
+        let reported = f64::from(pp.small_signal_gain().get());
         let out = run(&mut pp, 0.0005, 16_384);
         let g = goertzel(&out[8_192..], 220.0, 48_000.0) / 0.0005;
         let measured = 20.0 * g.max(1e-12).log10();
@@ -1021,14 +1027,14 @@ mod tests {
         let mut pp2 = PushPull::new();
         pp2.prepare(48_000.0);
         pp2.set_class_ab(1.0);
-        pp2.set_drive_db(24.0);
+        pp2.set_drive(db(24.0));
         let out2 = run(&mut pp2, 1.0, 16_384);
         let pk = out2[8_192..].iter().fold(0.0f32, |a, x| a.max(x.abs()));
         assert!(
-            (20.0 * f64::from(pk).log10() - f64::from(pp2.ceiling_db())).abs() < 1.5,
+            (20.0 * f64::from(pk).log10() - f64::from(pp2.ceiling().get())).abs() < 1.5,
             "ceiling report off: peak {:.2} dB vs reported {:.2}",
             20.0 * f64::from(pk).log10(),
-            pp2.ceiling_db()
+            pp2.ceiling().get()
         );
     }
 }

@@ -5,6 +5,7 @@ use crate::kernel::node::{Stage, Tail};
 use crate::kernel::resample::allpass::Allpass;
 use crate::kernel::resample::polyphase::{edges, kaiser_length, Polyphase, ATTENUATION_DB};
 use crate::kernel::resample::{HalfbandDown, HalfbandUp, HB_TAPS, HB_TAPS_INNER};
+use crate::units::Db;
 
 /// Block chunk at the outer rate for [`Stage::process`].
 const CHUNK: usize = 64;
@@ -46,7 +47,7 @@ fn deep_halfband_taps(r: usize) -> usize {
 impl Resampler {
     fn halfband(r: usize, minimum: bool) -> Self {
         if minimum {
-            return Self::Allpass(Allpass::new(ATTENUATION_DB, halfband_transition(r)));
+            return Self::Allpass(Allpass::new(Db::new(ATTENUATION_DB as f32), halfband_transition(r)));
         }
         let taps = match r {
             1 => HB_TAPS,

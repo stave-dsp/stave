@@ -297,6 +297,7 @@ mod tests {
     use crate::behavioral::curve::Frame;
     use crate::behavioral::shapes;
     use crate::primitives::filters::biquad::FilterSpec;
+    use crate::units::{Db, Hz};
 
     fn goertzel(buf: &[f32], f: f64, fs: f64) -> f64 {
         let w = 2.0 * core::f64::consts::PI * f / fs;
@@ -320,8 +321,8 @@ mod tests {
         });
         ch.push(StageKind::Curve(in_stage)).unwrap();
         ch.push(StageKind::Filter(Biquad::new(FilterSpec::HighShelf {
-            hz: 900.0,
-            db: -9.0,
+            frequency: Hz::new(900.0),
+            gain: Db::new(-9.0),
         })))
         .unwrap();
         let mut out_stage = CurveStage::from_fn(-6.0, 6.0, 0.0, shapes::knee(8.0));
@@ -418,6 +419,7 @@ mod tests {
 mod contract_tests {
     use super::*;
     use crate::behavioral::curve::CurveStage;
+    use crate::units::Hz;
 
     #[test]
     fn push_reports_full_instead_of_a_sentinel() {
@@ -429,15 +431,15 @@ mod contract_tests {
 
     #[test]
     fn tail_and_latency_forward_through_every_slot() {
-        let lp = |hz| StageKind::Filter(Biquad::new(FilterSpec::Lowpass { hz, q: 0.7 }));
+        let lp = |hz| StageKind::Filter(Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(hz), q: 0.7 }));
         let mut ch = Chain::<3>::new();
         ch.push(lp(100.0)).unwrap();
         ch.push(StageKind::Curve(CurveStage::from_fn(-1.0, 1.0, 0.0, |x| x)))
             .unwrap();
         ch.push(lp(50.0)).unwrap();
         ch.prepare(48_000.0);
-        let mut a = Biquad::new(FilterSpec::Lowpass { hz: 100.0, q: 0.7 });
-        let mut b = Biquad::new(FilterSpec::Lowpass { hz: 50.0, q: 0.7 });
+        let mut a = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(100.0), q: 0.7 });
+        let mut b = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(50.0), q: 0.7 });
         a.prepare(48_000.0);
         b.prepare(48_000.0);
         assert_eq!(ch.tail(), a.tail().then(b.tail()), "serial tails sum");
@@ -456,6 +458,7 @@ mod swap_tests {
     use super::*;
     use crate::behavioral::curve::CurveStage;
     use crate::kernel::node::Stage;
+    use crate::units::Hz;
 
     fn tiny_chain() -> (Chain<2>, StageId) {
         let mut ch = Chain::<2>::new();
@@ -525,7 +528,7 @@ mod swap_tests {
             .push(StageKind::Curve(CurveStage::from_fn(-1.0, 1.0, 0.0, |x| x)))
             .unwrap();
         ch.push(StageKind::Filter(Biquad::new(FilterSpec::Lowpass {
-            hz: 1_000.0,
+            frequency: Hz::new(1_000.0),
             q: 0.7,
         })))
         .unwrap();
@@ -625,6 +628,7 @@ mod stage_kind_tests {
     use crate::behavioral::curve::Frame;
     use crate::behavioral::shapes;
     use crate::RcClipperConfig;
+    use crate::units::{Db, Hz};
 
     #[test]
     fn curve_stage_matches_source_and_commits_frames() {
@@ -657,8 +661,8 @@ mod stage_kind_tests {
         // (same numbers prepared at 48k and at 4×192k).
         let amp_at = |rate: f32, f0: f64| -> f64 {
             let mut fs = Biquad::new(FilterSpec::Peak {
-                hz: 800.0,
-                db: -7.0,
+                frequency: Hz::new(800.0),
+                gain: Db::new(-7.0),
                 q: 1.4,
             });
             fs.prepare(rate);

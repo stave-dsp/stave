@@ -92,7 +92,7 @@ fn ridge(h: &[f32], hz: f64, rate: f64, sigma: f64, range: core::ops::Range<usiz
 fn lowpass_delay(spring: &Spring, hz: f64, rate: f64) -> f64 {
     let phase = |f: f64| {
         spring.lowpass.iter().map(|b| {
-            let (re, im) = b.response_at(f as f32);
+            let (re, im) = b.response_at(Hz::new(f as f32));
             f64::from(im).atan2(f64::from(re))
         })
         .sum::<f64>()

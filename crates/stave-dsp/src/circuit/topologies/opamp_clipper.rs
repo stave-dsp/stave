@@ -10,6 +10,7 @@
 use crate::circuit::devices::diode::Shockley;
 use crate::circuit::methods::newton::{NewtonSettings, NewtonStats};
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Seconds;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct OpAmpClipperConfig {
@@ -158,6 +159,6 @@ impl Stage for OpAmpClipper {
     fn tail(&self) -> Tail {
         let c = &self.config;
         let tau = (c.ground_ohms * c.ground_farads).max(c.feedback_ohms * c.feedback_farads);
-        Tail::from_time_constant(tau, self.sample_rate)
+        Tail::from_time_constant(Seconds::new(tau), self.sample_rate)
     }
 }

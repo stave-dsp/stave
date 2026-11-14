@@ -2,6 +2,8 @@
 //! present the same five verbs, so anything that processes audio nests
 //! inside anything that composes it.
 
+use crate::units::Seconds;
+
 /// How long a stage's output keeps ringing after its input stops.
 ///
 /// The same three cases a plugin reports to its host: output stops with
@@ -50,7 +52,8 @@ impl Tail {
 
     /// The decay of a first-order system with time constant `seconds`
     /// at `sample_rate`: `seconds · sample_rate · ln(1/TAIL_FLOOR)`.
-    pub fn from_time_constant(seconds: f64, sample_rate: f32) -> Self {
+    pub fn from_time_constant(tau: Seconds, sample_rate: f32) -> Self {
+        let seconds = tau.get();
         if seconds.is_nan() || seconds <= 0.0 {
             return Tail::None;
         }
@@ -208,6 +211,7 @@ impl<S: Stage + ?Sized> Stage for Box<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::units::seconds;
 
     #[test]
     fn tails_compose_by_the_invariants() {
@@ -231,7 +235,7 @@ mod tests {
         assert_eq!(Tail::from_pole(1.0), Tail::Infinite);
         assert_eq!(Tail::from_pole(0.0), Tail::Samples(1));
         // One second of time constant at 48 kHz: 13.8 τ.
-        let Tail::Samples(n) = Tail::from_time_constant(1.0, 48_000.0) else {
+        let Tail::Samples(n) = Tail::from_time_constant(seconds(1.0), 48_000.0) else {
             panic!()
         };
         assert!((n as f64 - 48_000.0 * 13.8155).abs() < 2.0, "{n}");

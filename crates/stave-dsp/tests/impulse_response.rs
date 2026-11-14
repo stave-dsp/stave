@@ -8,6 +8,7 @@ use stave_dsp::units::SampleRate;
 use stave_dsp::{Convolver, ImpulseResponse, Stage, Tail};
 
 use core::f64::consts::TAU;
+use stave_dsp::units::db;
 
 /// A band-limited response: tones at 1, 7 and 15 kHz under a Gaussian
 /// envelope (σ = 0.5 ms, so nothing above ~17 kHz), centred at 6 ms, in
@@ -108,7 +109,7 @@ fn normalisation_scales_every_path_by_one_gain() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn minimum_phase_keeps_each_path_magnitude_and_moves_its_energy_first() {
-    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.2 }, 70.0, 0.05);
+    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.2 }, db(70.0), 0.05);
     let delayed = |d: usize| -> Vec<f32> {
         let mut h = vec![0.0f32; d];
         h.extend(fir.taps().iter().map(|&v| v as f32));

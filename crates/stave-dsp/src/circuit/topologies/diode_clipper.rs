@@ -9,6 +9,7 @@ use crate::circuit::methods::wdf::adaa::{Antiparallel, Root};
 use crate::circuit::methods::wdf::{Capacitor, OnePort, PairMethod, Parallel, ResistiveSource};
 use crate::circuit::methods::wright_omega::WrightOmega;
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Seconds;
 
 /// The clipper's parts and its method: `M` is the pair's
 /// [`PairMethod`] — [`NewtonSettings`] (Newton on the exact pair),
@@ -215,7 +216,7 @@ impl<M: PairMethod> Stage for DiodeClipper<M> {
     /// input resistance: τ = R·C.
     fn tail(&self) -> Tail {
         let tau = self.tree.left.ohms * self.tree.right.farads();
-        Tail::from_time_constant(tau, self.sample_rate)
+        Tail::from_time_constant(Seconds::new(tau), self.sample_rate)
     }
 }
 

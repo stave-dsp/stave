@@ -14,6 +14,7 @@
 //! frequency.
 
 use core::f64::consts::PI;
+use crate::units::Db;
 
 /// The design's coefficients for a stopband of at least `attenuation_db`
 /// and a transition `transition` wide on each side of a quarter of the
@@ -123,7 +124,8 @@ pub(crate) struct Allpass {
 }
 
 impl Allpass {
-    pub fn new(attenuation_db: f64, transition: f64) -> Self {
+    pub fn new(attenuation: Db, transition: f64) -> Self {
+        let attenuation_db = f64::from(attenuation.get());
         let c = coefficients(attenuation_db, transition);
         let even: Vec<f64> = c.iter().copied().step_by(2).collect();
         let odd: Vec<f64> = c.iter().copied().skip(1).step_by(2).collect();

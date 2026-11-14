@@ -104,7 +104,7 @@ fn delay_follows_the_clock() {
         let (_, measured) = tone(&out, f0, rate);
         // The window starts at sample 9 600, a whole number of cycles.
         let filters = phase(line.input_filter().response(f0)) + phase(line.output_filter().response(f0));
-        let expected_s = Chip::MN3007.delay_s(hz(clock as f32));
+        let expected_s = Chip::MN3007.delay(hz(clock as f32)).get();
         let delay_phase = wrap(measured - filters);
         // Unwrap against the expected delay.
         let turns = ((-TAU * f0 * expected_s - delay_phase) / TAU).round();

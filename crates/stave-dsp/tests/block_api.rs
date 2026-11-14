@@ -9,6 +9,7 @@ use stave_dsp::{
     shapes, Biquad, Chain, CurveStage, FilterSpec, Hysteresis, Oversampled2x, Slew, Stage, StageId,
     StageKind,
 };
+use stave_dsp::units::{Db, Hz};
 
 fn lcg_noise(n: usize, mut state: u32) -> Vec<f32> {
     (0..n)
@@ -76,8 +77,8 @@ fn amp_like_chain() -> Chain<5> {
     )))
     .unwrap();
     ch.push(StageKind::Filter(Biquad::new(FilterSpec::Peak {
-        hz: 800.0,
-        db: -6.0,
+        frequency: Hz::new(800.0),
+        gain: Db::new(-6.0),
         q: 1.1,
     })))
     .unwrap();
@@ -136,8 +137,8 @@ fn chain_with_feedback_falls_back_and_still_matches() {
             StageId(4),
             StageId(0),
             Some(FilterSpec::HighShelf {
-                hz: 2_000.0,
-                db: 6.0,
+                frequency: Hz::new(2_000.0),
+                gain: Db::new(6.0),
             }),
         );
         ch.prepare(192_000.0);

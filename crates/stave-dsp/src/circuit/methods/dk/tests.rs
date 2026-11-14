@@ -5,6 +5,7 @@ use crate::circuit::netlist::Netlist;
 use crate::circuit::topologies::coupler::Coupler;
 use crate::circuit::topologies::diode_clipper::{DiodeClipper, DiodeClipperConfig};
 use crate::kernel::node::Stage;
+use crate::units::Hz;
 
 fn deck(text: &str) -> Netlist {
     Netlist::parse_spice(text).unwrap()
@@ -27,7 +28,7 @@ wrdata out v(o)
     dk.drive("v1").unwrap();
     dk.prepare(48_000.0);
     let corner = 1.0 / (std::f64::consts::TAU * 22e-9 * 1e6);
-    let mut hand = Coupler::new(corner as f32);
+    let mut hand = Coupler::new(Hz::new(corner as f32));
     hand.prepare(48_000.0);
     for n in 0..2_000 {
         let x = (n as f32 * 0.01).sin();

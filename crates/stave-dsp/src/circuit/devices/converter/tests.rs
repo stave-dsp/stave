@@ -1,11 +1,12 @@
 use super::*;
 use crate::primitives::fixed::Overflow;
 use crate::primitives::random::SplitMix64;
+use crate::units::seconds;
 
 #[test]
 fn delay_datapath_matches_an_integer_reference() {
     for overflow in [Overflow::Saturate, Overflow::Wrap] {
-        let mut d = Delay::new(Machine::SP1200, 0.01, overflow, 8);
+        let mut d = Delay::new(Machine::SP1200, seconds(0.01), overflow, 8);
         d.set_samples(37);
         d.set_feedback(1.4);
         // An 8-bit Q2.6 word: 1.4 truncates to 89/64.
@@ -33,7 +34,7 @@ fn delay_datapath_matches_an_integer_reference() {
 
 #[test]
 fn truncated_feedback_sticks_one_lsb_below_zero() {
-    let mut d = Delay::new(Machine::SP1200, 0.01, Overflow::Saturate, 8);
+    let mut d = Delay::new(Machine::SP1200, seconds(0.01), Overflow::Saturate, 8);
     d.set_samples(10);
     d.set_feedback(0.5);
     // A negative impulse: −100, −50, −25, −13, −7, −4, −2, −1, −1, …

@@ -17,6 +17,7 @@
 //! ```
 
 use crate::primitives::random::SplitMix64;
+use crate::units::Db;
 
 /// A taper as manufacturers make one: straight runs of one resistive
 /// ink joined by smooth transitions, between points `(rotation,
@@ -235,7 +236,9 @@ impl Tracking {
 
     /// A unit drawn from `seed` within `±spec_db` at `reference_db` of
     /// attenuation.
-    pub fn draw(spec_db: f64, reference_db: f64, seed: u64) -> Self {
+    pub fn draw(spec: Db, reference: Db, seed: u64) -> Self {
+        let spec_db = f64::from(spec.get());
+        let reference_db = f64::from(reference.get());
         let mut r = SplitMix64::new(seed);
         Self {
             error_db: 2.0 * r.next_centred() * spec_db.abs(),

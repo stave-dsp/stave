@@ -6,6 +6,7 @@
 
 use stave_dsp::primitives::spectral::{Band, Fir, Head, Passband, Window};
 use stave_dsp::{Convolver, Stage};
+use stave_dsp::units::{Db, db};
 
 /// `(passband ripple: half the peak-to-peak of |H| as a linear
 /// fraction, worst stopband gain in dB)` over `passbands` and
@@ -65,7 +66,7 @@ fn kaiser_designs_meet_ripple_and_attenuation() {
                 vec![(0.0, 0.06), (0.24, 0.5)],
             ),
         ] {
-            let fir = Fir::kaiser(passband, attenuation, 0.04);
+            let fir = Fir::kaiser(passband, Db::new(attenuation as f32), 0.04);
             let (ripple, worst) = measure(&fir, &pass, &stop);
             assert!(
                 worst <= -(attenuation - 1.0),
@@ -159,7 +160,7 @@ fn least_squares_is_optimal_for_its_error_and_follows_its_weights() {
     let windowed = Fir::windowed_sinc(
         Passband::Lowpass { cutoff: 0.125 },
         61,
-        Window::kaiser_for(50.0),
+        Window::kaiser_for(db(50.0)),
     );
     let (e_ls, e_win) = (error(&ls, &bands(1.0)), error(&windowed, &bands(1.0)));
     assert!(e_ls < e_win, "least squares {e_ls:e} vs windowed {e_win:e}");
@@ -184,7 +185,7 @@ fn least_squares_is_optimal_for_its_error_and_follows_its_weights() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn minimum_phase_keeps_the_magnitude_and_moves_energy_first() {
-    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, 80.0, 0.04);
+    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, db(80.0), 0.04);
     let min = fir.minimum_phase();
     assert_eq!(min.len(), fir.len());
     let mut worst_pass = 0.0f64;
@@ -225,7 +226,7 @@ fn minimum_phase_keeps_the_magnitude_and_moves_energy_first() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn a_design_runs_through_the_convolver() {
-    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, 70.0, 0.05);
+    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, db(70.0), 0.05);
     let ir = (&fir).into();
     let mut conv = Convolver::uniform(&ir, 64, Head::Direct);
     conv.prepare(48_000.0);

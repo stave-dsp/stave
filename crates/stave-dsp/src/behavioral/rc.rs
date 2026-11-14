@@ -3,6 +3,8 @@
 use crate::behavioral::curve::Curve;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::solve::NewtonStats;
+use crate::units::Seconds;
+use crate::units::ms;
 
 /// A clipper's charge time, conduction threshold and knee hardness
 /// (higher = more abrupt, more diode-like).
@@ -97,7 +99,8 @@ impl NonlinearRc {
 
     /// Generic stage from a conductance shape (odd, monotone ⇒ Newton is
     /// globally stable: F'(v) = 1 + k·i′ ≥ 1).
-    pub fn from_conductance(tau_ms: f32, i: impl FnMut(f64) -> f64) -> Self {
+    pub fn from_conductance(tau: Seconds, i: impl FnMut(f64) -> f64) -> Self {
+        let tau_ms = tau.to_ms() as f32;
         let mut c = Curve::flat();
         let mut i = i;
         c.rebuild(-8.0, 8.0, 0.0, &mut i);
@@ -170,7 +173,7 @@ impl NonlinearRc {
     /// Diode-pair preset: conduction turns on past ±`threshold` with the
     /// given knee hardness (higher = more abrupt, more diode-like).
     pub fn diode_clipper(config: &RcClipperConfig) -> Self {
-        let mut rc = Self::from_conductance(config.tau_ms, |u| u);
+        let mut rc = Self::from_conductance(ms(f64::from(Seconds::new(f64::from(config.tau_ms) / 1e3))), |u| u);
         rc.set_diode_clipper(config);
         rc
     }
@@ -288,9 +291,8 @@ impl Stage for NonlinearRc {
             return Tail::Infinite;
         }
         Tail::from_time_constant(
-            f64::from(self.tau_ms) * 1e-3 / slope,
-            self.sample_rate as f32,
-        )
+            Seconds::new(f64::from(self.tau_ms) * 1e-3 / slope),
+            self.sample_rate as f32,)
     }
 }
 

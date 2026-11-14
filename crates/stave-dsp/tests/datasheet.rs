@@ -126,6 +126,7 @@ use stave_dsp::circuit::netlist::{ElementKind, Netlist, Probe, Source};
 use stave_dsp::circuit::Circuit;
 use stave_dsp::learned::block::{self, Nonlinearity, ParallelHammerstein, Section, WienerHammerstein};
 use stave_dsp::learned::{nam, Gru, LoadError, RatePolicy};
+use stave_dsp::units::{db, ms, Hz};
 #[path = "datasheet/sheet.rs"]
 mod sheet;
 #[path = "datasheet/knobs.rs"]
@@ -219,12 +220,12 @@ fn network(template: &str) -> nam::Network {
 /// A [`Delay`] whose time glides 10 → 15 ms and jumps back, so every
 /// read is fractional.
 fn modulated_delay<I: Interpolator>(name: &str, input: &[f32], sample_rate: f32) {
-    let mut delay = Delay::<I>::new(20.0, 10.0);
+    let mut delay = Delay::<I>::new(ms(20.0), ms(10.0));
     delay.prepare(sample_rate);
     let mut ms = 10.0f32;
     bench(name, input, |x| {
         ms = if ms > 15.0 { 10.0 } else { ms + 1.3e-4 };
-        delay.set_ms(ms);
+        delay.set_delay(stave_dsp::units::ms(f64::from(ms)));
         delay.tick(x)
     });
 }
@@ -237,13 +238,13 @@ fn primitive_datasheet() {
     noise(&mut input);
 
     let mut biquad = Biquad::new(FilterSpec::Lowpass {
-        hz: 1_000.0,
+        frequency: Hz::new(1_000.0),
         q: 0.707,
     });
     biquad.prepare(sr);
     bench("Biquad (lowpass)", &input, |x| biquad.tick(x));
 
-    let mut ap = Allpass1::new(700.0);
+    let mut ap = Allpass1::new(hz(700.0));
     ap.prepare(sr);
     bench("Allpass1", &input, |x| ap.tick(x));
 
@@ -318,7 +319,7 @@ fn primitive_datasheet() {
         ("Fdn (8 lines, Hadamard)", Mixing::Hadamard),
     ] {
         let mut fdn = Fdn::new(mixing);
-        fdn.set_t60_s(2.0);
+        fdn.set_decay(seconds(2.0));
         fdn.prepare(sr);
         bench(name, &input, |x| fdn.tick(x));
     }
@@ -333,11 +334,11 @@ fn primitive_datasheet() {
     let mut kronecker = Fdn::new(Mixing::Hadamard);
     kronecker.set_kronecker(Kronecker::hadamard());
     kronecker.set_angle_modulation(0.3, hz(0.5));
-    kronecker.set_t60_s(2.0);
+    kronecker.set_decay(seconds(2.0));
     kronecker.prepare(sr);
     bench("Fdn (8 lines, Kronecker, modulated)", &input, |x| kronecker.tick(x));
     let mut velvet = VelvetNoise::new();
-    velvet.set_t60_s(2.0);
+    velvet.set_decay(seconds(2.0));
     velvet.prepare(sr);
     bench("VelvetNoise (4 branches, 408 taps)", &input, |x| velvet.tick(x));
     // Its block path: each tap reads a contiguous run, which vectorises.
@@ -352,16 +353,16 @@ fn primitive_datasheet() {
     velvet.set_t60(hall);
     velvet.prepare(sr);
     bench("VelvetNoise (graphic EQ)", &input, |x| velvet.tick(x));
-    let mut plate = Dattorro::new(50.0);
-    plate.set_t60_s(2.0);
+    let mut plate = Dattorro::new(ms(50.0));
+    plate.set_t60(seconds(2.0));
     plate.prepare(sr);
     bench("Dattorro (plate)", &input, |x| plate.tick(x));
     let mut schroeder = Schroeder::new();
-    schroeder.set_t60_s(2.0);
+    schroeder.set_t60(seconds(2.0));
     schroeder.prepare(sr);
     bench("Schroeder (4 combs, 2 allpasses)", &input, |x| schroeder.tick(x));
     let mut moorer = Schroeder::moorer();
-    moorer.set_t60_s(2.0);
+    moorer.set_t60(seconds(2.0));
     moorer.prepare(sr);
     bench("Schroeder::moorer (6 combs)", &input, |x| moorer.tick(x));
 
@@ -396,7 +397,7 @@ fn primitive_datasheet() {
     let mut ssb = SingleSideband::new(Sideband::Upper);
     ssb.prepare(sr);
     let mut carrier = Osc::new(Waveform::Sine);
-    carrier.set_hz(440.0);
+    carrier.set_frequency(hz(440.0));
     carrier.prepare(sr);
     bench("SingleSideband", &input, |x| ssb.modulate(x, carrier.tick(0.0)));
 
@@ -637,8 +638,8 @@ fn primitive_datasheet() {
         let mut sp = Converter::new(converter::Machine::SP1200);
         sp.prepare(sr);
         bench("Converter SP-1200", &input, |x| sp.tick(x));
-        let mut delay = converter::Delay::new(converter::Machine::SP1200, 0.5, Overflow::Saturate, 8);
-        delay.set_seconds(0.3);
+        let mut delay = converter::Delay::new(converter::Machine::SP1200, seconds(0.5), Overflow::Saturate, 8);
+        delay.set_delay(seconds(0.3));
         delay.set_feedback(0.6);
         delay.prepare(sr);
         bench("Digital delay 12-bit", &input, |x| delay.tick(x));
@@ -647,7 +648,7 @@ fn primitive_datasheet() {
     // H9: slow random processes.
     {
         use stave_dsp::primitives::control::drift::{OrnsteinUhlenbeck, Wiener};
-        let mut ou = OrnsteinUhlenbeck::new(25.0, 0.5, 30.0, 1);
+        let mut ou = OrnsteinUhlenbeck::new(25.0, 0.5, seconds(30.0), 1);
         ou.prepare(sr);
         bench("OrnsteinUhlenbeck", &input, |x| ou.tick(x));
         let mut wiener = Wiener::new(1.0, 1e-4, 1e-3, 1);
@@ -656,16 +657,16 @@ fn primitive_datasheet() {
     }
 
     // D1–D3: dynamics.
-    let mut peak = Peak::new(5.0, 50.0);
+    let mut peak = Peak::new(ms(5.0), ms(50.0));
     peak.prepare(sr);
     bench("Peak detector", &input, |x| peak.tick(x));
-    let mut rms = Rms::new(10.0);
+    let mut rms = Rms::new(ms(10.0));
     rms.prepare(sr);
     bench("Rms detector (10 ms)", &input, |x| rms.tick(x));
-    let mut program = ProgramDependent::new(1.0, 50.0, 1_000.0, 500.0);
+    let mut program = ProgramDependent::new(ms(1.0), ms(50.0), ms(1_000.0), ms(500.0));
     program.prepare(sr);
     bench("ProgramDependent detector", &input, |x| program.tick(x));
-    let mut sidechain = Sidechain::new(Some(100.0), Some(8_000.0));
+    let mut sidechain = Sidechain::new(Some(hz(100.0)), Some(hz(8_000.0)));
     sidechain.prepare(sr);
     bench("Sidechain (HP + LP)", &input, |x| sidechain.tick(x));
     let curve = GainComputer {
@@ -685,21 +686,21 @@ fn primitive_datasheet() {
         ("Limiter (true peak)", Peaks::True),
         ("Limiter (sample peak)", Peaks::Sample),
     ] {
-        let mut limiter = Limiter::new(peaks, -1.0);
+        let mut limiter = Limiter::new(peaks, db(-1.0));
         limiter.prepare(sr);
         bench(name, &input, |x| limiter.tick(x * 4.0));
     }
     bands::datasheet(sr, &input);
 
-    let mut lag = Lag::new(50.0, 50.0);
+    let mut lag = Lag::new(ms(50.0), ms(50.0));
     lag.prepare(sr);
     bench("Lag", &input, |x| lag.tick(x));
 
-    let mut lfo = Lfo::new(1.3);
+    let mut lfo = Lfo::new(hz(1.3));
     lfo.prepare(sr);
     bench("Lfo", &input, |x| lfo.tick(x));
 
-    let mut wander = RandomWalk::new(140.0, 30.0, 7);
+    let mut wander = RandomWalk::new(ms(140.0), ms(30.0), 7);
     wander.prepare(sr);
     bench("RandomWalk", &input, |x| wander.tick(x));
 
@@ -716,32 +717,32 @@ fn primitive_datasheet() {
 
     let mut osc_sine = Osc::new(Waveform::Sine);
     osc_sine.prepare(sr);
-    osc_sine.set_hz(220.0);
+    osc_sine.set_frequency(hz(220.0));
     bench("Osc (sine)", &input, |x| osc_sine.tick(x));
 
     let mut osc_saw = Osc::new(Waveform::Saw);
     osc_saw.prepare(sr);
-    osc_saw.set_hz(220.0);
+    osc_saw.set_frequency(hz(220.0));
     bench("Osc (saw, polyBLEP)", &input, |x| osc_saw.tick(x));
 
     // A3: the triangle's corners, the tabulated residuals, a hard-synced
     // saw (a reset every master cycle) and the mip-mapped table.
     let mut osc_tri = Osc::new(Waveform::Triangle);
     osc_tri.prepare(sr);
-    osc_tri.set_hz(220.0);
+    osc_tri.set_frequency(hz(220.0));
     bench("Osc (triangle, polyBLAMP)", &input, |x| osc_tri.tick(x));
     let mut osc_min = Osc::min_blep(Waveform::Saw);
     osc_min.prepare(sr);
-    osc_min.set_hz(220.0);
+    osc_min.set_frequency(hz(220.0));
     bench("Osc (saw, minBLEP)", &input, |x| osc_min.tick(x));
     let mut osc_sync = Osc::new(Waveform::Saw);
     osc_sync.prepare(sr);
-    osc_sync.set_hz(370.0);
+    osc_sync.set_frequency(hz(370.0));
     osc_sync.set_sync(Some(stave_dsp::units::Hz::new(220.0)));
     bench("Osc (saw, hard sync)", &input, |x| osc_sync.tick(x));
     let mut table = Wavetable::new(Waveform::Saw);
     table.prepare(sr);
-    table.set_hz(220.0);
+    table.set_frequency(hz(220.0));
     bench("Wavetable (saw)", &input, |x| table.tick(x));
 
     // A2: each oversampling region around nothing (the filters alone),
@@ -845,7 +846,7 @@ fn primitive_datasheet() {
 
     // F6: a designed FIR (80 dB Kaiser lowpass, 127 taps) run through
     // the convolver at zero latency.
-    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, 80.0, 0.04);
+    let fir = Fir::kaiser(Passband::Lowpass { cutoff: 0.1 }, db(80.0), 0.04);
     let mut conv = Convolver::uniform(&fir.impulse_response(), 64, Head::Direct);
     conv.prepare(sr);
     bench(&format!("Fir {} taps B=64 direct", fir.len()), &input, |x| conv.tick(x));

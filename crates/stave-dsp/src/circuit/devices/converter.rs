@@ -36,6 +36,7 @@ use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 use crate::primitives::osc::blep::MinBlep;
 use crate::primitives::quantise::{Quantiser, Rounding};
 use crate::primitives::time::interpolators::{Interpolator, Sinc};
+use crate::units::{Hz, SampleRate};
 
 mod delay;
 pub use delay::Delay;
@@ -95,8 +96,9 @@ impl Machine {
         output: Filter::None,
     };
 
-    pub const fn with_rate(mut self, hz: f64) -> Self {
-        self.rate_hz = hz;
+    /// The same machine clocked at `rate`.
+    pub const fn with_rate(mut self, rate: SampleRate) -> Self {
+        self.rate_hz = rate.get() as f64;
         self
     }
 
@@ -142,7 +144,7 @@ impl Cascade {
         for k in 0..pairs {
             let angle = (2 * k + 1) as f64 * std::f64::consts::PI / (2 * n) as f64;
             let q = (1.0 / (2.0 * angle.sin())) as f32;
-            let mut b = Biquad::new(FilterSpec::Lowpass { hz, q });
+            let mut b = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(hz), q });
             b.prepare(sample_rate);
             self.sections[k] = b;
         }
@@ -160,9 +162,9 @@ impl Cascade {
         self.sections[..self.count].iter_mut().fold(x, |y, s| s.tick(y))
     }
 
-    /// The cascade's magnitude at `hz`.
-    pub fn magnitude_at(&self, hz: f32) -> f32 {
-        self.sections[..self.count].iter().map(|s| s.magnitude_at(hz)).product()
+    /// The cascade's magnitude at `frequency`.
+    pub fn magnitude_at(&self, frequency: Hz) -> f32 {
+        self.sections[..self.count].iter().map(|s| s.magnitude_at(frequency)).product()
     }
 }
 
@@ -366,14 +368,14 @@ impl Converter {
         self.clock.machine
     }
 
-    /// The anti-alias filter's magnitude at `hz` (1 with none).
-    pub fn input_magnitude_at(&self, hz: f32) -> f32 {
-        self.clock.input_filter().magnitude_at(hz)
+    /// The anti-alias filter's magnitude at `frequency` (1 with none).
+    pub fn input_magnitude_at(&self, frequency: Hz) -> f32 {
+        self.clock.input_filter().magnitude_at(frequency)
     }
 
-    /// The reconstruction filter's magnitude at `hz` (1 with none).
-    pub fn output_magnitude_at(&self, hz: f32) -> f32 {
-        self.clock.output_filter().magnitude_at(hz)
+    /// The reconstruction filter's magnitude at `frequency` (1 with none).
+    pub fn output_magnitude_at(&self, frequency: Hz) -> f32 {
+        self.clock.output_filter().magnitude_at(frequency)
     }
 }
 

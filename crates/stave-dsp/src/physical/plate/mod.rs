@@ -456,7 +456,7 @@ impl Stage for Plate {
         if self.modes.is_empty() {
             Tail::None
         } else {
-            Tail::from_time_constant(1.0 / slowest, self.sample_rate)
+            Tail::from_time_constant(Seconds::new(1.0 / slowest), self.sample_rate)
         }
     }
 }

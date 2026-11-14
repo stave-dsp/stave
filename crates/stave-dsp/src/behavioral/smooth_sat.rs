@@ -27,6 +27,7 @@
 use crate::behavioral::shapes::soft_clip;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
+use crate::units::{Db, Hz};
 
 /// Number of Chebyshev terms (harmonic orders modelled).
 const N: usize = 10;
@@ -120,7 +121,7 @@ impl SmoothSat {
             hf_db: 4.0,
             pre: Biquad::passthrough(),
             post: Biquad::passthrough(),
-            dc: Biquad::new(FilterSpec::Highpass { hz: 5.0, q: 0.707 }),
+            dc: Biquad::new(FilterSpec::Highpass { frequency: Hz::new(5.0), q: 0.707 }),
         };
         s.rebuild_weights();
         s
@@ -163,7 +164,8 @@ impl SmoothSat {
     }
     /// Companding depth (dB) — how much the highs are de-/re-emphasised
     /// around the shaper. More = less HF distortion / IMD, same brightness.
-    pub fn set_hf_smoothing(&mut self, db: f32) {
+    pub fn set_hf_smoothing(&mut self, depth: Db) {
+        let db = depth.get();
         debug_assert!(db >= 0.0, "companding depth {db} dB");
         // Only recompute the shelf coefficients on an actual change — the
         // plugin calls this every block.
@@ -247,12 +249,12 @@ impl SmoothSat {
         // every buffer is a discontinuity each block = zipper noise on the
         // top end. State is only cleared in prepare()/reset().
         self.pre.set(FilterSpec::HighShelf {
-            hz: 2_500.0,
-            db: -self.hf_db,
+            frequency: Hz::new(2_500.0),
+            gain: Db::new(-self.hf_db),
         });
         self.post.set(FilterSpec::HighShelf {
-            hz: 2_500.0,
-            db: self.hf_db,
+            frequency: Hz::new(2_500.0),
+            gain: Db::new(self.hf_db),
         });
     }
 

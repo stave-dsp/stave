@@ -4,6 +4,7 @@ use super::Spring;
 use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::one_pole::OnePole;
 use crate::units::{Db, Hz, Seconds};
+use crate::units::hz;
 
 /// The longest list of springs a tank takes.
 pub const MAX_SPRINGS: usize = 4;
@@ -76,8 +77,8 @@ impl Tank {
         let scale = 1.0 / (springs.len() as f32).sqrt();
         Self {
             springs,
-            drive: OnePole::lowpass(5_000.0),
-            pickup: OnePole::highpass(150.0),
+            drive: OnePole::lowpass(hz(5_000.0)),
+            pickup: OnePole::highpass(hz(150.0)),
             scale,
         }
     }
@@ -99,12 +100,12 @@ impl Tank {
 
     /// The drive coil's corner, `R/(2πL)`.
     pub fn set_drive_corner(&mut self, corner: Hz) {
-        self.drive.set_hz(corner.get());
+        self.drive.set_frequency(Hz::new(corner.get()));
     }
 
     /// The pickup's corner.
     pub fn set_pickup_corner(&mut self, corner: Hz) {
-        self.pickup.set_hz(corner.get());
+        self.pickup.set_frequency(Hz::new(corner.get()));
     }
 }
 
