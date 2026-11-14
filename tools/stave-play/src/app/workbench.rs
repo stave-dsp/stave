@@ -10,7 +10,7 @@ use super::commands::{id, CommandInfo, CommandSource, Invocation};
 use super::keyboard::Tab;
 use super::panels::{BLOCKS, RATES};
 use super::theme::ThemeChoice;
-use super::{library, HostApp};
+use super::{library, tools, HostApp};
 use crate::project::{Mode, ViewId};
 
 impl CommandSource for HostApp {
@@ -37,6 +37,7 @@ impl CommandSource for HostApp {
             ),
             CommandInfo::new("Input", "Show the keyboard", Invocation::new(id::KEYBOARD)),
             CommandInfo::new("Input", "Show the sample pads", Invocation::new(id::SAMPLES)),
+            CommandInfo::new("Layout", "Show command output", Invocation::new(id::OUTPUT)),
             CommandInfo::new("Input", "Octave up", Invocation::new(id::OCTAVE_UP)),
             CommandInfo::new("Input", "Octave down", Invocation::new(id::OCTAVE_DOWN)),
         ]);
@@ -67,6 +68,7 @@ impl CommandSource for HostApp {
         for (p, path) in &self.projects {
             out.push(CommandInfo::new("Open project", p.name.clone(), Invocation::with(id::PROJECT_OPEN, path.display().to_string())));
         }
+        out.extend(self.tools.commands(self.tool_target().as_ref()));
         out
     }
 }
@@ -106,8 +108,12 @@ impl HostApp {
                     self.layout.theme = t;
                 }
             }
-            id::KEYBOARD | id::SAMPLES => {
-                self.keyboard.tab = if inv.id == id::KEYBOARD { Tab::Midi } else { Tab::Samples };
+            id::KEYBOARD | id::SAMPLES | id::OUTPUT => {
+                self.keyboard.tab = match inv.id.as_str() {
+                    id::KEYBOARD => Tab::Midi,
+                    id::SAMPLES => Tab::Samples,
+                    _ => Tab::Output,
+                };
                 self.layout.panel = true;
                 self.layout.focus = false;
             }
@@ -137,6 +143,13 @@ impl HostApp {
             id::PROJECT_NEW => self.new_project(),
             id::PROJECT_SAVE => self.save_project(),
             id::PROJECT_OPEN => self.open_project(PathBuf::from(arg)),
+            tool if tool.starts_with(tools::PREFIX) => {
+                let target = self.tool_target();
+                match self.tools.start(&tool[tools::PREFIX.len()..], target.as_ref()) {
+                    Ok(()) => self.run(&Invocation::new(id::OUTPUT)),
+                    Err(e) => self.fail(e),
+                }
+            }
             other => self.shared.log.warn(format!("unknown command {other}")),
         }
     }
@@ -169,6 +182,19 @@ impl HostApp {
     /// Every plugin the library knows (scanned once, refreshed on demand).
     pub(super) fn plugin_list(&self) -> &[PathBuf] {
         self.plugins.get_or_init(|| library::scan_vst3(&library::vst3_dirs()).into_iter().chain(library::stages()).collect())
+    }
+
+    /// The loaded plugin as a registry command's target, as currently
+    /// set; none while nothing is loaded.
+    pub(super) fn tool_target(&self) -> Option<tools::Target> {
+        let s = self.session.as_ref()?;
+        Some(tools::Target::new(
+            &self.project.plugin_path,
+            self.project.sample_rate.hz(),
+            self.project.block_size.get(),
+            &s.params(),
+            s.telemetry().is_some(),
+        ))
     }
 
     pub(super) fn rescan_plugins(&mut self) {

@@ -171,6 +171,12 @@ impl HostApp {
                 peak_meter(ui, &t, f32::from_bits(self.shared.peak.load(Ordering::Relaxed)));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(line) = self.tools.status_line() {
+                    let job = ui.add(egui::Label::new(RichText::new(format!("● {line}")).small().color(t.accent)).sense(Sense::click()));
+                    if job.on_hover_text("A command is running. Click: the Output panel").clicked() {
+                        run = Some(Invocation::new(id::OUTPUT));
+                    }
+                }
                 if self.project.active_view.mode() != Mode::Listen {
                     let o = self.project.octave;
                     let keys = format!(

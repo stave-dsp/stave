@@ -21,6 +21,8 @@
 //! layout.rs      which regions are open (persisted)
 //! theme.rs       the design system's tokens as egui visuals
 //! shell.rs       activity bar, header, status bar
+//! tools.rs       the shared command registry as a palette source; runs
+//! output.rs      the Output panel: a registry run's result
 //! panels.rs      library side bar, params inspector; plugin + project ops
 //! central.rs     the editor area: the active view
 //! keyboard.rs    piano strip + sample chips; held-note bookkeeping
@@ -41,6 +43,8 @@ mod screenshot;
 mod session;
 mod shell;
 pub(crate) mod theme;
+mod tools;
+mod output;
 mod voicing;
 mod workbench;
 
@@ -124,6 +128,8 @@ pub struct HostApp {
     /// The library's plugin scan (VST3 folders + catalog stages).
     plugins: OnceCell<Vec<PathBuf>>,
     library_query: String,
+    /// The shared command registry and its current / last run.
+    tools: tools::Tools,
 }
 
 /// What the command line hands the app.
@@ -144,6 +150,9 @@ pub struct Launch {
     pub ui: Vec<UiFlag>,
     /// `--window WxH`: the window's inner size in points.
     pub window: Option<[f32; 2]>,
+    /// `--command ID[=ARG]`: commands to run once the window is up, as
+    /// the palette would (`tool:bench`, `workbench.view=Scope`).
+    pub commands: Vec<String>,
 }
 
 /// One `--ui` item: a region opened or closed, a panel tab, the
@@ -239,6 +248,7 @@ impl HostApp {
             applied_dark: None,
             plugins: OnceCell::new(),
             library_query: String::new(),
+            tools: tools::Tools::default(),
         };
         if launch.voicing.wants_voicing() {
             // Straight to the comparison: no main plugin to load, but the
@@ -261,6 +271,13 @@ impl HostApp {
         }
         for flag in launch.ui {
             app.apply_flag(flag);
+        }
+        for c in launch.commands {
+            let inv = match c.split_once('=') {
+                Some((id, arg)) => commands::Invocation::with(id, arg),
+                None => commands::Invocation::new(&c),
+            };
+            app.run(&inv);
         }
         app
     }
@@ -447,7 +464,14 @@ impl eframe::App for HostApp {
             .frame(frame_of(t.canvas).inner_margin(egui::Margin::same(12.0)))
             .show(ctx, |ui| self.draw_central(ui, dt));
 
-        let items = self.commands();
+        let was_busy = self.tools.busy();
+        self.tools.poll();
+        if was_busy && !self.tools.busy() {
+            self.tool_finished();
+        }
+        // Commands are gathered only while the palette is open (they
+        // read the live params and the plugin scan).
+        let items = if self.palette.open { self.commands() } else { Vec::new() };
         if let Some(inv) = self.palette.ui(ctx, &items, &self.keymap, &t) {
             self.run(&inv);
         }

@@ -65,6 +65,7 @@ pub mod id {
     pub const THEME: &str = "workbench.theme";
     pub const KEYBOARD: &str = "input.keyboard";
     pub const SAMPLES: &str = "input.samples";
+    pub const OUTPUT: &str = "workbench.output";
     pub const OCTAVE_UP: &str = "input.octaveUp";
     pub const OCTAVE_DOWN: &str = "input.octaveDown";
     pub const SAMPLE_RATE: &str = "audio.sampleRate";
