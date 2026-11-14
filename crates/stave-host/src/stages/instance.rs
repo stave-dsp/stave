@@ -187,8 +187,13 @@ impl Instance for CatalogInstance {
         ]
     }
 
+    /// Set and apply at once, so what the setting changes about the
+    /// stage — its latency above all (an oversampling factor's filters)
+    /// — reads back before the next `process`.
     fn set_param(&mut self, name: &str, value: f64) -> Result<(), ParamError> {
-        self.handle().set(name, value)
+        self.handle().set(name, value)?;
+        self.apply_edits();
+        Ok(())
     }
 }
 
