@@ -146,8 +146,11 @@ fn every_reference_runs() {
     for spec in REFERENCES {
         let opened = crate::opened::Opened::open(std::path::Path::new(&format!("{PREFIX}{}", spec.name)), config()).unwrap();
         let mut inst = opened.into_instance();
-        for factor in 0..4 {
-            inst.set_param("oversample", f64::from(factor)).unwrap();
+        let oversampled = inst.set_param("oversample", 0.0).is_ok();
+        for factor in 0..if oversampled { 4 } else { 1 } {
+            if oversampled {
+                inst.set_param("oversample", f64::from(factor)).unwrap();
+            }
             let (mut l, mut r) = (vec![0.0f32; 64], vec![0.0f32; 64]);
             let mut peak = 0.0f32;
             for chunk in input.chunks(64).take(if factor < 2 { 75 } else { 10 }) {
@@ -206,4 +209,55 @@ fn pedal_settings_reach_the_audio() {
     let (x, y) = (run("circuit/ts808", "opamp", 0.0), run("circuit/ts808", "opamp", 1.0));
     let diff: f64 = x.iter().zip(&y).map(|(p, q)| f64::from(p - q).powi(2)).sum();
     assert!(diff > 0.0, "the op-amp choice reaches the audio");
+}
+
+/// Every oversampled reference reports its oversampler's latency as
+/// soon as the factor is set (before any `process`, as stave-play reads
+/// it), and its output lands there: an impulse's peak moves from the 1×
+/// position by the reported latency, within a sample or two (the
+/// circuit's own response warps a little between rates).
+#[test]
+fn oversampled_references_report_their_latency() {
+    use stave_core::params::Params;
+    let peak_at = |name: &str, factor: f64| -> (u32, usize) {
+        let opened = crate::opened::Opened::open(std::path::Path::new(&format!("{PREFIX}{name}")), config()).unwrap();
+        let mut inst = opened.into_instance();
+        inst.set_param("oversample", factor).unwrap();
+        let latency = inst.latency();
+        let mut input = vec![0.0f32; 4_096];
+        input[64] = 0.05;
+        let mut out = Vec::new();
+        let (mut l, mut r) = (vec![0.0f32; 64], vec![0.0f32; 64]);
+        for chunk in input.chunks(64) {
+            inst.process(&[chunk, chunk], &mut [&mut l, &mut r], &[]);
+            out.extend_from_slice(&l);
+        }
+        // Past the step a self-biasing circuit settles from, the
+        // impulse's largest departure from the sample before it.
+        let peak = (64..out.len())
+            .max_by(|&a, &b| (out[a] - out[63]).abs().total_cmp(&(out[b] - out[63]).abs()))
+            .unwrap();
+        (latency, peak)
+    };
+    for spec in REFERENCES {
+        let params = (spec.params)();
+        let oversampled = (0..params.count())
+            .filter_map(|i| params.by_index(i))
+            .any(|p| p.meta().name == "oversample");
+        if !oversampled || spec.name == "circuit/phase90" || spec.name == "circuit/ts808_lfo" {
+            continue;
+        }
+        let (base_latency, base) = peak_at(spec.name, 0.0);
+        assert_eq!(base_latency, 0, "{} at 1×", spec.name);
+        for factor in 1..4 {
+            let (latency, peak) = peak_at(spec.name, f64::from(factor));
+            assert!(latency > 0, "{} at factor {factor}: reports no latency", spec.name);
+            let moved = peak as i64 - base as i64;
+            assert!(
+                (moved - i64::from(latency)).abs() <= 2,
+                "{} at factor {factor}: peak moved {moved}, reported {latency}",
+                spec.name
+            );
+        }
+    }
 }
