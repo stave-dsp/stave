@@ -120,6 +120,20 @@ impl Shipping {
     pub const fn antialiased(self) -> Self {
         Self { adaa: true, ..self }
     }
+
+    /// The latency this configuration adds at the host rate `host`, in
+    /// seconds, that the plugin reports with its oversampler's: ADAA's
+    /// half an inner sample (its kernel `½(1 + z⁻¹)` is that delay times
+    /// `cos(ωT/2)`), none otherwise. The characterisation reads a shipped
+    /// model's phases with it taken out, as the host's delay
+    /// compensation would (R12); R16's null aligns it anyway.
+    pub fn latency_seconds(self, host: f64) -> f64 {
+        if self.adaa {
+            0.5 / (host * f64::from(self.oversample))
+        } else {
+            0.0
+        }
+    }
 }
 
 impl fmt::Display for Shipping {

@@ -203,12 +203,30 @@ pub fn oversample(case: &str, tier: Tier) -> u32 {
 /// −10 dB (Kahles et al. 2019), whose C2 response stays within 1 dB to
 /// 16 kHz, and which holds the matrix's existing phase budgets. That
 /// rules out the Fuzz Face at 1× (its AC128 transit time reads 5.7 dB
-/// low at 16 kHz at 44.1 kHz: it ships at 4× for its response, not its
-/// aliasing) and, for now, ADAA: it halves the factor a clipper needs
-/// (the op-amp clipper reaches −17.2 dB at 4× with it, −33.7 at 8×
-/// without) but delays by half an inner sample (0.95° at 1 kHz at 4×,
-/// 17° at 16 kHz) and, at 2×, bends the response (designed for 1.5·T,
-/// 4.4 dB low at 16 kHz on the Tube Screamer).
+/// low at 16 kHz at 44.1 kHz, and at 2× its null reads −6.5 dB in the
+/// worst band at 16.5 kHz: it ships at 4× for its response, not its
+/// aliasing) and ADAA, swept against plain oversampling for every
+/// circuit (`shipping_rate.rs` and `shipping_cost.rs` with
+/// `STAVE_SHIPPING_CONFIGS`; its half inner sample reported as latency,
+/// `Shipping::latency_seconds`). Only the op-amp clipper's solve has a
+/// closed-form mean (one solve a sample: 4× ADAA 2,172 ns against 8×
+/// plain 3,386); every other circuit's quadrature costs a second solve,
+/// so ADAA at m× costs plain 2m× within 10%. ADAA passes the piano at
+/// half the factor for the op-amp clipper (4×: −17.2 dB), the Tube
+/// Screamer, the triode stage and the CE-2's filters, but bends the
+/// response it was meant to keep: the op-amp clipper at 4× reads 0.54 dB
+/// high at 16 kHz and its null −1.4 dB in the worst band at T1 (CCIF's
+/// products at 17.7 kHz, 3.2 dB off: nonlinear, not the `cos(ωT/2)`
+/// droop a shelf would restore); the others read 1.3–4.4 dB off at
+/// 16 kHz at 2×/8×. No circuit ships with it. The same sweep found three
+/// circuits that pass at a lower plain factor than they shipped at: the
+/// common cathode with grid current at 4× (piano −10.7 dB; was 8×), the
+/// R15 push-pull with its cathode at 4× (−68.8; 2× passes the piano at
+/// −12.6 but its hand twin aliases on T1's −40 dB tone) and the grid
+/// blocking stage at 4× (−18.9); each one's null inaudible at T0 and
+/// T1. Like the op-amp clipper's, their T1 rows hold what the grid's
+/// hottest tone (8 kHz at +20 dB, above the piano's 4.2 kHz) aliases at
+/// that factor, as findings.
 /// Three circuits read above −10 dB at every factor — the CE
 /// stage (+10.0 dB at 8× and 16×), the JFET booster (−6.6 at 27 Hz) and
 /// the MOSFET booster (+13.5): that floor does not fall with
@@ -218,18 +236,22 @@ pub fn oversample(case: &str, tier: Tier) -> u32 {
 /// it took away above (the RC clipper alone gained, 4.1 → 1.7 dB at
 /// 48 kHz; 4× takes it to 0.006 dB). A hand topology ships as its circuit
 /// does, oversampled only.
-pub static SHIPPING: [(&str, Shipping); 19] = [
+pub static SHIPPING: [(&str, Shipping); 28] = [
     ("diode_clipper", Shipping::oversampled(8)),
     ("opamp_clipper", Shipping::oversampled(8)),
     ("tube_screamer", Shipping::oversampled(4)),
     ("common_cathode", Shipping::PLAIN),
-    ("common_cathode_grid_current", Shipping::oversampled(8)),
+    // 8× until the ADAA sweep: the piano holds at 4× (−10.7 dB).
+    ("common_cathode_grid_current", Shipping::oversampled(4)),
     ("triode_stage", Shipping::oversampled(4)),
     ("push_pull", Shipping::oversampled(8)),
     ("push_pull_pentode", Shipping::oversampled(8)),
     ("power_supply", Shipping::PLAIN),
     ("fuzz_face", Shipping::oversampled(4)),
-    ("rangemaster", Shipping::PLAIN),
+    // At 1× its null was audible at T1 (−6.7 dB in the worst band, at
+    // 115 Hz on the +20 dB multisines: products folded past Nyquist onto
+    // its lines); 2×: −16.0 (R16).
+    ("rangemaster", Shipping::oversampled(2)),
     ("ce_stage", Shipping::oversampled(8)),
     ("jfet_booster", Shipping::oversampled(8)),
     ("mosfet_booster", Shipping::oversampled(8)),
@@ -237,11 +259,63 @@ pub static SHIPPING: [(&str, Shipping); 19] = [
     // Its sixth-order stopband, bent by the bilinear map, holds the
     // followers' folded products only from 16× (−20.5 dB; 8×: −3.1).
     ("boss_ce2_filters", Shipping::oversampled(16)),
-    // As their fixed-bias and grid-current twins ship.
+    // As their fixed-bias and grid-current twins shipped, until the ADAA
+    // sweep took the push-pull (8×) and the blocking stage (8×) to 4×:
+    // piano −68.8 and −18.9 dB.
     ("triode_stage_cathode", Shipping::oversampled(4)),
-    ("push_pull_cathode", Shipping::oversampled(8)),
-    ("grid_blocking", Shipping::oversampled(8)),
+    ("push_pull_cathode", Shipping::oversampled(4)),
+    ("grid_blocking", Shipping::oversampled(4)),
+    // The classics (DSP.md R27), at 1× until this sweep (16 kHz 4.9–18 dB
+    // off, piano ANMR to +65.4 dB, nulls audible). ADAA read 1.0–2.9 dB
+    // off at 16 kHz at 4× and 3.6–12.6 at 2× on every one (TS-808 4×
+    // 1.6 dB), so plain oversampling: C2's 1 dB rules out 2× for the
+    // TS-808 (2.0), Big Muff (3.1), RAT (1.5), Klon (1.2) and D+ (1.1);
+    // the piano sets the Moog (4×: −3.6), Phase 90 (8×: −8.0), DS-1,
+    // whose floor stops falling at 8× (−2.1 dB at 8× and 16×: a finding,
+    // it ships at 8×), and JCM800: 16× reads −9.5 dB (8×: +4.2), still
+    // falling, so 32× would pass at twice a cost already past real time:
+    // it ships at 16×, a finding. Over the
+    // real-time line at 48 kHz on the reference machine (`shipping_cost.rs`):
+    // the JCM800, Moog, Phase 90 and DS-1; the Big Muff sits at it (4×:
+    // 19.2–19.8 µs alone, 22.1 loaded).
+    ("tube_screamer_ts808", Shipping::oversampled(4)),
+    ("big_muff_rams_head", Shipping::oversampled(4)),
+    ("proco_rat", Shipping::oversampled(4)),
+    ("marshall_jcm800_2203", Shipping::oversampled(16)),
+    ("moog_ladder_feedback", Shipping::oversampled(8)),
+    ("mxr_phase90", Shipping::oversampled(16)),
+    ("boss_ds1", Shipping::oversampled(8)),
+    ("klon_centaur", Shipping::oversampled(4)),
+    ("mxr_distortion_plus", Shipping::oversampled(4)),
 ];
+
+/// The configurations a report sweeps instead of its own, from
+/// `STAVE_SHIPPING_CONFIGS`: a comma-separated list of factors, each
+/// with `a` for stateful ADAA (`8,4a,2a`).
+pub fn configs_from_env() -> Option<Vec<Shipping>> {
+    let list = std::env::var("STAVE_SHIPPING_CONFIGS").ok()?;
+    Some(
+        list.split(',')
+            .map(|c| {
+                let c = c.trim();
+                let (m, adaa) = c.strip_suffix('a').map_or((c, false), |m| (m, true));
+                let m: u32 = m.parse().unwrap_or_else(|_| panic!("STAVE_SHIPPING_CONFIGS: {c}"));
+                let s = Shipping::oversampled(m);
+                if adaa {
+                    s.antialiased()
+                } else {
+                    s
+                }
+            })
+            .collect(),
+    )
+}
+
+/// The netlist `name` runs on: its deck, or a classic's catalogued
+/// topology.
+pub fn netlist(name: &str) -> Netlist {
+    find(name).classic.map_or_else(|| stave_test::characterise::deck(name), |(topology, _)| topology())
+}
 
 /// `case`'s shipping configuration (a hand topology's is its circuit's,
 /// without a prewarp: it has its own discretisation; a `_static` deck's
@@ -252,7 +326,15 @@ pub fn shipping(case: &str) -> Shipping {
     let circuit = first.strip_suffix("_static").unwrap_or(first);
     let s = SHIPPING.iter().find(|(n, _)| *n == circuit).map_or(Shipping::PLAIN, |s| s.1);
     if parts.next() == Some("hand") {
-        Shipping::oversampled(s.oversample)
+        // The hand push-pull's own floor reads ANMR −7.6 dB on T1's
+        // −40 dB tone at 4× (≤ −10 from 8×): it keeps 8× where its circuit
+        // ships at 4×.
+        if circuit == "push_pull_cathode" {
+            return Shipping::oversampled(8);
+        }
+        // A hand topology has no stateful ADAA here: it takes the factor
+        // its circuit's ADAA stands in for.
+        Shipping::oversampled(if s.adaa { 2 * s.oversample } else { s.oversample })
     } else {
         s
     }
@@ -359,11 +441,11 @@ pub fn decimate(y: &[f64], m: usize) -> Vec<f64> {
 /// ships in `s`: `(ANMR dB, at Hz)`.
 pub fn piano_anmr(name: &str, host: f64, s: Shipping, offset: f64) -> (f64, f64) {
     use stave_measure::aliasing::{anmr, SteppedTone};
-    use stave_test::characterise::{deck, Plan};
+    use stave_test::characterise::Plan;
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("spice");
     let plan = Plan::parse(&std::fs::read_to_string(dir.join(format!("{name}.plan"))).unwrap()).unwrap();
     // A classic runs as its catalogued topology.
-    let deck = find(name).classic.map_or_else(|| deck(name), |(topology, _)| topology());
+    let deck = netlist(name);
     let sweep = SteppedTone {
         amplitude: plan.knee.unwrap().at(offset),
         // Past the slowest settling (≤ 50 ms) in one window.
