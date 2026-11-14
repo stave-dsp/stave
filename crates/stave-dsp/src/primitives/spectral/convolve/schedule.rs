@@ -121,13 +121,43 @@ pub(crate) fn schedule(
         defer,
     };
     let mut spans = Vec::new();
+    walk(
+        ir_len,
+        block,
+        base,
+        |k, a, fits| {
+            let parts = solve(k, a, &search, &mut best).1;
+            debug_assert!(admissible(k, a, fits, parts, levels, block, defer));
+            parts
+        },
+        |span| spans.push(span),
+    );
+    spans
+}
+
+/// The runs a choice of counts makes, smallest first. The walk starts at
+/// size `block` with alignment 1 (`offset + base == a · size`: the first
+/// run hears the newest block); at each size `block << k` and alignment
+/// `a`, `choose(k, a, fits)` gives the partitions there (`fits` of them
+/// finish the response), and `parts` of them move it to size `2·size` at
+/// alignment `(a + parts)/2`, where the next run starts right after. It
+/// stops once the response is covered. [`schedule`]'s search chooses; the
+/// Kani proof below lets any [`admissible`] choice through.
+fn walk(
+    ir_len: usize,
+    block: usize,
+    base: usize,
+    mut choose: impl FnMut(usize, usize, usize) -> usize,
+    mut push: impl FnMut(Span),
+) {
     let (mut k, mut a) = (0, 1);
     loop {
-        let parts = solve(k, a, &search, &mut best).1;
         let size = block << k;
         let offset = a * size - base;
+        let fits = ir_len.saturating_sub(offset).div_ceil(size);
+        let parts = choose(k, a, fits);
         if parts > 0 {
-            spans.push(Span {
+            push(Span {
                 size,
                 offset,
                 skip: a - 1,
@@ -135,10 +165,28 @@ pub(crate) fn schedule(
             });
         }
         if offset + parts * size >= ir_len {
-            return spans;
+            return;
         }
         (k, a) = (k + 1, (a + parts) / 2);
     }
+}
+
+/// The counts the search can choose at size `block << k`, alignment `a`,
+/// among `levels` sizes: every partition that fits (which finishes the
+/// response), or, below the largest size, fewer — fewer than
+/// [`SEARCH_PARTS`] too — of the parity that keeps the next size aligned
+/// (`parts ≡ a mod 2`), never stepping into a deferred size without its
+/// block of slack (the search prices that start infinite, so a finite
+/// choice never takes it).
+fn admissible(k: usize, a: usize, fits: usize, parts: usize, levels: usize, block: usize, defer: usize) -> bool {
+    if parts == fits {
+        return true;
+    }
+    let next = block << (k + 1);
+    k + 1 < levels
+        && parts < fits.min(SEARCH_PARTS)
+        && parts % 2 == a % 2
+        && !(next >= defer && (a + parts) / 2 < 2)
 }
 
 /// The fixed inputs of a [`schedule`] search.
@@ -290,5 +338,66 @@ mod tests {
             .collect();
         println!("96 k taps, B = 64, deferred from 512: {hall:?}");
         assert!(hall.iter().all(|&(size, _, skip)| size < 512 || skip >= 1));
+    }
+}
+
+/// Kani proof (DSP.md R10; `scripts/kani.sh`): the partition schedule's
+/// coverage and deadlines, for every count the search may choose.
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// For every block from 1 to 64 samples, up to five sizes, either
+    /// head, every response length to 2¹⁴ taps and every deferral bound
+    /// above the block, any [`admissible`] choice of counts (so the
+    /// search's, which `schedule` checks against it): every tap past the
+    /// head is in exactly one run and the head's taps in none; the runs
+    /// follow one another from the head, sizes doubling powers of two
+    /// from the block to the largest; every run lines up with the
+    /// latency (`offset + base == size·(1 + skip)`: its output is due
+    /// exactly when its input block has passed through it); a run of a
+    /// deferred size keeps a block of slack (`skip ≥ 1`); and the last
+    /// run overshoots the response by less than one partition.
+    #[kani::proof]
+    #[kani::unwind(7)]
+    fn every_tap_is_scheduled_once_and_every_run_meets_its_deadline() {
+        let block = 1usize << kani::any_where(|b: &u32| *b <= 6);
+        let levels: usize = kani::any_where(|l: &usize| (1..=5).contains(l));
+        let largest = block << (levels - 1);
+        let base = if kani::any() { 0 } else { block };
+        let ir_len: usize = kani::any_where(|n: &usize| *n <= 1 << 14);
+        let defer: usize = kani::any_where(|d: &usize| *d > block);
+        let tap: usize = kani::any();
+        // `schedule` returns no runs when the head holds the response.
+        kani::assume(block - base < ir_len);
+        let (mut at, mut size_was, mut holders) = (block - base, 0usize, 0u32);
+        walk(
+            ir_len,
+            block,
+            base,
+            |k, a, fits| {
+                let parts: usize = kani::any();
+                kani::assume(admissible(k, a, fits, parts, levels, block, defer));
+                parts
+            },
+            |s| {
+                assert_eq!(s.offset, at);
+                assert!(s.size.is_power_of_two() && s.size >= block && s.size <= largest && s.size > size_was);
+                assert!(s.parts > 0);
+                assert_eq!(s.offset + base, s.size * (1 + s.skip));
+                assert!(s.size < defer || s.skip >= 1);
+                if tap >= s.offset && tap < s.offset + s.parts * s.size {
+                    holders += 1;
+                }
+                at += s.parts * s.size;
+                size_was = s.size;
+            },
+        );
+        assert!(at >= ir_len && at - ir_len < size_was);
+        if tap < block - base || tap >= at {
+            assert_eq!(holders, 0);
+        } else {
+            assert_eq!(holders, 1);
+        }
     }
 }

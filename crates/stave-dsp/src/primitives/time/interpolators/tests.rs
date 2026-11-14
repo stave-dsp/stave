@@ -36,6 +36,29 @@ fn weights_sum_to_one() {
     }
 }
 
+/// Every `f32` fraction in `[0, 1)` (1 065 353 216 of them): the
+/// Lagrange reads of a constant are that constant within two (Lagrange3)
+/// and three (Lagrange5) `f32` epsilons, no weight exceeds one in
+/// magnitude. Worst found: 1.79e-7 and 2.98e-7. The Kani proofs
+/// (`interpolators.rs::proofs`) hold both to it at every `k / 2⁸`;
+/// this scan covers every other fraction.
+/// `cargo test --release -p stave-dsp --lib every_f32_fraction -- --ignored`
+#[test]
+#[ignore = "exhaustive: about a minute in release"]
+fn every_f32_fraction_sums_to_one() {
+    let (mut worst3, mut worst5) = (0.0f32, 0.0f32);
+    for bits in 0..1.0f32.to_bits() {
+        let frac = f32::from_bits(bits);
+        let s3 = Lagrange3.interpolate(&[1.0; 4], frac);
+        let s5 = Lagrange5.interpolate(&[1.0; 6], frac);
+        worst3 = worst3.max((s3 - 1.0).abs());
+        worst5 = worst5.max((s5 - 1.0).abs());
+        assert!(Lagrange3::weights(frac).iter().chain(&Lagrange5::weights(frac)).all(|w| w.abs() <= 1.0), "{frac}");
+    }
+    println!("worst |sum − 1|: Lagrange3 {worst3:e}, Lagrange5 {worst5:e}");
+    assert!(worst3 <= 2.0 * f32::EPSILON && worst5 <= 3.0 * f32::EPSILON);
+}
+
 /// Magnitude (dB) and phase (cycles) error of a sine at `f` cycles per
 /// sample read `20 + frac` samples back, against the exact delayed sine.
 fn sine_error<I: Interpolator>(f: f64, frac: f32) -> (f64, f64) {

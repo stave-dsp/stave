@@ -612,8 +612,22 @@ pub fn of_black_box(
     rate: f64,
     knee: Option<Knee>,
 ) -> (Fingerprint, Plan) {
+    of_black_box_from(case, model, catalogue, make, rate, knee, super::model::KNEE_SEARCH_FROM)
+}
+
+/// [`of_black_box`] with the knee's climb starting at `from` of full
+/// scale ([`delayed_knee_from`](super::model::delayed_knee_from)).
+pub fn of_black_box_from(
+    case: &str,
+    model: &str,
+    catalogue: Option<&str>,
+    make: impl Fn(f64) -> (super::model::Ticker, usize) + 'static,
+    rate: f64,
+    knee: Option<Knee>,
+    from: f64,
+) -> (Fingerprint, Plan) {
     let settle = STAGE_SETTLE_SECONDS;
-    let found = super::model::delayed_knee(&make, rate, settle);
+    let found = super::model::delayed_knee_from(&make, rate, settle, from);
     let plan = stage_plan(case, knee.unwrap_or(found), settle);
     let m = super::model::Model::Delayed { make: Box::new(make) };
     let (table, _) = m.measure(&plan, &stave_dsp::circuit::netlist::Netlist::new(), Tier::T0, rate, false, super::Shipping::PLAIN, &[]);
@@ -638,6 +652,33 @@ pub fn pin_stage_with(
     make: impl Fn(f64) -> super::model::Ticker + 'static,
     kernels: Option<&super::kernels::KernelPlan>,
 ) {
+    pin_black_box(case, model, catalogue, make, kernels, super::model::KNEE_SEARCH_FROM);
+}
+
+/// [`pin_stage`] with the knee's climb starting at `from` of full scale
+/// ([`delayed_knee_from`](super::model::delayed_knee_from)): for a stage
+/// whose small-signal reading is its own `f32` floor. The test that
+/// re-measures it passes the same `from`, so it finds the same knee.
+#[track_caller]
+pub fn pin_stage_from(
+    case: &str,
+    model: &str,
+    catalogue: Option<&str>,
+    make: impl Fn(f64) -> super::model::Ticker + 'static,
+    from: f64,
+) {
+    pin_black_box(case, model, catalogue, make, None, from);
+}
+
+#[track_caller]
+fn pin_black_box(
+    case: &str,
+    model: &str,
+    catalogue: Option<&str>,
+    make: impl Fn(f64) -> super::model::Ticker + 'static,
+    kernels: Option<&super::kernels::KernelPlan>,
+    from: f64,
+) {
     let committed = if blessing() {
         None
     } else {
@@ -645,7 +686,8 @@ pub fn pin_stage_with(
     };
     let make = std::rc::Rc::new(make);
     let shared = make.clone();
-    let (fp, plan) = of_stage(case, model, catalogue, move |r| shared(r), 48_000.0, committed.as_ref().and_then(|c| c.knee));
+    let knee = committed.as_ref().and_then(|c| c.knee);
+    let (fp, plan) = of_black_box_from(case, model, catalogue, move |r| (shared(r), 0), 48_000.0, knee, from);
     let record = kernels.map(|k| {
         let stage = super::model::Model::Stage {
             make: Box::new(move |r| make(r)),

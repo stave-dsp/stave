@@ -126,6 +126,26 @@ const KEEP: usize = 2 * HB_HALF;
 const LINE: usize = 256;
 const RUN: usize = 128;
 
+/// The upsampler's windows for the `n` outputs whose inputs sit at
+/// `p..p + n`, `h` side taps: the centre tap's `n` samples from `p − h`,
+/// and the side taps' `2h − 1 + n` from `p + 1 − 2h` (newer =
+/// sig[p−h+j+1], older = sig[p−h−j]). `outputs` slices each from its
+/// start and its reader (`widen`, `side_taps`) cuts it to its length, the
+/// form the lane loads compile best from; the proof holds the whole range
+/// inside the line.
+#[inline(always)]
+fn up_windows(p: usize, h: usize, n: usize) -> (core::ops::Range<usize>, core::ops::Range<usize>) {
+    (p - h..p - h + n, p + 1 - 2 * h..p + n)
+}
+
+/// The decimator's windows for the `n` outputs whose pairs sit at
+/// `q..q + n`: the even line's `n` samples from `q − h` (the centre
+/// tap), the odd line's `2h − 1 + n` from `q − 2h` (the side taps).
+#[inline(always)]
+fn down_windows(q: usize, h: usize, n: usize) -> (core::ops::Range<usize>, core::ops::Range<usize>) {
+    (q - h..q - h + n, q - 2 * h..q + n - 1)
+}
+
 /// `acc + Σ_j side[j]·(w[h+j] + w[h−1−j])` for `N` outputs, `h` the
 /// side taps: the symmetric pairs around a window's middle, newer first,
 /// in the scalar order. `w` is cut to exactly the window first, so the
@@ -221,10 +241,11 @@ impl HalfbandUp {
     #[inline(always)]
     fn outputs<const N: usize>(&self, p: usize) -> (F64s<N>, F64s<N>) {
         let (buf, h) = (&self.sig.buf, self.half);
+        let (centre, sides) = up_windows(p, h, N);
         // Even phase: the center tap is the only one that sees signal.
-        let even = F64s::<N>::widen(&buf[p - h..]) * self.center;
+        let even = F64s::<N>::widen(&buf[centre.start..]) * self.center;
         // Odd phase: every side tap sees signal; center sees a zero.
-        let odd = side_taps(F64s::default(), &self.side[..h], &buf[p + 1 - 2 * h..]);
+        let odd = side_taps(F64s::default(), &self.side[..h], &buf[sides.start..]);
         (even, odd)
     }
 
@@ -339,8 +360,9 @@ impl HalfbandDown {
     #[inline(always)]
     fn outputs<const N: usize>(&self, q: usize) -> F64s<N> {
         let (even, odd, h) = (&self.even.buf, &self.odd.buf, self.half);
-        let centre = F64s::<N>::widen(&even[q - h..]) * self.center;
-        side_taps(centre, &self.side[..h], &odd[q - 2 * h..])
+        let (centre, sides) = down_windows(q, h, N);
+        let centre = F64s::<N>::widen(&even[centre.start..]) * self.center;
+        side_taps(centre, &self.side[..h], &odd[sides.start..])
     }
 
     #[inline]
@@ -692,5 +714,50 @@ mod polyphase_bitexact {
                 len = len % 299 + 7;
             }
         }
+    }
+}
+
+/// Kani proof (DSP.md R10; `scripts/kani.sh`): the half-band pair's
+/// history lines. Every read in `outputs` slices its line with bounds
+/// checks (a panic in `tick`, against the crate's contract); this proves
+/// none can fail, on the windows `outputs` slices (`up_windows`,
+/// `down_windows`) and the reads `side_taps` makes inside them.
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// A line in any state the pair can leave it in (`KEEP ≤ end ≤
+    /// LINE`), any design to [`HB_TAPS`] (`1 ≤ half ≤ HB_HALF`), any run
+    /// of `n ≤ RUN` samples: `room` keeps that state and leaves room for
+    /// the run, moving the newest `KEEP` samples as the look-back; the
+    /// upsampler's and the decimator's windows for a lane group or one
+    /// output anywhere in the run lie inside the line, each exactly the
+    /// length its reader takes, and every side-tap read lies inside its
+    /// window; after the run the state holds again.
+    #[kani::proof]
+    fn halfband_windows_stay_inside_their_lines() {
+        let h: usize = kani::any_where(|h: &usize| (1..=HB_HALF).contains(h));
+        let end: usize = kani::any_where(|e: &usize| (KEEP..=LINE).contains(e));
+        let n: usize = kani::any_where(|n: &usize| (1..=RUN).contains(n));
+        let mut line = Line { buf: [0.0; LINE], end };
+        line.buf[end - 1] = 1.0;
+        line.buf[end - KEEP] = 2.0;
+        line.room(n);
+        assert!(line.end >= KEEP && line.end + n <= LINE);
+        // The newest and the oldest kept sample, where the reads expect them.
+        assert_eq!(line.buf[line.end - 1], 1.0);
+        assert_eq!(line.buf[line.end - KEEP], 2.0);
+        let width = if kani::any() { LANES } else { 1 };
+        let i: usize = kani::any_where(|i: &usize| *i < n && *i + width <= n);
+        let at = line.end + i;
+        for (centre, sides) in [up_windows(at, h, width), down_windows(at, h, width)] {
+            assert!(centre.start <= centre.end && centre.end <= LINE && centre.len() == width);
+            assert!(sides.start <= sides.end && sides.end <= LINE && sides.len() == 2 * h - 1 + width);
+        }
+        // side_taps: w[h + j..][..N] and w[h − 1 − j..][..N] for j < h.
+        let j: usize = kani::any_where(|j: &usize| *j < h);
+        assert!(h + j + width <= 2 * h - 1 + width && h - 1 >= j);
+        line.end += n;
+        assert!(line.end >= KEEP && line.end <= LINE);
     }
 }

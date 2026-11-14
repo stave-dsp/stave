@@ -509,6 +509,17 @@ pub fn stage_knee(make: &dyn Fn(f64) -> Ticker, rate: f64, settle: f64) -> Knee 
 
 /// [`stage_knee`] for a delayed black box ([`Model::Delayed`]).
 pub fn delayed_knee(make: &dyn Fn(f64) -> (Ticker, usize), rate: f64, settle: f64) -> Knee {
+    delayed_knee_from(make, rate, settle, KNEE_SEARCH_FROM)
+}
+
+/// Where [`stage_knee`]'s climb starts: 10 µ of full scale.
+pub const KNEE_SEARCH_FROM: f64 = 1e-5;
+
+/// [`delayed_knee`] with the climb starting at `from` (of full scale):
+/// for a black box whose small-signal reading is its own `f32` floor (a
+/// network whose output sits on a DC offset reads a tiny tone's
+/// harmonics as that offset's rounding: a "knee" at the first level).
+pub fn delayed_knee_from(make: &dyn Fn(f64) -> (Ticker, usize), rate: f64, settle: f64, from: f64) -> Knee {
     let period = Period::units(6);
     let bin = tone_bin(period, 1_000.0, HARMONICS, &SHIPPING_RATES).unwrap();
     let settle_periods = (settle / period.seconds()).ceil() as u32 + 1;
@@ -533,5 +544,5 @@ pub fn delayed_knee(make: &dyn Fn(f64) -> (Ticker, usize), rate: f64, settle: f6
         let h = Harmonics::of(&s, bin, HARMONICS);
         (db(gain(&run.excitation.tones[0], h.fundamental()).norm()), h.thd())
     };
-    find_knee(measure, 1e-5, 100.0).rounded()
+    find_knee(measure, from, 100.0).rounded()
 }
