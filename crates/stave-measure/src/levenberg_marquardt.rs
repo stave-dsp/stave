@@ -2,7 +2,7 @@
 //! bounds, and the L_p continuation toward a minimax fit. The one solver
 //! every fit in stave shares — E11's device fits to datasheet curves
 //! (`crates/stave-test/tests/fit_datasheet.rs`) and G4's design fits
-//! ([`design::fit`](crate::design::fit)).
+//! ([`design::fit`](mod@crate::design::fit)).
 //!
 //! # Models
 //!
