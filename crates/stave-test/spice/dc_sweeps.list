@@ -1,0 +1,52 @@
+# DC transfer sweeps (DSP.md R3): each deck's operating point against
+# its input where the input is DC-coupled (the static transfer), its
+# supply, its bias source or a bias pot/trim (a resistor), read at the
+# named probes. scripts/ngspice-simulate.py runs each as a `.dc` sweep into
+# dc_sweeps.ngspice.txt (every other time-varying source at its t = 0
+# value, or held as stated); tests/dc_sweeps_match_ngspice.rs holds
+# Circuit<Dk>'s operating point at every point to it.
+#
+# sweep <id> <deck> <element> <start> <stop> <points> [hold <source>=<v> …] probe <vector> …
+#
+# Static transfers (the input DC-coupled to the nonlinearity).
+sweep diode_clipper/input diode_clipper v1 -3 3 61 probe v(out)
+sweep opamp_clipper/input opamp_clipper v1 -0.5 0.5 41 probe v(out)
+sweep common_cathode/grid common_cathode v1 -4 1 51 probe v(p) v(k)
+sweep common_cathode_grid_current/grid common_cathode_grid_current v1 -4 4 81 probe v(p) v(k) v(g)
+sweep triode_stage_cathode/grid triode_stage_cathode v1 -4 4 81 probe v(p) v(k)
+sweep push_pull_cathode/swing push_pull_cathode vx -16 16 65 probe v(p2,p1) v(k)
+sweep ota_vca/input ota_vca vin -5 5 41 hold vc=5 probe v(out)
+sweep diode_ac/bias diode_ac vin 0 10 41 probe v(out)
+# Operating point against the supply.
+sweep common_cathode/supply common_cathode vb 150 450 31 probe v(p) v(k)
+sweep triode_stage/supply triode_stage vb 150 450 31 hold v1=-1.5 probe v(p)
+sweep triode_stage_cathode/supply triode_stage_cathode vb 150 450 31 probe v(p) v(k)
+sweep push_pull/supply push_pull vb 150 450 31 hold vx=0 probe v(p1)
+sweep push_pull_cathode/supply push_pull_cathode vb 150 450 31 probe v(p1) v(k)
+sweep push_pull_pentode/supply push_pull_pentode vb 300 500 21 hold vx=0 probe v(p1)
+sweep grid_blocking/supply grid_blocking vb 150 450 31 probe v(p) v(k)
+sweep fuzz_face/supply fuzz_face vee -12 -6 25 probe v(c1) v(c2) v(e2)
+sweep rangemaster/supply rangemaster vee -12 -6 25 probe v(c) v(e)
+sweep ce_stage/supply ce_stage vcc 8 16 33 probe v(c) v(e)
+sweep jfet_booster/supply jfet_booster vdd 6 12 25 probe v(d) v(s)
+sweep mosfet_booster/supply mosfet_booster vdd 6 12 25 probe v(d) v(s)
+sweep big_muff_rams_head/supply big_muff_rams_head va 6 12 25 probe v(c1) v(c2) v(c3) v(c4)
+sweep boss_ds1/supply boss_ds1 va 6 12 25 probe v(c2) v(e3)
+sweep proco_rat/bias proco_rat vb 3.5 5.5 21 probe v(s) v(o)
+sweep tube_screamer_ts808/supply tube_screamer_ts808 va 6 12 25 probe v(e1) v(e2) v(o1)
+sweep marshall_jcm800_2203/supply marshall_jcm800_2203 vb5 280 400 25 probe v(p1) v(p2) v(k1) v(k2)
+# Operating point against a bias source or a bias pot/trim.
+sweep tube_screamer/reference tube_screamer v1 3.5 5.5 21 probe v(out)
+sweep pentode_stage_ac/bias pentode_stage_ac vin -50 -25 26 probe v(p) v(s)
+sweep fuzz_face/trim fuzz_face r3 4e3 16e3 25 probe v(c2) v(c1)
+sweep rangemaster/bias rangemaster rb2 40e3 100e3 31 probe v(c) v(e)
+sweep ce_stage/bias ce_stage r2 6e3 14e3 33 probe v(c) v(e)
+sweep jfet_booster/bias jfet_booster rs 500 5e3 37 probe v(d) v(s)
+sweep mosfet_booster/bias mosfet_booster rg2 200e3 1e6 33 probe v(d) v(s)
+sweep ota_vca/control ota_vca vc 0 10 41 hold vin=1 probe v(out)
+sweep boss_ce2_filters/bias boss_ce2_filters vb 3.5 5.5 21 probe v(q2e) v(q3e)
+sweep klon_centaur/bias klon_centaur vr 3.5 5.5 21 probe v(o2) v(o3) v(o4)
+sweep mxr_phase90/bias mxr_phase90 vr 4 6 21 probe v(p1) v(c5)
+sweep transistor_ladder/tail transistor_ladder itail 20e-6 200e-6 37 probe v(c4l) v(c1l)
+sweep diode_ladder/tail diode_ladder itail 20e-6 200e-6 37 probe v(l3) v(l0)
+sweep moog_ladder_feedback/tail moog_ladder_feedback it 20e-6 200e-6 37 probe v(l1) v(l4)

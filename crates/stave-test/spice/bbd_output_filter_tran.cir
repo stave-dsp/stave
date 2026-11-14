@@ -1,0 +1,25 @@
+* spice/bbd_output_filter.cir in the time domain (DSP.md R3): the same network
+* from rest, driven by 0.5 V at 220 Hz plus 0.5 V at 3.1 kHz (two sines
+* in series), so the step into the tones and the steady state both
+* read against ngspice's transient. Output: the AC deck's node.
+VI i x SIN(0 0.5 220)
+V2 x 0 SIN(0 0.5 3.1k)
+R1 i a 10k
+R2 a b 10k
+C1 a m 2.7n
+C2 b 0 2.2n
+E1 m 0 b 0 1
+R3 m c 10k
+R4 c d 10k
+C3 c o 6.8n
+C4 d 0 820p
+E2 o 0 d 0 1
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(o)
+.endc
+.end

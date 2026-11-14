@@ -46,6 +46,10 @@ pub enum Check {
     Intermodulation,
     /// C8: bias shift (volts) and the probe's recovery (dB) after a burst.
     Dynamics,
+    /// C8: the bias shift's 1/e recovery time after a burst, as the
+    /// model's error relative to the reference's (|τm/τr − 1|): how long
+    /// a cathode or a coupling cap holds a loud passage's bias.
+    Recovery,
     /// C10: inharmonic energy on empty bins, dBc — the model's alone,
     /// held to a ceiling.
     Aliasing,
@@ -61,7 +65,7 @@ pub enum Check {
 }
 
 impl Check {
-    pub const ALL: [Check; 13] = [
+    pub const ALL: [Check; 14] = [
         Check::OperatingPoint,
         Check::Response,
         Check::GroupDelay,
@@ -72,6 +76,7 @@ impl Check {
         Check::ThdN,
         Check::Intermodulation,
         Check::Dynamics,
+        Check::Recovery,
         Check::Aliasing,
         Check::Anmr,
         Check::Audibility,
@@ -89,6 +94,7 @@ impl Check {
             Check::ThdN => "C6 THD+N 20k flat",
             Check::Intermodulation => "C7 IMD",
             Check::Dynamics => "C8 dynamics",
+            Check::Recovery => "C8 recovery time",
             Check::Aliasing => "C10 aliasing",
             Check::Anmr => "C10 ANMR",
             Check::Audibility => "R16 null NMR",
@@ -104,6 +110,7 @@ impl Check {
             Check::Aliasing => "dBc",
             Check::Anmr | Check::Audibility => "dB NMR",
             Check::GroupDelay => "s",
+            Check::Recovery => "rel",
             _ => "dB",
         }
     }
@@ -333,6 +340,26 @@ pub fn compare(
                 }
             }
         }
+        Check::Recovery => {
+            for (run, r, md) in pairs() {
+                let Kind::Burst { burst, .. } = run.kind else { continue };
+                let Some((base, from)) = burst_periods(run) else { continue };
+                let (rr, rm) = (Recovery::of(&r.periods, 0), Recovery::of(&md.periods, 0));
+                // Something to recover: a shift above 1e-5 of the burst's
+                // own level at the reference's output (and 1 nV).
+                let level = r.periods.get(from.saturating_sub(1)).and_then(|s| s.magnitude(burst)).unwrap_or(0.0);
+                let seconds = run.period().seconds();
+                let Some(tr) = rr.time_constant(rr.dc[base], from, seconds, (1e-5 * level).max(1e-9)) else {
+                    continue;
+                };
+                let tm = rm.time_constant(rm.dc[base], from, seconds, 0.0).unwrap_or(0.0);
+                let error = if tr == tm { 0.0 } else { (tm / tr - 1.0).abs() };
+                m.points += 1;
+                m.first.offer(error, || {
+                    format!("{}: 1/e recovery {:.3} vs {:.3} ms", run.id, tr * 1e3, tm * 1e3)
+                });
+            }
+        }
         Check::Anmr => {
             m.first.error = f64::NEG_INFINITY;
             for (run, _, md) in pairs() {
@@ -377,6 +404,16 @@ pub fn compare(
         }
     }
     (m.points > 0).then_some(m)
+}
+
+/// A burst run's measured periods: the last before the burst (its
+/// settled bias) and the first after it, from its gated tone.
+fn burst_periods(run: &Run) -> Option<(usize, usize)> {
+    let gate = run.excitation.tones.iter().find(|t| t.gate.off.is_finite())?.gate;
+    let p = run.period().seconds();
+    let measured = |t: f64| (t / p).round() as i64 - i64::from(run.settle);
+    let (on, off) = (measured(gate.on), measured(gate.off));
+    (on >= 1 && off > on && (off as u64) < u64::from(run.measure)).then_some(((on - 1) as usize, off as usize))
 }
 
 /// The BLA at one level, averaged over its realisations in `table`

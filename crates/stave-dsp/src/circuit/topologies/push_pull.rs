@@ -243,7 +243,11 @@ impl Half {
 /// the EL34 pair against ngspice's, 2.6e-7 (budget 1e-6) up to its level
 /// scale;
 /// `crates/stave-test/tests/solver_conformance.rs::push_pull_feedback_converges_at_the_host_rate`,
-/// `crates/stave-test/tests/solver_conformance.rs::push_pull_pentode_feedback_converges_at_the_host_rate`.
+/// `crates/stave-test/tests/solver_conformance.rs::push_pull_pentode_feedback_converges_at_the_host_rate`;
+/// under [`Bias::Cathode`] (DSP.md R15),
+/// `crates/stave-test/tests/cathode_bias_matches_ngspice.rs::push_pull_cathode_bias_matches_ngspice`:
+/// the shared cathode through an 8 V burst and its recovery against
+/// ngspice's cathode-biased pair (`spice/push_pull_cathode_burst.cir`).
 ///
 /// # Cost
 /// The datasheet's `"PushPull (EL34) x100"` (the triode pair costs the

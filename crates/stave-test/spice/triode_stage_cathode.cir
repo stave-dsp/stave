@@ -1,0 +1,27 @@
+* The triode stage under cathode bias (DSP.md R15): Koren 12AX7 plate
+* current (Koren 2003, the T12AX7 card) and Dempwolf RSD-1 grid current,
+* the grid at 0 V through the 68k stopper, 300 V through 100k, and the
+* cathode self-biased by RK bypassed by CK. RK is the value the tabulated
+* `Triode` takes under `Bias::Cathode` (its design bias -1.5 V over its
+* idle plate current, 1579.40 ohm); CK 22u. The memory: plate and grid
+* current rectified into the cathode RC move the bias under drive and it
+* recovers after. Driven 2 V at 1 kHz. Output: the plate.
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+V1 in 0 SIN(0 2 1k)
+RS in g 68k
+VB b 0 300
+RA b p 100k
+RK k 0 1579.40
+CK k 0 22u
+BG g k I = {gg*pow(ln(1+exp(cg*V(g,k)))/cg, xi) + ig0}
+BP p k I = {2*pow((V(p,k)/kp)*ln(1+exp(kp*(1/mu+V(g,k)/sqrt(kvb+V(p,k)*V(p,k))))), ex)/kg1}
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p)
+.endc
+.end

@@ -23,6 +23,13 @@ carrying the plan's excitation), reduced to the complex amplitudes of the
 plan's bins over whole periods, THD+N and the inharmonic floor: measurements,
 never waveforms. --check compares them the same way.
 
+Then the DC transfer sweeps (DSP.md R3): each line of dc_sweeps.list
+names a deck, an element (a source, or a resistor for a pot or a trim)
+and its range; the deck runs a `.dc` sweep of it, every other
+time-varying source held at its value at t = 0 (or the line's `hold`),
+into dc_sweeps.ngspice.txt — the operating point at each value, one
+block a sweep.
+
 Drives the shared library when there is one (macOS: brew install
 libngspice; NGSPICE_LIBRARY names it), else the ngspice program in batch
 mode (Linux: apt install ngspice; NGSPICE names it) — the same simulator
@@ -599,6 +606,148 @@ def compare_tables(committed, fresh, rtol):
     return worst, where
 
 
+# ------------------------------------------------------------ DC sweeps
+
+SWEEPS = SPICE_DIR / "dc_sweeps.list"
+SWEPT = SPICE_DIR / "dc_sweeps.ngspice.txt"
+
+
+def parse_sweeps():
+    """dc_sweeps.list: `sweep <id> <deck> <element> <start> <stop> <points>
+    [hold <source>=<value> …] probe <vector> …`."""
+    sweeps = []
+    for line in SWEEPS.read_text().splitlines():
+        w = line.split()
+        if not w or w[0].startswith("#"):
+            continue
+        assert w[0] == "sweep", line
+        sweep = {"id": w[1], "deck": w[2], "element": w[3].lower(), "start": float(w[4]),
+                 "stop": float(w[5]), "points": int(w[6]), "holds": {}, "probes": []}
+        i = 7
+        while w[i] == "hold":
+            name, value = w[i + 1].split("=")
+            sweep["holds"][name.lower()] = float(value)
+            i += 2
+        assert w[i] == "probe", line
+        sweep["probes"] = w[i + 1:]
+        sweeps.append(sweep)
+    return sweeps
+
+
+SUFFIX = {"t": 1e12, "g": 1e9, "meg": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6, "n": 1e-9, "p": 1e-12, "f": 1e-15}
+
+
+def spice_number(text):
+    found = re.match(r"^([-+]?[0-9.]+(?:e[-+]?[0-9]+)?)(meg|[tgkmunpf])?", text.lower())
+    return float(found.group(1)) * SUFFIX.get(found.group(2), 1.0)
+
+
+def at_rest(line):
+    """A source's value at t = 0 as ngspice's transient starts it: SIN's
+    offset plus its amplitude times the sine of its phase, PWL's first
+    value; None for a source that is already DC."""
+    found = re.search(r"\b(sin|pwl)\s*\(([^)]*)\)", line, re.I)
+    if not found:
+        return None
+    args = [spice_number(x) for x in found.group(2).replace(",", " ").split()]
+    if found.group(1).lower() == "pwl":
+        return args[1]
+    phase = args[5] if len(args) > 5 else 0.0
+    return args[0] + args[1] * math.sin(math.radians(phase))
+
+
+def sweep_deck(sweep, out):
+    """The deck as a `.dc` sweep of its element, its other sources at rest."""
+    lines, _, _ = deck_parts(SPICE_DIR / f"{sweep['deck']}.cir")
+    deck, found = [f"* {sweep['deck']} {sweep['id']}"], False
+    for line in lines:
+        w = line.split()
+        name = w[0].lower() if w else ""
+        if name == sweep["element"]:
+            found = True
+            if name[0] in "vi":
+                line = f"{w[0]} {w[1]} {w[2]} DC 0"
+        elif name[:1] in ("v", "i") and len(w) > 3:
+            if name in sweep["holds"]:
+                line = f"{w[0]} {w[1]} {w[2]} DC {sweep['holds'][name]!r}"
+            elif (rest := at_rest(line)) is not None:
+                line = f"{w[0]} {w[1]} {w[2]} DC {rest!r}"
+        deck.append(line)
+    if not found:
+        sys.exit(f"{sweep['id']}: no element {sweep['element']} in spice/{sweep['deck']}.cir")
+    step = (sweep["stop"] - sweep["start"]) / (sweep["points"] - 1)
+    deck += [".control", "set numdgt=15", "set wr_singlescale",
+             f"dc {sweep['element']} {sweep['start']!r} {sweep['stop'] + 0.25 * step!r} {step!r}",
+             f"wrdata {out} {' '.join(sweep['probes'])}", ".endc", ".end"]
+    return "\n".join(deck) + "\n"
+
+
+def simulate_sweeps(spice, target, only):
+    """Every sweep (or those on the decks `only`) into `target`, keeping
+    the committed blocks of the others; the ids simulated."""
+    blocks, current = {}, None
+    if SWEPT.exists():
+        for line in SWEPT.read_text().splitlines():
+            if line.startswith("sweep "):
+                current = line.split()[1]
+                blocks[current] = [line]
+            elif current and line and not line.startswith("#"):
+                blocks[current].append(line)
+    every = parse_sweeps()
+    sweeps = [s for s in every if not only or s["deck"] in only]
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = pathlib.Path(scratch)
+
+        def one(sweep):
+            tag = sweep["id"].replace("/", "_")
+            out = scratch / f"{tag}.txt"
+            run_deck(spice, sweep_deck(sweep, out), scratch, tag)
+            head = f"sweep {sweep['id']} {sweep['deck']} {sweep['element']} {' '.join(sweep['probes'])}"
+            return sweep["id"], [head] + [" ".join(f"{x:.12e}" for x in row) for row in columns(out)]
+
+        if program():
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max(len(sweeps), 1)) as pool:
+                fresh = dict(pool.map(one, sweeps))
+        else:
+            fresh = dict(one(s) for s in sweeps)
+    blocks.update(fresh)
+    text = [f"# stave DC sweeps v1 (DSP.md R3): spice/{SWEEPS.name} through ngspice {version(spice)}",
+            "# sweep <id> <deck> <element> <probes…>, then <value> <probe volts…> a point"]
+    for sweep in every:
+        text += blocks.get(sweep["id"], [])
+    target.write_text("\n".join(text) + "\n")
+    return list(fresh)
+
+
+def sweep_rows(path):
+    rows, current = {}, None
+    for line in path.read_text().splitlines():
+        if line.startswith("sweep "):
+            current = line.split()[1]
+            rows[current] = []
+        elif current and line and not line.startswith("#"):
+            rows[current].append(list(map(float, line.split())))
+    return rows
+
+
+def compare_sweeps(committed, fresh, ids, rtol):
+    """The largest deviation of a fresh sweep's column from the committed
+    one, over that column's peak, and where."""
+    a, b = sweep_rows(committed), sweep_rows(fresh)
+    worst, where = 0.0, ""
+    for sid in ids:
+        if sid not in a or len(a[sid]) != len(b[sid]):
+            return math.inf, f"{sid}: not committed, or its points differ"
+        for c in range(len(a[sid][0])):
+            peak = max(abs(r[c]) for r in a[sid]) or 1.0
+            for ra, rb in zip(a[sid], b[sid]):
+                d = abs(ra[c] - rb[c]) / peak
+                if d > worst:
+                    worst, where = d, f"{sid} at {ra[0]:.6g}, column {c + 1}: {ra[c]:.12e} vs {rb[c]:.12e}"
+    return worst, where
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="compare, don't write")
@@ -611,6 +760,7 @@ def main():
     parser.add_argument("--exclude", help="every deck but these (comma-separated names): CI checks "
                         "the slow classics' decks and tables in a job of their own")
     parser.add_argument("--tables-only", action="store_true", help="skip the waveforms")
+    parser.add_argument("--sweeps-only", action="store_true", help="only the DC sweeps")
     parser.add_argument("--keep", type=pathlib.Path,
                         help="--check: copy every stale table's fresh simulation here (CI uploads them)")
     parser.add_argument("--jobs", type=int, default=default_jobs(),
@@ -633,7 +783,7 @@ def main():
         check_exact(spice, scratch)
         failed = []
         for cir in sorted(SPICE_DIR.glob("*.cir")):
-            if args.tables_only or not chosen(cir.stem):
+            if args.tables_only or args.sweeps_only or not chosen(cir.stem):
                 continue
             committed = cir.with_suffix(".ngspice.txt")
             if not args.check:
@@ -652,11 +802,28 @@ def main():
                   + (f" ({where})" if worst > 0 else ""))
             if worst > args.rtol:
                 failed.append(committed.name)
+        if SWEEPS.exists():
+            target = scratch / SWEPT.name if args.check else SWEPT
+            ids = simulate_sweeps(spice, target, only)
+            if not args.check:
+                print(f"wrote {SWEPT.name} ({len(ids)} sweeps)")
+            elif ids:
+                worst, where = compare_sweeps(SWEPT, target, ids, args.rtol) if SWEPT.exists() \
+                    else (math.inf, "not committed")
+                verdict = "ok" if worst <= args.rtol else "STALE"
+                print(f"{SWEPT.name}: {len(ids)} sweeps, max deviation {worst:.3e} of peak {verdict}"
+                      + (f" ({where})" if worst > 0 else ""))
+                if worst > args.rtol:
+                    failed.append(SWEPT.name)
+                    if args.keep:
+                        args.keep.mkdir(parents=True, exist_ok=True)
+                        shutil.copy(target, args.keep / SWEPT.name)
         # Every plan at once: the runs of all of them share --jobs ngspice
         # programs, so a slow deck never leaves the others idle.
         global SLOTS
         SLOTS = threading.BoundedSemaphore(args.jobs)
-        plans = [p for p in sorted(SPICE_DIR.glob("*.plan")) if chosen(p.stem)]
+        plans = [p for p in sorted(SPICE_DIR.glob("*.plan"))
+                 if not args.sweeps_only and chosen(p.stem)]
 
         def one(plan):
             cir, committed = plan.with_suffix(".cir"), plan.with_suffix(".table")

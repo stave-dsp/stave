@@ -1,0 +1,15 @@
+* spice/coupler.cir in the frequency domain (DSP.md R3): the 22n coupling
+* cap into its 1M grid leak, |Vo/Vi| over 1 Hz to 20 kHz (corner
+* 7.234 Hz; first column = frequency). Output: the grid.
+V1 i 0 DC 0 AC 1
+C1 i o 22n
+R1 o 0 1meg
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.ac dec 20 1 20k
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE vm(o)
+.endc
+.end

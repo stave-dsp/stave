@@ -74,7 +74,10 @@ t1!(
     ce_stage_static,
     jfet_booster_static,
     mosfet_booster_static,
-    boss_ce2_filters
+    boss_ce2_filters,
+    triode_stage_cathode,
+    push_pull_cathode,
+    grid_blocking
 );
 
 /// The classics (DSP.md R24, R25, R27): each catalogued topology's whole
@@ -128,7 +131,9 @@ mod hand {
         opamp_clipper: "opamp_clipper/hand",
         common_cathode: "common_cathode/hand",
         common_cathode_grid_current: "common_cathode_grid_current/hand",
-        power_supply: "power_supply/hand"
+        power_supply: "power_supply/hand",
+        triode_stage_cathode: "triode_stage_cathode/hand",
+        push_pull_cathode: "push_pull_cathode/hand"
     );
 }
 

@@ -3,7 +3,8 @@
 
 use stave_dsp::circuit::netlist::Netlist;
 use stave_dsp::circuit::topologies;
-use stave_test::characterise::{Budget, Characterise, Input, Rates, Shipping, Tier};
+use stave_measure::suite::levels::Knee;
+use stave_test::characterise::{Budget, Characterise, Input, Plan, Rates, Shipping, Tier};
 
 pub struct Circuit {
     pub name: &'static str,
@@ -18,6 +19,16 @@ pub struct Circuit {
     /// topology's op-amps and triodes as behavioural sources; the two are
     /// held together by `classics_match_ngspice.rs`).
     pub classic: Option<Classic>,
+    /// Runs moved into T0 ([`Plan::promoted`]): a circuit with memory
+    /// holds its burst there (DSP.md R15).
+    pub t0: &'static [&'static str],
+}
+
+impl Circuit {
+    /// Its plan from a knee and settling time, with its T0 promotions.
+    pub fn plan(&self, input: Input, knee: Knee, settle: f64) -> Plan {
+        Plan::circuit(self.name, input, knee, settle).promoted(self.t0)
+    }
 }
 
 /// A classic's catalogued topology and its `stave_dsp` path.
@@ -30,6 +41,7 @@ const fn circuit(name: &'static str, input: fn() -> Input) -> Circuit {
         supply: false,
         settle: None,
         classic: None,
+        t0: &[],
     }
 }
 
@@ -40,10 +52,20 @@ const fn classic(name: &'static str, topology: fn() -> Netlist, catalogue: &'sta
         supply: false,
         settle: None,
         classic: Some((topology, catalogue)),
+        t0: &[],
     }
 }
 
-pub static CIRCUITS: [Circuit; 30] = [
+/// A circuit with memory (a cathode RC, a coupling cap's charge): its
+/// +20 dB burst and recovery run at T0 too.
+const fn memory(name: &'static str, input: fn() -> Input) -> Circuit {
+    Circuit {
+        t0: &["burst/+20"],
+        ..circuit(name, input)
+    }
+}
+
+pub static CIRCUITS: [Circuit; 33] = [
     circuit("diode_clipper", || Input::new("v1", 0.0)),
     circuit("opamp_clipper", || Input::new("v1", 0.0)),
     // The TS808 stage rides on the 4.5 V reference.
@@ -63,6 +85,7 @@ pub static CIRCUITS: [Circuit; 30] = [
         supply: true,
         settle: Some(0.35),
         classic: None,
+        t0: &[],
     },
     circuit("fuzz_face", || Input::new("vin", 0.0)),
     circuit("rangemaster", || Input::new("vin", 0.0)),
@@ -122,6 +145,11 @@ pub static CIRCUITS: [Circuit; 30] = [
         || topologies::mxr_distortion_plus(1.0, 1.0),
         "stave_dsp::circuit::topologies::mxr_distortion_plus::mxr_distortion_plus",
     ),
+    // Cathode bias and blocking (DSP.md R15): the grid (the swing) at 0 V,
+    // the bias the cathode's or the coupling cap's own.
+    memory("triode_stage_cathode", || Input::new("v1", 0.0)),
+    memory("push_pull_cathode", || Input::new("vx", 0.0)),
+    memory("grid_blocking", || Input::new("v1", 0.0)),
 ];
 
 /// The circuit `name`.
@@ -190,7 +218,7 @@ pub fn oversample(case: &str, tier: Tier) -> u32 {
 /// it took away above (the RC clipper alone gained, 4.1 → 1.7 dB at
 /// 48 kHz; 4× takes it to 0.006 dB). A hand topology ships as its circuit
 /// does, oversampled only.
-pub static SHIPPING: [(&str, Shipping); 16] = [
+pub static SHIPPING: [(&str, Shipping); 19] = [
     ("diode_clipper", Shipping::oversampled(8)),
     ("opamp_clipper", Shipping::oversampled(8)),
     ("tube_screamer", Shipping::oversampled(4)),
@@ -209,6 +237,10 @@ pub static SHIPPING: [(&str, Shipping); 16] = [
     // Its sixth-order stopband, bent by the bilinear map, holds the
     // followers' folded products only from 16× (−20.5 dB; 8×: −3.1).
     ("boss_ce2_filters", Shipping::oversampled(16)),
+    // As their fixed-bias and grid-current twins ship.
+    ("triode_stage_cathode", Shipping::oversampled(4)),
+    ("push_pull_cathode", Shipping::oversampled(8)),
+    ("grid_blocking", Shipping::oversampled(8)),
 ];
 
 /// `case`'s shipping configuration (a hand topology's is its circuit's,
@@ -361,6 +393,17 @@ pub fn piano_anmr(name: &str, host: f64, s: Shipping, offset: f64) -> (f64, f64)
         .fold((f64::NEG_INFINITY, 0.0), |a, b| if b.0 > a.0 { b } else { a })
 }
 
+/// `spice/triode_stage_cathode.cir`'s cathode: the tabulated `Triode`'s
+/// own RK under `Bias::Cathode` (its −1.5 V design bias over its idle
+/// plate current), and the bypass.
+pub const TRIODE_CATHODE_OHMS: f64 = 1579.40;
+pub const TRIODE_CATHODE_FARADS: f64 = 22e-6;
+/// `spice/push_pull_cathode.cir`'s shared cathode: `PushPull`'s RK (its
+/// −3.5 V class point over both halves' idle cathode current), and the
+/// bypass.
+pub const PUSH_PULL_CATHODE_OHMS: f64 = 17384.1;
+pub const PUSH_PULL_CATHODE_FARADS: f64 = 2.2e-6;
+
 /// A fresh hand stage at a rate.
 type Make = Box<dyn Fn(f64) -> Box<dyn FnMut(f64) -> f64>>;
 
@@ -368,10 +411,11 @@ type Make = Box<dyn Fn(f64) -> Box<dyn FnMut(f64) -> f64>>;
 /// asserted: each ships as its own type, so each is held to ngspice on
 /// its circuit's plan directly.
 pub fn hand(case: &str, tier: Tier) {
+    use stave_dsp::circuit::topologies::triode_stage::{Bias, LevelPolicy};
     use stave_dsp::{
         CommonCathode, CommonCathodeConfig, Dempwolf, DiodeClipper, DiodeClipperConfig, Koren,
-        OpAmpClipper, OpAmpClipperConfig, PairSolver, PowerSupply, PowerSupplyConfig, Shockley,
-        Stage,
+        OpAmpClipper, OpAmpClipperConfig, PairSolver, PowerSupply, PowerSupplyConfig, PushPull,
+        Shockley, Stage, Triode,
     };
     fn cathode<T: stave_dsp::circuit::devices::triode::Triode + Copy + 'static>(
         tube: T,
@@ -403,6 +447,8 @@ pub fn hand(case: &str, tier: Tier) {
         "opamp_clipper/hand" => "stave_dsp::circuit::topologies::opamp_clipper::OpAmpClipper",
         "common_cathode/hand" | "common_cathode_grid_current/hand" => "stave_dsp::circuit::topologies::common_cathode::CommonCathode",
         "power_supply/hand" => "stave_dsp::circuit::topologies::power_supply::PowerSupply",
+        "triode_stage_cathode/hand" => "stave_dsp::circuit::topologies::triode_stage::Triode",
+        "push_pull_cathode/hand" => "stave_dsp::circuit::topologies::push_pull::PushPull",
         other => panic!("no hand topology {other}"),
     };
     let base = Characterise::ngspice(circuit).named(case).tier(tier).catalogue(catalogue);
@@ -449,6 +495,56 @@ pub fn hand(case: &str, tier: Tier) {
                 }
             }
         }),
+        // The tabulated stage under `Bias::Cathode` (DSP.md R15), one grid
+        // volt a unit (`Physical` at that drive: the output is the plate's
+        // fall over the stage's own gain), read back as plate volts.
+        "triode_stage_cathode/hand" => {
+            let make = |rate: f64| {
+                let mut t = Triode::new();
+                t.set_level_policy(LevelPolicy::Physical { reference_drive: 1.0 });
+                t.set_grid_drive(1.0);
+                t.set_bias(Bias::Cathode { bypass_farads: TRIODE_CATHODE_FARADS });
+                t.prepare(rate as f32);
+                t
+            };
+            let t = make(48_000.0);
+            assert!(
+                (t.cathode_ohms() - TRIODE_CATHODE_OHMS).abs() < 0.01,
+                "the deck's RK {TRIODE_CATHODE_OHMS} is not the stage's {}",
+                t.cathode_ohms()
+            );
+            let (plate, volts) = (t.operating_point(), 1.0 / t.frame_params().2);
+            base.stage(move |rate| {
+                let mut t = make(rate);
+                move |x| plate - f64::from(t.tick(x as f32)) * volts
+            })
+            .operating_point("p", plate)
+            .operating_point("k", -t.frame_params().0)
+        }
+        // The pair under `Bias::Cathode`, one grid volt a unit, its output
+        // (normalised to its fixed-bias swing at ±16 V) read back as the
+        // plate difference by that swing, ngspice's on the fixed-bias deck.
+        "push_pull_cathode/hand" => {
+            let make = |rate: f64| {
+                let mut p = PushPull::new();
+                p.set_bias(Bias::Cathode { bypass_farads: PUSH_PULL_CATHODE_FARADS });
+                p.prepare(rate as f32);
+                p
+            };
+            let p = make(48_000.0);
+            assert!(
+                (p.cathode_ohms() - PUSH_PULL_CATHODE_OHMS).abs() < 0.1,
+                "the deck's RK {PUSH_PULL_CATHODE_OHMS} is not the pair's {}",
+                p.cathode_ohms()
+            );
+            let fixed = stave_test::reference::Reference::ngspice("push_pull");
+            let volts = fixed.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            base.stage(move |rate| {
+                let mut p = make(rate);
+                move |x| f64::from(p.tick(x as f32)) * volts
+            })
+            .operating_point("k", 3.5)
+        }
         other => panic!("no hand topology {other}"),
     };
     // Each hand topology pins its fingerprint (DSP.md R18) at T0.
