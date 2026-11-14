@@ -1,3 +1,4 @@
+* (CI timing probe: a comment changes the deck's bytes, nothing else.)
 * The Tube Screamer's clipping stage (TS808 values, drive at maximum:
 * 51k + 500k) on its JRC4558, at 9 V with the 4.5 V reference: the
 * input rides on 4.5 V at 0.3 V peak, 1 kHz; the ground leg is 4.7k and
