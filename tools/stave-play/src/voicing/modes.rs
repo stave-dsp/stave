@@ -1,6 +1,7 @@
-//! The three listening modes' panels: sighted A/B (switch, prefer,
-//! bless), blind ABX (trials, running statistics, verdict) and rating
-//! (randomised sliders with hidden reference and anchor).
+//! The listening modes' panels: sighted A/B (switch, prefer, bless),
+//! blind ABX (trials, running statistics, verdict), rating (randomised
+//! sliders with hidden reference and anchor) and the null test (each
+//! candidate against the reference: alignment, NMR verdict, residual).
 
 use std::path::Path;
 
@@ -8,6 +9,7 @@ use eframe::egui::{self, Color32, RichText};
 use stave_measure::listening::{Abx, AbxVerdict, ALPHA, ASSUMED_HIT_RATE};
 
 use super::log::{self, BlessedRef, Preference};
+use super::null::NullTest;
 use super::takes::TakeKind;
 use super::trials::{AbxListen, AbxRun, RatingRun, Stimulus};
 use super::ui::{section, ACCENT, BAD, GOOD, WARN};
@@ -452,6 +454,81 @@ impl Live {
             status = status.or(Some(("rating done: results below".into(), false)));
         }
         status
+    }
+
+    // ---- null test -----------------------------------------------------
+
+    /// Each candidate against the reference: the alignment, the NMR
+    /// verdict, the residual to play, and the pair's ABX one click away.
+    pub(super) fn null_ui(&mut self, ui: &mut egui::Ui) -> Status {
+        ui.label(
+            RichText::new(
+                "Null test: each candidate against the reference, matched in level and latency. The residual is \
+                 what is left; its NMR under the reference predicts whether it is heard (−10 dB or below, total and \
+                 worst band). A prediction: confirm it blind.",
+            )
+            .weak(),
+        );
+        ui.add_space(4.0);
+        let rows: Vec<(usize, NullTest)> = match &self.prepared.nulls {
+            Ok(n) if n.is_empty() => {
+                ui.label(RichText::new("nothing to null: add a candidate beside the reference").color(WARN));
+                return None;
+            }
+            Ok(n) => n.iter().cloned().enumerate().collect(),
+            Err(e) => {
+                ui.label(RichText::new(format!("no null test: {e}")).color(WARN));
+                return None;
+            }
+        };
+        let selected = self.transport.selected();
+        let rate = self.prepared.sample_rate;
+        let mut pick = None;
+        let mut abx = None;
+        egui::Grid::new("voicing_nulls").striped(true).num_columns(7).show(ui, |ui| {
+            for h in ["candidate vs reference", "aligned", "null NMR", "worst band", "residual", "verdict", "listen"] {
+                ui.label(RichText::new(h).strong());
+            }
+            ui.end_row();
+            for (j, n) in &rows {
+                ui.label(format!("{}  vs  {}", n.a, n.b));
+                ui.label(format!("{:+.3} dB, {:+.2} fr ({:+.1} µs)", n.gain_db, n.delay_samples, n.delay_samples / rate * 1e6));
+                ui.label(format!("{:.1} dB", n.nmr_total_db));
+                ui.label(format!("{:.1} dB @ {:.0} Hz", n.nmr_max_db, n.nmr_max_hz));
+                ui.label(format!("{:.1} dB re ref", n.residual_db));
+                ui.label(RichText::new(n.verdict()).strong().color(if n.inaudible { GOOD } else { BAD }));
+                ui.horizontal(|ui| {
+                    let (ta, tb) = (self.take_of(n.candidate), self.take_of(n.reference));
+                    let (true_level, raised) = (self.residual_take(*j, false), self.residual_take(*j, true));
+                    for (take, label, hover) in [
+                        (ta, "A", "the candidate"),
+                        (tb, "B", "the reference"),
+                        (true_level, "A − B", "the residual at its true level: what the null leaves"),
+                        (raised, "A − B raised", "the residual raised to the session's loudness: what it is made of"),
+                    ] {
+                        if ui.selectable_label(selected == take, label).on_hover_text(hover).clicked() {
+                            pick = Some(take);
+                        }
+                    }
+                    if ui.button("ABX").on_hover_text("blind ABX of this pair").clicked() {
+                        abx = Some((n.candidate, n.reference, n.a.clone(), n.b.clone()));
+                    }
+                });
+                ui.end_row();
+            }
+        });
+        ui.label(RichText::new("space plays · the residual plays in the loop like any take").weak().small());
+        if let Some(t) = pick {
+            self.select(t);
+        }
+        if let Some((a, b, la, lb)) = abx {
+            self.abx_pair = (a, b);
+            self.abx = None;
+            self.mode = super::Mode::Abx;
+            self.transport.select(self.take_of(a));
+            return Some((format!("ABX: {la} vs {lb} — press Start"), false));
+        }
+        None
     }
 }
 

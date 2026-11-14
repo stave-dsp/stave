@@ -1,9 +1,11 @@
-//! Design tools (DSP.md G2, G3): a model run over its parts' values —
+//! Design tools (DSP.md G2–G4): a model run over its parts' values —
 //! a grid of values ([`sweep`]), each part's sensitivity
-//! ([`sensitivity`]: which resistor moves the tone most), and built
+//! ([`sensitivity`]: which resistor moves the tone most), built
 //! units drawn from the parts' tolerances ([`monte_carlo`]: the spread
 //! of response across a production run, and which part's grade
-//! dominates it).
+//! dominates it), and the values that best meet a target ([`fit()`]: a
+//! response, a harmonic-vs-level curve or a capture, the error in
+//! budgets, snapped to preferred values on request).
 //!
 //! Any model takes part: a [`Design`] says what its parameters are and
 //! builds a [`Subject`] from their values. [`Parts`] is a netlist's
@@ -12,7 +14,9 @@
 //! [`Circuit`], a hand-derived topology or any [`Stage`] ([`Staged`]).
 //! What is measured are [`Quantity`]s: small-signal response and phase
 //! (exact from a circuit's linearisation, else measured with a small
-//! coherent sine), a sine's gain, and its THD.
+//! coherent sine), a sine's gain, its THD, and one harmonic's level.
+//! A pot's rotation joins a netlist's parameters with
+//! [`Parts::setting`].
 //!
 //! Evaluations run on [`Bench::threads`] threads (one by default; a
 //! shell sets it from its caps — stave-test's `threads()` reads
@@ -36,6 +40,8 @@
 //! [`Circuit`]: stave_dsp::circuit::Circuit
 //! [`Stage`]: stave_dsp::Stage
 
+pub mod fit;
+mod series;
 mod spread;
 mod study;
 
@@ -43,10 +49,12 @@ use std::fmt;
 
 use stave_dsp::circuit::methods::dk::{Dk, Phasor};
 use stave_dsp::circuit::netlist::tolerance::{Part, Tolerance, Tolerances};
-use stave_dsp::circuit::netlist::Netlist;
+use stave_dsp::circuit::netlist::{Netlist, Variable};
 use stave_dsp::circuit::Circuit;
 use stave_dsp::Stage;
 
+pub use fit::{fit, Budget, Fit, Fitting, Free, Point, Target};
+pub use series::Series;
 pub use spread::{monte_carlo, Advice, Spread};
 pub use study::{sensitivity, sweep, Sensitivity, Sweep};
 
@@ -88,16 +96,34 @@ pub enum Quantity {
     /// A sine's THD at `hz` and `amplitude`: harmonics 2… up to the
     /// bench's limit against the fundamental, in dB.
     ThdDb { hz: f64, amplitude: f64 },
+    /// Harmonic `harmonic` (2, 3, …) of a sine at `hz` and `amplitude`,
+    /// against the output's fundamental, in dB (dBc): one point of a
+    /// harmonic-vs-level curve. Harmonics past the bench's limit read NaN.
+    HarmonicDb { hz: f64, amplitude: f64, harmonic: u32 },
 }
 
 impl Quantity {
     /// A short label: `response 1 kHz`, `THD 1 kHz @ 0.5`.
     pub fn label(&self) -> String {
+        // Four significant figures, trailing zeros dropped.
+        let figures = |v: f64| {
+            let decimals = if v.is_finite() && v != 0.0 {
+                (3 - v.abs().log10().floor() as i32).clamp(0, 12) as usize
+            } else {
+                0
+            };
+            let s = format!("{v:.decimals$}");
+            if s.contains('.') {
+                s.trim_end_matches('0').trim_end_matches('.').to_string()
+            } else {
+                s
+            }
+        };
         let f = |hz: f64| {
             if hz >= 1e3 {
-                format!("{} kHz", hz / 1e3)
+                format!("{} kHz", figures(hz / 1e3))
             } else {
-                format!("{hz} Hz")
+                format!("{} Hz", figures(hz))
             }
         };
         match *self {
@@ -105,6 +131,7 @@ impl Quantity {
             Self::PhaseDegrees { hz } => format!("phase {}", f(hz)),
             Self::GainDb { hz, amplitude } => format!("gain {} @ {amplitude}", f(hz)),
             Self::ThdDb { hz, amplitude } => format!("THD {} @ {amplitude}", f(hz)),
+            Self::HarmonicDb { hz, amplitude, harmonic } => format!("H{harmonic} {} @ {amplitude}", f(hz)),
         }
     }
 
@@ -118,7 +145,11 @@ impl Quantity {
 
     fn hz(&self) -> f64 {
         match *self {
-            Self::ResponseDb { hz } | Self::PhaseDegrees { hz } | Self::GainDb { hz, .. } | Self::ThdDb { hz, .. } => hz,
+            Self::ResponseDb { hz }
+            | Self::PhaseDegrees { hz }
+            | Self::GainDb { hz, .. }
+            | Self::ThdDb { hz, .. }
+            | Self::HarmonicDb { hz, .. } => hz,
         }
     }
 }
@@ -290,8 +321,53 @@ impl<S: Subject, F: Fn(&[f64]) -> S + Sync> Design for Parameters<F> {
 pub struct Parts {
     netlist: Netlist,
     parts: Vec<Part>,
+    /// Pots and rheostats whose rotation is a parameter, after the parts.
+    settings: Vec<Variable>,
     parameters: Vec<Parameter>,
     drive: Option<String>,
+}
+
+/// A pot's or rheostat's rotation in `netlist`, from its elements'
+/// values and its taper.
+fn rotation(netlist: &Netlist, variable: &Variable) -> Option<f64> {
+    match variable {
+        Variable::Pot { legs, taper, end_ohms, .. } => {
+            let (a, b) = (netlist.value(&legs[0])?, netlist.value(&legs[1])?);
+            let track = a + b - 2.0 * end_ohms;
+            Some(taper.position((a - end_ohms) / track))
+        }
+        Variable::Rheostat { element, track_ohms, taper, end_ohms, .. } => {
+            Some(taper.position((netlist.value(element)? - end_ohms) / track_ohms))
+        }
+        _ => None,
+    }
+}
+
+/// Turn a pot or rheostat in `netlist` to `position`, its track as the
+/// parts left it (`base` is the netlist as read: a rheostat's track
+/// scales with its element).
+fn turn(netlist: &mut Netlist, base: &Netlist, variable: &Variable, position: f64) -> Result<(), Error> {
+    let fail = |e: stave_dsp::circuit::netlist::NetlistError| Error::Build(e.to_string());
+    let missing = |name: &str| Error::Build(format!("no element {name}"));
+    // A leg never reaches zero ohms (the solver wants a resistance).
+    let floor = |ohms: f64, track: f64| ohms.max(track * 1e-9);
+    match variable {
+        Variable::Pot { legs, taper, end_ohms, .. } => {
+            let a = netlist.value(&legs[0]).ok_or_else(|| missing(&legs[0]))?;
+            let b = netlist.value(&legs[1]).ok_or_else(|| missing(&legs[1]))?;
+            let track = a + b - 2.0 * end_ohms;
+            let f = taper.fraction(position);
+            netlist.set_value(&legs[0], floor(end_ohms + track * f, track)).map_err(fail)?;
+            netlist.set_value(&legs[1], floor(end_ohms + track * (1.0 - f), track)).map_err(fail)
+        }
+        Variable::Rheostat { element, track_ohms, taper, end_ohms, .. } => {
+            let now = netlist.value(element).ok_or_else(|| missing(element))?;
+            let was = base.value(element).ok_or_else(|| missing(element))?;
+            let track = track_ohms * now / was;
+            netlist.set_value(element, floor(end_ohms + track * taper.fraction(position), track)).map_err(fail)
+        }
+        _ => Err(Error::Build(format!("{} is not a pot or rheostat", variable.name()))),
+    }
 }
 
 impl Parts {
@@ -304,9 +380,29 @@ impl Parts {
         Self {
             netlist: netlist.clone(),
             parts,
+            settings: Vec::new(),
             parameters,
             drive: None,
         }
+    }
+
+    /// The pot or rheostat `pot` (a declared [`Variable`]) joins the
+    /// parameters as its rotation, 0 to 1 along its taper, named
+    /// `<pot>.position`, its nominal the rotation the netlist's values
+    /// give. Its track stays a part of its own.
+    pub fn setting(mut self, pot: &str) -> Result<Self, Error> {
+        let name = pot.to_ascii_lowercase();
+        let variable = self
+            .netlist
+            .variables()
+            .iter()
+            .find(|v| v.name() == name && matches!(v, Variable::Pot { .. } | Variable::Rheostat { .. }))
+            .cloned()
+            .ok_or_else(|| Error::UnknownParameter(name.clone()))?;
+        let position = rotation(&self.netlist, &variable).ok_or_else(|| Error::Build(format!("{name}: no value")))?;
+        self.parameters.push(Parameter::new(&format!("{name}.position"), position));
+        self.settings.push(variable);
+        Ok(self)
     }
 
     /// The independent source the sine quantities drive.
@@ -318,12 +414,13 @@ impl Parts {
     /// Only the named parts vary; the rest stay at their values.
     pub fn only(mut self, names: &[&str]) -> Result<Self, Error> {
         let names: Vec<String> = names.iter().map(|n| n.to_ascii_lowercase()).collect();
-        if let Some(n) = names.iter().find(|n| !self.parts.iter().any(|p| p.name == **n)) {
+        if let Some(n) = names.iter().find(|n| !self.parameters.iter().any(|p| p.name == **n)) {
             return Err(Error::UnknownParameter(n.clone()));
         }
         let keep = |name: &str| names.iter().any(|n| n == name);
         self.parameters.retain(|p| keep(&p.name));
         self.parts.retain(|p| keep(&p.name));
+        self.settings.retain(|v| keep(&format!("{}.position", v.name())));
         Ok(self)
     }
 }
@@ -337,6 +434,9 @@ impl Design for Parts {
         let mut netlist = self.netlist.clone();
         for (part, &v) in self.parts.iter().zip(values) {
             part.set(&mut netlist, &self.netlist, v).map_err(|e| Error::Build(e.to_string()))?;
+        }
+        for (pot, &position) in self.settings.iter().zip(&values[self.parts.len()..]) {
+            turn(&mut netlist, &self.netlist, pot, position)?;
         }
         let mut circuit = Circuit::<Dk>::new(&netlist).map_err(|e| Error::Build(e.to_string()))?;
         if let Some(source) = &self.drive {
@@ -407,6 +507,14 @@ pub fn measure(subject: &mut dyn Subject, quantities: &[Quantity], bench: &Bench
                 let (h, harmonics) = sine(subject, hz, amplitude, bench);
                 let distortion = harmonics.iter().map(|a| a * a).sum::<f64>().sqrt();
                 db(distortion / (h.magnitude() * amplitude))
+            }
+            Quantity::HarmonicDb { hz, amplitude, harmonic } => {
+                let (h, harmonics) = sine(subject, hz, amplitude, bench);
+                let k = harmonic as usize;
+                match harmonics.get(k.wrapping_sub(2)) {
+                    Some(a) if k >= 2 => db(a / (h.magnitude() * amplitude)),
+                    _ => f64::NAN,
+                }
             }
         })
         .collect()

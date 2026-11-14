@@ -1,6 +1,6 @@
 //! The Voicing view driven headlessly: real egui frames with simulated
-//! keys, no window and no audio device, through setup, the three modes
-//! and the log.
+//! keys, no window and no audio device, through setup, the modes, the
+//! null test and the log.
 
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicU32;
@@ -197,6 +197,24 @@ fn a_whole_session_from_the_keyboard() {
     // Results are drawn without trouble.
     h.frame(Vec::new());
 
+    // Null test: both candidates nulled against the dry reference, the
+    // panel drawn, digits still select, the residual takes playable.
+    let l = h.voicing.live.as_mut().unwrap();
+    l.mode = Mode::Null;
+    {
+        let nulls = l.prepared.nulls.as_ref().unwrap();
+        assert_eq!(nulls.len(), 2);
+        assert!(nulls.iter().all(|n| n.reference == 0 && !n.inaudible), "a peak and a clipper are heard against dry");
+    }
+    h.frame(Vec::new());
+    h.press(Key::Num2);
+    assert_eq!(h.voicing.live.as_ref().unwrap().transport.selected(), 1);
+    let l = h.voicing.live.as_mut().unwrap();
+    let residual = l.residual_take(1, true);
+    assert_eq!(residual, l.prepared.takes.len() + 3);
+    l.select(residual);
+    h.frame(Vec::new());
+
     // End: the log holds it all.
     let path = h.voicing.live.as_ref().unwrap().saved.as_ref().unwrap().0.clone();
     h.voicing.end_session();
@@ -205,6 +223,8 @@ fn a_whole_session_from_the_keyboard() {
     assert_eq!(json["abx"][0]["stats"]["correct"], 4);
     assert_eq!(json["ratings"][0]["trials"].as_array().unwrap().len(), 1);
     assert_eq!(json["material"]["trim_db"], -3.0);
+    assert_eq!(json["nulls"].as_array().unwrap().len(), 2);
+    assert_eq!(json["nulls"][0]["b"], "dry");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

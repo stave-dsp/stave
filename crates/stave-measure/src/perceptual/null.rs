@@ -60,7 +60,10 @@
 //! and moves dB for dB with its level; a gain of 1.7 dB and a delay of
 //! 7.37 samples on the model are fitted to 1e-6 dB and 1e-4 samples and
 //! leave the same NMR as without them, while unaligned they read 30 dB
-//! worse; the periodic (lines) and waveform paths agree.
+//! worse; the periodic (lines) and waveform paths agree; the residual
+//! [`with_residual`] returns (what G5's "listen to the difference"
+//! plays) is the injected error to 5 % of its peak, and an alignment
+//! [`apply`]d again gives the same verdict.
 //!
 //! # Cost
 //!
@@ -242,24 +245,59 @@ pub fn residual_nmr(reference: &[f64], aligned: &[f64], rate: f64, playback: Pla
 /// reference. Signals shorter than two NMR frames are zero-padded to
 /// two (a short transient measures as itself, then silence).
 pub fn between(reference: &[f64], model: &[f64], rate: f64, playback: Playback, max_delay: f64) -> Null {
+    with_residual(reference, model, rate, playback, max_delay).null
+}
+
+/// A null test with its waveforms: the verdict, the model as aligned
+/// and the residual `reference - aligned` (what "listen to the
+/// difference" plays). Both as long as the reference, the residual zero
+/// within the delay of either end.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Nulled {
+    pub null: Null,
+    pub aligned: Vec<f64>,
+    pub residual: Vec<f64>,
+}
+
+/// The model's spectrum on an FFT long enough for `max_delay`.
+struct Padded {
+    fft: Fft<f64>,
+    n: usize,
+    len: usize,
+    spectrum: Vec<Complex<f64>>,
+}
+
+impl Padded {
+    fn new(model: &[f64], rate: f64, max_delay: f64) -> Self {
+        let min_len = 3 * super::ear::frame_len(rate) / 2; // two frames at a hop of half a frame
+        let len = model.len().max(min_len);
+        let lag = (max_delay.max(0.0) * rate).ceil() as usize + 2;
+        let n = (len + lag).next_power_of_two().max(2);
+        let fft = Fft::new(n);
+        let spectrum = spectrum_of(&fft, n, model);
+        Self { fft, n, len, spectrum }
+    }
+}
+
+fn spectrum_of(fft: &Fft<f64>, n: usize, x: &[f64]) -> Vec<Complex<f64>> {
+    let mut buf = x.to_vec();
+    buf.resize(n, 0.0);
+    let mut out = vec![Complex::new(0.0, 0.0); n / 2 + 1];
+    fft.forward_real(&buf, &mut out);
+    out
+}
+
+/// [`between`], keeping the aligned model and the residual.
+pub fn with_residual(reference: &[f64], model: &[f64], rate: f64, playback: Playback, max_delay: f64) -> Nulled {
     assert_eq!(reference.len(), model.len(), "the reference and model differ in length");
-    let min_len = 3 * super::ear::frame_len(rate) / 2; // two frames at a hop of half a frame
-    let len = reference.len().max(min_len);
+    let padded = Padded::new(model, rate, max_delay);
+    let (n, fft) = (padded.n, &padded.fft);
     let lag = (max_delay.max(0.0) * rate).ceil() as usize + 2;
-    let n = (len + lag).next_power_of_two().max(2);
-    let fft = Fft::new(n);
-    let spectrum = |x: &[f64]| {
-        let mut buf = x.to_vec();
-        buf.resize(n, 0.0);
-        let mut out = vec![Complex::new(0.0, 0.0); n / 2 + 1];
-        fft.forward_real(&buf, &mut out);
-        out
-    };
-    let (r, m) = (spectrum(reference), spectrum(model));
+    let (r, m) = (spectrum_of(fft, n, reference), &padded.spectrum);
     let hz = |k: usize| k as f64 * rate / n as f64;
     // The integer lag: the band-limited cross-correlation's peak within
-    // ±lag (the model delayed by `l` samples matches when the
-    // correlation of r against m peaks at −l).
+    // +-lag (the model delayed by `l` samples matches when the
+    // correlation of r against m peaks at -l).
     let mut cross: Vec<Complex<f64>> = (0..=n / 2)
         .map(|k| if k > 0 && hz(k) <= BAND_HZ { r[k] * m[k].conj() } else { Complex::new(0.0, 0.0) })
         .collect();
@@ -273,9 +311,31 @@ pub fn between(reference: &[f64], model: &[f64], rate: f64, playback: Playback, 
         .0;
     let lines: Vec<Line> = (1..=n / 2).filter(|&k| hz(k) <= BAND_HZ).map(|k| (hz(k), r[k], m[k])).collect();
     let alignment = Alignment::refine(&lines, (best - 1.0) / rate, (best + 1.0) / rate);
+    finish(reference, model.len(), &padded, alignment, rate, playback)
+}
+
+/// The alignment [`between`] finds, alone (one alignment for several
+/// channels: fit it on their mix, then [`apply`] it to each).
+pub fn align(reference: &[f64], model: &[f64], rate: f64, max_delay: f64) -> Alignment {
+    with_residual(reference, model, rate, Playback::default(), max_delay).null.alignment
+}
+
+/// The null test of `model` against `reference` under an alignment
+/// already fitted (on another channel, or a mix).
+pub fn apply(reference: &[f64], model: &[f64], alignment: Alignment, rate: f64, playback: Playback) -> Nulled {
+    assert_eq!(reference.len(), model.len(), "the reference and model differ in length");
+    let padded = Padded::new(model, rate, alignment.delay.abs());
+    finish(reference, model.len(), &padded, alignment, rate, playback)
+}
+
+/// Shift and scale the padded model by `alignment`, leave no residual
+/// where the shift has no counterpart, and judge the rest.
+fn finish(reference: &[f64], real_len: usize, padded: &Padded, alignment: Alignment, rate: f64, playback: Playback) -> Nulled {
+    let (n, len, m) = (padded.n, padded.len, &padded.spectrum);
+    let hz = |k: usize| k as f64 * rate / n as f64;
     let mut shifted: Vec<Complex<f64>> = (0..=n / 2).map(|k| m[k] * alignment.factor(hz(k))).collect();
     let mut out = vec![0.0; n];
-    fft.inverse_real(&mut shifted, &mut out);
+    padded.fft.inverse_real(&mut shifted, &mut out);
     let scale = 1.0 / n as f64;
     let mut reference = reference.to_vec();
     reference.resize(len, 0.0);
@@ -283,13 +343,17 @@ pub fn between(reference: &[f64], model: &[f64], rate: f64, playback: Playback, 
     // Within the delay of either end the shifted model has no
     // counterpart: no residual there.
     let edge = (alignment.delay.abs() * rate).ceil() as usize + 1;
-    let real_len = model.len();
     for i in (0..edge.min(len)).chain(real_len.saturating_sub(edge)..real_len) {
         aligned[i] = reference[i];
     }
-    Null {
-        nmr: residual_nmr(&reference, &aligned, rate, playback),
-        alignment,
+    let nmr = residual_nmr(&reference, &aligned, rate, playback);
+    let mut residual: Vec<f64> = reference.iter().zip(&aligned).map(|(r, a)| r - a).collect();
+    residual.truncate(real_len);
+    aligned.truncate(real_len);
+    Nulled {
+        null: Null { nmr, alignment },
+        aligned,
+        residual,
     }
 }
 
@@ -442,5 +506,26 @@ mod tests {
         let len = 12_000;
         let nmr = residual_nmr(&super::super::tiled(&r, len), &super::super::tiled(&a, len), RATE, playback());
         assert!(nmr.total_db < -100.0, "{}", nmr.total_db);
+    }
+
+    /// The residual a null plays back is the one it judges: with the
+    /// model delayed and scaled, `with_residual` returns the injected
+    /// error as its residual, and an alignment fitted once and applied
+    /// again gives the same verdict.
+    #[test]
+    fn the_residual_is_the_injected_error() {
+        let (gain, delay) = (10f64.powf(-2.3 / 20.0), 3.25);
+        let x = signal(0.0);
+        let e = error(1e-3, 0.0);
+        let ed = error(1e-3, delay);
+        let model: Vec<f64> = signal(delay).iter().zip(&ed).map(|(a, b)| (a - b) * gain).collect();
+        let nulled = with_residual(&x, &model, RATE, playback(), 1e-3);
+        assert_eq!(nulled.null, between(&x, &model, RATE, playback(), 1e-3));
+        assert_eq!((nulled.residual.len(), nulled.aligned.len()), (LEN, LEN));
+        let worst = nulled.residual.iter().zip(&e).map(|(r, e)| (r - e).abs()).fold(0.0, f64::max);
+        assert!(worst < 0.05 * 1e-3, "residual off the injected error (peak 1e-3) by {worst}");
+        let again = apply(&x, &model, nulled.null.alignment, RATE, playback());
+        assert!((again.null.nmr.total_db - nulled.null.nmr.total_db).abs() < 1e-6);
+        assert_eq!(align(&x, &model, RATE, 1e-3), nulled.null.alignment);
     }
 }

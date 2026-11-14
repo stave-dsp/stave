@@ -3,7 +3,8 @@
 Most stave models are tuned by listening: there is rarely a hardware
 unit to capture, so the ear is the reference. `stave-play`'s **Voicing**
 tab makes that a structured activity. It compares candidates matched in
-loudness, runs blind ABX and rating trials, logs every session, and
+loudness, runs blind ABX and rating trials, nulls candidates against a
+reference model or a capture, logs every session, and
 pins a chosen sound so that a later change to the model shows up
 instead of drifting silently. This page covers starting a session, each
 mode, the statistics behind the verdicts, and where the results go.
@@ -225,6 +226,82 @@ Without a reference, the run is a preference rating with the anchor
 alone. For a near-threshold question ("did this refactor change the
 sound at all?"), run ABX first; when it says *detected*, a rating with a
 hidden reference measures how much (the BS.1116 question).
+
+### Null test
+
+The **Null test** mode subtracts. It lines each candidate up with the
+reference (the `ref` row, or the first candidate when none is marked)
+in level and latency, then subtracts the two. What is left is the
+residual, the part of the difference that a level match and a time shift
+cannot remove. The reference can be another model or a capture: a
+`wav:FILE` of the hardware played over the same material. For each
+candidate the panel shows:
+
+- **aligned**: the gain and delay that line it up with the reference.
+  The gain is between the takes as produced, before the loudness match.
+  The delay is in samples and µs, up to ±50 ms, so a capture through an
+  interface's round trip still lines up.
+- **null NMR**: the residual's noise-to-mask ratio under the reference,
+  in total and in the worst band (DSP.md R16), from the worse of the
+  two channels. At −10 dB or below on both it reads **inaudible**,
+  otherwise **AUDIBLE**. The verdict is the ear model's prediction, not
+  a listening result.
+- **residual**: the residual's level against the reference.
+- **listen**: A, B, **A − B** (the residual at its true level, as it sits
+  under the reference) and **A − B raised** (the residual brought up to
+  the session's loudness, to hear what it is made of; its level means
+  nothing). The residual plays in the loop like any take, with the same
+  click-free switching.
+- **ABX**: opens Blind ABX set to this pair. Confirm the prediction with
+  your ears; it is not the same question. A null can be audible on
+  paper while no listener picks it out, and a difference the ear model
+  calls inaudible can still be found.
+
+The keys are those of sighted A/B.
+
+Every null is written to the session log (`nulls`). Headless, the
+command below prepares both candidates the same way and prints the
+verdict, and `--residual` writes the residual (as heard) to a WAV. The
+exit status is 0 for inaudible, 1 for audible and 2 for an error, so a
+script can gate on it:
+
+```sh
+# A stage against a capture of the unit made from the same DI take.
+stave-play --null 'stage:circuit/ts808' 'wav:~/captures/ts808.wav' \
+           --material ~/takes/di-guitar.wav --residual /tmp/ts808-residual.wav
+
+# Two models on a corpus role's first item (DSP.md R22).
+stave-play --null 'stage:circuit/diode_clipper' 'stage:clipper/diode' --material role:vocal
+```
+
+The measurement underneath is
+[`null::with_residual`](stave_measure::perceptual::null::with_residual).
+For stereo takes, the alignment is fitted once on the mid channel with
+[`null::align`](stave_measure::perceptual::null::align) and applied to
+each channel with [`null::apply`](stave_measure::perceptual::null::apply):
+
+```rust
+use stave_measure::perceptual::null::{align, apply, with_residual};
+use stave_measure::perceptual::Playback;
+
+let rate = 48_000.0;
+let env = |i: usize| (std::f64::consts::PI * i as f64 / 24_000.0).sin().powi(2);
+let take = |i: usize, late: f64| {
+    let t = (i as f64 - late) / rate;
+    env(i) * (0.3 * (std::f64::consts::TAU * 220.0 * t).sin() + 0.1 * (std::f64::consts::TAU * 1_330.0 * t).sin())
+};
+let reference: Vec<f64> = (0..24_000).map(|i| take(i, 0.0)).collect();
+// The candidate: 2 dB hot and 12 samples late.
+let candidate: Vec<f64> = (0..24_000).map(|i| take(i, 12.0) * 10f64.powf(2.0 / 20.0)).collect();
+let n = with_residual(&reference, &candidate, rate, Playback::default(), 0.05);
+assert!((n.null.alignment.gain_db() + 2.0).abs() < 0.01);
+assert!((n.null.alignment.delay * rate + 12.0).abs() < 0.05);
+assert!(n.null.inaudible(), "{:?}", n.null.nmr);
+// One alignment for several channels.
+let a = align(&reference, &candidate, rate, 0.05);
+let again = apply(&reference, &candidate, a, rate, Playback::default());
+assert_eq!(again.residual.len(), reference.len());
+```
 
 ## The session log
 
