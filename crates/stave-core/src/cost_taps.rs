@@ -17,7 +17,7 @@
 //! let mut cost = CostTaps::new(&telemetry, CostTapIds::DEFAULT); // in Plugin::new
 //! cost.prepare(48_000.0);                                        // in prepare
 //!
-//! let mut filter = Biquad::new(FilterSpec::Lowpass { hz: 1_000.0, q: 0.707 });
+//! let mut filter = Biquad::new(FilterSpec::Lowpass { frequency: Hz::new(1_000.0), q: 0.707 });
 //! filter.prepare(48_000.0);
 //! let mut block = [0.25f32; 64];
 //! cost.measure(block.len(), || filter.process(&mut block));     // in process

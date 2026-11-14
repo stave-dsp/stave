@@ -3,7 +3,7 @@
 //! (bool, enum) at its exact frames. Parameters hold the shared target
 //! (hosts, faces, state); these hold the per-plugin running state.
 
-use super::{BoolParam, EnumParam, FloatParam, ParamEnum, ParamId, Range, Smooth};
+use super::{AnyParam, BoolParam, EnumParam, FloatParam, ParamEnum, ParamId, Quantity, Range, Smooth, Unit};
 use crate::environment::Environment;
 use crate::process::{Block, ParamBlock, ParamChange, ParamChangeKind};
 
@@ -20,6 +20,8 @@ use crate::process::{Block, ParamBlock, ParamChange, ParamChangeKind};
 #[derive(Clone, Debug)]
 pub struct Smoother {
     id: ParamId,
+    /// The param's unit, for [`Ramp::next_as`].
+    unit: Unit,
     /// The parameter's restore count when last read: a new count means a
     /// restored value, which is jumped to, not glided to.
     restores: u32,
@@ -40,6 +42,7 @@ impl Smoother {
         let initial = param.plain();
         Self {
             id: param.id(),
+            unit: param.meta().unit,
             restores: param.restores(),
             range: param.range(),
             smooth: param.smoothing(),
@@ -214,6 +217,16 @@ impl Ramp<'_> {
     )]
     pub fn next(&mut self) -> f32 {
         self.next_f64() as f32
+    }
+
+    /// The next frame's value as the stave-dsp unit the param's [`Unit`]
+    /// names (`Hz`, `Db`, `Gain`, `Seconds`, `Ratio`; see
+    /// [`FloatParam::value_as`]), checked in debug builds.
+    #[inline]
+    #[track_caller]
+    pub fn next_as<T: Quantity>(&mut self) -> T {
+        let unit = self.smoother.unit;
+        T::from_param(unit, self.next_f64())
     }
 
     /// [`next`](Self::next) at full precision.
