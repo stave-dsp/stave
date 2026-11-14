@@ -22,12 +22,13 @@ stave-macros.workspace = true
 stave-measure.workspace = true
 stave-telemetry.workspace = true
 stave-test.workspace = true
+stave-tools.workspace = true
 stave-ui.workspace = true
 stave-raster.workspace = true
 stave-tilt-vst3 = { path = "../../examples/tilt" }
 
 [package.metadata.cargo-machete]
-ignored = ["stave", "stave-core", "stave-dsp", "stave-face", "stave-host", "stave-macros", "stave-measure", "stave-telemetry", "stave-test", "stave-ui", "stave-raster", "stave-tilt-vst3"]
+ignored = ["stave", "stave-core", "stave-dsp", "stave-face", "stave-host", "stave-macros", "stave-measure", "stave-telemetry", "stave-test", "stave-tools", "stave-ui", "stave-raster", "stave-tilt-vst3"]
 
 [lints]
 workspace = true

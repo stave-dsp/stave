@@ -1,7 +1,7 @@
 # Telemetry and taps
 
 [`Telemetry`](stave::Telemetry) is the channel from a running plugin to
-whoever is watching it: its face, `stave-play`, `stave-bench`, a test.
+whoever is watching it: its face, `stave-play`, `stave`, a test.
 The plugin publishes named values through typed taps on the audio thread,
 lock-free and allocation-free; readers find them by a constant id, never
 by a string. The same block carries captured audio, the plugin's recent
@@ -66,7 +66,7 @@ so plugin code never branches on whether anything is attached.
   reads in [`Part::reads`](stave_face::Part::reads), and the face repaints
   when one moves.
 - **Tools and hosts.** `stave-host` reads a stave-built plugin's block
-  across the dynamic-library boundary, so `stave-bench --describe` lists
+  across the dynamic-library boundary, so `stave describe` lists
   every tap with its latest, minimum and maximum, and `stave-play` plots
   them. A third-party plugin has no telemetry block, so it has no taps.
 - **Tests.** [`FaceDriver::tap`](stave_test::FaceDriver::tap) publishes a
@@ -112,7 +112,7 @@ iteration cap unconverged — anything but zero is a defect), continuation
 fallbacks, and the worst residual a solve ended on. Register them in
 `Plugin::new`, publish once a block from `process` with the circuit's
 `take_health()` (the account since the last call), and `stave-play` plots
-them beside the plugin's own taps, `stave-bench --describe` lists their
+them beside the plugin's own taps, `stave describe` lists their
 minimum and maximum, and a face can light a [`Lamp`](stave_face::Lamp)
 on `solver_capped` — so a circuit that struggles at some knob setting, on
 some material, shows it in a DAW session instead of failing silently.

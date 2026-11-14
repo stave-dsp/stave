@@ -2,13 +2,15 @@
 
 Load any VST3 (or, on macOS, any Audio Unit), stave-built or
 third-party, and drive, measure and validate it: from Rust with the `stave-host` library, from a shell or an
-agent with `stave-bench`, by ear with `stave-play`, and after a DAW
-session with `stave-events`. This page is recipes; the CLI reference
-lists every flag from each binary's own `--help`.
+agent with `stave` (its CLI and MCP server), by ear with `stave play`, and after a DAW
+session with `stave-events`. This page is recipes; [The stave tool](crate::howto::stave_tool)
+explains the command core the tools share, and the CLI reference
+lists every flag from each command's own `--help`.
 
-## One library, three tools
+## One library, one tool
 
-[`stave_host`] does the work; the tools are thin.
+[`stave_host`] does the work; [`stave_tools`] makes each capability a
+command; the CLI, the MCP server and the GUI only present them.
 
 | Piece | What it is |
 |---|---|
@@ -56,36 +58,38 @@ let catalogued = |n: &str| stave_host::stages::CATALOG.iter().any(|s| s.name == 
 assert!(["filter/peak", "coupler", "circuit/transformer"].into_iter().all(catalogued));
 ```
 
-## stave-bench: the agent API
+## stave: the agent API
 
-`stave-bench` is the headless host. Its stdout carries only the report:
-anything a plugin prints is redirected to stderr. Malformed arguments
-are errors that name the flag (exit status 2).
+`stave` is the headless host (`cargo run --release -p stave-cli --`),
+and `stave mcp` serves the same commands to an agent over MCP. Its
+stdout carries only the result: anything a plugin prints is redirected
+to stderr. Malformed arguments are errors that name the flag (exit
+status 2); `--json` prints any command's result as JSON.
 
-**Start with `--describe`.** It prints, as JSON, the identity and load
+**Start with `describe`.** With `--json` it prints the identity and load
 trace of a VST3, its layout, latency and tail, every param (name, unit,
 range, default, value, steps and their names, flags), the presets and
-the taps. The param names are what `--set` takes; `--list` is the same
-as text.
+the taps. The param names are what `--set` takes; without `--json` it
+is the same as text.
 
 ```sh
 # What can I set on this thing?
-stave-bench build/StaveTilt.vst3 --describe | jq '.params[].name'
+stave describe build/StaveTilt.vst3 --json | jq '.params[].name'
 
 # Why won't it load? Stream the load trace as it happens.
-STAVE_HOST_TRACE=1 stave-bench Some.vst3 --list
+STAVE_HOST_TRACE=1 stave describe Some.vst3
 
 # A configuration, kept as a 32-bit float WAV to listen to or diff.
-stave-bench build/StaveTilt.vst3 --seconds 4 --set Tilt=3 --out take.wav
+stave bench build/StaveTilt.vst3 --seconds 4 --set Tilt=3 --out take.wav
 
 # Distortion at a level: gain, THD, THD+N and harmonics, per channel.
-stave-bench Some.vst3 --signal sine:1000:-6 --json | jq '.output.tone'
+stave bench Some.vst3 --signal sine:1000:-6 --json | jq '.output.tone'
 
 # Is the build sane? Exit status 1 when any check fails.
-stave-bench build/StaveTilt.vst3 --validate || echo BROKEN
+stave validate build/StaveTilt.vst3 || echo BROKEN
 
 # Frequency response at several input levels (a fresh instance each).
-stave-bench stage:filter/peak --response
+stave response stage:filter/peak
 ```
 
 `stage:NAME` opens a catalogued stave-dsp stage instead of a bundle
@@ -93,7 +97,7 @@ stave-bench stage:filter/peak --response
 an unknown name lists the catalogue. `--notes KEY@ON:OFF[:V],...`
 plays sample-accurate notes, which is how an instrument is driven.
 
-**The default run** times its phases (latency, the timed run, silence
+**The bench** times its phases (latency, the timed run, silence
 and, for an effect, a step), each with its frames and wall time, and
 reports CPU per block against the realtime budget (mean, median, p95,
 p99, max), latency (reported against the measured impulse onset and
@@ -101,8 +105,8 @@ peak, per output channel), and the output (levels, non-finite samples,
 the silence residual, DC, and for a sine a coherent tone analysis).
 The plugin's taps are read right after the timed run.
 
-**`--validate`** runs the validation suite, each check on fresh
-instances, and prints JSON with per-check timing. Checks hard-fail only
+**`validate`** runs the validation suite, each check on fresh
+instances, with per-check timing (progress names each check as it ends). Checks hard-fail only
 the unambiguous; judgement calls are `info` with the numbers, and a
 check with nothing to test is `not_applicable`, never a vacuous pass.
 A message the plugin logs at `Fatal`, `HostMisbehaving` or
@@ -177,11 +181,11 @@ rate and block size, with the unit's reported latency and tail. A
 misspelt name lists the installed units it resembles.
 
 ```sh
-stave-bench 'au:Apple:AUDelay' --list
-stave-bench 'au:Some Vendor Overdrive' --signal sine:1000:-12 --set Drive=0.7
+stave describe 'au:Apple:AUDelay'
+stave bench 'au:Some Vendor Overdrive' --signal sine:1000:-12 --set Drive=0.7
 ```
 
-**Side by side.** `stave-play --characterise` runs the characterisation
+**Side by side.** `stave characterise` runs the characterisation
 (DSP.md R17–R19, [Fingerprints and perceptual
 metrics](crate::howto::fingerprints)) on each candidate as a black box,
 at each rate, and prints one markdown table: the knee, latency, tail,
@@ -212,9 +216,9 @@ presets, a `stop_s` that stops and restarts the motor),
 `instrument/drum`.
 
 ```sh
-stave-play \
-  --characterise 'stage:circuit/ts808;oversample=2;label=stave 4x' \
-  --characterise 'au:Some Vendor Overdrive;Drive=1;label=theirs' \
+stave characterise \
+  'stage:circuit/ts808;oversample=2;label=stave 4x' \
+  'au:Some Vendor Overdrive;Drive=1;label=theirs' \
   --rates 44100,48000 --tier t1 --process-block 64 --report research/ts.md
 ```
 

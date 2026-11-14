@@ -202,7 +202,7 @@ are functions too — [`stave_test::checks`], [`stave_test::face::laws`],
 
 ### The validation suite
 
-`passes_validation` runs the same suite `stave-bench --validate` runs on
+`passes_validation` runs the same suite `stave validate` runs on
 any VST3. Each check gets fresh instances; only the unambiguous fails,
 and a judgment call is reported as `info` with its numbers:
 

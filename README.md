@@ -17,8 +17,9 @@ are generated from the code, and nothing on it is written twice.
 - `examples/tilt` — Stave Tilt, a one-knob tilt EQ: the worked example.
 - `examples/pluck` — Stave Pluck, a plucked-string instrument: the worked
   example of an instrument.
-- `tools/` — `stave-bench` (headless host, the agent API), `stave-play`
-  (windowed host), the storybook, and the docs site generator.
+- `tools/` — `stave` (`tools/stave-cli`: every command on the command line
+  and as an MCP server, the agent API), `stave-play` (windowed host), the
+  storybook, and the docs site generator.
 - `crates/stave-guide` — the guide's articles, in Markdown.
 - `OVERHAUL.md` — the project's working ledger.
 - `DSP.md` — the DSP roadmap: models, verification loops and profiling.

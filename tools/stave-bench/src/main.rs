@@ -1,222 +1,105 @@
-//! stave-bench — the headless host: maximal machine-readable data from
-//! any VST3 plugin. All the work lives in `stave_host::{bench, validate}`;
-//! this binary parses arguments (`cli`), loads, and prints. See `--help` and
-//! the guide (crates/stave-guide/src/howto/host-tools.md).
+//! stave-bench — deprecated: `stave` (tools/stave-cli) took its modes as
+//! commands. This shim keeps scripts working for one release: it maps
+//! the old flags onto the new commands, says so once on stderr, and runs
+//! them through the same registry.
+//!
+//! ```text
+//! stave-bench X [opts]               stave bench X [opts]
+//! stave-bench X --describe           stave describe X --json
+//! stave-bench X --list               stave describe X
+//! stave-bench X --validate           stave validate X --json
+//! stave-bench X --response [--response-levels L]
+//!                                    stave response X [--levels L]
+//! ```
 
-use std::error::Error;
-use std::fs::File;
-use std::io::Write;
 use std::process::ExitCode;
 
-mod cli;
+/// The new command line for an old one.
+fn translate(args: &[String]) -> Vec<String> {
+    let mut command = "bench";
+    let mut json = false;
+    let mut rest = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--describe" => (command, json) = ("describe", true),
+            "--list" => command = "describe",
+            "--validate" => (command, json) = ("validate", true),
+            "--response" => command = "response",
+            "--json" => json = true,
+            "--response-levels" => {
+                rest.push("--levels".to_string());
+                rest.extend(it.next().cloned());
+            }
+            _ => rest.push(a.clone()),
+        }
+    }
+    let mut out = vec![command.to_string()];
+    out.extend(rest);
+    if json {
+        out.push("--json".into());
+    }
+    out
+}
 
-use cli::{Cli, Mode, USAGE};
-
-use stave_host::bench::{self, text};
-use stave_host::config::HostConfig;
-use stave_host::instance::{apply_preset, Instance};
-use stave_host::opened::Opened;
-use stave_host::note::NoteSchedule;
-use stave_host::drive::Driver;
-use stave_host::validate;
-use stave_measure::signal::Silence;
-use stave_host::wav;
+/// Drop the options the chosen command does not take (the old binary
+/// ignored them), saying which.
+fn keep_known(registry: &stave_tools::Registry, args: Vec<String>) -> Vec<String> {
+    let Some(info) = registry.get(&args[0]).map(|c| *c.info()) else { return args };
+    let mut out = vec![args[0].clone()];
+    let mut it = args.into_iter().skip(1);
+    while let Some(a) = it.next() {
+        let takes = |a: &str| a == "--json" || a == "--help" || a == "-h" || info.inputs.iter().any(|f| f.flag_name() == a);
+        if a.starts_with("--") && !takes(&a) {
+            let value = it.next();
+            eprintln!("stave-bench: {a} {} ignored (stave {} does not take it)", value.unwrap_or_default(), info.id);
+            continue;
+        }
+        out.push(a);
+    }
+    out
+}
 
 fn main() -> ExitCode {
-    // Plugins print to stdout (JUCE announces its version); stdout is
-    // our JSON channel. Keep a private handle to it and point fd 1 at
-    // stderr, so plugin chatter can never corrupt a report.
-    let Some(mut out) = reserve_stdout() else {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let registry = stave_tools::registry();
+    if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
+        println!(
+            "stave-bench is deprecated and forwards to `stave` (tools/stave-cli):\n  \
+             stave-bench X [opts]      -> stave bench X [opts]\n  \
+             stave-bench X --describe  -> stave describe X --json\n  \
+             stave-bench X --list      -> stave describe X\n  \
+             stave-bench X --validate  -> stave validate X --json\n  \
+             stave-bench X --response  -> stave response X (--response-levels -> --levels)\n\n{}",
+            stave_tools::cli::command_help(registry.get("bench").expect("built in").info())
+        );
+        return ExitCode::SUCCESS;
+    }
+    let new = keep_known(&registry, translate(&args));
+    eprintln!("stave-bench is deprecated: running `stave {}`", new.join(" "));
+    let Some(mut out) = stave_tools::stdout::reserve() else {
         eprintln!("stave-bench: could not reserve stdout");
         return ExitCode::FAILURE;
     };
-    let cli = match cli::parse(std::env::args().skip(1)) {
-        Ok(cli) => cli,
-        Err(e) => {
-            report(&e);
-            eprintln!("\n{USAGE}");
-            return ExitCode::from(2);
-        }
-    };
-    match run(&cli, &mut out) {
-        Ok(code) => code,
-        Err(e) => {
-            report(e.as_ref());
-            ExitCode::FAILURE
-        }
-    }
+    ExitCode::from(stave_tools::cli::run(&registry, &new, &mut out, &mut std::io::stderr()))
 }
 
-fn report(error: &dyn Error) {
-    eprintln!("stave-bench: {error}");
-    let mut source = error.source();
-    while let Some(cause) = source {
-        eprintln!("  caused by: {cause}");
-        source = cause.source();
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn run(cli: &Cli, out: &mut File) -> Result<ExitCode, Box<dyn Error>> {
-    let config = HostConfig {
-        sample_rate: cli.rate,
-        max_block: cli.block,
-        ..HostConfig::default()
-    };
-    let open = || Opened::open(&cli.load, config);
-    match cli.mode {
-        Mode::Help => emit(out, USAGE)?,
-        Mode::Validate => {
-            let mut fresh = || open().map(Opened::into_instance);
-            let report = validate::Suite::default().run(&mut fresh, |r| {
-                eprintln!(
-                    "[validate] {:<18} {:?} ({:.0} ms)",
-                    r.check, r.status, r.duration_ms
-                )
-            });
-            emit(out, &json(&report)?)?;
-            return Ok(if report.passed() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            });
-        }
-        Mode::Response => {
-            let mut fresh = || open().map(Opened::into_instance);
-            let r = stave_host::response::measure_levels(&mut fresh, &cli.response)?;
-            if cli.json {
-                emit(out, &json(&r)?)?;
-            } else {
-                emit(out, &text::level_response(&r))?;
-            }
-        }
-        Mode::Describe | Mode::List => {
-            let mut loaded = open()?;
-            warm_up(loaded.instance());
-            let d = bench::describe::describe_opened(&loaded);
-            if cli.mode == Mode::Describe {
-                emit(out, &json(&d)?)?;
-            } else {
-                emit(out, &text::description(&d))?;
-            }
-        }
-        Mode::Bench => {
-            let mut loaded = open()?;
-            let plugin = loaded.instance();
-            warm_up(plugin);
-            if let Some(name) = &cli.preset {
-                apply_preset(plugin, name)?;
-                eprintln!("preset '{name}' selected");
-            }
-            for (name, value) in &cli.sets {
-                plugin
-                    .set_param(name, *value)
-                    .map_err(|e| format!("--set {name}: {e} (see --list)"))?;
-            }
-            let run = bench::run(plugin, &cli.bench)?;
-            if let (Some(path), Some(channels)) = (&cli.out, run.capture) {
-                let hz = cli.rate.hz();
-                if hz.fract() != 0.0 || hz > f64::from(u32::MAX) {
-                    return Err(
-                        format!("a WAV header holds whole-number rates; {hz} Hz is not").into(),
-                    );
-                }
-                let audio = wav::Audio {
-                    sample_rate: hz as u32,
-                    channels,
-                };
-                wav::write(path, &audio)?;
-                eprintln!("wrote {}", path.display());
-            }
-            if cli.json {
-                emit(out, &json(&run.report)?)?;
-            } else {
-                emit(
-                    out,
-                    &text::bench(&run.report, &cli.load.display().to_string()),
-                )?;
-            }
-        }
+    fn t(s: &str) -> String {
+        let args: Vec<String> = s.split_whitespace().map(String::from).collect();
+        keep_known(&stave_tools::registry(), translate(&args)).join(" ")
     }
-    Ok(ExitCode::SUCCESS)
-}
 
-/// A few silent blocks: stave plugins register their surface on the
-/// telemetry during their first process calls.
-fn warm_up(plugin: &mut dyn Instance) {
-    let mut d = Driver::new(plugin);
-    let n = 4 * d.block() as u64;
-    d.skip(n, &Silence, &NoteSchedule::default());
-}
-
-fn json(v: &impl serde::Serialize) -> serde_json::Result<String> {
-    serde_json::to_string_pretty(v)
-}
-
-fn emit(out: &mut File, text: &str) -> std::io::Result<()> {
-    let nl = if text.ends_with('\n') { "" } else { "\n" };
-    write!(out, "{text}{nl}")?;
-    out.flush()
-}
-
-/// Duplicate stdout for our own use, then redirect fd 1 to stderr.
-#[cfg(unix)]
-fn reserve_stdout() -> Option<File> {
-    use std::os::fd::FromRawFd;
-    extern "C" {
-        fn dup(fd: i32) -> i32;
-        fn dup2(src: i32, dst: i32) -> i32;
-    }
-    std::io::stdout().flush().ok()?;
-    // SAFETY: plain fd syscalls; the dup'd fd is owned by the File.
-    unsafe {
-        let ours = dup(1);
-        if ours < 0 || dup2(2, 1) < 0 {
-            return None;
-        }
-        Some(File::from_raw_fd(ours))
-    }
-}
-
-/// Duplicate stdout's handle for our own use, then point the standard
-/// output handle (Win32 writes) and the C runtime's fd 1 (plugin
-/// `printf`) at stderr.
-#[cfg(windows)]
-fn reserve_stdout() -> Option<File> {
-    use std::ffi::c_void;
-    use std::os::windows::io::FromRawHandle;
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetStdHandle(which: u32) -> *mut c_void;
-        fn SetStdHandle(which: u32, handle: *mut c_void) -> i32;
-        fn GetCurrentProcess() -> *mut c_void;
-        fn DuplicateHandle(
-            source_process: *mut c_void,
-            source: *mut c_void,
-            target_process: *mut c_void,
-            target: *mut *mut c_void,
-            access: u32,
-            inherit: i32,
-            options: u32,
-        ) -> i32;
-    }
-    extern "C" {
-        fn _dup2(src: i32, dst: i32) -> i32;
-    }
-    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
-    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
-    const DUPLICATE_SAME_ACCESS: u32 = 2;
-    std::io::stdout().flush().ok()?;
-    // SAFETY: handle calls on this process's own standard handles; the
-    // duplicate is owned by the File.
-    unsafe {
-        let process = GetCurrentProcess();
-        let mut ours = std::ptr::null_mut();
-        let out = GetStdHandle(STD_OUTPUT_HANDLE);
-        if out.is_null() || DuplicateHandle(process, out, process, &mut ours, 0, 0, DUPLICATE_SAME_ACCESS) == 0 {
-            return None;
-        }
-        SetStdHandle(STD_OUTPUT_HANDLE, GetStdHandle(STD_ERROR_HANDLE));
-        _dup2(2, 1);
-        Some(File::from_raw_handle(ours))
+    #[test]
+    fn old_modes_become_commands() {
+        assert_eq!(t("X.vst3 --seconds 1 --json"), "bench X.vst3 --seconds 1 --json");
+        assert_eq!(t("X.vst3 --describe"), "describe X.vst3 --json");
+        assert_eq!(t("X.vst3 --list"), "describe X.vst3");
+        assert_eq!(t("X.vst3 --validate --rate 44100"), "validate X.vst3 --rate 44100 --json");
+        assert_eq!(t("X --response --response-levels -6,0"), "response X --levels -6,0");
+        assert_eq!(t("X --validate --seconds 3"), "validate X --json", "an option the mode ignored is dropped");
     }
 }

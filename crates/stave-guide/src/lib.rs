@@ -46,6 +46,8 @@ pub mod concepts {
 pub mod howto {
     #![doc = include_str!("howto/index.md")]
 
+    #[doc = include_str!("howto/stave-tool.md")]
+    pub mod stave_tool {}
     #[doc = include_str!("howto/host-tools.md")]
     pub mod host_tools {}
     #[doc = include_str!("howto/formats.md")]

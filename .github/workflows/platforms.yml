@@ -170,11 +170,11 @@ jobs:
             -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF
           cmake --build vst3sdk/build --config Release --target validator -j4
           wait
-      - run: cargo build --release --locked -p stave-tilt-vst3 -p stave-pluck -p stave-bench
+      - run: cargo build --release --locked -p stave-tilt-vst3 -p stave-pluck -p stave-cli
       - run: scripts/check-exports.sh
       - run: scripts/validate-formats.sh clap
       - run: scripts/validate-formats.sh vst3
         env:
           VALIDATOR: vst3sdk/build/bin/Release/validator
       - name: stave-host opens the bundle
-        run: target/release/stave-bench target/validate/StaveTilt.vst3 --validate > /dev/null
+        run: target/release/stave validate target/validate/StaveTilt.vst3 --json > /dev/null
