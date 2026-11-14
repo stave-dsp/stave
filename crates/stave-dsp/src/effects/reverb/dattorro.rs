@@ -7,6 +7,7 @@ use crate::primitives::time::delay::DelayLine;
 use crate::primitives::time::interpolators::Lagrange3;
 
 use super::decay_tail;
+use crate::units::{Hz, Seconds};
 
 /// The rate Dattorro's lengths are given at (Hz).
 const DESIGN_RATE: f32 = 29_761.0;
@@ -207,7 +208,7 @@ pub struct Dattorro {
 
 impl Default for Dattorro {
     fn default() -> Self {
-        Self::new(100.0)
+        Self::new(Seconds::new(0.1))
     }
 }
 
@@ -215,7 +216,8 @@ impl Dattorro {
     /// A plate that can predelay up to `max_predelay_ms`: T60 2 s, no
     /// predelay, damping at 8 kHz, bandwidth at 16 kHz. Lines are
     /// allocated in `prepare`.
-    pub fn new(max_predelay_ms: f32) -> Self {
+    pub fn new(max_predelay: Seconds) -> Self {
+        let max_predelay_ms = max_predelay.to_ms() as f32;
         let mut d = Self {
             predelay: DelayLine::new(),
             max_predelay_ms: max_predelay_ms.max(0.0),
@@ -244,29 +246,32 @@ impl Dattorro {
 
     /// The time for the tail to fall 60 dB, in seconds; `f32::INFINITY`
     /// freezes it.
-    // TODO(U4): take `units::Seconds` once it lands.
-    pub fn set_t60_s(&mut self, t60_s: f32) {
+    pub fn set_t60(&mut self, t60: Seconds) {
+        let t60_s = t60.get() as f32;
         debug_assert!(t60_s > 0.0, "T60 {t60_s} s");
         self.t60_s = t60_s;
         self.update();
     }
 
     /// Delay before the plate, in ms, within `[0, max_predelay_ms]`.
-    pub fn set_predelay_ms(&mut self, ms: f32) {
+    pub fn set_predelay(&mut self, predelay: Seconds) {
+        let ms = predelay.to_ms() as f32;
         self.predelay_ms = ms.clamp(0.0, self.max_predelay_ms);
         self.update();
     }
 
     /// The tank's high-frequency loss: a one-pole lowpass corner in Hz
     /// (lower is darker).
-    pub fn set_damping_hz(&mut self, hz: f32) {
+    pub fn set_damping(&mut self, corner: Hz) {
+        let hz = corner.get();
         debug_assert!(hz > 0.0, "damping corner {hz} Hz");
         self.damping_hz = hz;
         self.update();
     }
 
     /// The input's bandwidth: a one-pole lowpass corner in Hz.
-    pub fn set_bandwidth_hz(&mut self, hz: f32) {
+    pub fn set_bandwidth(&mut self, corner: Hz) {
+        let hz = corner.get();
         debug_assert!(hz > 0.0, "bandwidth corner {hz} Hz");
         self.bandwidth_hz = hz;
         self.update();

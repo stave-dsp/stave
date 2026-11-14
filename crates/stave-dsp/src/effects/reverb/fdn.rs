@@ -6,7 +6,7 @@ use crate::kernel::node::{Stage, Tail};
 use crate::primitives::time::delay::DelayLine;
 use crate::primitives::time::interpolators::{Interpolator, Lagrange3};
 
-use crate::units::Hz;
+use crate::units::{Hz, Seconds};
 
 use super::attenuation::{loop_target, Design, GraphicEq, POINTS};
 use super::kronecker::Kronecker;
@@ -103,7 +103,7 @@ impl Mixing {
 /// orthogonal, `Γ` a per-line absorption filter. No hardware claim; the
 /// network is wet only (mix dry yourself). Two absorptions:
 ///
-/// - [`set_t60_s`](Self::set_t60_s) and [`set_hf_ratio`](Self::set_hf_ratio):
+/// - [`set_decay`](Self::set_decay) and [`set_hf_ratio`](Self::set_hf_ratio):
 ///   a gain and a one-pole shelf per line (Jot 1992), a T60 at DC and one
 ///   at Nyquist, cheapest.
 /// - [`set_t60`](Self::set_t60): a [`T60`] per octave band, held by a
@@ -178,7 +178,7 @@ impl Mixing {
 /// Size in `[0.1, Fdn::MAX_SIZE]`; high-frequency ratio in `(0, 1]`;
 /// modulation depth in `[0, 2]` ms; angles any finite radians. Memory:
 /// eight lines of `75·MAX_SIZE + 2` ms. A design (`set_t60`, and in that
-/// form `set_size` and `set_modulation_ms`) allocates nothing.
+/// form `set_size` and `set_modulation`) allocates nothing.
 #[derive(Clone, Debug)]
 pub struct Fdn {
     lines: [DelayLine<Lagrange3>; LINES],
@@ -273,8 +273,8 @@ impl Fdn {
     /// band (the gain-and-shelf absorption, with
     /// [`set_hf_ratio`](Self::set_hf_ratio)); `f32::INFINITY` never
     /// decays. Replaces a [`set_t60`](Self::set_t60) profile.
-    // TODO(U4): take `units::Seconds` once it lands.
-    pub fn set_t60_s(&mut self, t60_s: f32) {
+    pub fn set_decay(&mut self, t60: Seconds) {
+        let t60_s = t60.get() as f32;
         debug_assert!(t60_s > 0.0, "T60 {t60_s} s");
         self.t60_s = t60_s;
         self.profile = None;
@@ -289,7 +289,7 @@ impl Fdn {
         self.update();
     }
 
-    /// The T60 at Nyquist as a fraction of [`set_t60_s`](Self::set_t60_s)'s
+    /// The T60 at Nyquist as a fraction of [`set_decay`](Self::set_decay)'s
     /// (1 = no damping; 0.25 = highs die four times faster).
     pub fn set_hf_ratio(&mut self, ratio: f32) {
         debug_assert!(ratio > 0.0 && ratio <= 1.0, "hf ratio {ratio}");
@@ -305,7 +305,8 @@ impl Fdn {
     }
 
     /// Peak excursion of each line's read point, in ms (0 = static).
-    pub fn set_modulation_ms(&mut self, depth_ms: f32) {
+    pub fn set_modulation(&mut self, depth: Seconds) {
+        let depth_ms = depth.to_ms() as f32;
         self.depth_ms = depth_ms.clamp(0.0, 2.0);
         self.update();
     }

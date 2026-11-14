@@ -3,6 +3,7 @@ use crate::effects::dynamics::{GainComputer, Limiter, Peaks, Topology};
 use crate::primitives::filters::crossover::Order;
 use crate::primitives::spectral::{Complex, Fft};
 use crate::units::{db, hz, Hz};
+use crate::units::ms;
 
 const RATE: f32 = 48_000.0;
 
@@ -62,7 +63,7 @@ fn worst_flatness(h: &[f64]) -> f64 {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn unity_bands_reconstruct() {
-    let limiter = || Band::Limit(Box::new(Limiter::new(Peaks::Sample, 20.0)));
+    let limiter = || Band::Limit(Box::new(Limiter::new(Peaks::Sample, db(20.0))));
     // Linkwitz–Riley: the output is the crossover's allpass, flat; with
     // a limiter in one band, the same allpass `latency` samples later.
     let lr = Crossover::<4>::linkwitz_riley(Order::Lr4, &corners());
@@ -126,8 +127,8 @@ fn compressor() -> Compressor {
         GainComputer { threshold_db: -30.0, ratio: 4.0, knee_db: 0.0 },
         Topology::FeedForward,
     );
-    c.set_attack_ms(1.0);
-    c.set_release_ms(50.0);
+    c.set_attack(ms(1.0));
+    c.set_release(ms(50.0));
     c
 }
 
@@ -160,8 +161,8 @@ fn a_band_compresses_alone() {
     }
     assert!(worst < 1e-6, "{worst:e} from three lone compressors");
     // The loud high band is squashed; the quiet low band is untouched.
-    assert!(mb.band(2)[0].reduction_db() > 15.0);
-    assert_eq!(mb.band(0)[0].reduction_db(), 0.0);
+    assert!(mb.band(2)[0].reduction().get() > 15.0);
+    assert_eq!(mb.band(0)[0].reduction().get(), 0.0);
     let quiet = level_db(&out, 60.0) - level_db(&low, 60.0);
     assert!(quiet.abs() < 0.01, "low band moved {quiet:.4} dB");
 }
@@ -227,14 +228,14 @@ fn link_and_sidechain_reach_every_band() {
             mb.tick_stereo_linked(tone(700.0, 0.5, i), 0.0);
         }
         let [l, r] = mb.band(1);
-        assert!(l.reduction_db() > 10.0);
+        assert!(l.reduction().get() > 10.0);
         if right_squashed {
-            assert!((l.reduction_db() - r.reduction_db()).abs() < 1e-6, "{link:?}");
+            assert!((l.reduction().get() - r.reduction().get()).abs() < 1e-6, "{link:?}");
         } else {
-            assert_eq!(r.reduction_db(), 0.0, "{link:?}");
+            assert_eq!(r.reduction().get(), 0.0, "{link:?}");
         }
         for b in [0, 2] {
-            assert!(mb.band(b)[1].reduction_db() < 0.5, "{link:?} band {b}");
+            assert!(mb.band(b)[1].reduction().get() < 0.5, "{link:?} band {b}");
         }
     }
     // An external low key ducks the low band alone, mono and stereo.
@@ -249,11 +250,11 @@ fn link_and_sidechain_reach_every_band() {
         stereo.tick_stereo_keyed(x, x, key, 0.0);
     }
     for m in [&mb, &stereo] {
-        assert!(m.band(0)[0].reduction_db() > 10.0);
-        assert!(m.band(2)[0].reduction_db() == 0.0);
+        assert!(m.band(0)[0].reduction().get() > 10.0);
+        assert!(m.band(2)[0].reduction().get() == 0.0);
     }
     assert_eq!(
-        stereo.band(0)[0].reduction_db(),
-        stereo.band(0)[1].reduction_db()
+        stereo.band(0)[0].reduction().get(),
+        stereo.band(0)[1].reduction().get()
     );
 }

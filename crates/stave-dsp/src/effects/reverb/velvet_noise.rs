@@ -4,6 +4,7 @@
 
 use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Seconds;
 
 use super::attenuation::{loop_target, Design, GraphicEq};
 use super::t60::T60;
@@ -141,8 +142,8 @@ impl VelvetNoise {
 
     /// The same T60 in every band, seconds (`f32::INFINITY` never
     /// decays). Replaces a [`set_t60`](Self::set_t60) profile.
-    // TODO(U4): take `units::Seconds` once it lands.
-    pub fn set_t60_s(&mut self, t60_s: f32) {
+    pub fn set_decay(&mut self, t60: Seconds) {
+        let t60_s = t60.get() as f32;
         debug_assert!(t60_s > 0.0, "T60 {t60_s} s");
         self.t60_s = t60_s;
         self.profile = None;

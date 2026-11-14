@@ -6,6 +6,8 @@ use crate::kernel::node::{Stage, Tail};
 use crate::primitives::control::envelope::{EnvelopeFollower, EnvelopeTimes};
 use crate::primitives::filters::biquad::{Biquad, FilterSpec};
 use crate::primitives::filters::one_pole::tau_coeff;
+use crate::units::Hz;
+use crate::units::Seconds;
 
 /// A peak detector: the rectified signal through a one-pole that rises
 /// with the attack time constant and falls with the release.
@@ -41,7 +43,9 @@ pub struct Peak {
 
 impl Peak {
     /// A detector with time constants `attack_ms` and `release_ms`.
-    pub fn new(attack_ms: f32, release_ms: f32) -> Self {
+    pub fn new(attack: Seconds, release: Seconds) -> Self {
+        let attack_ms = attack.to_ms() as f32;
+        let release_ms = release.to_ms() as f32;
         Self {
             follower: EnvelopeFollower::new(EnvelopeTimes {
                 attack_ms,
@@ -51,12 +55,12 @@ impl Peak {
         }
     }
 
-    pub fn set_attack_ms(&mut self, ms: f32) {
-        self.follower.set_attack_ms(ms);
+    pub fn set_attack(&mut self, attack: Seconds) {
+        self.follower.set_attack(attack);
     }
 
-    pub fn set_release_ms(&mut self, ms: f32) {
-        self.follower.set_release_ms(ms);
+    pub fn set_release(&mut self, release: Seconds) {
+        self.follower.set_release(release);
     }
 }
 
@@ -113,7 +117,8 @@ pub struct Rms {
 impl Rms {
     /// A detector over the last `window_ms`. The window is allocated in
     /// `prepare`.
-    pub fn new(window_ms: f32) -> Self {
+    pub fn new(window: Seconds) -> Self {
+        let window_ms = window.to_ms() as f32;
         debug_assert!(window_ms > 0.0, "window {window_ms} ms");
         Self {
             window_ms,
@@ -206,7 +211,11 @@ pub struct ProgramDependent {
 impl ProgramDependent {
     /// A detector attacking with `attack_ms`, releasing between
     /// `fast_ms` and `slow_ms` as its `memory_ms`-long history fills.
-    pub fn new(attack_ms: f32, fast_ms: f32, slow_ms: f32, memory_ms: f32) -> Self {
+    pub fn new(attack: Seconds, fast: Seconds, slow: Seconds, memory: Seconds) -> Self {
+        let attack_ms = attack.to_ms() as f32;
+        let fast_ms = fast.to_ms() as f32;
+        let slow_ms = slow.to_ms() as f32;
+        let memory_ms = memory.to_ms() as f32;
         debug_assert!(fast_ms <= slow_ms, "fast release {fast_ms} > slow {slow_ms}");
         let mut d = Self {
             attack_ms,
@@ -224,8 +233,8 @@ impl ProgramDependent {
     }
 
     fn update(&mut self) {
-        self.attack = tau_coeff(self.attack_ms / 1000.0, self.sample_rate);
-        self.memory = tau_coeff(self.memory_ms / 1000.0, self.sample_rate);
+        self.attack = tau_coeff(Seconds::new(f64::from(self.attack_ms / 1000.0)), self.sample_rate);
+        self.memory = tau_coeff(Seconds::new(f64::from(self.memory_ms / 1000.0)), self.sample_rate);
     }
 }
 
@@ -251,14 +260,14 @@ impl Stage for ProgramDependent {
                 1.0
             };
             let ms = self.fast_ms + (self.slow_ms - self.fast_ms) * history;
-            tau_coeff(ms / 1000.0, self.sample_rate)
+            tau_coeff(Seconds::new(f64::from(ms / 1000.0)), self.sample_rate)
         };
         self.envelope = denormal::flush(self.envelope + (x - self.envelope) * k);
         self.held = denormal::flush(self.held + (self.envelope - self.held) * self.memory);
         self.envelope
     }
     fn tail(&self) -> Tail {
-        Tail::from_time_constant(f64::from(self.slow_ms.max(self.memory_ms)) / 1000.0, self.sample_rate)
+        Tail::from_time_constant(Seconds::new(f64::from(self.slow_ms.max(self.memory_ms)) / 1000.0), self.sample_rate)
     }
 }
 
@@ -340,12 +349,12 @@ pub struct Sidechain {
 }
 
 impl Sidechain {
-    /// A key filter with an optional highpass and lowpass corner, in Hz.
-    pub fn new(highpass_hz: Option<f32>, lowpass_hz: Option<f32>) -> Self {
+    /// A key filter with an optional highpass and lowpass corner.
+    pub fn new(highpass: Option<Hz>, lowpass: Option<Hz>) -> Self {
         let q = core::f32::consts::FRAC_1_SQRT_2;
         Self {
-            highpass: highpass_hz.map(|hz| Biquad::new(FilterSpec::Highpass { hz, q })),
-            lowpass: lowpass_hz.map(|hz| Biquad::new(FilterSpec::Lowpass { hz, q })),
+            highpass: highpass.map(|frequency| Biquad::new(FilterSpec::Highpass { frequency, q })),
+            lowpass: lowpass.map(|frequency| Biquad::new(FilterSpec::Lowpass { frequency, q })),
         }
     }
 }

@@ -2,28 +2,30 @@ use super::*;
 use crate::kernel::node::Stage;
 use crate::units::{hz, seconds};
 use stave_measure::tail::{t60_band_s, t60_s};
+use crate::units::Seconds;
+use crate::units::ms;
 
 /// Every reverb under test, by name, at T60 `t60`.
 fn reverbs(t60: f32) -> Vec<(&'static str, Box<dyn Stage>)> {
     let mut householder = Fdn::new(Mixing::Householder);
-    householder.set_t60_s(t60);
+    householder.set_decay(Seconds::new(f64::from(t60)));
     let mut hadamard = Fdn::new(Mixing::Hadamard);
-    hadamard.set_t60_s(t60);
-    let mut plate = Dattorro::new(50.0);
-    plate.set_t60_s(t60);
-    plate.set_damping_hz(1e6); // open: the T60 is the broadband decay
+    hadamard.set_decay(Seconds::new(f64::from(t60)));
+    let mut plate = Dattorro::new(ms(50.0));
+    plate.set_t60(Seconds::new(f64::from(t60)));
+    plate.set_damping(hz(1e6)); // open: the T60 is the broadband decay
     let mut schroeder = Schroeder::new();
-    schroeder.set_t60_s(t60);
+    schroeder.set_t60(Seconds::new(f64::from(t60)));
     let mut moorer = Schroeder::moorer();
-    moorer.set_t60_s(t60);
+    moorer.set_t60(Seconds::new(f64::from(t60)));
     let mut velvet = VelvetNoise::new();
-    velvet.set_t60_s(t60);
+    velvet.set_decay(Seconds::new(f64::from(t60)));
     let mut graphic = Fdn::new(Mixing::Householder);
     graphic.set_t60(T60::uniform(seconds(f64::from(t60))));
     let mut kronecker = Fdn::new(Mixing::Householder);
     kronecker.set_kronecker(Kronecker::hadamard());
     kronecker.set_angle_modulation(0.3, hz(0.5));
-    kronecker.set_t60_s(t60);
+    kronecker.set_decay(Seconds::new(f64::from(t60)));
     vec![
         ("Fdn (Householder)", Box::new(householder)),
         ("Fdn (Hadamard)", Box::new(hadamard)),
@@ -257,7 +259,7 @@ fn t60_per_octave_band_matches_the_profile() {
         for rate in [48_000.0f32, 96_000.0] {
             for modulation_ms in [0.0, 0.25] {
                 let mut fdn = Fdn::new(Mixing::Hadamard);
-                fdn.set_modulation_ms(modulation_ms);
+                fdn.set_modulation(ms(f64::from(modulation_ms)));
                 fdn.set_t60(T60::octaves(profile.map(seconds)));
                 let longest = profile.iter().copied().fold(0.0, f64::max) as f32;
                 let measured = band_t60s(&mut fdn, rate, 1.2 * longest + 0.2, 1..=8);
@@ -288,12 +290,12 @@ fn t60_per_octave_band_matches_the_profile() {
     assert!(over.is_empty(), "over budget:\n{}", over.join("\n"));
 }
 
-/// `set_t60_s` still replaces a profile.
+/// `set_decay` still replaces a profile.
 #[test]
-fn set_t60_s_replaces_a_profile() {
+fn set_decay_replaces_a_profile() {
     let mut fdn = Fdn::new(Mixing::Householder);
     fdn.set_t60(T60::uniform(seconds(4.0)));
-    fdn.set_t60_s(0.5);
+    fdn.set_decay(seconds(0.5));
     fdn.prepare(48_000.0);
     let crate::Tail::Samples(n) = fdn.tail() else {
         panic!("finite")
@@ -456,7 +458,7 @@ fn modulating_the_matrix_keeps_the_decay() {
 fn velvet_noise_density_is_the_design() {
     for rate in [44_100.0f32, 48_000.0, 96_000.0] {
         let mut velvet = VelvetNoise::new();
-        velvet.set_t60_s(2.0);
+        velvet.set_decay(seconds(2.0));
         velvet.prepare(rate);
         let grid = velvet.grid();
         let n = (3.0 * rate) as usize / grid * grid;
@@ -526,9 +528,9 @@ fn velvet_noise_t60_matches_the_setting() {
             .sum::<f64>()
     };
     let mut fdn = Fdn::new(Mixing::Householder);
-    fdn.set_t60_s(2.0);
+    fdn.set_decay(seconds(2.0));
     let mut velvet = VelvetNoise::new();
-    velvet.set_t60_s(2.0);
+    velvet.set_decay(seconds(2.0));
     let ratio_db = 10.0 * (energy(&mut velvet) / energy(&mut fdn)).log10();
     println!("VelvetNoise level re Fdn: {ratio_db:+.2} dB");
     assert!(ratio_db.abs() < 6.0, "{ratio_db:+.2} dB");
@@ -545,7 +547,7 @@ fn velvet_noise_process_is_tick() {
             if graphic {
                 v.set_t60(T60::octaves(PROMENADI.map(seconds)));
             } else {
-                v.set_t60_s(1.5);
+                v.set_decay(seconds(1.5));
             }
             v.prepare(48_000.0);
             v

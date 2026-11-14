@@ -9,6 +9,7 @@ use crate::kernel::node::{Stage, Tail};
 use crate::primitives::filters::svf::Svf;
 use crate::primitives::spectral::{Convolver, Head, ImpulseResponse};
 use crate::units::{Db, Ratio, Seconds};
+use crate::units::Hz;
 
 /// How a band is realised.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -312,7 +313,7 @@ impl Dynamic {
             state.section = Section::new(band, rate);
             state.section.restore(ic1, ic2);
             let (key, key_gain) = key_filter(band);
-            state.key.set(key.0, key.1);
+            state.key.set(Hz::new(key.0), key.1);
             state.key_gain = key_gain;
         }
         if let Some(d) = new.active() {
@@ -391,14 +392,14 @@ fn configure(computer: &mut Compressor, d: Dynamics) {
         ratio: d.ratio.get(),
         knee_db: d.knee.get(),
     });
-    computer.set_attack_ms((d.attack.get().max(MIN_TIME_S) * 1e3) as f32);
-    computer.set_release_ms((d.release.get().max(MIN_TIME_S) * 1e3) as f32);
+    computer.set_attack(Seconds::new(d.attack.get().max(MIN_TIME_S)));
+    computer.set_release(Seconds::new(d.release.get().max(MIN_TIME_S)));
 }
 
 impl BandState {
     fn new(b: &DynamicBand, sample_rate: f32) -> Self {
         let ((hz, q), key_gain) = key_filter(b.band);
-        let mut key = Svf::new(hz, q);
+        let mut key = Svf::new(Hz::new(hz), q);
         key.prepare(sample_rate);
         let mut computer = Compressor::new(
             GainComputer {
@@ -411,7 +412,7 @@ impl BandState {
         computer.prepare(sample_rate);
         let level = match b.dynamics.map(|d| d.detector) {
             Some(Detector::Rms(window)) => {
-                let mut rms = Rms::new((window.get() * 1e3) as f32);
+                let mut rms = Rms::new(window);
                 rms.prepare(sample_rate);
                 Level::Rms(rms)
             }
@@ -471,7 +472,7 @@ impl BandState {
             Level::Rms(rms) => rms.tick(key),
         };
         self.computer.tick_keyed(0.0, level);
-        let r = self.computer.reduction_db();
+        let r = self.computer.reduction().get();
         let range = d.range.get();
         self.offset_db = if range < 0.0 { (-r).max(range) } else { r.min(range) };
     }
