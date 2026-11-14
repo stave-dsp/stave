@@ -3,7 +3,7 @@
 use super::activation::{sigmoid_in_place, tanh_in_place};
 use super::error::{LoadError, Weights};
 use super::json::Json;
-use super::rate::{RateGuard, RateMismatch, RatePolicy, StateDelay};
+use super::rate::{hold, RateGuard, RateMismatch, RatePolicy, StateDelay};
 use crate::kernel::node::{Stage, Tail};
 
 /// A stacked GRU (Cho et al. 2014) with a linear head, one sample per
@@ -254,10 +254,16 @@ impl Cell {
         }
     }
 
-    /// Take the delayed state (snapshot floats from `at`) as the last one.
+    /// Take the delayed state (snapshot floats from `at`) as the last one,
+    /// held to [−1, 1]: a convex mix of `tanh` and itself, the state
+    /// never leaves it at the trained rate, and the cubic's read must not
+    /// take it out (see [`StateDelay::read`]).
     #[inline]
     fn recall(&mut self, delay: &StateDelay, at: usize) {
         delay.read(at, &mut self.h);
+        for h in &mut self.h {
+            *h = hold(*h, 1.0);
+        }
     }
 
     /// Store the new state (snapshot floats from `at`).

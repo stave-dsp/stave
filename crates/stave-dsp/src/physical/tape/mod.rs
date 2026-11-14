@@ -404,7 +404,7 @@ impl Stage for Chowdhury {
             s.set_speed_ratio(ratio);
             y = s.tick(y);
         }
-        y
+        crate::kernel::denormal::normal(y)
     }
     fn latency(&self) -> u32 {
         self.record.latency()

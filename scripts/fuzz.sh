@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # The fuzz targets (OVERHAUL.md C5), cargo-fuzz on the pinned
 # nightly. Every target for SECONDS each (default 30: the PR smoke; the
-# nightly job runs 600). The committed state fixtures seed state_load.
+# nightly job runs 600). The committed state fixtures seed state_load;
+# `solvers` (DSP.md R7) replays a slow or crashing input with
+# `STAVE_FUZZ_REPLAY` (crates/stave-test/tests/solver_fuzz.rs).
 #
 #   scripts/fuzz.sh            # every target, 30 s each
 #   scripts/fuzz.sh 600        # every target, 10 min each
@@ -18,13 +20,17 @@ shift || true
 NIGHTLY="${NIGHTLY:-nightly-2026-11-01}"
 TARGET="$(rustc +"$NIGHTLY" -vV | sed -n 's/^host: //p')"
 TARGETS=("$@")
-[[ $# -gt 0 ]] || TARGETS=(state_load param_text vst3_host clap_events raster)
+[[ $# -gt 0 ]] || TARGETS=(state_load param_text vst3_host clap_events raster solvers)
 mkdir -p fuzz/corpus/state_load
 cp crates/stave-core/tests/fixtures/*.stve fuzz/corpus/state_load/ 2>/dev/null || true
 for target in ${TARGETS[@]+"${TARGETS[@]}"}; do
   echo "== fuzz: ${target} (${SECONDS_EACH}s)"
+  # The solvers target is safe Rust doing numerics: AddressSanitizer
+  # finds nothing there and slows each case tenfold, so it runs without.
+  sanitizer=address
+  [[ "$target" == solvers ]] && sanitizer=none
   # --target: a cargo-fuzz built for another arch (Rosetta) would
   # otherwise default to its own.
-  cargo +"$NIGHTLY" fuzz run --fuzz-dir fuzz --target "$TARGET" "$target" -- \
+  cargo +"$NIGHTLY" fuzz run --fuzz-dir fuzz --target "$TARGET" --sanitizer "$sanitizer" "$target" -- \
     -max_total_time="$SECONDS_EACH" -rss_limit_mb=4096 -max_len=4096
 done

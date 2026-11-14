@@ -1,7 +1,8 @@
 //! A body heard at one point, as its modes: the plate's SIMD phasor
 //! lanes ([`Lanes`]) driven by a list of modes in SI units, one pickup
-//! calibrated to a unit-energy impulse response. The membrane and the
-//! bar are this with their own mode sets.
+//! calibrated to a unit-energy impulse response at 48 kHz (the same
+//! continuous energy at every rate, as the plate's). The membrane and
+//! the bar are this with their own mode sets.
 
 use crate::kernel::node::Tail;
 use crate::physical::lanes::{Lanes, BLOCK};
@@ -43,7 +44,10 @@ impl Body {
     /// Set every mode (no allocation; at most the allocated count):
     /// rotations `r e^(jωT)` and the pickup's weights on `Re z`/`Im z`
     /// for `output` (the impulse-invariant derivatives of the plate),
-    /// scaled so the impulse response carries unit energy.
+    /// scaled so the impulse response carries unit energy at 48 kHz and
+    /// the same continuous energy at every rate (`Σh² = 48 kHz / fs`):
+    /// unit energy at each rate put the gain on `√fs`, +6 dB at 192 kHz
+    /// (DSP.md R6).
     pub fn set(&mut self, rings: &[Ring], output: Output, sample_rate: f32) {
         let t = 1.0 / f64::from(sample_rate);
         let weights = |m: &Ring| -> (f64, f64) {
@@ -67,6 +71,8 @@ impl Body {
                 self.slowest = self.slowest.min(m.sigma);
             }
         }
+        // A sampled response's energy goes as T: calibrate at 48 kHz.
+        let energy = energy * f64::from(sample_rate) / 48_000.0;
         self.scale = if energy > 0.0 && energy.is_finite() { 1.0 / energy.sqrt() } else { 0.0 };
         for i in 0..self.modes {
             match rings.get(i) {

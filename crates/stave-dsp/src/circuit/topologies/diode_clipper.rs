@@ -192,9 +192,9 @@ impl<M: PairMethod> Stage for DiodeClipper<M> {
 
     fn tick(&mut self, x: f32) -> f32 {
         if self.antialiasing == Antialiasing::Adaa {
-            return self.tick_adaa(f64::from(x)) as f32;
+            return crate::kernel::denormal::normal64(self.tick_adaa(f64::from(x)));
         }
-        self.tick_plain(x)
+        crate::kernel::denormal::normal(self.tick_plain(x))
     }
 
     /// The mode is chosen once a block, so the plain path's loop is the
@@ -202,11 +202,11 @@ impl<M: PairMethod> Stage for DiodeClipper<M> {
     fn process(&mut self, block: &mut [f32]) {
         if self.antialiasing == Antialiasing::Adaa {
             for x in block.iter_mut() {
-                *x = self.tick_adaa(f64::from(*x)) as f32;
+                *x = crate::kernel::denormal::normal64(self.tick_adaa(f64::from(*x)));
             }
         } else {
             for x in block.iter_mut() {
-                *x = self.tick_plain(*x);
+                *x = crate::kernel::denormal::normal(self.tick_plain(*x));
             }
         }
     }

@@ -224,6 +224,14 @@ impl StateDelay {
     }
 
     /// The delayed state's floats `at .. at + out.len()` into `out`.
+    ///
+    /// Away from the centred read the cubic's weights sum to one but not
+    /// in magnitude (at `M = 1.8375`, 88.2 kHz from 48, they alternate to
+    /// 1.16; extrapolating at 44.1 kHz, to 1.57), so a network whose step
+    /// is mostly its read — a GRU's update gate near one, a held state —
+    /// grows without bound through them unless the cell holds the read
+    /// to what its state can be ([`hold`], [`read_within`](Self::read_within);
+    /// DSP.md R6, `crates/stave-dsp/tests/learned_rates.rs::interpolated_state_stays_bounded_under_a_held_gate`).
     #[inline]
     pub(crate) fn read(&self, at: usize, out: &mut [f32]) {
         out.fill(0.0);
@@ -236,6 +244,39 @@ impl StateDelay {
             }
         }
     }
+
+    /// [`read`](Self::read), each float held within `step` of the
+    /// largest magnitude among the snapshots it is read from: for a state
+    /// that moves at most `step` a trained period (an LSTM's cell: `|c|`
+    /// grows by at most `|i·g| < 1` a step), a bound no true reading
+    /// reaches, which still keeps the read from feeding its own growth.
+    #[inline]
+    pub(crate) fn read_within(&self, at: usize, out: &mut [f32], step: f32) {
+        self.read(at, out);
+        for (i, o) in out.iter_mut().enumerate() {
+            let most = (0..4)
+                .map(|k| self.ring[self.slot(self.gamma - 1 + k) * self.width + at + i].abs())
+                .fold(0.0f32, f32::max)
+                + step;
+            *o = hold(*o, most);
+        }
+    }
+}
+
+/// `x` held to `±limit`; a NaN stays NaN (no panic, unlike `clamp` on a
+/// NaN bound).
+#[inline]
+pub(crate) fn hold(x: f32, limit: f32) -> f32 {
+    if x > limit {
+        limit
+    } else if x < -limit {
+        -limit
+    } else {
+        x
+    }
+}
+
+impl StateDelay {
 
     /// The new state's floats `at ..` into the next slot (the oldest,
     /// which no read of this step reaches).

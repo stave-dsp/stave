@@ -16,6 +16,7 @@
 //!   - `no_alloc`       no allocation on the audio thread
 //!   - `perf`           the perf check against a plugin's CPU budget
 //!   - `reference`      a model against ngspice, a solved reference or a datasheet curve, within a budget
+//!   - `solver_fuzz`    the circuit solvers under drawn parts and hot input (DSP.md R7)
 //!   - `stability`      no pumping, no runaway energy
 
 #![forbid(unsafe_code)]
@@ -33,6 +34,7 @@ pub mod perf;
 pub mod plugin_checks;
 pub mod reference;
 pub mod sha256;
+pub mod solver_fuzz;
 pub mod stability;
 pub mod validation;
 
