@@ -1,0 +1,30 @@
+* Blocking distortion (DSP.md R15): a 12AX7 common-cathode stage
+* (Dempwolf & Zolzer, DAFx 2011, Table 1 RSD-1, grid current included)
+* fed through an interstage coupling cap: the driving plate's ~40k
+* source RO, CC 22n into the 1M grid leak RG, the 33k grid stopper, 300 V
+* through 100k, 1.5k cathode bypassed by 22u. Driven past the cathode,
+* the grid conducts and charges CC: its grid side sits negative after a
+* loud passage (the stage blocks), recovering through RG at about
+* CC (RG + RO) = 23 ms. Driven 4 V at 1 kHz. Output: the plate.
+.param g=2.242e-3 mu=103.2 gamma=1.26 c=3.40
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+V1 in 0 SIN(0 4 1k)
+RO in a 40k
+CC a l 22n
+RG l 0 1meg
+RGS l g 33k
+VB b 0 300
+RA b p 100k
+RK k 0 1.5k
+CK k 0 22u
+BG g k I = {gg*pow(ln(1+exp(cg*V(g,k)))/cg, xi) + ig0}
+BP p k I = {g*pow(ln(1+exp(c*(V(p,k)/mu+V(g,k))))/c, gamma) - gg*pow(ln(1+exp(cg*V(g,k)))/cg, xi) - ig0}
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p)
+.endc
+.end

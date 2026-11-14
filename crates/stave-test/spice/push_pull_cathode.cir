@@ -1,0 +1,34 @@
+* The push-pull pair under cathode bias (DSP.md R15): two 12AX7 halves
+* (Koren plate, Dempwolf RSD-1 grid current), grids at 0 V +/- x through
+* the phase inverter's 40k, 300 V through 100k per plate, sharing one
+* cathode self-biased by RK bypassed by CK. RK is the value `PushPull`
+* takes under `Bias::Cathode` (its class point -3.5 V over both halves'
+* idle cathode current, 17384.1 ohm); CK 2.2u. In class AB the pair's
+* cathode current rises with drive, the shared cathode climbs and the
+* class point cools, then wanders back after a burst. Driven x = 6 V at
+* 1 kHz. Output: the plate difference v(p2) - v(p1).
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+VX x 0 SIN(0 6 1k)
+B1 in1 0 V = {V(x)}
+B2 in2 0 V = {-V(x)}
+RS1 in1 g1 40k
+RS2 in2 g2 40k
+VB b 0 300
+RA1 b p1 100k
+RA2 b p2 100k
+RK k 0 17384.1
+CK k 0 2.2u
+BG1 g1 k I = {gg*pow(ln(1+exp(cg*V(g1,k)))/cg, xi) + ig0}
+BG2 g2 k I = {gg*pow(ln(1+exp(cg*V(g2,k)))/cg, xi) + ig0}
+BP1 p1 k I = {2*pow((V(p1,k)/kp)*ln(1+exp(kp*(1/mu+V(g1,k)/sqrt(kvb+V(p1,k)*V(p1,k))))), ex)/kg1}
+BP2 p2 k I = {2*pow((V(p2,k)/kp)*ln(1+exp(kp*(1/mu+V(g2,k)/sqrt(kvb+V(p2,k)*V(p2,k))))), ex)/kg1}
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(p2,p1)
+.endc
+.end

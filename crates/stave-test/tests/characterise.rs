@@ -48,7 +48,7 @@ fn plans_are_current() {
             let plan = if c.supply {
                 Plan::supply(c.name, input, settle)
             } else {
-                Plan::circuit(c.name, input.clone(), knee(&deck, &input, settle), settle)
+                c.plan(input.clone(), knee(&deck, &input, settle), settle)
             };
             std::fs::write(&path, plan.describe()).unwrap();
             println!("{}: wrote {} runs", c.name, plan.runs.len());
@@ -63,7 +63,7 @@ fn plans_are_current() {
         let now = if c.supply {
             Plan::supply(c.name, old.input, old.settle_seconds)
         } else {
-            Plan::circuit(c.name, old.input, old.knee.unwrap(), old.settle_seconds)
+            c.plan(old.input, old.knee.unwrap(), old.settle_seconds)
         };
         // Line endings as committed: a Windows checkout may hand back CRLF.
         if text.replace("\r\n", "\n") != now.describe() {
@@ -219,6 +219,24 @@ fn mxr_distortion_plus() {
     circuit("mxr_distortion_plus");
 }
 
+// Cathode bias and blocking (DSP.md R15): circuits with memory, each
+// with its +20 dB burst and recovery (C8) at T0.
+
+#[test]
+fn triode_stage_cathode() {
+    circuit("triode_stage_cathode");
+}
+
+#[test]
+fn push_pull_cathode() {
+    circuit("push_pull_cathode");
+}
+
+#[test]
+fn grid_blocking() {
+    circuit("grid_blocking");
+}
+
 /// `Circuit<Wdf>` on every circuit's plan at `Circuit<Dk>`'s T0
 /// budgets: the wave digital method (trees under an R-type root, the
 /// devices a K-method root) held to ngspice on the whole matrix — both
@@ -296,5 +314,17 @@ mod hand {
     #[test]
     fn power_supply() {
         hand("power_supply/hand", Tier::T0);
+    }
+
+    /// The tabulated `Triode` under `Bias::Cathode` (DSP.md R15).
+    #[test]
+    fn triode_stage_cathode() {
+        hand("triode_stage_cathode/hand", Tier::T0);
+    }
+
+    /// `PushPull` under `Bias::Cathode` (DSP.md R15).
+    #[test]
+    fn push_pull_cathode() {
+        hand("push_pull_cathode/hand", Tier::T0);
     }
 }

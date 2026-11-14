@@ -379,6 +379,21 @@ impl Plan {
         }
     }
 
+    /// The plan with the runs `ids` moved into T0: a circuit with memory
+    /// (a cathode or a coupling cap's bias) holds a burst there, so its
+    /// recovery is checked on every commit (DSP.md R15).
+    pub fn promoted(mut self, ids: &[&str]) -> Self {
+        for id in ids {
+            let run = self
+                .runs
+                .iter_mut()
+                .find(|r| r.id == *id)
+                .unwrap_or_else(|| panic!("{}: no run {id} to promote", self.circuit));
+            run.tier = Tier::T0;
+        }
+        self
+    }
+
     /// The runs of `tier` (T1 includes T0's).
     pub fn runs(&self, tier: Tier) -> impl Iterator<Item = &Run> {
         self.runs.iter().filter(move |r| r.tier <= tier)

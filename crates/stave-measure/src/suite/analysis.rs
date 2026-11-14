@@ -346,6 +346,36 @@ impl Recovery {
             probe_db: level.iter().map(|l| db(l / first)).collect(),
         }
     }
+
+    /// The bias shift's 1/e recovery time, seconds: from period `from`
+    /// (the first after a level step down), how long the mean takes to
+    /// fall to 1/e of its shift there from `base` (the settled mean
+    /// before the step) — an exponential's time constant whichever
+    /// period it is read from. Between periods the shift is taken as
+    /// exponential (linear when it crosses zero: an overshoot). `None`
+    /// when the shift at `from` is under `min_shift` (nothing to
+    /// recover); infinite when it has not recovered by the last period.
+    pub fn time_constant(&self, base: f64, from: usize, period_seconds: f64, min_shift: f64) -> Option<f64> {
+        let shift = |j: usize| self.dc[j] - base;
+        let d0 = self.dc.get(from)? - base;
+        if d0.is_nan() || d0.abs() < min_shift {
+            return None;
+        }
+        let target = d0 / std::f64::consts::E;
+        for j in from + 1..self.dc.len() {
+            let (a, b) = (shift(j - 1), shift(j));
+            // Past the target: on the far side of it, toward zero or beyond.
+            if b * d0.signum() <= target * d0.signum() {
+                let fraction = if a * b > 0.0 {
+                    (a / target).ln() / (a / b).ln()
+                } else {
+                    (a - target) / (a - b)
+                };
+                return Some(((j - 1 - from) as f64 + fraction) * period_seconds);
+            }
+        }
+        Some(f64::INFINITY)
+    }
 }
 
 #[cfg(test)]
@@ -527,6 +557,25 @@ mod tests {
             .collect();
         let r = Recovery::of(&periods, 23);
         assert!((r.dc[1] + 0.2).abs() < 1e-12 && (r.probe_db[1] - db(0.5)).abs() < 1e-9);
+        // 1/e of −0.2 lies between −0.1 and +0.05 (an overshoot): a linear step.
+        let overshoot = Recovery {
+            dc: vec![0.0, -0.2, -0.1, 0.05],
+            probe_db: vec![0.0; 4],
+        };
+        let tau = overshoot.time_constant(0.0, 1, 0.01, 1e-6).unwrap();
+        let want = (1.0 + (0.1 - 0.2 / std::f64::consts::E) / 0.15) * 0.01;
+        assert!((tau - want).abs() < 1e-12, "{tau} vs {want}");
+        assert_eq!(r.time_constant(0.0, 3, 0.01, 1e-6), None);
+        // An exponential's time constant, read from any period.
+        let decay = Recovery {
+            dc: (0..8).map(|j| 0.3 + 0.7 * (-0.5 * j as f64).exp()).collect(),
+            probe_db: vec![0.0; 8],
+        };
+        for from in 0..3 {
+            let tau = decay.time_constant(0.3, from, 0.01, 1e-6).unwrap();
+            assert!((tau - 0.02).abs() < 1e-12, "from {from}: {tau}");
+        }
+        assert_eq!(decay.time_constant(-1.0, 0, 0.01, 1e-6), Some(f64::INFINITY));
         assert_eq!(n, 480);
         let prev: Vec<f64> = vec![0.0; 4];
         assert_eq!(steady_state(&[1.0, -1.0, 1.0, -1.0], &[1.0, -1.0, 1.0, -1.0]), 0.0);

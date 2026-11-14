@@ -1713,6 +1713,285 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 50.0, NAN), // 8.9
             (ThdN, Shipping, 500.0, NAN), // 99.7 — aliasing as it ships
         ],
+        // Cathode bias and blocking (DSP.md R15), measured 2026-11-13. The
+        // hand topologies' rows are the tabulated stages under
+        // `Bias::Cathode` held to the circuit: their findings are marked.
+        ("triode_stage_cathode", Tier::T0) => &[
+            (Audibility, Oversampled, -10.0, -10.0), // -62.3 / -50.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -62.3 / -50.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Aliasing, Oversampled, -109.0, NAN), // -111.1
+            (Aliasing, Shipping, -109.0, NAN), // -111.1
+            (Anmr, Shipping, -10.0, NAN), // -24.6
+            (Bla, Oversampled, 0.005, 0.002), // 0.000969 / 0.00037
+            (Bla, Shipping, 0.005, 0.002), // 0.000969 / 0.00037
+            (Compression, Oversampled, 2e-05, 0.0001), // 3.61e-06 / 2.12e-05
+            (Compression, Shipping, 2e-05, 0.0001), // 3.61e-06 / 2.12e-05
+            (Detection, Oversampled, 0.005, NAN), // 0.00115
+            (Detection, Shipping, 0.005, NAN), // 0.00115
+            (Dynamics, Oversampled, 0.0002, 0.0002), // 5.67e-05 / 4.1e-05
+            (Dynamics, Shipping, 0.0002, 0.0002), // 5.67e-05 / 4.1e-05
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.62e-15
+            (GroupDelay, Shipping, 0.0002, NAN), // 6.32e-11
+            (Harmonics, Oversampled, 2.0, 0.05), // 0.408 / 0.00696
+            (Harmonics, Shipping, 2.0, 0.05), // 0.408 / 0.00696
+            (OperatingPoint, Oversampled, 5e-08, NAN), // 8.09e-09
+            (OperatingPoint, Shipping, 5e-08, NAN), // 8.09e-09
+            (Recovery, Oversampled, 0.0002, NAN), // 4.3e-05
+            (Recovery, Shipping, 0.0002, NAN), // 4.3e-05
+            (Response, Oversampled, 5e-09, 2e-09), // 6.88e-10 / 6.27e-10
+            (Response, Shipping, 2e-07, 0.002), // 4.76e-08 / 0.000372
+            (ThdN, Oversampled, 0.0002, NAN), // 4.18e-05
+            (ThdN, Shipping, 0.0002, NAN), // 4.18e-05
+        ],
+        ("triode_stage_cathode", Tier::T1) => &[
+            (Audibility, Oversampled, -10.0, -10.0), // -62.1 / -44.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -61.5 / -44.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Aliasing, Oversampled, -76.0, NAN), // -78.4
+            (Aliasing, Shipping, -75.0, NAN), // -77.6
+            (Anmr, Shipping, 5.6, NAN), // 2.6 — FINDING: audible on the matrix's 8 kHz tones at +20 dB at 4×, as it ships (the piano sweep reads −42.7 dB)
+            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.00103
+            (Bla, Shipping, 0.005, 0.005), // 0.000968 / 0.00145
+            (Compression, Oversampled, 0.001, 0.001), // 0.000243 / 0.00019
+            (Compression, Shipping, 0.001, 0.001), // 0.000244 / 0.000225
+            (Detection, Oversampled, 0.02, NAN), // 0.00452
+            (Detection, Shipping, 0.02, NAN), // 0.00494
+            (Dynamics, Oversampled, 0.0002, 0.0002), // 5.67e-05 / 4.1e-05
+            (Dynamics, Shipping, 0.0005, 0.0002), // 6.83e-05 / 4.65e-05
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.62e-15
+            (GroupDelay, Shipping, 0.0002, NAN), // 7.49e-11
+            (Harmonics, Oversampled, 2.0, 0.5), // 0.408 / 0.123
+            (Harmonics, Shipping, 2.0, 0.5), // 0.448 / 0.102
+            (Intermodulation, Oversampled, 0.2, 0.05), // 0.0495 / 0.0138
+            (Intermodulation, Shipping, 0.2, 0.01), // 0.0426 / 0.00308
+            (OperatingPoint, Oversampled, 5e-08, NAN), // 8.09e-09
+            (OperatingPoint, Shipping, 5e-08, NAN), // 8.09e-09
+            (Recovery, Oversampled, 0.0002, NAN), // 4.49e-05
+            (Recovery, Shipping, 0.0002, NAN), // 4.5e-05
+            (Response, Oversampled, 5e-09, 2e-09), // 6.88e-10 / 6.27e-10
+            (Response, Shipping, 2e-07, 0.002), // 5.62e-08 / 0.000441
+            (ThdN, Oversampled, 0.02, NAN), // 0.0054
+            (ThdN, Shipping, 0.02, NAN), // 0.00541
+        ],
+        ("push_pull_cathode", Tier::T0) => &[
+            (Audibility, Oversampled, -10.0, -10.0), // -82.5 / -64.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -82.8 / -65.1 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120
+            (Anmr, Shipping, -10.0, NAN), // -36.4
+            (Bla, Oversampled, 0.005, 0.01), // 0.000968 / 0.00216
+            (Bla, Shipping, 0.005, 0.005), // 0.000968 / 0.00104
+            (Compression, Oversampled, 2e-05, 0.0005), // 5.1e-06 / 9.6e-05
+            (Compression, Shipping, 2e-05, 0.0001), // 5.2e-06 / 2.38e-05
+            (Detection, Oversampled, 0.002, NAN), // 0.00037
+            (Detection, Shipping, 0.002, NAN), // 0.000372
+            (Dynamics, Oversampled, 0.0005, 0.002), // 9.91e-05 / 0.000435
+            (Dynamics, Shipping, 0.0002, 0.002), // 5.06e-05 / 0.000494
+            (GroupDelay, Oversampled, 0.0002, NAN), // 0
+            (GroupDelay, Shipping, 0.0002, NAN), // 0
+            (Harmonics, Oversampled, 0.01, 0.02), // 0.00294 / 0.00587
+            (Harmonics, Shipping, 0.01, 0.005), // 0.00289 / 0.00135
+            (OperatingPoint, Oversampled, 5e-08, NAN), // 8.16e-09
+            (OperatingPoint, Shipping, 5e-08, NAN), // 8.16e-09
+            (Response, Oversampled, 1e-09, 1e-09), // 2.91e-10 / 2.52e-31
+            (Response, Shipping, 1e-09, 1e-09), // 2.91e-10 / 2.52e-31
+            (ThdN, Oversampled, 0.0005, NAN), // 0.000118
+            (ThdN, Shipping, 0.0005, NAN), // 8.44e-05
+        ],
+        ("push_pull_cathode", Tier::T1) => &[
+            (Audibility, Oversampled, -10.0, -10.0), // -62.3 / -47.5 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -67.9 / -48.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Aliasing, Oversampled, -80.0, NAN), // -82.1
+            (Aliasing, Shipping, -118.0, NAN), // -120
+            (Anmr, Shipping, -10.0, NAN), // -19.3
+            (Bla, Oversampled, 0.01, 0.05), // 0.00183 / 0.0113
+            (Bla, Shipping, 0.005, 0.01), // 0.000968 / 0.00252
+            (Compression, Oversampled, 0.002, 0.005), // 0.000371 / 0.00119
+            (Compression, Shipping, 0.002, 0.002), // 0.000371 / 0.000336
+            (Detection, Oversampled, 0.2, NAN), // 0.0421
+            (Detection, Shipping, 0.1, NAN), // 0.0177
+            (Dynamics, Oversampled, 0.0005, 0.002), // 9.91e-05 / 0.000435
+            (Dynamics, Shipping, 0.0002, 0.002), // 5.35e-05 / 0.000508
+            (GroupDelay, Oversampled, 0.0002, NAN), // 0
+            (GroupDelay, Shipping, 0.0002, NAN), // 0
+            (Harmonics, Oversampled, 5.0, 5.0), // 0.843 / 0.696
+            (Harmonics, Shipping, 5.0, 5.0), // 0.842 / 0.686
+            (Intermodulation, Oversampled, 0.1, 0.2), // 0.0298 / 0.0352
+            (Intermodulation, Shipping, 0.1, 0.1), // 0.0174 / 0.0211
+            (OperatingPoint, Oversampled, 5e-08, NAN), // 8.16e-09
+            (OperatingPoint, Shipping, 5e-08, NAN), // 8.16e-09
+            (Recovery, Oversampled, 0.002, NAN), // 0.000519
+            (Recovery, Shipping, 0.002, NAN), // 0.000519
+            (Response, Oversampled, 1e-09, 1e-09), // 2.91e-10 / 5.04e-31
+            (Response, Shipping, 1e-09, 1e-09), // 2.91e-10 / 5.04e-31
+            (ThdN, Oversampled, 10.0, NAN), // 1.68
+            (ThdN, Shipping, 0.05, NAN), // 0.00942
+        ],
+        ("grid_blocking", Tier::T0) => &[
+            (Audibility, Oversampled, -10.0, -10.0), // -76.1 / -62.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -80.6 / -64.1 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120
+            (Anmr, Shipping, -10.0, NAN), // -37.8
+            (Bla, Oversampled, 0.005, 0.005), // 0.000968 / 0.000992
+            (Bla, Shipping, 0.005, 0.002), // 0.000968 / 0.00059
+            (Compression, Oversampled, 2e-05, 0.0002), // 3.46e-06 / 5.99e-05
+            (Compression, Shipping, 2e-05, 5e-05), // 3.39e-06 / 1.47e-05
+            (Detection, Oversampled, 0.005, NAN), // 0.000792
+            (Detection, Shipping, 0.002, NAN), // 0.000501
+            (Dynamics, Oversampled, 0.02, 0.05), // 0.00603 / 0.0149
+            (Dynamics, Shipping, 0.002, 0.002), // 0.000437 / 0.000418
+            (GroupDelay, Oversampled, 0.0002, NAN), // 1.45e-14
+            (GroupDelay, Shipping, 0.0002, NAN), // 4.22e-11
+            (Harmonics, Oversampled, 0.05, 0.05), // 0.0077 / 0.00811
+            (Harmonics, Shipping, 0.02, 0.02), // 0.00437 / 0.00353
+            (OperatingPoint, Oversampled, 2e-07, NAN), // 4.61e-08
+            (OperatingPoint, Shipping, 2e-07, NAN), // 4.61e-08
+            (Recovery, Oversampled, 0.0001, NAN), // 2.4e-05
+            (Recovery, Shipping, 1e-05, NAN), // 2.29e-06
+            (Response, Oversampled, 2e-09, 2e-09), // 6.52e-10 / 4.82e-10
+            (Response, Shipping, 1e-07, 0.001), // 2.39e-08 / 0.000247
+            (ThdN, Oversampled, 0.0002, NAN), // 3.79e-05
+            (ThdN, Shipping, 0.0001, NAN), // 2.99e-05
+        ],
+        ("grid_blocking", Tier::T1) => &[
+            (Audibility, Oversampled, -10.0, -10.0), // -60.0 / -44.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -60.0 / -44.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Aliasing, Oversampled, -65.0, NAN), // -67.3
+            (Aliasing, Shipping, -88.0, NAN), // -90.1
+            (Anmr, Shipping, -5.0, NAN), // -8.0 — FINDING: audible above −10 dB on the matrix's high tones at 8× (the piano sweep reads −30.1 dB)
+            (Bla, Oversampled, 0.005, 0.01), // 0.000969 / 0.00291
+            (Bla, Shipping, 0.005, 0.002), // 0.000969 / 0.000491
+            (Compression, Oversampled, 0.001, 0.002), // 0.000243 / 0.000605
+            (Compression, Shipping, 0.001, 0.0005), // 0.000243 / 0.00016
+            (Detection, Oversampled, 0.02, NAN), // 0.0035
+            (Detection, Shipping, 0.01, NAN), // 0.00193
+            (Dynamics, Oversampled, 0.02, 0.05), // 0.00603 / 0.0149
+            (Dynamics, Shipping, 0.01, 0.05), // 0.00315 / 0.008
+            (GroupDelay, Oversampled, 0.0002, NAN), // 1.45e-14
+            (GroupDelay, Shipping, 0.0002, NAN), // 5e-11
+            (Harmonics, Oversampled, 2.0, 2.0), // 0.359 / 0.591
+            (Harmonics, Shipping, 2.0, 0.5), // 0.363 / 0.124
+            (Intermodulation, Oversampled, 0.2, 0.1), // 0.0616 / 0.0309
+            (Intermodulation, Shipping, 0.1, 0.02), // 0.0283 / 0.00357
+            (OperatingPoint, Oversampled, 2e-07, NAN), // 4.61e-08
+            (OperatingPoint, Shipping, 2e-07, NAN), // 4.61e-08
+            (Recovery, Oversampled, 0.0001, NAN), // 2.4e-05
+            (Recovery, Shipping, 5e-05, NAN), // 8.52e-06
+            (Response, Oversampled, 2e-09, 2e-09), // 6.52e-10 / 4.82e-10
+            (Response, Shipping, 1e-07, 0.001), // 2.82e-08 / 0.000293
+            (ThdN, Oversampled, 0.01, NAN), // 0.0017
+            (ThdN, Shipping, 0.01, NAN), // 0.00169
+        ],
+        ("triode_stage_cathode/hand", Tier::T0) => &[
+            (Audibility, Oversampled, -10.0, 3.6), // -21.1 / -1.4 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Audibility, Shipping, -10.0, 3.6), // -21.1 / -1.4 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Aliasing, Oversampled, -92.0, NAN), // -94.9
+            (Aliasing, Shipping, -92.0, NAN), // -94.9
+            (Anmr, Shipping, -10.0, NAN), // -24.6
+            (Bla, Oversampled, 1.0, 50.0), // 0.307 / 15.2
+            (Bla, Shipping, 1.0, 50.0), // 0.307 / 15.2
+            (Compression, Oversampled, 0.01, 5.0), // 0.00281 / 0.893
+            (Compression, Shipping, 0.01, 5.0), // 0.00281 / 0.893
+            (Detection, Oversampled, 50.0, NAN), // 8.8
+            (Detection, Shipping, 50.0, NAN), // 8.8
+            (Dynamics, Oversampled, 2.0, 0.2), // 0.574 / 0.0511
+            (Dynamics, Shipping, 2.0, 0.2), // 0.574 / 0.0511
+            (GroupDelay, Oversampled, 0.0002, NAN), // 2.62e-06
+            (GroupDelay, Shipping, 0.0002, NAN), // 2.62e-06
+            (Harmonics, Oversampled, 200.0, 0.1), // 54 / 0.0193 — FINDING: the table's interpolation floor, H4 near −66 dBc at −20 dB re knee where the circuit has −149
+            (Harmonics, Shipping, 200.0, 0.1), // 54 / 0.0193
+            (OperatingPoint, Oversampled, 2.0, NAN), // 0.508 — FINDING (R15): the table reads plate volts to ground; the circuit's tube sees them less its cathode, so it rests 0.51 V higher (cathode 1.492 V, not 1.5)
+            (OperatingPoint, Shipping, 2.0, NAN), // 0.508
+            (Recovery, Oversampled, 0.02, NAN), // 0.00487 — the one-pole cathode recovers within 0.5% of the circuit's
+            (Recovery, Shipping, 0.02, NAN), // 0.00487
+            (Response, Oversampled, 1.0, 50.0), // 0.304 / 15.2 — FINDING: first-order ADAA's half-sample delay (15° at 16 kHz at 192 kHz) and its roll-off
+            (Response, Shipping, 1.0, 50.0), // 0.304 / 15.2
+            (ThdN, Oversampled, 5.0, NAN), // 1.15
+            (ThdN, Shipping, 5.0, NAN), // 1.15
+        ],
+        ("triode_stage_cathode/hand", Tier::T1) => &[
+            (Audibility, Oversampled, -10.0, 3.7), // -21.1 / -1.4 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Audibility, Shipping, -10.0, 3.7), // -21.0 / -1.3 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Aliasing, Oversampled, -77.0, NAN), // -79.6
+            (Aliasing, Shipping, -77.0, NAN), // -79.5
+            (Anmr, Shipping, -4.2, NAN), // -7.2
+            (Bla, Oversampled, 1.0, 50.0), // 0.307 / 15.2
+            (Bla, Shipping, 2.0, 50.0), // 0.366 / 16.6
+            (Compression, Oversampled, 0.5, 50.0), // 0.0757 / 7.64
+            (Compression, Shipping, 0.5, 50.0), // 0.0901 / 8.32
+            (Detection, Oversampled, 100.0, NAN), // 20
+            (Detection, Shipping, 100.0, NAN), // 20.1
+            (Dynamics, Oversampled, 2.0, 0.2), // 0.574 / 0.0511
+            (Dynamics, Shipping, 2.0, 0.2), // 0.574 / 0.0511
+            (GroupDelay, Oversampled, 0.0002, NAN), // 2.62e-06
+            (GroupDelay, Shipping, 0.0002, NAN), // 2.86e-06
+            (Harmonics, Oversampled, 200.0, 10.0), // 55 / 1.87
+            (Harmonics, Shipping, 200.0, 10.0), // 55.4 / 2.06
+            (Intermodulation, Oversampled, 200.0, 200.0), // 33.4 / 56.3
+            (Intermodulation, Shipping, 200.0, 100.0), // 33.4 / 21.5
+            (OperatingPoint, Oversampled, 2.0, NAN), // 0.508
+            (OperatingPoint, Shipping, 2.0, NAN), // 0.508
+            (Recovery, Oversampled, 0.02, NAN), // 0.00487
+            (Recovery, Shipping, 0.02, NAN), // 0.00509
+            (Response, Oversampled, 1.0, 50.0), // 0.304 / 15.2
+            (Response, Shipping, 2.0, 50.0), // 0.362 / 16.6
+            (ThdN, Oversampled, 50.0, NAN), // 11.3
+            (ThdN, Shipping, 50.0, NAN), // 11.6
+        ],
+        ("push_pull_cathode/hand", Tier::T0) => &[
+            (Audibility, Oversampled, 4.1, 23.8), // -0.9 / 18.8 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Audibility, Shipping, 4.1, 23.8), // -0.9 / 18.8 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Aliasing, Oversampled, -89.0, NAN), // -91.9
+            (Aliasing, Shipping, -90.0, NAN), // -92
+            (Anmr, Shipping, -10.0, NAN), // -35.9
+            (Bla, Oversampled, 2.0, 50.0), // 0.354 / 15.2
+            (Bla, Shipping, 2.0, 50.0), // 0.351 / 7.64
+            (Compression, Oversampled, 0.5, 5.0), // 0.071 / 0.896
+            (Compression, Shipping, 0.5, 2.0), // 0.0727 / 0.451
+            (Detection, Oversampled, 200.0, NAN), // 53
+            (Detection, Shipping, 200.0, NAN), // 54.1
+            (Dynamics, Oversampled, 0.5, 5.0), // 0.0805 / 1.31
+            (Dynamics, Shipping, 0.5, 5.0), // 0.0792 / 1.31
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.91e-06
+            (GroupDelay, Shipping, 0.0002, NAN), // 2.74e-06
+            (Harmonics, Oversampled, 500.0, 10.0), // 74.8 / 3.11 — FINDING: the composed table's interpolation floor, H5 near −45 dBc at −20 dB re knee where the circuit has −169
+            (Harmonics, Shipping, 500.0, 10.0), // 74.8 / 3.12
+            (OperatingPoint, Oversampled, 0.2, NAN), // 0.0418 — FINDING (R15): the shared cathode rests at 3.458 V in the circuit, 3.5 V in the pair (its RK from plate volts to ground)
+            (OperatingPoint, Shipping, 0.2, NAN), // 0.0418
+            (Response, Oversampled, 2.0, 50.0), // 0.354 / 15.2 — FINDING: ADAA's half-sample delay and roll-off
+            (Response, Shipping, 2.0, 50.0), // 0.351 / 7.62
+            (ThdN, Oversampled, 200.0, NAN), // 38.7
+            (ThdN, Shipping, 200.0, NAN), // 38.7
+        ],
+        ("push_pull_cathode/hand", Tier::T1) => &[
+            (Audibility, Oversampled, 4.1, 23.8), // -0.9 / 18.8 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Audibility, Shipping, 4.0, 23.7), // -1.0 / 18.7 — FINDING (R16): audible — the table's interpolation floor on the −20 dB tone; held at measurement + 5 dB
+            (Aliasing, Oversampled, -57.0, NAN), // -59.2
+            (Aliasing, Shipping, -63.0, NAN), // -65.2
+            (Anmr, Shipping, -10.0, NAN), // -12.2
+            (Bla, Oversampled, 2.0, 50.0), // 0.351 / 15.3
+            (Bla, Shipping, 2.0, 50.0), // 0.349 / 8.34
+            (Compression, Oversampled, 1.0, 50.0), // 0.328 / 7.64
+            (Compression, Shipping, 1.0, 20.0), // 0.307 / 4.16
+            (Detection, Oversampled, 200.0, NAN), // 53.8
+            (Detection, Shipping, 200.0, NAN), // 56.8
+            (Dynamics, Oversampled, 0.5, 5.0), // 0.0805 / 1.31
+            (Dynamics, Shipping, 0.5, 5.0), // 0.0793 / 1.31
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.67e-06
+            (GroupDelay, Shipping, 0.0002, NAN), // 2.54e-06
+            (Harmonics, Oversampled, 500.0, 200.0), // 74.8 / 46.6
+            (Harmonics, Shipping, 500.0, 200.0), // 80.9 / 48.1
+            (Intermodulation, Oversampled, 100.0, 200.0), // 33.3 / 56.2
+            (Intermodulation, Shipping, 200.0, 50.0), // 33.4 / 12.8
+            (OperatingPoint, Oversampled, 0.2, NAN), // 0.0418
+            (OperatingPoint, Shipping, 0.2, NAN), // 0.0418
+            (Recovery, Oversampled, 0.05, NAN), // 0.012
+            (Recovery, Shipping, 0.05, NAN), // 0.0162
+            (Response, Oversampled, 2.0, 50.0), // 0.351 / 15.2
+            (Response, Shipping, 2.0, 50.0), // 0.349 / 8.3
+            (ThdN, Oversampled, 500.0, NAN), // 78.5
+            (ThdN, Shipping, 500.0, NAN), // 84.8
+        ],
         (case, tier) => panic!("no budgets for `{case}` at {tier:?}"),
     }
 }

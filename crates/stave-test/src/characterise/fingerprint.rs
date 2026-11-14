@@ -68,7 +68,7 @@ pub const HEADER: &str = "# stave fingerprint v1: ";
 /// fingerprint has moved: `(check, first, second)`, in the check's units
 /// (dB, degrees, volts, seconds). Wide enough for one platform's `libm`
 /// against another's, far below anything audible or any budget.
-pub const TOLERANCES: [(Check, f64, f64); 12] = [
+pub const TOLERANCES: [(Check, f64, f64); 13] = [
     (Check::OperatingPoint, 2e-5, f64::NAN),
     (Check::Response, 1e-3, 0.01),
     (Check::GroupDelay, 1e-7, f64::NAN),
@@ -79,6 +79,7 @@ pub const TOLERANCES: [(Check, f64, f64); 12] = [
     (Check::ThdN, 0.01, f64::NAN),
     (Check::Intermodulation, 0.05, 0.5),
     (Check::Dynamics, 2e-5, 0.01),
+    (Check::Recovery, 1e-3, f64::NAN),
     // Aliasing and ANMR as their own level's change, at floors below
     // which nothing is heard: dBc above −110, dB NMR above −60.
     (Check::Aliasing, 0.5, f64::NAN),

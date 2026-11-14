@@ -1,0 +1,33 @@
+* spice/push_pull_cathode.cir through a burst: 8 V at 200 Hz for 50 ms from
+* 20 ms (two sines in series, the second cancelling the first from
+* 70 ms on), then 180 ms of silence: the bias builds under the burst
+* and recovers after (DSP.md R15). Output: the shared cathode, v(k). The burst
+* starts and stops half an output step past 20 and 70 ms, between
+* printed points: ngspice interpolates its output linearly across
+* the sources' breakpoints, which a printed point on one would read.
+.param mu=100 ex=1.4 kg1=1060 kp=600 kvb=300
+.param gg=6.177e-4 xi=1.314 cg=9.901 ig0=8.025e-8
+VX x z SIN(0 8 200 20.0104167m)
+VOFF z 0 SIN(0 -8 200 70.0104167m)
+B1 in1 0 V = {V(x)}
+B2 in2 0 V = {-V(x)}
+RS1 in1 g1 40k
+RS2 in2 g2 40k
+VB b 0 300
+RA1 b p1 100k
+RA2 b p2 100k
+RK k 0 17384.1
+CK k 0 2.2u
+BG1 g1 k I = {gg*pow(ln(1+exp(cg*V(g1,k)))/cg, xi) + ig0}
+BG2 g2 k I = {gg*pow(ln(1+exp(cg*V(g2,k)))/cg, xi) + ig0}
+BP1 p1 k I = {2*pow((V(p1,k)/kp)*ln(1+exp(kp*(1/mu+V(g1,k)/sqrt(kvb+V(p1,k)*V(p1,k))))), ex)/kg1}
+BP2 p2 k I = {2*pow((V(p2,k)/kp)*ln(1+exp(kp*(1/mu+V(g2,k)/sqrt(kvb+V(p2,k)*V(p2,k))))), ex)/kg1}
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 250m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(k)
+.endc
+.end

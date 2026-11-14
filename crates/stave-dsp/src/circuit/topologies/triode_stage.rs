@@ -139,6 +139,10 @@ pub enum Bias {
 /// `crates/stave-test/tests/matches_ngspice.rs::triode_stage_static_transfer_matches_ngspice`:
 /// the static transfer against an ngspice grid sweep, 5e-7 normalized
 /// RMS up to the level scale, the operating point to 1 µV;
+/// under [`Bias::Cathode`] (DSP.md R15),
+/// `crates/stave-test/tests/cathode_bias_matches_ngspice.rs::triode_cathode_bias_matches_ngspice`:
+/// the cathode through a 4 V burst and its recovery against ngspice's
+/// cathode-biased stage (`spice/triode_stage_cathode_burst.cir`);
 /// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::koren_matches_12ax7_datasheet`;
 /// `crates/stave-dsp/tests/aliasing_budgets.rs::nonlinear_stages_hold_their_alias_budgets`
 /// (DSP.md R5): driven at 77 V per unit with first-order ADAA and no

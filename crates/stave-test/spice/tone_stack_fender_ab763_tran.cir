@@ -1,0 +1,23 @@
+* spice/tone_stack_fender_ab763.cir in the time domain (DSP.md R3): the same network
+* from rest, driven by 0.5 V at 220 Hz plus 0.5 V at 3.1 kHz (two sines
+* in series), so the step into the tones and the steady state both
+* read against ngspice's transient. Output: the AC deck's node.
+VI i x SIN(0 0.5 220)
+V2 x 0 SIN(0 0.5 3.1k)
+C1 i t 250p
+RT1 t o 125000
+RT2 o b 125000
+R4 i n 100000
+C2 n b 100n
+RB b j 125000
+RM j 0 6800
+C3 n j 47n
+.options interp reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 20.8333333u 20m 0 1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(o)
+.endc
+.end
