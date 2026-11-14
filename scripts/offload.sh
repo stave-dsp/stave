@@ -448,7 +448,9 @@ else
       GITENV="GIT_DIR=\$HOME/$SLOTDIR/git GIT_WORK_TREE=\$HOME/$DIR "
     fi
   fi
-  RUN=". ~/.cargo/env && ${GITENV}CARGO_TERM_COLOR=always $CMD"
+  ENV_MANIFEST="${STAVE_OFFLOAD_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/fleet/offload-environments.tsv}"
+  ENV_SETUP="$(perl "$LIB/offload-env.pl" "$ENV_MANIFEST" "$HOST")"
+  RUN="$ENV_SETUP && ${GITENV}CARGO_TERM_COLOR=always $CMD"
 fi
 T_SYNC="$(date +%s)"
 
