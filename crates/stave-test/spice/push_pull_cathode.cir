@@ -3,7 +3,8 @@
 * the phase inverter's 40k, 300 V through 100k per plate, sharing one
 * cathode self-biased by RK bypassed by CK. RK is the value `PushPull`
 * takes under `Bias::Cathode` (its class point -3.5 V over both halves'
-* idle cathode current, 17384.1 ohm); CK 2.2u. In class AB the pair's
+* idle cathode current, each plate's load line from 300 V less the
+* cathode: 19087.8 ohm, so the deck rests at 3.5 V); CK 2.2u. In class AB the pair's
 * cathode current rises with drive, the shared cathode climbs and the
 * class point cools, then wanders back after a burst. Driven x = 6 V at
 * 1 kHz. Output: the plate difference v(p2) - v(p1).
@@ -17,7 +18,7 @@ RS2 in2 g2 40k
 VB b 0 300
 RA1 b p1 100k
 RA2 b p2 100k
-RK k 0 17384.1
+RK k 0 19087.8
 CK k 0 2.2u
 BG1 g1 k I = {gg*pow(ln(1+exp(cg*V(g1,k)))/cg, xi) + ig0}
 BG2 g2 k I = {gg*pow(ln(1+exp(cg*V(g2,k)))/cg, xi) + ig0}

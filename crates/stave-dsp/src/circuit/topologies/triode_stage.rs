@@ -7,14 +7,19 @@
 //! than a sample, so each sample is an equilibrium of
 //! `(V_supply − Vpk)/R_plate = Ip(Vgk, Vpk)`: a memoryless map from input
 //! to plate swing. It is solved once per table point when the stage is
-//! rebuilt, tabulated over grid volts with its antiderivatives, and
-//! evaluated with ADAA. Cutoff, bottoming, their asymmetry (2nd-harmonic
+//! rebuilt, tabulated over grid volts with its slope (implicit
+//! differentiation of the same equation) as a cubic Hermite [`Curve`]
+//! with exact antiderivatives, and evaluated with ADAA. Cutoff, bottoming, their asymmetry (2nd-harmonic
 //! dominance) and grid-conduction limiting all come from that equation;
 //! nothing is shaped by hand. The per-sample solve of the same circuit,
 //! cathode node included, is [`CommonCathode`](super::common_cathode).
 //!
 //! Under [`Bias::Cathode`] the cathode is the circuit's RC, driven by
-//! plate plus grid current and moving the bias between samples.
+//! plate plus grid current (tabulated beside the transfer) and moving the
+//! bias between samples. The cathode resistor makes the design bias from
+//! the idle current, with the tube seeing its plate volts less the
+//! cathode's: the load line runs from B+ less the resting cathode, so the
+//! circuit with that resistor rests where the stage does.
 //!
 //! Output is the inverted plate swing `(Vpk0 − Vpk)`, scaled by the
 //! [`LevelPolicy`].
@@ -123,6 +128,16 @@ pub enum Bias {
     Cathode { bypass_farads: f64 },
 }
 
+/// The tube's plate law and grid current at a source-side grid voltage,
+/// with their slopes: what the tables hold.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StagePoint {
+    /// The plate's AC swing `vpk0 − vpk` and its slope per input volt.
+    pub swing: (f64, f64),
+    /// Cathode current (plate plus grid), amps, and its slope.
+    pub cathode_amps: (f64, f64),
+}
+
 /// A tabulated common-cathode triode stage (see the module docs).
 ///
 /// # Models
@@ -132,25 +147,38 @@ pub enum Bias {
 ///
 /// # Derivation
 /// The plate equilibrium solved once per table point, tabulated over
-/// grid volts with its antiderivatives and evaluated with ADAA; under
-/// [`Bias::Cathode`] the cathode is the circuit's RC.
+/// grid volts with its slope as a cubic Hermite curve (O(h⁴); its
+/// antiderivatives exact integrals of it) and evaluated with ADAA; under
+/// [`Bias::Cathode`] the cathode is the circuit's RC, its resistor the
+/// design bias over the idle cathode current with the plate's load line
+/// from B+ less the cathode.
 ///
 /// # Verified
 /// `crates/stave-test/tests/matches_ngspice.rs::triode_stage_static_transfer_matches_ngspice`:
-/// the static transfer against an ngspice grid sweep, 5e-7 normalized
-/// RMS up to the level scale, the operating point to 1 µV;
+/// the static transfer against an ngspice grid sweep, 1.6e-8 normalized
+/// RMS up to the level scale (budget 5e-8), the operating point to 1 µV;
 /// under [`Bias::Cathode`] (DSP.md R15),
 /// `crates/stave-test/tests/cathode_bias_matches_ngspice.rs::triode_cathode_bias_matches_ngspice`:
 /// the cathode through a 4 V burst and its recovery against ngspice's
-/// cathode-biased stage (`spice/triode_stage_cathode_burst.cir`);
+/// cathode-biased stage with this stage's Rk
+/// (`spice/triode_stage_cathode_burst.cir`; 8.5e-5 normalized RMS, both
+/// at rest at 1.5 V, recovery +0.5%), and the stage's whole T0/T1 matrix
+/// against that deck (`characterise.rs`, `hand::triode_stage_cathode`:
+/// inaudible by R16's null, −32.1 / −14.5 dB NMR);
 /// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::koren_matches_12ax7_datasheet`;
+/// `crates/stave-dsp/src/circuit/topologies/triode_stage/tests.rs::the_table_is_the_solved_stage`
+/// (the table and its slope against the solved equilibrium);
 /// `crates/stave-dsp/tests/aliasing_budgets.rs::nonlinear_stages_hold_their_alias_budgets`
 /// (DSP.md R5): driven at 77 V per unit with first-order ADAA and no
 /// oversampler, a stepped tone's inharmonic energy below 20 kHz stays
 /// under −19 dB at 44.1 kHz (measured −21.8) and −18 at 48 (−20.2).
 ///
 /// # Cost
-/// No datasheet line yet (DSP.md P1).
+/// No datasheet line yet (DSP.md P1). Measured on a build host
+/// (release, 192 kHz): about 25 ns a sample fixed-biased, as with the
+/// Catmull-Rom table, and 45 under [`Bias::Cathode`] (its current
+/// tabulated; the per-sample grid solve it replaces cost ~500); a
+/// rebuild ~1k plate solves, ~2.8 ms.
 ///
 /// # Aliasing
 /// First-order ADAA on the tabulated transfer
@@ -164,7 +192,8 @@ pub enum Bias {
 pub struct Triode {
     p: TriodeParams,
 
-    // Quiescent plate voltage (operating point), solved at prepare/reset.
+    // Quiescent plate-to-cathode voltage (operating point), solved at
+    // prepare/reset.
     vpk0: f64,
 
     // Effective extra grid bias (more-negative ⇒ less gain) =
@@ -209,6 +238,9 @@ pub struct Triode {
     // (vpk0 − vpk); `g1` = ∫f dvg; `g2` = ∫g1 dvg. Order guidance (why the
     // default is 1st order) is in the `adaa` module docs.
     curve: Curve,
+    // Cathode current (plate plus grid) vs grid volts, tabulated under
+    // `Bias::Cathode` (flat otherwise): what charges the cathode RC.
+    cathode_amps: Curve,
     adaa: Adaa,
     adaa_on: bool,
 }
@@ -242,6 +274,7 @@ impl Triode {
             gain_q: 1.0,
             curve_max_f: 1.0,
             curve: Curve::flat(),
+            cathode_amps: Curve::flat(),
             adaa: Adaa::new(AdaaOrder::First),
             adaa_on: true,
         };
@@ -266,9 +299,31 @@ impl Triode {
     /// lets it recover. The observed recovery is faster than Rk·Ck by the
     /// loop factor 1 + gm·Rk (the shift suppresses the very current that
     /// charges the cathode), ≈2× for a 12AX7, as in hardware.
+    /// Switching between `Fixed` and `Cathode` rebuilds the tables (the
+    /// plate's load line starts from B+ less the cathode); a new bypass
+    /// only moves the time constant.
     pub fn set_bias(&mut self, bias: Bias) {
+        let rebuild = matches!(bias, Bias::Cathode { .. }) != matches!(self.bias, Bias::Cathode { .. });
         self.bias = bias;
-        self.update_cathode_coeff();
+        if rebuild {
+            self.recompute_operating_point();
+        } else {
+            self.update_cathode_coeff();
+        }
+    }
+
+    /// The circuit as the plate sees it: under `Bias::Cathode` its load
+    /// line runs from B+ less the resting cathode (`−grid_bias`), its
+    /// volts plate-to-cathode.
+    #[inline]
+    fn seen(&self) -> TriodeParams {
+        match self.bias {
+            Bias::Fixed => self.p,
+            Bias::Cathode { .. } => TriodeParams {
+                supply_v: self.p.supply_v + self.p.grid_bias,
+                ..self.p
+            },
+        }
     }
 
     pub fn cathode_ohms(&self) -> f64 {
@@ -307,7 +362,7 @@ impl Triode {
     /// Newton with analytic derivative, bounded, warm-started from `seed`.
     #[inline]
     fn solve_plate(&self, vgk: f64, seed: f64) -> f64 {
-        solve_load_line(&self.p, vgk, seed)
+        solve_load_line(&self.seen(), vgk, seed)
     }
 
     /// Re-solve the quiescent operating point, (re)build the ADAA curve,
@@ -317,13 +372,18 @@ impl Triode {
     fn recompute_operating_point(&mut self) {
         let vgk0 = grid_volts_at(&self.p, self.p.grid_bias);
         self.vpk0 = self.solve_plate(vgk0, self.p.supply_v * 0.6);
-        // Tabulate the physical transfer (plate swing vs grid volts) with
-        // antiderivatives referenced to the quiescent bias.
-        let p = self.p;
+        // Tabulate the physical transfer (plate swing vs grid volts) and
+        // its slope, antiderivatives referenced to the quiescent bias.
+        let p = self.seen();
         let vpk0 = self.vpk0;
-        self.curve.rebuild(VG_MIN, VG_MAX, p.grid_bias, |vg| {
-            core_transfer_at(&p, vpk0, vg)
+        self.curve.rebuild_hermite(VG_MIN, VG_MAX, p.grid_bias, |vg| {
+            stage_point(&p, vpk0, vg).swing
         });
+        if let Bias::Cathode { .. } = self.bias {
+            self.cathode_amps.rebuild_hermite(VG_MIN, VG_MAX, p.grid_bias, |vg| {
+                stage_point(&p, vpk0, vg).cathode_amps
+            });
+        }
         // The raw output ceiling: max |plate swing| over the table —
         // behind `ceiling`, the third reported quantity (gain +
         // ceiling = the knee, so consumers can COMPUTE their staging).
@@ -336,9 +396,12 @@ impl Triode {
         self.calibrate_output();
         // Cathode self-bias operating point: pick Rk so the quiescent
         // cathode voltage equals the design grid bias (vk0 = −grid_bias),
-        // i.e. the cathode resistor *creates* the bias from the idle plate
-        // current — self-consistent, no jump when the dynamic is enabled.
-        let i_op = ((self.p.supply_v - self.vpk0) / self.p.r_plate).max(1e-9);
+        // i.e. the cathode resistor *creates* the bias from the idle
+        // cathode current (plate plus grid, the plate's load line from B+
+        // less the cathode under `Bias::Cathode`) — self-consistent, no
+        // jump when the dynamic is enabled, and the circuit with this Rk
+        // rests at the same point.
+        let i_op = stage_point(&p, self.vpk0, p.grid_bias).cathode_amps.0.max(1e-9);
         self.vk0 = -self.p.grid_bias;
         self.rk = self.vk0 / i_op;
         self.vk = self.vk0;
@@ -355,7 +418,19 @@ impl Triode {
     #[cfg_attr(not(test), allow(dead_code))] // test/inspection surface
     #[inline]
     fn core_transfer(&self, vg_raw: f64) -> f64 {
-        core_transfer_at(&self.p, self.vpk0, vg_raw)
+        core_transfer_at(&self.seen(), self.vpk0, vg_raw)
+    }
+
+    /// The solved stage at an input grid voltage (the tables' source).
+    #[cfg_attr(not(test), allow(dead_code))] // test/inspection surface
+    fn solved(&self, vg_raw: f64) -> StagePoint {
+        stage_point(&self.seen(), self.vpk0, vg_raw)
+    }
+
+    /// The tabulated cathode current at an input grid voltage.
+    #[cfg_attr(not(test), allow(dead_code))] // test/inspection surface
+    fn cathode_amps_at(&self, vg_raw: f64) -> f64 {
+        self.cathode_amps.f_at(vg_raw)
     }
 
     /// Raw curve lookup in grid-voltage space (used by the cathode-bias
@@ -537,11 +612,13 @@ impl Triode {
         self.p.tube
     }
 
-    /// Process one normalised sample (−1..1) → saturated sample.
-    ///
-    /// Test/inspection: quiescent plate voltage.
+    /// Quiescent plate voltage to ground (under `Bias::Cathode` the
+    /// resting cathode's volts above the plate-to-cathode operating point).
     pub fn operating_point(&self) -> f64 {
-        self.vpk0
+        match self.bias {
+            Bias::Fixed => self.vpk0,
+            Bias::Cathode { .. } => self.vpk0 + self.vk0,
+        }
     }
     /// Test/inspection: current total bias shift (V) = sidechain + cathode.
     /// The cathode's own drift from its quiescent voltage (volts, positive
@@ -564,13 +641,13 @@ impl Triode {
     /// frame set from the current drive calibration. The stage carries no
     /// cathode/blocking state — those become drivers + routes.
     pub fn to_curve_stage(&self) -> CurveStage {
-        let p = self.p;
+        let p = self.seen();
         let vpk0 = self.vpk0;
-        let mut cs = CurveStage::from_fn_with_sense(
+        let mut cs = CurveStage::from_hermite_with_sense(
             VG_MIN,
             VG_MAX,
             p.grid_bias,
-            |vg| core_transfer_at(&p, vpk0, vg),
+            |vg| stage_point(&p, vpk0, vg).swing,
             |vg| vg.max(0.0),
         );
         cs.set_pending(Frame {
@@ -592,7 +669,7 @@ impl Triode {
     /// (rk, vk0, i_op, r_plate) — plate current is affine in the stage's
     /// unscaled output: ip = i_op + core/r_plate.
     pub fn cathode_constants(&self) -> (f64, f64, f64, f64) {
-        let i_op = ((self.p.supply_v - self.vpk0) / self.p.r_plate).max(1e-9);
+        let i_op = ((self.seen().supply_v - self.vpk0) / self.p.r_plate).max(1e-9);
         (self.rk, self.vk0, i_op, self.p.r_plate)
     }
 }
@@ -637,16 +714,49 @@ pub(crate) fn grid_volts_at(p: &TriodeParams, input: f64) -> f64 {
         .value
 }
 
-/// Grid current at a source-side grid voltage.
-#[inline]
-pub(crate) fn grid_amps_at(p: &TriodeParams, input: f64) -> f64 {
-    GRID.grid_current(grid_volts_at(p, input)).0
-}
-
 /// The tabulated shape: plate AC swing at a source-side grid voltage.
 #[inline]
 pub(crate) fn core_transfer_at(p: &TriodeParams, vpk0: f64, input: f64) -> f64 {
     vpk0 - solve_load_line(p, grid_volts_at(p, input), vpk0)
+}
+
+/// The stage solved at a source-side grid voltage, with slopes by
+/// implicit differentiation: the grid's `dvg/dinput = 1/(1 + Rs·g_g)`,
+/// the plate's `dvpk/dvg = −g_m/(1/R + 1/r_p)` (the load line's
+/// partials at the solution).
+pub(crate) fn stage_point(p: &TriodeParams, vpk0: f64, input: f64) -> StagePoint {
+    let g = grid_at(p, input);
+    let vpk = solve_load_line(p, g.volts, vpk0);
+    let c = p.tube.plate(g.volts, vpk);
+    let dvpk = -c.per_grid_volt / (1.0 / p.r_plate + c.per_plate_volt) * g.volts_per_input;
+    let ip = (p.supply_v - vpk) / p.r_plate;
+    StagePoint {
+        swing: (vpk0 - vpk, -dvpk),
+        cathode_amps: (ip + g.amps, -dvpk / p.r_plate + g.amps_per_input),
+    }
+}
+
+/// The grid at a source-side voltage, with slopes per input volt.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GridPoint {
+    pub volts: f64,
+    pub volts_per_input: f64,
+    pub amps: f64,
+    pub amps_per_input: f64,
+}
+
+/// The grid's own voltage and current at a source-side voltage `input`
+/// ([`grid_volts_at`]) and their slopes: `dvg/dinput = 1/(1 + Rs·g_g)`.
+pub(crate) fn grid_at(p: &TriodeParams, input: f64) -> GridPoint {
+    let volts = grid_volts_at(p, input);
+    let (amps, per_volt) = GRID.grid_current(volts);
+    let volts_per_input = 1.0 / (1.0 + p.source_ohms * per_volt);
+    GridPoint {
+        volts,
+        volts_per_input,
+        amps,
+        amps_per_input: per_volt * volts_per_input,
+    }
 }
 
 impl Stage for Triode {
@@ -695,11 +805,7 @@ impl Stage for Triode {
         // current (hence bias) rises with program level → compression that
         // recovers with `cathode_tau_ms`.
         if let Bias::Cathode { .. } = self.bias {
-            let input = self.vg_of(x0);
-            let vpk = self.vpk0 - self.core_at(input);
-            let ip = (self.p.supply_v - vpk) / self.p.r_plate;
-            let ig = GRID.grid_current(grid_volts_at(&self.p, input)).0;
-            let vk_target = (ip + ig) * self.rk;
+            let vk_target = self.cathode_amps.f_at(self.vg_of(x0)) * self.rk;
             self.vk += (vk_target - self.vk) * self.cathode_coeff;
             self.cathode_shift = self.vk - self.vk0;
             self.extra_bias = self.external_bias + self.cathode_shift;
