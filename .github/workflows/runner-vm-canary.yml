@@ -1,0 +1,49 @@
+name: runner-vm-canary
+run-name: vm canary ${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Fleet correlation identifier
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  canary:
+    runs-on: [self-hosted, fleet-tart-canary]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify VM boundary and capabilities
+        env:
+          CANARY_LABEL: macos-build
+        run: |
+          set -euo pipefail
+          test "$(id -un)" = ci
+          test "$(sysctl -n hw.ncpu)" = 4
+          test "$(sysctl -n hw.memsize)" = 8589934592
+          test "$FLEET_ISOLATION" = tart
+          test -s /opt/fleet/image-manifest.json
+          for home in "$(dirname "$HOME")"/*; do
+            case "$(basename "$home")" in
+              Shared|admin|ci|Guest) ;;
+              *) echo 'Unexpected host home in guest'; exit 1 ;;
+            esac
+          done
+          test ! -d '/Volumes/My Shared Files'
+          test ! -w /opt/stave-toolchain/cargo/bin/rustup
+          if sudo -n true 2>/dev/null; then echo 'Unexpected sudo access'; exit 1; fi
+          bash scripts/runner-canary.sh
+          xcode-select -p
+          cmake --version
+          /usr/bin/auval -h
+      - name: Compile with fresh caches
+        run: |
+          set -euo pipefail
+          test "$CARGO_HOME" = "$HOME/.cargo"
+          project=$(mktemp -d "$RUNNER_TEMP/vm-canary.XXXXXX")
+          mkdir "$project/src"
+          printf '[package]\nname="vm-canary"\nversion="0.0.0"\nedition="2021"\n' > "$project/Cargo.toml"
+          printf '#[test]\nfn works() { assert_eq!(2+2,4); }\n' > "$project/src/lib.rs"
+          cargo +1.86.0 test --offline --manifest-path "$project/Cargo.toml"
+          cargo +1.96.0 nextest run --offline --manifest-path "$project/Cargo.toml"

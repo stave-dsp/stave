@@ -114,13 +114,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
-      - run: rustup toolchain install
+      - run: scripts/ci-toolchain.sh
       - name: What the change affects
         run: |
           # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
           scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
-        run: rustup toolchain install 1.86.0 --profile minimal
+        run: scripts/ci-toolchain.sh 1.86.0
       - if: env.AFFECTED_SCOPE != 'none'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}", cache-bin: "${{ runner.environment == 'github-hosted' }}" }
@@ -157,7 +157,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
-      - run: rustup toolchain install
+      - run: scripts/ci-toolchain.sh
       - name: What the change affects
         run: |
           # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
