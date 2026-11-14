@@ -1,0 +1,45 @@
+# The reference generators' tools, pinned (references.yml): Python with
+# NumPy/SciPy from scripts/reference-requirements.txt (wheels from a pip
+# cache) and ngspice at exactly the given Ubuntu package. The package's
+# .debs are cached under its version, so a warm job installs them without
+# apt's index; a cold one downloads them first. Either way the installed
+# package is checked against the pin.
+name: reference tools
+description: Python with the reference requirements, and the pinned ngspice
+inputs:
+  ngspice-package:
+    description: the ngspice package version to install (e.g. 42+ds-3build1)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: pip
+        cache-dependency-path: scripts/reference-requirements.txt
+    - shell: bash
+      run: pip install -q -r scripts/reference-requirements.txt
+    - id: debs
+      uses: actions/cache@v4
+      with:
+        path: ~/ngspice-debs
+        key: ngspice-debs-${{ runner.os }}-${{ runner.arch }}-ubuntu-24.04-${{ inputs.ngspice-package }}
+    - if: steps.debs.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.ngspice-package }}
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get clean
+        sudo apt-get install -y -qq --no-install-recommends --download-only "ngspice=$PACKAGE"
+        mkdir -p ~/ngspice-debs
+        cp /var/cache/apt/archives/*.deb ~/ngspice-debs/
+    - shell: bash
+      env:
+        PACKAGE: ${{ inputs.ngspice-package }}
+      run: |
+        sudo dpkg -i ~/ngspice-debs/*.deb > /dev/null
+        installed="$(dpkg-query -W -f '${Version}' ngspice)"
+        test "$installed" = "$PACKAGE" || { echo "::error::ngspice $installed installed, pinned $PACKAGE"; exit 1; }
+        echo "ngspice $installed"

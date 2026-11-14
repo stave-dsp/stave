@@ -6,6 +6,13 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 fail-fast = false
 slow-timeout = { period = "30s", terminate-after = 4 }
 
+# T1 of the characterisation matrix (references.yml's partitions): a
+# circuit's whole grid takes minutes, so a test past a minute is reported
+# and none is killed (the job's timeout is the bound).
+[profile.t1]
+fail-fast = false
+slow-timeout = { period = "60s" }
+
 # Miri (CI's `miri` shards): one interpreted process per test; a slow
 # one is reported, one past 5 min has hung.
 [profile.miri]

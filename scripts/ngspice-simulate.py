@@ -38,11 +38,23 @@ there is one. --expect-version fails on any other ngspice version. The
 waveforms need only Python's standard library; the tables need NumPy
 (scripts/reference-requirements.txt). ngspice never runs in a test, the
 tests read the files.
+
+CI splits the check across machines (DSP.md R2): --shard i/n takes the
+i-th of n groups of decks (a deck's waveform and table together), balanced
+by each deck's measured ngspice time in spice/costs.tsv (--costs-out
+writes a run's, to merge into it; a deck not listed counts as the median
+of its kind). --shard-of n prints every deck's group and runs nothing.
+--stamps DIR records each waveform and table that passes --check under a
+key of everything its result depends on (this script, the ngspice and
+NumPy versions, --rtol, the netlist, the plan, the committed file);
+--skip-stamped skips one whose key is already there, unchanged since a
+passing check, without simulating it again.
 """
 
 import argparse
 import ctypes
 import ctypes.util
+import hashlib
 import math
 import os
 import pathlib
@@ -81,6 +93,17 @@ def default_jobs():
 
 
 SLOTS = threading.BoundedSemaphore(default_jobs())
+
+# Seconds of ngspice per deck (its waveform and its table's runs, each
+# timed while it holds a slot): --costs-out, the shards' balance.
+BUSY = {}
+BUSY_LOCK = threading.Lock()
+
+
+def charge(deck, seconds):
+    if deck:
+        with BUSY_LOCK:
+            BUSY[deck] = BUSY.get(deck, 0.0) + seconds
 
 
 @PRINT
@@ -123,17 +146,19 @@ class Library:
         self.spice.ngSpice_Command(b"version")
         return "".join(output)
 
-    def run(self, path):
+    def run(self, path, deck=None):
         errors.clear()
         output.clear()
+        started = time.monotonic()
         self.spice.ngSpice_Command(f"source {path}".encode())
         self.spice.ngSpice_Command(b"remcirc")
+        charge(deck, time.monotonic() - started)
         return "".join(errors) or no_operating_point("".join(output))
 
-    def run_text(self, path):
+    def run_text(self, path, deck=None):
         """The run's problem (empty when none) and its printed output."""
         output.clear()
-        problem = self.run(path)
+        problem = self.run(path, deck)
         return problem, "".join(output)
 
 
@@ -146,12 +171,14 @@ class Program:
     def version(self):
         return subprocess.run([self.where, "--version"], capture_output=True, text=True).stdout
 
-    def run(self, path):
-        return self.run_text(path)[0]
+    def run(self, path, deck=None):
+        return self.run_text(path, deck)[0]
 
-    def run_text(self, path):
+    def run_text(self, path, deck=None):
         with SLOTS:
+            started = time.monotonic()
             done = subprocess.run([self.where, "-b", path], capture_output=True, text=True)
+            charge(deck, time.monotonic() - started)
         failed = done.returncode != 0 or re.search(r"^Error", done.stdout + done.stderr, re.M)
         log = done.stdout + done.stderr
         return (log if failed else no_operating_point(log)), done.stdout
@@ -180,7 +207,7 @@ def simulate(spice, cir, waveform):
     netlist = cir.read_text().replace("OUTFILE", str(waveform))
     with tempfile.NamedTemporaryFile("w", suffix=".cir", delete=False) as tmp:
         tmp.write(netlist)
-    problem = spice.run(tmp.name)
+    problem = spice.run(tmp.name, cir.stem)
     pathlib.Path(tmp.name).unlink()
     if problem or not waveform.exists():
         sys.exit(f"{cir.name}: " + (problem or "no output written"))
@@ -427,10 +454,10 @@ def reference_rate(run):
     return rate
 
 
-def run_deck(spice, text, scratch, tag):
+def run_deck(spice, text, scratch, tag, deck):
     path = scratch / f"{tag}.cir"
     path.write_text(text)
-    problem, printed = spice.run_text(str(path))
+    problem, printed = spice.run_text(str(path), deck)
     if problem:
         sys.exit(f"{tag}: {problem}")
     return printed
@@ -468,7 +495,7 @@ def simulate_run(spice, cir, plan, run, scratch):
         ".endc",
         ".end",
     ]) + "\n"
-    run_deck(spice, deck, scratch, tag)
+    run_deck(spice, deck, scratch, tag, cir.stem)
     data = np.loadtxt(out)
     out.unlink()
     index = np.rint((data[:, 0] - start) / step).astype(int)
@@ -520,7 +547,7 @@ def characterise(cir, plan_path, table, jobs, library):
                 control += [f"ac lin 1 {hz!r} {hz!r}", f"wrdata {ac} {probe}"]
             text = "\n".join([f"* {cir.stem} op and ac"] + split_deck(lines, plan, quiet)
                              + control + [".endc", ".end"]) + "\n"
-            printed = run_deck(spice, text, scratch, f"{cir.stem}.op")
+            printed = run_deck(spice, text, scratch, f"{cir.stem}.op", cir.stem)
             for line in printed.splitlines():
                 found = re.match(r"^([a-z0-9_.]+) = (\S+)$", line.strip().lower())
                 if found:
@@ -701,7 +728,7 @@ def simulate_sweeps(spice, target, only):
         def one(sweep):
             tag = sweep["id"].replace("/", "_")
             out = scratch / f"{tag}.txt"
-            run_deck(spice, sweep_deck(sweep, out), scratch, tag)
+            run_deck(spice, sweep_deck(sweep, out), scratch, tag, sweep["deck"])
             head = f"sweep {sweep['id']} {sweep['deck']} {sweep['element']} {' '.join(sweep['probes'])}"
             return sweep["id"], [head] + [" ".join(f"{x:.12e}" for x in row) for row in columns(out)]
 
@@ -748,6 +775,70 @@ def compare_sweeps(committed, fresh, ids, rtol):
     return worst, where
 
 
+# ------------------------------------------------------------ shards and stamps
+
+COSTS = SPICE_DIR / "costs.tsv"
+
+
+def read_costs(path):
+    """deck -> seconds of ngspice, from a costs file (deck<TAB>seconds)."""
+    costs = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            w = line.split()
+            if len(w) >= 2 and not line.startswith("#"):
+                costs[w[0]] = float(w[1])
+    return costs
+
+
+def shards(n, costs):
+    """deck -> its group of n (1-based): longest first onto the lightest
+    group (ties to the lower number), so the groups' ngspice time is as
+    even as whole decks allow. A deck the costs don't list counts as the
+    median of the listed decks of its kind (with a plan, or a waveform
+    only)."""
+    stems = sorted(c.stem for c in SPICE_DIR.glob("*.cir"))
+    planned = {p.stem for p in SPICE_DIR.glob("*.plan")}
+
+    def median(kind):
+        xs = sorted(costs[s] for s in stems if s in costs and (s in planned) == kind)
+        return xs[len(xs) // 2] if xs else (300.0 if kind else 1.0)
+
+    guess = {True: median(True), False: median(False)}
+    cost = {s: costs.get(s, guess[s in planned]) for s in stems}
+    load, group = [0.0] * n, {}
+    for s in sorted(stems, key=lambda s: (-cost[s], s)):
+        k = min(range(n), key=lambda k: (load[k], k))
+        load[k] += cost[s]
+        group[s] = k + 1
+    return group, load
+
+
+def parse_shard(text):
+    i, _, n = text.partition("/")
+    i, n = int(i), int(n)
+    if not 1 <= i <= n:
+        sys.exit(f"--shard {text}: want i/n with 1 <= i <= n")
+    return i, n
+
+
+def digest(*parts):
+    h = hashlib.sha256()
+    for part in parts:
+        data = part if isinstance(part, bytes) else str(part).encode()
+        h.update(len(data).to_bytes(8, "little"))
+        h.update(data)
+    return h.hexdigest()
+
+
+def stamp_key(common, kind, *paths):
+    """A check's stamp: everything its verdict depends on — `common` (this
+    script, ngspice's version, --rtol, Python's and NumPy's), the kind, and
+    each file's name and bytes."""
+    return f"{kind}-{paths[0].stem}-" + digest(
+        common, kind, *(p.name.encode() + b"\0" + p.read_bytes() for p in paths))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="compare, don't write")
@@ -757,44 +848,118 @@ def main():
                              "a waveform by 1.6e-3 or more)")
     parser.add_argument("--expect-version", help="fail unless ngspice reports this version")
     parser.add_argument("--only", help="only these decks (comma-separated names)")
-    parser.add_argument("--exclude", help="every deck but these (comma-separated names): CI checks "
-                        "the slow classics' decks and tables in a job of their own")
+    parser.add_argument("--exclude", help="every deck but these (comma-separated names)")
+    parser.add_argument("--shard", help="i/n: only the i-th of n groups of decks, balanced by "
+                        "spice/costs.tsv (CI's references shards)")
+    parser.add_argument("--shard-of", type=int, metavar="N",
+                        help="print each deck's group of N (deck<TAB>group); run nothing")
+    parser.add_argument("--costs", type=pathlib.Path, default=COSTS,
+                        help="the decks' measured ngspice seconds (default spice/costs.tsv)")
+    parser.add_argument("--costs-out", type=pathlib.Path,
+                        help="write the seconds of ngspice each simulated deck took here")
+    parser.add_argument("--stamps", type=pathlib.Path,
+                        help="--check: record each passing waveform and table here")
+    parser.add_argument("--skip-stamped", action="store_true",
+                        help="--check: skip a waveform or table whose stamp is in --stamps")
     parser.add_argument("--tables-only", action="store_true", help="skip the waveforms")
     parser.add_argument("--sweeps-only", action="store_true", help="only the DC sweeps")
     parser.add_argument("--keep", type=pathlib.Path,
                         help="--check: copy every stale table's fresh simulation here (CI uploads them)")
     parser.add_argument("--jobs", type=int, default=default_jobs(),
-                        help="parallel characterisation runs (with the ngspice program)")
+                        help="parallel ngspice runs (with the ngspice program)")
     args = parser.parse_args()
     only = set(args.only.split(",")) if args.only else None
     exclude = set(args.exclude.split(",")) if args.exclude else set()
+    costs = read_costs(args.costs)
+
+    if args.shard_of:
+        group, weight = shards(args.shard_of, costs)
+        for stem in sorted(group):
+            print(f"{stem}\t{group[stem]}")
+        for k, seconds in enumerate(weight):
+            print(f"# group {k + 1}: {seconds:.0f} s of ngspice", file=sys.stderr)
+        return
+    shard = None
+    if args.shard:
+        i, n = parse_shard(args.shard)
+        group, weight = shards(n, costs)
+        shard = {s for s, k in group.items() if k == i}
+        print(f"shard {i}/{n}: {len(shard)} deck(s), about {weight[i - 1]:.0f} s of ngspice "
+              f"({', '.join(sorted(shard))})")
 
     def chosen(stem):
-        return (not only or stem in only) and stem not in exclude
+        return (not only or stem in only) and stem not in exclude and (shard is None or stem in shard)
+
+    if args.skip_stamped and not args.stamps:
+        sys.exit("--skip-stamped needs --stamps")
+    if args.stamps and not args.check:
+        sys.exit("--stamps records passing checks: it needs --check")
 
     spice = load()
     found = version(spice)
-    print(f"ngspice {found} ({spice.where})")
+    print(f"ngspice {found} ({spice.where})", flush=True)
     if args.expect_version and found != args.expect_version:
         sys.exit(f"ngspice {found}, expected {args.expect_version}")
+    common = digest(pathlib.Path(__file__).read_bytes(), spice.version(), repr(args.rtol),
+                    sys.version_info[:2])
+    stamped = []
+
+    def skip(key):
+        if args.skip_stamped and (args.stamps / key).exists():
+            stamped.append(key)
+            return True
+        return False
+
+    def record(key):
+        if args.stamps:
+            args.stamps.mkdir(parents=True, exist_ok=True)
+            (args.stamps / key).write_text("")
+
+    global SLOTS
+    SLOTS = threading.BoundedSemaphore(args.jobs)
+    parallel = program() is not None
+
+    def pool_map(fn, items):
+        if parallel and len(items) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(len(items)) as pool:
+                return list(pool.map(fn, items))
+        return [fn(x) for x in items]
 
     with tempfile.TemporaryDirectory() as scratch:
         scratch = pathlib.Path(scratch)
         check_exact(spice, scratch)
+        BUSY.clear()  # the oracle's runs are every shard's, no deck's
         failed = []
+        waves = []
         for cir in sorted(SPICE_DIR.glob("*.cir")):
             if args.tables_only or args.sweeps_only or not chosen(cir.stem):
                 continue
             committed = cir.with_suffix(".ngspice.txt")
+            key = None
+            if args.check:
+                if not committed.exists():
+                    failed.append(committed.name)
+                    print(f"{committed.name}: not committed")
+                    continue
+                key = stamp_key(common, "waveform", cir, committed)
+                if skip(key):
+                    continue
+            waves.append((cir, committed, key))
+
+        # The waveforms side by side when the ngspice program is there
+        # (each is one run of it; the shared library runs one at a time).
+        spice_waves = program() or spice
+
+        def wave(item):
+            cir, committed, key = item
+            target = committed if not args.check else scratch / committed.name
+            simulate(spice_waves, cir, target)
+            return item, target
+
+        for (cir, committed, key), fresh in pool_map(wave, waves):
             if not args.check:
-                simulate(spice, cir, committed)
                 print(f"wrote {committed.name} ({len(columns(committed))} points)")
-                continue
-            fresh = scratch / committed.name
-            simulate(spice, cir, fresh)
-            if not committed.exists():
-                failed.append(committed.name)
-                print(f"{committed.name}: not committed")
                 continue
             worst, where = compare(cir.stem, committed, fresh, args.rtol)
             verdict = "ok" if worst <= args.rtol else "STALE"
@@ -802,49 +967,74 @@ def main():
                   + (f" ({where})" if worst > 0 else ""))
             if worst > args.rtol:
                 failed.append(committed.name)
-        if SWEEPS.exists():
-            target = scratch / SWEPT.name if args.check else SWEPT
-            ids = simulate_sweeps(spice, target, only)
-            if not args.check:
-                print(f"wrote {SWEPT.name} ({len(ids)} sweeps)")
-            elif ids:
-                worst, where = compare_sweeps(SWEPT, target, ids, args.rtol) if SWEPT.exists() \
-                    else (math.inf, "not committed")
-                verdict = "ok" if worst <= args.rtol else "STALE"
-                print(f"{SWEPT.name}: {len(ids)} sweeps, max deviation {worst:.3e} of peak {verdict}"
-                      + (f" ({where})" if worst > 0 else ""))
-                if worst > args.rtol:
-                    failed.append(SWEPT.name)
-                    if args.keep:
-                        args.keep.mkdir(parents=True, exist_ok=True)
-                        shutil.copy(target, args.keep / SWEPT.name)
+            else:
+                record(key)
+        sys.stdout.flush()
+
+        # The DC sweeps of the chosen decks (all in one committed file,
+        # each deck's sweeps stamped together).
+        if SWEEPS.exists() and not args.tables_only:
+            swept, keys = set(), {}
+            for deck in sorted({sw["deck"] for sw in parse_sweeps() if chosen(sw["deck"])}):
+                if args.check:
+                    if not SWEPT.exists():
+                        swept.add(deck)
+                        continue
+                    keys[deck] = stamp_key(common, "sweeps", SPICE_DIR / f"{deck}.cir", SWEEPS, SWEPT)
+                    if skip(keys[deck]):
+                        continue
+                swept.add(deck)
+            if swept:
+                target = scratch / SWEPT.name if args.check else SWEPT
+                ids = simulate_sweeps(spice, target, swept)
+                if not args.check:
+                    print(f"wrote {SWEPT.name} ({len(ids)} sweeps)")
+                elif ids:
+                    worst, where = compare_sweeps(SWEPT, target, ids, args.rtol) if SWEPT.exists() \
+                        else (math.inf, "not committed")
+                    verdict = "ok" if worst <= args.rtol else "STALE"
+                    print(f"{SWEPT.name}: {len(ids)} sweeps, max deviation {worst:.3e} of peak {verdict}"
+                          + (f" ({where})" if worst > 0 else ""))
+                    if worst > args.rtol:
+                        failed.append(SWEPT.name)
+                        if args.keep:
+                            args.keep.mkdir(parents=True, exist_ok=True)
+                            shutil.copy(target, args.keep / SWEPT.name)
+                    else:
+                        for deck in swept:
+                            if deck in keys:
+                                record(keys[deck])
+
         # Every plan at once: the runs of all of them share --jobs ngspice
         # programs, so a slow deck never leaves the others idle.
-        global SLOTS
-        SLOTS = threading.BoundedSemaphore(args.jobs)
-        plans = [p for p in sorted(SPICE_DIR.glob("*.plan"))
-                 if not args.sweeps_only and chosen(p.stem)]
+        plans = []
+        for plan in sorted(SPICE_DIR.glob("*.plan")):
+            if args.sweeps_only or not chosen(plan.stem):
+                continue
+            cir, committed = plan.with_suffix(".cir"), plan.with_suffix(".table")
+            key = None
+            if args.check:
+                if not committed.exists():
+                    failed.append(committed.name)
+                    print(f"{committed.name}: not committed")
+                    continue
+                import numpy
+                key = stamp_key(common + numpy.__version__, "table", cir, plan, committed)
+                if skip(key):
+                    continue
+            plans.append((plan, key))
 
-        def one(plan):
+        def one(item):
+            plan, key = item
             cir, committed = plan.with_suffix(".cir"), plan.with_suffix(".table")
             started = time.monotonic()
             target = committed if not args.check else scratch / committed.name
             characterise(cir, plan, target, args.jobs, spice)
-            return plan, committed, target, time.monotonic() - started
+            return plan, key, committed, target, time.monotonic() - started
 
-        if program():
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max(len(plans), 1)) as pool:
-                done = list(pool.map(one, plans))
-        else:
-            done = [one(p) for p in plans]
-        for plan, committed, fresh, seconds in done:
+        for plan, key, committed, fresh, seconds in pool_map(one, plans):
             if not args.check:
                 print(f"wrote {committed.name} ({committed.stat().st_size // 1024} KiB, {seconds:.1f} s)")
-                continue
-            if not committed.exists():
-                failed.append(committed.name)
-                print(f"{committed.name}: not committed")
                 continue
             worst, where = compare_tables(committed, fresh, args.rtol)
             verdict = "ok" if worst <= args.rtol else "STALE"
@@ -855,6 +1045,18 @@ def main():
                 if args.keep:
                     args.keep.mkdir(parents=True, exist_ok=True)
                     shutil.copy(fresh, args.keep / committed.name)
+            else:
+                record(key)
+        if stamped:
+            kinds = [k.split("-")[0] for k in stamped]
+            print(f"unchanged since a passing check (stamped in {args.stamps}), not simulated: "
+                  f"{kinds.count('waveform')} waveform(s), {kinds.count('table')} table(s)")
+        if BUSY:
+            print("seconds of ngspice: " + ", ".join(f"{d} {s:.0f}" for d, s in
+                                                   sorted(BUSY.items(), key=lambda x: -x[1])))
+        if args.costs_out:
+            args.costs_out.parent.mkdir(parents=True, exist_ok=True)
+            args.costs_out.write_text("".join(f"{d}\t{s:.1f}\n" for d, s in sorted(BUSY.items())))
         if failed:
             sys.exit(f"{len(failed)} waveform(s) or table(s) differ from a fresh simulation by more than "
                      f"{args.rtol:g} of peak: {', '.join(failed)}. Regenerate with "
