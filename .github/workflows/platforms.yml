@@ -4,6 +4,13 @@
 # validator, and stave-host opens them; the face shells are driven in a
 # real window (Xvfb on Linux, window messages on Windows). macOS is
 # ci.yml's. Every job fits five minutes warm.
+#
+# A pull request gates what it changes, and only that: `changes` asks
+# scripts/affected.sh which packages the change reaches (as ci.yml's
+# jobs do), the build, test and lint jobs work on those, and a change
+# that reaches no package (documentation, another workflow's file)
+# skips them. Not a required check, so a skipped job blocks nothing.
+# Main, release branches and a dispatched run gate everything.
 name: platforms
 
 on:
@@ -21,18 +28,45 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # scripts/affected.sh's base: the pull request's.
+  AFFECTED_ARGS: >-
+    ${{ github.event_name == 'pull_request' && format('--base origin/{0}', github.base_ref)
+    || '--full' }}
 
 defaults:
   run:
     shell: bash
 
 jobs:
+  changes:
+    name: what the change affects
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.affected.outputs.scope }}
+      packages: ${{ steps.affected.outputs.packages }}
+      lib-packages: ${{ steps.affected.outputs.lib-packages }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
+      - run: rustup toolchain install
+      - id: affected
+        run: |
+          out="$(scripts/affected.sh --outputs $AFFECTED_ARGS)"
+          echo "$out"
+          sed -n 's/^AFFECTED_SCOPE=/scope=/p; s/^AFFECTED_PACKAGES=/packages=/p; s/^AFFECTED_LIB_PACKAGES=/lib-packages=/p' <<<"$out" >> "$GITHUB_OUTPUT"
+
   test:
     # Every target builds (bins, examples, benches); every test runs —
     # the X11 shell's in a real window on Xvfb (STAVE_REQUIRE_DISPLAY
     # makes a missing server a failure, not a skip).
     name: build + test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.scope != 'none'
     runs-on: ${{ matrix.os }}
+    env:
+      PACKAGES: ${{ needs.changes.outputs.packages }}
+      LIB_PACKAGES: ${{ needs.changes.outputs.lib-packages }}
     strategy:
       fail-fast: false
       matrix:
@@ -49,16 +83,17 @@ jobs:
           cache-on-failure: true
       - uses: taiki-e/install-action@v2.90.3
         with: { tool: nextest@0.9.148 }
-      - run: cargo build --workspace --all-targets --locked
+      - run: cargo build --all-targets --locked $PACKAGES
       - name: cargo nextest run
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then
             export STAVE_REQUIRE_DISPLAY=1
-            xvfb-run -a -s "-screen 0 1280x1024x24" cargo nextest run --workspace --locked --profile ci
+            xvfb-run -a -s "-screen 0 1280x1024x24" cargo nextest run --locked --profile ci --no-tests=pass $PACKAGES
           else
-            cargo nextest run --workspace --locked --profile ci
+            cargo nextest run --locked --profile ci --no-tests=pass $PACKAGES
           fi
-      - run: cargo test --workspace --doc --locked
+      - if: env.LIB_PACKAGES != ''
+        run: cargo test --doc --locked $LIB_PACKAGES
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -68,7 +103,11 @@ jobs:
 
   clippy:
     name: clippy + rustdoc (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.scope != 'none'
     runs-on: ${{ matrix.os }}
+    env:
+      PACKAGES: ${{ needs.changes.outputs.packages }}
     strategy:
       fail-fast: false
       matrix:
@@ -83,11 +122,11 @@ jobs:
           save-if: "${{ github.ref == 'refs/heads/main' }}"
           # A failing test still leaves a warm build for the next run.
           cache-on-failure: true
-      - run: cargo clippy --workspace --all-targets --no-deps --locked -- -D warnings
+      - run: cargo clippy --all-targets --no-deps --locked $PACKAGES -- -D warnings
       # The standalone (a feature, so the workspace build skips its bin).
       - run: cargo clippy -p stave-tilt-vst3 --features standalone --all-targets --no-deps --locked -- -D warnings
       # Docs of code that only compiles here (the shells, the loaders).
-      - run: cargo doc --workspace --no-deps --document-private-items --locked
+      - run: cargo doc --no-deps --document-private-items --locked $PACKAGES
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -96,6 +135,8 @@ jobs:
     # points exported, clap-validator, Steinberg's validator (the SDK is
     # MIT; its build is cached), and stave-host opening the bundle.
     name: validators (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.scope != 'none'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
