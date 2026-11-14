@@ -10,7 +10,8 @@
 //!
 //! **Method.** Levenberg–Marquardt on weighted residuals, every
 //! parameter held inside physically sensible bounds by a logistic map
-//! (log-scaled for parameters spanning decades). A reading's residual is
+//! (log-scaled for parameters spanning decades): the shared solver,
+//! `stave_measure::levenberg_marquardt`, which G4's design fits use too. A reading's residual is
 //! `(model − reading)/u`, with `u` the table's own uncertainty plus the
 //! model tolerance R13 states (5% of the table's peak on a linear axis,
 //! 10% on a log axis) — the budget `matches_datasheet.rs` holds the
@@ -44,11 +45,12 @@ use stave_dsp::circuit::devices::pentode::reefman::{Knee, Reefman};
 use stave_dsp::circuit::devices::pentode::Pentode;
 use stave_dsp::circuit::devices::triode::koren::Koren;
 use stave_dsp::units::Hz;
+use stave_measure::levenberg_marquardt::{self, Bounded, Solution as Fit, MINIMAX};
 use stave_test::reference::{Curve, Datasheet, Uncertainty};
 
 // ---------------------------------------------------------------- solver
 
-/// A fitted parameter: its starting value and its bounds.
+/// A fitted parameter: its name, starting value and bounds.
 #[derive(Copy, Clone, Debug)]
 struct Param {
     name: &'static str,
@@ -62,213 +64,38 @@ const fn param(name: &'static str, init: f64, lo: f64, hi: f64) -> Param {
 }
 
 impl Param {
-    /// Log-scaled when positive and spanning more than a decade.
-    fn log(&self) -> bool {
-        self.lo > 0.0 && self.hi / self.lo > 10.0
+    fn bounded(&self) -> Bounded {
+        Bounded::new(self.init, self.lo, self.hi)
     }
-
-    fn span(&self) -> (f64, f64) {
-        if self.log() {
-            (self.lo.ln(), self.hi.ln())
-        } else {
-            (self.lo, self.hi)
-        }
-    }
-
-    /// The bounded value of the free coordinate `z`.
-    fn value(&self, z: f64) -> f64 {
-        let (a, b) = self.span();
-        let u = a + (b - a) / (1.0 + (-z).exp());
-        if self.log() {
-            u.exp()
-        } else {
-            u
-        }
-    }
-
-    /// The free coordinate of `v` (clamped just inside the bounds).
-    fn free(&self, v: f64) -> f64 {
-        let (a, b) = self.span();
-        let u = if self.log() { v.ln() } else { v };
-        let s = ((u - a) / (b - a)).clamp(1e-6, 1.0 - 1e-6);
-        (s / (1.0 - s)).ln()
-    }
-}
-
-/// A finished fit.
-struct Fit {
-    values: Vec<f64>,
-    residuals: Vec<f64>,
-}
-
-impl Fit {
-    fn chi2(&self) -> f64 {
-        self.residuals.iter().map(|r| r * r).sum::<f64>() / self.residuals.len() as f64
-    }
-
-    fn worst(&self) -> f64 {
-        self.residuals.iter().fold(0.0, |m: f64, r| m.max(r.abs()))
-    }
-}
-
-/// `a·x = b` by Gaussian elimination with partial pivoting.
-fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
-    let n = b.len();
-    for k in 0..n {
-        let p = (k..n).max_by(|&i, &j| a[i][k].abs().total_cmp(&a[j][k].abs()))?;
-        if a[p][k].abs() < 1e-300 {
-            return None;
-        }
-        a.swap(k, p);
-        b.swap(k, p);
-        for i in k + 1..n {
-            let m = a[i][k] / a[k][k];
-            for j in k..n {
-                a[i][j] -= m * a[k][j];
-            }
-            b[i] -= m * b[k];
-        }
-    }
-    let mut x = vec![0.0; n];
-    for k in (0..n).rev() {
-        let s: f64 = (k + 1..n).map(|j| a[k][j] * x[j]).sum();
-        x[k] = (b[k] - s) / a[k][k];
-    }
-    Some(x)
 }
 
 /// The threads a fit may use: `RAYON_NUM_THREADS`, else
 /// `STAVE_OFFLOAD_JOBS` (a build host's per-job cap), else the machine's
 /// parallelism.
 fn threads() -> usize {
-    ["RAYON_NUM_THREADS", "STAVE_OFFLOAD_JOBS"]
-        .iter()
-        .find_map(|k| std::env::var(k).ok()?.parse().ok())
-        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
-}
-
-/// Levenberg–Marquardt (Marquardt's diagonal scaling) over the bounded
-/// parameters from their starting values, minimising Σ|r|^p (each
-/// residual mapped to sign(r)·|r|^(p/2), so p = 2 is least squares).
-fn levenberg_marquardt(
-    params: &[Param],
-    p: f64,
-    raw: &(dyn Fn(&[f64]) -> Vec<f64> + Sync),
-) -> Fit {
-    let residuals = |v: &[f64]| -> Vec<f64> {
-        raw(v)
-            .into_iter()
-            .map(|r| r.signum() * r.abs().powf(0.5 * p))
-            .collect()
-    };
-    let values = |z: &[f64]| -> Vec<f64> {
-        params.iter().zip(z).map(|(p, &z)| p.value(z)).collect()
-    };
-    let cost = |r: &[f64]| r.iter().map(|r| r * r).sum::<f64>();
-    let mut z: Vec<f64> = params.iter().map(|p| p.free(p.init)).collect();
-    let mut r = residuals(&values(&z));
-    let mut c = cost(&r);
-    let mut lambda = 1e-3;
-    let n = z.len();
-    let mut stalls = 0;
-    for _ in 0..150 {
-        // Central-difference Jacobian in the free coordinates, columns
-        // shared among at most `threads()` threads (the transistor fits'
-        // curve tracer is slow).
-        let h = 1e-5;
-        let column = |k: usize| -> Vec<f64> {
-            let mut up = z.clone();
-            let mut down = z.clone();
-            up[k] += h;
-            down[k] -= h;
-            let (ru, rd) = (residuals(&values(&up)), residuals(&values(&down)));
-            ru.iter().zip(&rd).map(|(a, b)| (a - b) / (2.0 * h)).collect()
-        };
-        let workers = threads().min(n).max(1);
-        let jac: Vec<Vec<f64>> = std::thread::scope(|scope| {
-            let handles: Vec<_> = (0..workers)
-                .map(|w| {
-                    let column = &column;
-                    scope.spawn(move || {
-                        (w..n)
-                            .step_by(workers)
-                            .map(|k| (k, column(k)))
-                            .collect::<Vec<_>>()
-                    })
-                })
-                .collect();
-            let mut columns: Vec<(usize, Vec<f64>)> = handles
-                .into_iter()
-                .flat_map(|h| h.join().expect("a Jacobian column"))
-                .collect();
-            columns.sort_by_key(|(k, _)| *k);
-            columns.into_iter().map(|(_, c)| c).collect()
-        });
-        let jtj: Vec<Vec<f64>> = (0..n)
-            .map(|i| (0..n).map(|j| jac[i].iter().zip(&jac[j]).map(|(a, b)| a * b).sum()).collect())
-            .collect();
-        let jtr: Vec<f64> = (0..n).map(|i| jac[i].iter().zip(&r).map(|(a, b)| a * b).sum()).collect();
-        let mut improved = false;
-        while lambda < 1e12 {
-            let mut a = jtj.clone();
-            for i in 0..n {
-                a[i][i] += lambda * jtj[i][i].max(1e-12);
-            }
-            let Some(step) = solve(a, jtr.iter().map(|g| -g).collect()) else {
-                lambda *= 4.0;
-                continue;
-            };
-            let trial: Vec<f64> = z.iter().zip(&step).map(|(z, s)| z + s).collect();
-            let rt = residuals(&values(&trial));
-            let ct = cost(&rt);
-            if ct.is_finite() && ct < c {
-                stalls = if (c - ct) < 1e-10 * c { stalls + 1 } else { 0 };
-                z = trial;
-                r = rt;
-                c = ct;
-                lambda = (lambda / 3.0).max(1e-12);
-                improved = true;
-                break;
-            }
-            lambda *= 4.0;
-        }
-        if !improved || stalls >= 3 {
-            break;
-        }
-    }
-    let values = values(&z);
-    Fit {
-        residuals: raw(&values),
-        values,
-    }
+    stave_test::threads()
 }
 
 /// Least squares, then the L_p continuation toward minimax (module
 /// docs), each stage printed.
 fn least_squares(params: &[Param], residuals: &(dyn Fn(&[f64]) -> Vec<f64> + Sync)) -> Fit {
-    stages(params, &[2.0, 4.0, 8.0, 16.0], residuals)
+    stages(params, &MINIMAX, residuals)
 }
 
-/// [`levenberg_marquardt`] at each exponent of `ps` in turn, each from
-/// the last; every stage's parameters are printed as it ends (a slow
-/// fit's progress survives an interruption).
+/// The shared solver ([`stave_measure::levenberg_marquardt`]) at each
+/// exponent of `ps` in turn, each from the last; every stage's
+/// parameters are printed as it ends (a slow fit's progress survives an
+/// interruption).
 fn stages(params: &[Param], ps: &[f64], residuals: &(dyn Fn(&[f64]) -> Vec<f64> + Sync)) -> Fit {
-    let mut params = params.to_vec();
-    let mut fit = None;
-    for &p in ps {
-        let f = levenberg_marquardt(&params, p, residuals);
+    let bounded: Vec<Bounded> = params.iter().map(Param::bounded).collect();
+    levenberg_marquardt::continuation(&bounded, ps, residuals, threads(), &mut |p, f| {
         println!(
             "   p = {p:>2}: mean r² {:.3}, worst |r| {:.3}; {:?}",
             f.chi2(),
             f.worst(),
             f.values
         );
-        for (q, &v) in params.iter_mut().zip(&f.values) {
-            q.init = v;
-        }
-        fit = Some(f);
-    }
-    fit.expect("a stage")
+    })
 }
 
 /// The best of several starts (each a full set of starting values).

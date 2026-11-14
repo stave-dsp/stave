@@ -1,11 +1,12 @@
-# Design a circuit: schematics, sensitivities and tolerances
+# Design a circuit: schematics, sensitivities, tolerances and fits
 
 A circuit drawn in a schematic editor runs in stave as it is drawn, and
 stave can then answer the questions a designer asks before ordering
 parts: which part moves the tone most, how far apart two built units
-will sound, and which part's grade is worth paying for. This page
-covers the three tools (DSP.md G1–G3): importing a KiCad netlist,
-sensitivity studies, and Monte Carlo over tolerances.
+will sound, which part's grade is worth paying for, and which values
+meet a target. This page covers the four tools (DSP.md G1–G4):
+importing a KiCad netlist, sensitivity studies, Monte Carlo over
+tolerances, and fitting.
 
 ## Import a KiCad netlist
 
@@ -130,6 +131,84 @@ assert!(spread.advice[0].share > 0.98);
 The same draws build a unit as a netlist with
 [`Tolerances::unit`](stave_dsp::circuit::netlist::tolerance::Tolerances::unit),
 to run, listen to, or characterise like any other circuit.
+
+## Fit parts to a target
+
+[`fit`](fn@stave_measure::design::fit) chooses the values of the
+parameters you free that best meet a [`Target`](stave_measure::design::Target).
+Each parameter is a [`Free`](stave_measure::design::Free) with physical
+bounds. The parts you leave out keep their values. A pot's rotation can
+be freed too: [`Parts::setting`](stave_measure::design::Parts::setting)
+adds it as `<pot>.position`, from 0 to 1 along its taper. A target can
+be:
+
+- a response: a magnitude or phase table in dB or degrees, read off a
+  datasheet, measured, or taken from another model with
+  [`Target::measured`](stave_measure::design::Target::measured);
+- a harmonic-vs-level curve: one harmonic's dBc, or THD, at a set of
+  drive levels;
+- a capture: an input and the output it produced. The model is run on
+  the input, and the error is the normalised RMS difference.
+
+Every point has a budget. The fit's error is reported in budgets in R1's
+form: the worst point's error over its budget, so 1 is exactly on
+budget, and where that worst point is. A capture also gets R16's
+audibility verdict on the residual. Ask for preferred values with
+[`Free::snap`](stave_measure::design::Free::snap) and the report adds
+the parts at E-series values. It also gives the error at those values
+and what snapping cost: each snapped part's two neighbours in the series
+are tried in every combination, and any pot rotations are refitted
+around them.
+
+```
+use stave_dsp::circuit::netlist::tolerance::Tolerances;
+use stave_dsp::circuit::netlist::Netlist;
+use stave_measure::design::{fit, Fitting, Free, Parts, Series, Target};
+
+// A low-pass into a 10k load, built with the wrong parts.
+let rc = Netlist::parse_spice(
+    "* rc\nV1 in 0 AC 1\nR1 in out 1k\nC1 out 0 100n\nR2 out 0 10k\n.control\nwrdata o v(out)\n.endc",
+)
+.unwrap();
+// The response it should have (a table: Hz, dB), each point within 0.05 dB.
+let table = [(50.0, -3.3511), (500.0, -3.7991), (2_000.0, -7.7522), (8_000.0, -17.9894)];
+let target = Target::response(&table, 0.05);
+let free = [
+    Free::new("r1", 100.0, 1e6).snap(Series::E24),
+    Free::new("c1", 1e-9, 1e-6).snap(Series::E12),
+];
+let f = fit(&Parts::new(&rc, &Tolerances::new()), &free, &target, &Fitting::default()).unwrap();
+assert!(f.passed(), "{f}");
+assert!((f.value("r1").unwrap() / 4.7e3 - 1.0).abs() < 1e-3);
+// At preferred values: 4.7k (E24) and 33n (E12), and what that costs.
+let snapped = f.snapped.as_ref().unwrap();
+assert!((snapped.parts[0].3 / 4.7e3 - 1.0).abs() < 1e-9);
+assert!((snapped.parts[1].3 / 33e-9 - 1.0).abs() < 1e-9);
+assert!(snapped.error < 1.0);
+println!("{f}");
+```
+
+The printed report reads like any R1 case: the error against the
+budget, the worst point with its target and model values, the
+audibility line, each fitted value with its bounds (and a note when a
+value is pinned at a bound), the snapped alternative and its cost, and
+each L_p stage. Fits of points run least squares first, then the L_p
+continuation toward the minimax fit the worst-point budget judges.
+This is E11's Levenberg–Marquardt solver, now shared as
+[`levenberg_marquardt`](stave_measure::levenberg_marquardt). Pass
+[`Fitting::starts`](stave_measure::design::Fitting::starts) to start
+several times when the target can be met in more than one way. Free
+only what the target determines: an RC's response alone fixes only the
+product RC.
+
+`crates/stave-test/tests/design_fit.rs` holds the AB763 tone stack to
+both kinds of fit. Given its own response at treble 0.3 and bass 0.7,
+with an 82k slope resistor and a 56n mid capacitor, it recovers all
+four to 1e-6. Fitted to the Marshall 2203's ngspice response, it meets
+it within 6e-6 dB: the bass rheostat ends at its stop and the parts
+land at 470 pF, 16.1k, 45.5 nF, 6.49k and 44.7 nF. At E12 values the
+same fit is 0.16 dB off. The R1 harness then holds each fitted stack to
+the 2203's deck.
 
 ## On the docs site
 

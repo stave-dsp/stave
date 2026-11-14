@@ -123,6 +123,9 @@ pub struct Prepared {
     pub matching: Matching,
     pub sample_rate: f64,
     pub block_size: usize,
+    /// Each candidate nulled against the reference (DSP.md G5), or why
+    /// there is no null; empty until [`super::null::all`] fills it.
+    pub nulls: Result<Vec<super::null::NullTest>, String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -392,6 +395,7 @@ pub fn prepare(plan: Plan, jobs: Vec<Job>, progress: &AtomicU32) -> Result<Prepa
         matching,
         sample_rate: rate,
         block_size,
+        nulls: Ok(Vec::new()),
     })
 }
 

@@ -30,6 +30,11 @@ ALLOWED=(
   # its values, split over the caller's thread count and gathered by
   # index, so the numbers are the same on any schedule.
   'crates/stave-measure/src/design/mod.rs:std::thread'
+  # The shared Levenberg–Marquardt (DSP.md E11, G4): the Jacobian's
+  # columns, each a pure function of the point, split over the caller's
+  # thread count and gathered by index (bit-identical on any count:
+  # levenberg_marquardt::tests::threads_do_not_change_the_result).
+  'crates/stave-measure/src/levenberg_marquardt.rs:std::thread'
   # Memoised bakes: a cache hit returns the image a miss would compute.
   'crates/stave-face/src/part.rs:RefCell'
   # Trace's scrolling history: one sample per frame time (6e07cd1), so a

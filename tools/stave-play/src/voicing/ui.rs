@@ -409,7 +409,7 @@ impl Voicing {
         transport_ui(ui, l);
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            for (mode, name) in [(Mode::Sighted, "Sighted A/B"), (Mode::Abx, "Blind ABX"), (Mode::Rating, "Rating")] {
+            for (mode, name) in [(Mode::Sighted, "Sighted A/B"), (Mode::Abx, "Blind ABX"), (Mode::Rating, "Rating"), (Mode::Null, "Null test")] {
                 if ui.selectable_label(l.mode == mode, RichText::new(name).strong()).clicked() && l.mode != mode {
                     l.mode = mode;
                     l.transport.select(0);
@@ -425,6 +425,7 @@ impl Voicing {
                     Mode::Sighted => l.sighted_ui(ui, &dir),
                     Mode::Abx => l.abx_ui(ui, &dir),
                     Mode::Rating => l.rating_ui(ui, &dir),
+                    Mode::Null => l.null_ui(ui),
                 };
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
@@ -468,7 +469,7 @@ impl Voicing {
         let digit = digit_pressed(ctx);
         let next = take_key(ctx, Modifiers::NONE, Key::Enter) || take_key(ctx, Modifiers::NONE, Key::N);
         let status = match l.mode {
-            Mode::Sighted => {
+            Mode::Sighted | Mode::Null => {
                 let n = l.prepared.candidates.len();
                 let mut pick = digit.filter(|&d| d < n);
                 if take_key(ctx, Modifiers::NONE, Key::A) {

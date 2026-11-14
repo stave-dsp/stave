@@ -27,6 +27,8 @@ const USAGE: &str = "stave-play [PLUGIN.vst3] [--sample-rate HZ] [--block-size N
        stave-play --compare CANDIDATE --compare CANDIDATE ... [--material MATERIAL] \
                      [--trim DB] [--abx-trials N] [--voicing-dir DIR]
        stave-play --verify-blessed RECORD_OR_DIR [--tolerance-db DB]
+       stave-play --null CANDIDATE REFERENCE [--material MATERIAL] [--trim DB] \
+                     [--residual OUT.wav]
        stave-play --characterise CANDIDATE --characterise CANDIDATE ... \
                      [--rates HZ,HZ] [--tier t0|t1] [--process-block N] [--report PATH]
        stave-play --list-material [--export-material DIR]
@@ -36,6 +38,12 @@ wav:FILE or blessed:RECORD, then ;name=value settings, ;preset=NAME,
 ;label=TEXT or ;ref (quote it). --characterise measures each plugin or
 stage candidate as a black box (DSP.md R17-R19) and prints them side by
 side (default rates 44100,48000, tier t1, process block 64).
+--null nulls CANDIDATE against REFERENCE (another model, or a capture
+as wav:FILE) on the material, level- and latency-aligned, and prints the
+residual's NMR verdict (DSP.md R16, G5); --residual writes the residual
+to listen to. Exit status 0 inaudible, 1 audible, 2 an error. To hear it
+and ABX the pair, open the Voicing tab with --compare A --compare 'B;ref'
+(the Null test mode).
 MATERIAL is a built-in name, role:NAME[#N] (item N of a reference-corpus
 role from the sample library, DSP.md R22; see --list-material) or a WAV
 path.";
@@ -72,6 +80,9 @@ fn main() -> std::process::ExitCode {
     }
     if let Some(path) = &launch.verify_blessed {
         return verify_blessed(path, launch.tolerance_db);
+    }
+    if let Some(n) = &launch.null {
+        return null_headless(n, &launch.app);
     }
     if !launch.characterise.candidates.is_empty() {
         return match characterise::run(&launch.characterise) {
@@ -192,6 +203,33 @@ fn verify_blessed(path: &std::path::Path, tolerance_db: f64) -> std::process::Ex
     }
 }
 
+/// `--null A B`: print the verdict, write the residual if asked.
+fn null_headless(n: &voicing::null::Headless, app: &app::Launch) -> std::process::ExitCode {
+    let config = HostConfig {
+        sample_rate: app.sample_rate,
+        max_block: app.block_size,
+        ..HostConfig::default()
+    };
+    match voicing::null::headless(n, config) {
+        Ok((t, rate)) => {
+            println!("{}", t.describe(rate));
+            if let Some(path) = &n.residual {
+                println!("residual (as heard) -> {}", path.display());
+            }
+            println!("hear it and ABX the pair: stave-play --compare '{}' --compare '{};ref' (Null test)", n.a, n.b);
+            if t.inaudible {
+                std::process::ExitCode::SUCCESS
+            } else {
+                std::process::ExitCode::FAILURE
+            }
+        }
+        Err(e) => {
+            eprintln!("stave-play: {e}");
+            std::process::ExitCode::from(2)
+        }
+    }
+}
+
 /// What the command line asks for: the app, or a headless voicing task.
 struct Cli {
     app: app::Launch,
@@ -202,6 +240,8 @@ struct Cli {
     list_material: bool,
     export_material: Option<PathBuf>,
     characterise: characterise::Options,
+    /// `--null A B` (with the voicing options' material and trim).
+    null: Option<voicing::null::Headless>,
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -231,6 +271,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
     let (mut verify_blessed, mut tolerance_db, mut list_material) = (None, -120.0, false);
     let mut export_material = None;
     let mut characterise = characterise::Options::default();
+    let (mut null_pair, mut residual) = (None, None);
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         let mut value = |flag| it.next().ok_or(ArgError::MissingValue(flag));
@@ -316,6 +357,15 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
                 characterise.block = v.parse().ok().filter(|n| *n > 0).ok_or_else(|| bad("--process-block", &v))?;
             }
             "--report" => characterise.out = Some(PathBuf::from(value("--report")?)),
+            "--null" => {
+                let a = value("--null")?;
+                let b = it.next().ok_or(ArgError::MissingValue("--null"))?;
+                for v in [&a, &b] {
+                    voicing::Candidate::parse(v).map_err(|_| bad("--null", v))?;
+                }
+                null_pair = Some((a, b));
+            }
+            "--residual" => residual = Some(PathBuf::from(value("--residual")?)),
             "--list-material" => list_material = true,
             "--export-material" => export_material = Some(PathBuf::from(value("--export-material")?)),
             s if s.starts_with('-') => return Err(ArgError::UnknownOption(arg)),
@@ -323,7 +373,15 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
             _ => return Err(ArgError::UnexpectedArgument(arg)),
         }
     }
+    let null = null_pair.map(|(a, b)| voicing::null::Headless {
+        a,
+        b,
+        material: l.voicing.material.clone(),
+        trim_db: l.voicing.trim_db.unwrap_or(0.0),
+        residual,
+    });
     Ok(Some(Cli {
+        null,
         app: l,
         verify_blessed,
         tolerance_db,
@@ -407,6 +465,19 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!((c.verify_blessed, c.tolerance_db), (Some(PathBuf::from("b")), -90.0));
+    }
+
+    #[test]
+    fn parses_null_options() {
+        let args = ["--null", "stage:clipper/diode", "wav:take.wav", "--material", "role:vocal#2", "--trim", "-3", "--residual", "r.wav"];
+        let c = parse(args.into_iter().map(String::from)).unwrap().unwrap();
+        let n = c.null.unwrap();
+        assert_eq!((n.a.as_str(), n.b.as_str()), ("stage:clipper/diode", "wav:take.wav"));
+        assert_eq!((n.material.as_deref(), n.trim_db), (Some("role:vocal#2"), -3.0));
+        assert_eq!(n.residual, Some(PathBuf::from("r.wav")));
+        assert!(!c.app.voicing.wants_voicing(), "headless: no window");
+        assert_eq!(p("--null dry").err(), Some(ArgError::MissingValue("--null")));
+        assert!(matches!(p("--null dry x.vst3;drive"), Err(ArgError::InvalidValue { flag: "--null", .. })));
     }
 
     #[test]

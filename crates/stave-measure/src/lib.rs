@@ -18,7 +18,8 @@
 //! latency     onset + peak of an impulse response
 //! transfer    H(f) from input/output (H1, Welch-averaged)
 //! compare     bitwise divergence; null-test residuals
-//! design      sweeps, sensitivities and Monte Carlo over a model's parts
+//! design      sweeps, sensitivities, Monte Carlo and fits over a model's parts
+//! levenberg_marquardt  bounded nonlinear least squares, L_p toward minimax
 //! tone_window   a bin-centred tone (or two) through a system: alias, gain, IMD
 //! suite       the measurement design: coherent stimuli and their analysers
 //! nonlinear   alias floor, gain surfaces, hysteresis
@@ -68,6 +69,7 @@ pub mod design;
 pub mod dynamics;
 pub mod identify;
 pub mod latency;
+pub mod levenberg_marquardt;
 pub mod level;
 pub mod listening;
 pub mod loudness;

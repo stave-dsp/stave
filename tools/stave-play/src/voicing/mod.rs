@@ -2,12 +2,15 @@
 //! program material and up to nine candidates, prepare (every candidate
 //! runs offline, latency-compensated, and is loudness-matched to 0.1 LU),
 //! then listen sighted, in blind ABX trials, or in MUSHRA-style rating
-//! trials; every session is logged, and a chosen sound can be blessed.
+//! trials, or null each candidate against the reference (DSP.md G5:
+//! aligned, judged by NMR, the residual played back); every session is
+//! logged, and a chosen sound can be blessed.
 //!
 //! ```text
 //! mod.rs       the voicing state: setup, preparing, the live session
 //! ui.rs        the Voicing view: setup, transport, keys
-//! modes.rs     the three listening modes' panels
+//! modes.rs     the listening modes' panels (and the null test's)
+//! null.rs      null tests against the reference: alignment, NMR, residual
 //! builtin.rs   built-in program material (synthesised, deterministic)
 //! material.rs  material: built-in, WAV, sample library; checksums
 //! candidate.rs what is compared, and its command-line form
@@ -25,6 +28,7 @@ pub(crate) mod candidate;
 mod log;
 mod material;
 mod modes;
+pub(crate) mod null;
 mod player;
 mod rng;
 use stave_test::sha256;
@@ -86,6 +90,19 @@ pub enum MaterialChoice {
 }
 
 impl MaterialChoice {
+    /// `--material`'s forms: a built-in name (or `builtin:NAME`),
+    /// `role:NAME[#N]`, else a WAV path.
+    pub fn parse(m: &str) -> Self {
+        let name = m.strip_prefix("builtin:").unwrap_or(m);
+        if builtin::find(name).is_some() {
+            Self::Builtin(name.into())
+        } else if let Some((role, index)) = material::parse_role(m) {
+            Self::Role(role, index)
+        } else {
+            Self::File(candidate::expand_home(m))
+        }
+    }
+
     fn load(&self, sample_rate: f64) -> Result<Material, material::MaterialError> {
         match self {
             Self::Builtin(n) => Material::builtin(n, sample_rate),
@@ -142,6 +159,8 @@ pub enum Mode {
     Sighted,
     Abx,
     Rating,
+    /// Each candidate nulled against the reference (DSP.md G5).
+    Null,
 }
 
 /// A prepared session being listened to.
@@ -197,14 +216,7 @@ impl Voicing {
     pub fn new(launch: &Launch) -> Result<Self, String> {
         let mut setup = Setup::default();
         if let Some(m) = &launch.material {
-            let name = m.strip_prefix("builtin:").unwrap_or(m);
-            setup.material = if builtin::find(name).is_some() {
-                MaterialChoice::Builtin(name.into())
-            } else if let Some((role, index)) = material::parse_role(m) {
-                MaterialChoice::Role(role, index)
-            } else {
-                MaterialChoice::File(candidate::expand_home(m))
-            };
+            setup.material = MaterialChoice::parse(m);
         }
         if let Some(t) = launch.trim_db {
             setup.trim_db = t;
@@ -294,6 +306,10 @@ impl Voicing {
                     block_size: block,
                 };
                 let r = takes::prepare(plan, jobs, &p)
+                    .map(|mut prepared| {
+                        prepared.nulls = null::all(&prepared);
+                        prepared
+                    })
                     .map_err(|e| crate::errors::with_causes(&e));
                 let _ = tx.send(r);
             });
@@ -407,12 +423,17 @@ impl Voicing {
         }
         (ctx.suspend_main)();
         let p = &l.prepared;
-        let takes = p
+        // The takes, then each null's residual (true level, raised):
+        // `Live::residual_take` indexes them.
+        let mut takes: Vec<_> = p
             .takes
             .iter()
             .enumerate()
             .map(|(i, t)| (t.audio.clone(), p.matching.gain(i)))
             .collect();
+        if let Ok(nulls) = &p.nulls {
+            takes.extend(null::player_takes(nulls));
+        }
         let player = Player::new(takes, l.transport.clone(), p.sample_rate, ctx.config.max_block.get());
         match audio::start(player, ctx.shared.clone()) {
             Ok(s) => l.stream = Some(s),
@@ -467,6 +488,12 @@ impl Live {
             self.transport.seek(self.transport.loop_region().0);
         }
         self.transport.select(take);
+    }
+
+    /// The player's take for null `j`'s residual, raised or at its
+    /// true level (after the prepared takes: see `ensure_stream`).
+    fn residual_take(&self, j: usize, raised: bool) -> usize {
+        self.prepared.takes.len() + 2 * j + usize::from(raised)
     }
 
     fn progress_of_prepare(p: &Preparing) -> f32 {

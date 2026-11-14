@@ -123,6 +123,8 @@ pub struct SessionLog {
     pub ratings: Vec<RatingRecord>,
     pub preferences: Vec<Preference>,
     pub blessed: Vec<BlessedRef>,
+    /// Each candidate nulled against the reference (DSP.md G5).
+    pub nulls: Vec<super::null::NullTest>,
     pub notes: String,
 }
 
@@ -244,6 +246,7 @@ pub fn build(prepared: &Prepared, meta: &Meta, history: &History) -> SessionLog 
         ratings: history.ratings.clone(),
         preferences: history.preferences.clone(),
         blessed: history.blessed.clone(),
+        nulls: prepared.nulls.clone().unwrap_or_default(),
         notes: history.notes.clone(),
     }
 }
@@ -290,6 +293,9 @@ pub fn summary(log: &SessionLog) -> String {
         for w in &c.take.warnings {
             line(format!("     warning: {w}"));
         }
+    }
+    for n in &log.nulls {
+        line(format!("null {}", n.describe(log.sample_rate)));
     }
     for a in &log.abx {
         let st = &a.stats;
