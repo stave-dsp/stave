@@ -124,7 +124,7 @@ assess() {
     xcrun stapler validate "$item" 2>&1 | tail -1 | sed 's/^/    /' || true
     return
   fi
-  codesign --verify --deep --strict --verbose=2 "$item" 2>&1 | sed 's/^/    /'
+  codesign --verify --deep --strict --verbose=2 "$item" 2>&1 | sed 's/^/    /' || true
   if [[ "$type" == execute ]]; then
     spctl --assess -vv --type execute "$item" 2>&1 | sed 's/^/    /' || true
   else
