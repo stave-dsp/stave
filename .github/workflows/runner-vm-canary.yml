@@ -24,8 +24,12 @@ jobs:
           test "$(sysctl -n hw.memsize)" = 8589934592
           test "$FLEET_ISOLATION" = tart
           test -s /opt/fleet/image-manifest.json
-          test ! -e /Users/ryanbahan
-          test ! -e /Users/reference
+          for home in "$(dirname "$HOME")"/*; do
+            case "$(basename "$home")" in
+              Shared|admin|ci|Guest) ;;
+              *) echo 'Unexpected host home in guest'; exit 1 ;;
+            esac
+          done
           test ! -d '/Volumes/My Shared Files'
           test ! -w /opt/stave-toolchain/cargo/bin/rustup
           if sudo -n true 2>/dev/null; then echo 'Unexpected sudo access'; exit 1; fi
