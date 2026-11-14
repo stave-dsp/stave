@@ -6,7 +6,9 @@
 //! * each case is a fresh instance prepared at 48 kHz with the case's
 //!   values restored before `prepare` (an oversampling choice is in
 //!   force from the first sample), effects fed noise on every input,
-//!   instruments sounding a held chord;
+//!   instruments sounding a chord, struck again every
+//!   `retrigger_seconds` so a decaying voice is measured sounding, not
+//!   dying away;
 //! * warm-up first (caches, ramps, voices), then REPEATED timed runs and
 //!   the MEDIAN taken, the spread printed so a noisy run discredits
 //!   itself;
@@ -14,12 +16,15 @@
 //!   preempted is not counted as the plugin's cost; where Linux's
 //!   counters can be read the instructions a sample are printed too, a
 //!   number that is the same on every run;
-//! * the worst parameter state is searched for, not guessed: every
-//!   parameter but the bypass is moved alone from its default to each
-//!   candidate value (every step of a stepped parameter of up to 16
-//!   steps, else its ends and middle), each in a short run, and the
-//!   costliest value of each parameter that cost more than the defaults
-//!   is combined into the case `WORST KNOBS`, measured in full;
+//! * the worst parameter state is searched for, not guessed, by
+//!   coordinate ascent from the costliest declared case: each parameter
+//!   but the bypass in turn is moved to each candidate value (every step
+//!   of a stepped parameter of up to 16 steps, else its ends and middle)
+//!   with the others where the search has left them, each in a short
+//!   run, and kept where it cost most; the state it ends in is the case
+//!   `WORST KNOBS`, measured in full. Parameters interact (a mode can
+//!   switch off the stage another knob loads), so each is judged in the
+//!   state the others are in, not alone from the defaults;
 //! * per channel is the frame's cost over the larger of the main input
 //!   and output channel counts.
 //!
@@ -71,10 +76,14 @@ pub struct PerfConfig {
     pub stage_seconds: f32,
     /// Every input channel, effects only.
     pub input: Noise,
-    /// Instruments are measured SOUNDING, this chord held from the
+    /// Instruments are measured SOUNDING, this chord struck from the
     /// first block: an idle rack's cost is not the number that matters
     /// in a session.
     pub chord: Vec<i16>,
+    /// The chord is released and struck again this often, so a
+    /// percussive voice is timed sounding rather than decayed to
+    /// nothing (0: struck once and held).
+    pub retrigger_seconds: f32,
     pub velocity: f64,
 }
 
@@ -95,6 +104,7 @@ impl Default for PerfConfig {
                 amplitude: 0.3,
             },
             chord: vec![36, 43, 48, 55, 60, 64, 67, 72],
+            retrigger_seconds: 0.5,
             velocity: 0.8,
         }
     }
@@ -209,28 +219,26 @@ fn hotspot(r: &PerfRow, channels: usize) -> String {
 struct Feed {
     input: Vec<f32>,
     chord: Vec<Event>,
+    /// The chord released and struck again.
+    retrigger: Vec<Event>,
+    /// Blocks between strikes (0: never again).
+    retrigger_blocks: usize,
 }
 
 impl Feed {
     fn new(config: &PerfConfig) -> Self {
-        let chord = config
-            .chord
-            .iter()
-            .enumerate()
-            .map(|(i, &key)| Event {
+        let notes = |kind: NoteKind| {
+            config.chord.iter().enumerate().map(move |(i, &key)| Event {
                 frame: 0,
-                kind: EventKind::Note(NoteEvent {
-                    kind: NoteKind::On,
-                    key,
-                    channel: 0,
-                    velocity: config.velocity,
-                    note_id: i as i32,
-                }),
+                kind: EventKind::Note(NoteEvent { kind, key, channel: 0, velocity: config.velocity, note_id: i as i32 }),
             })
-            .collect();
+        };
+        let chord: Vec<Event> = notes(NoteKind::On).collect();
+        let retrigger = notes(NoteKind::Off).chain(notes(NoteKind::On)).collect();
+        let retrigger_blocks = (config.retrigger_seconds * config.sample_rate) as usize / config.block_size;
         let longest = config.seconds_per_repeat.max(config.scan_seconds).max(config.stage_seconds);
         let input = config.input.samples(0, (longest * config.sample_rate) as usize + 2 * config.block_size);
-        Feed { input, chord }
+        Feed { input, chord, retrigger, retrigger_blocks }
     }
 }
 
@@ -240,7 +248,8 @@ struct Run<'f, P: Plugin> {
     feed: &'f Feed,
     block: usize,
     at: usize,
-    chord_sent: bool,
+    /// Blocks processed.
+    played: usize,
 }
 
 impl<'f, P: Plugin> Run<'f, P> {
@@ -249,7 +258,7 @@ impl<'f, P: Plugin> Run<'f, P> {
         for (name, value) in set {
             b = b.set(name, *value);
         }
-        Run { h: b.build(), feed, block: config.block_size, at: 0, chord_sent: false }
+        Run { h: b.build(), feed, block: config.block_size, at: 0, played: 0 }
     }
 
     fn blocks(&mut self, n: usize) {
@@ -260,9 +269,14 @@ impl<'f, P: Plugin> Run<'f, P> {
             for ch in self.h.inputs_mut() {
                 ch.copy_from_slice(&self.feed.input[at..at + block]);
             }
-            let events: &[Event] = if self.chord_sent || self.h.input_channels() != 0 { &[] } else { &self.feed.chord };
+            let f = self.feed;
+            let events: &[Event] = match (self.h.input_channels(), self.played) {
+                (0, 0) => &f.chord,
+                (0, n) if f.retrigger_blocks > 0 && n % f.retrigger_blocks == 0 => &f.retrigger,
+                _ => &[],
+            };
             self.h.process(events);
-            self.chord_sent = true;
+            self.played += 1;
             self.at += block;
         }
     }
@@ -327,43 +341,54 @@ fn channels<P: Plugin>() -> usize {
     l.input_channels().max(l.output_channels()).max(1)
 }
 
-/// Search for the costliest parameter state (see the module docs): each
-/// parameter's costliest candidate that beat the defaults.
-pub fn worst_knobs<P: Plugin>(config: &PerfConfig) -> Vec<(String, f64)> {
+/// Search for the costliest parameter state from `start` (see the
+/// module docs): coordinate ascent, one pass over the parameters.
+pub fn worst_knobs<P: Plugin>(config: &PerfConfig, start: &[(String, f64)]) -> Vec<(String, f64)> {
     let feed = Feed::new(config);
     let scan = |set: &[(String, f64)]| {
         let mut run = Run::<P>::new(set, config, &feed);
         run.blocks(config.scan_warmup_blocks);
         run.timed(blocks_for(config.scan_seconds, config), &mut None).0
     };
-    let base = scan(&[]);
     let table = PluginHarness::<P>::new(config.sample_rate, config.block_size).table();
-    let mut worst = Vec::new();
+    let mut state = start.to_vec();
+    let mut cost = scan(&state);
     for i in 0..table.count() {
         let Some(p) = table.by_index(i) else { continue };
         if p.meta().flags.bypass {
             continue;
         }
+        let name = p.meta().name;
+        let at = state.iter().position(|(n, _)| n.eq_ignore_ascii_case(name));
+        let current = at.map_or(p.default_normalized(), |k| p.normalize(state[k].1));
         let steps = p.step_count();
         let candidates: Vec<f64> = if steps > 0 && steps <= 16 {
             (0..=steps).map(|s| f64::from(s) / f64::from(steps)).collect()
         } else {
             vec![0.0, 0.5, 1.0]
         };
-        let default = p.default_normalized();
         let mut best: Option<(f64, f64)> = None;
-        for n in candidates.into_iter().filter(|n| (n - default).abs() > 1e-9) {
+        for n in candidates.into_iter().filter(|n| (n - current).abs() > 1e-9) {
             let value = p.denormalize(n);
-            let ns = scan(&[(p.meta().name.to_string(), value)]);
-            if best.is_none_or(|(_, b)| ns > b) {
+            let mut trial = state.clone();
+            match at {
+                Some(k) => trial[k].1 = value,
+                None => trial.push((name.to_string(), value)),
+            }
+            let ns = scan(&trial);
+            if ns > best.map_or(cost, |(_, b)| b) {
                 best = Some((value, ns));
             }
         }
-        if let Some((value, _)) = best.filter(|&(_, ns)| ns > base) {
-            worst.push((p.meta().name.to_string(), value));
+        if let Some((value, ns)) = best {
+            match at {
+                Some(k) => state[k].1 = value,
+                None => state.push((name.to_string(), value)),
+            }
+            cost = ns;
         }
     }
-    worst
+    state
 }
 
 /// Measure every case, and the worst parameter state, and PRINT the
@@ -384,41 +409,56 @@ pub fn measure<P: Plugin>(project: &str, cases: &[PerfCase], config: &PerfConfig
     let channels = channels::<P>();
     let feed = Feed::new(config);
     let mut counter = Instructions::open();
-    let mut states: Vec<(String, Vec<(String, f64)>)> = cases
+    let states: Vec<(String, Vec<(String, f64)>)> = cases
         .iter()
         .map(|c| (c.name.to_string(), c.set.iter().map(|(n, v)| (n.to_string(), *v)).collect()))
         .collect();
+    let mut rows: Vec<PerfRow> =
+        states.into_iter().map(|(name, set)| measure_state::<P>(name, set, channels, config, &feed, &mut counter)).collect();
     if config.worst_case {
-        states.push((WORST_KNOBS.to_string(), worst_knobs::<P>(config)));
-    }
-    let mut rows = Vec::new();
-    for (name, set) in states {
-        let mut run = Run::<P>::new(&set, config, &feed);
-        run.blocks(config.warmup_blocks);
-        let blocks = blocks_for(config.seconds_per_repeat, config);
-        let mut times = Vec::with_capacity(config.repeats);
-        let mut counts = Vec::with_capacity(config.repeats);
-        for _ in 0..config.repeats.max(1) {
-            let (ns, instructions) = run.timed(blocks, &mut counter);
-            times.push(ns);
-            counts.extend(instructions);
-        }
-        times.sort_by(f64::total_cmp);
-        counts.sort_by(f64::total_cmp);
-        let median = times[times.len() / 2];
-        let stages = run.stages(blocks_for(config.stage_seconds, config));
-        rows.push(PerfRow {
-            name,
-            set,
-            ns_per_frame: median,
-            ns_per_sample_per_channel: median / channels as f64,
-            spread_percent: (times[times.len() - 1] - times[0]) / median.max(f64::MIN_POSITIVE) * 100.0,
-            instructions_per_sample_per_channel: (!counts.is_empty())
-                .then(|| counts[counts.len() / 2] / channels as f64),
-            stages,
-        });
+        let start = rows
+            .iter()
+            .max_by(|a, b| a.ns_per_frame.total_cmp(&b.ns_per_frame))
+            .map_or_else(Vec::new, |r| r.set.clone());
+        let worst = worst_knobs::<P>(config, &start);
+        rows.push(measure_state::<P>(WORST_KNOBS.to_string(), worst, channels, config, &feed, &mut counter));
     }
     PerfReport { project: project.to_string(), budget, channels, rows }
+}
+
+/// One state measured in full: warm-up, the timed runs, the stage taps.
+fn measure_state<P: Plugin>(
+    name: String,
+    set: Vec<(String, f64)>,
+    channels: usize,
+    config: &PerfConfig,
+    feed: &Feed,
+    counter: &mut Option<Instructions>,
+) -> PerfRow {
+    let mut run = Run::<P>::new(&set, config, feed);
+    run.blocks(config.warmup_blocks);
+    let blocks = blocks_for(config.seconds_per_repeat, config);
+    let mut times = Vec::with_capacity(config.repeats);
+    let mut counts = Vec::with_capacity(config.repeats);
+    for _ in 0..config.repeats.max(1) {
+        let (ns, instructions) = run.timed(blocks, counter);
+        times.push(ns);
+        counts.extend(instructions);
+    }
+    times.sort_by(f64::total_cmp);
+    counts.sort_by(f64::total_cmp);
+    let median = times[times.len() / 2];
+    let stages = run.stages(blocks_for(config.stage_seconds, config));
+    PerfRow {
+        name,
+        set,
+        ns_per_frame: median,
+        ns_per_sample_per_channel: median / channels as f64,
+        spread_percent: (times[times.len() - 1] - times[0]) / median.max(f64::MIN_POSITIVE) * 100.0,
+        instructions_per_sample_per_channel: (!counts.is_empty())
+            .then(|| counts[counts.len() / 2] / channels as f64),
+        stages,
+    }
 }
 
 fn print(r: &PerfReport, config: &PerfConfig, counted: bool) {

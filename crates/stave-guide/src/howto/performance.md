@@ -72,8 +72,11 @@ stave_test::plugin_checks!(my_plugin::MyPlugin, {
 
 Each case is a fresh instance at 48 kHz with the case's values restored
 before `prepare`, so an oversampling choice is in force from the first
-sample. Effects are fed noise; instruments are timed sounding a held
-eight-note chord. After a warm-up, five timed runs of three seconds
+sample. Effects are fed noise; instruments are timed sounding an
+eight-note chord, released and struck again every half second so a
+percussive voice is measured sounding rather than decayed to nothing
+(struck once, a decaying instrument's runs spread by up to 19×). After a
+warm-up, five timed runs of three seconds
 each are measured in the thread's CPU time (time spent preempted is not
 the plugin's), and the median is the case's cost. Where Linux's
 performance counters can be read, the instructions a sample a channel
@@ -81,12 +84,19 @@ are printed too: the same on every run, so they see a change the clock
 cannot.
 
 The check adds a case of its own, `WORST KNOBS`: the worst parameter
-state, searched rather than guessed. Every parameter but the bypass is
-moved alone from its default to each candidate value (every step of a
-stepped parameter of up to 16 steps, else its ends and middle) in a
-short run; the costliest value of each parameter that cost more than
-the defaults joins the state, which is then measured in full. The
-report prints the values it chose.
+state, searched rather than guessed. Starting from the costliest
+declared case, each parameter but the bypass in turn is moved to each
+candidate value (every step of a stepped parameter of up to 16 steps,
+else its ends and middle) with the others where the search has left
+them, in a short run, and kept where it cost most; the state the pass
+ends in is measured in full. Parameters interact (a mode can switch off
+the stage another knob loads), so each is judged in the others' state:
+moving each alone from the defaults and combining the winners measured
+cheaper than a declared case on four of the seventeen plugins. The
+report prints the values it chose. The search is one pass of short runs,
+so it can stop short of a state that only costs over time (a freeze
+that fills a buffer); every declared case is held to the budget too, so
+declare those.
 
 The check skips debug builds, where optimisation levels misstate
 release cost. Measure under release, and run it whenever you touch DSP:
@@ -123,7 +133,8 @@ assert_eq!(c.warmup_blocks, 200);           // untimed, before the first run
 assert_eq!((c.repeats, c.seconds_per_repeat), (5, 3.0)); // median of five 3 s runs
 assert!(c.worst_case);                      // the WORST KNOBS search
 assert_eq!((c.scan_warmup_blocks, c.scan_seconds), (40, 0.25)); // a candidate's run
-assert_eq!(c.chord.len(), 8);               // instruments are timed sounding
+assert_eq!(c.chord.len(), 8);               // instruments are timed sounding,
+assert_eq!(c.retrigger_seconds, 0.5);       // the chord struck again this often
 ```
 
 CI does not run the release check: a shared runner's timing is not the
