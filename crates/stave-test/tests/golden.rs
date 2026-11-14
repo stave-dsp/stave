@@ -41,7 +41,7 @@ use stave_test::golden::{pin, pin_stage, RATE};
 
 fn fdn(mixing: Mixing) -> Fdn {
     let mut f = Fdn::new(mixing);
-    f.set_t60_s(2.0);
+    f.set_decay(seconds(2.0));
     f
 }
 
@@ -72,14 +72,14 @@ fn fdn_kronecker() {
     let mut f = Fdn::new(Mixing::Hadamard);
     f.set_kronecker(Kronecker::hadamard());
     f.set_angle_modulation(0.3, hz(0.5));
-    f.set_t60_s(2.0);
+    f.set_decay(seconds(2.0));
     pin_stage("effects/reverb/fdn_kronecker", "Fdn, 8 lines, Kronecker (Hadamard), angles modulated 0.3 at 0.5 Hz, T60 2 s", f);
 }
 
 #[test]
 fn velvet_noise() {
     let mut v = VelvetNoise::new();
-    v.set_t60_s(2.0);
+    v.set_decay(seconds(2.0));
     pin_stage("effects/reverb/velvet_noise", "VelvetNoise, 4 branches, T60 2 s", v);
 }
 
@@ -92,22 +92,22 @@ fn velvet_noise_graphic() {
 
 #[test]
 fn dattorro() {
-    let mut d = Dattorro::new(50.0);
-    d.set_t60_s(2.0);
+    let mut d = Dattorro::new(ms(50.0));
+    d.set_t60(seconds(2.0));
     pin_stage("effects/reverb/dattorro", "Dattorro plate, 50, T60 2 s", d);
 }
 
 #[test]
 fn schroeder() {
     let mut s = Schroeder::new();
-    s.set_t60_s(2.0);
+    s.set_t60(seconds(2.0));
     pin_stage("effects/reverb/schroeder", "Schroeder, 4 combs and 2 allpasses, T60 2 s", s);
 }
 
 #[test]
 fn moorer() {
     let mut s = Schroeder::moorer();
-    s.set_t60_s(2.0);
+    s.set_t60(seconds(2.0));
     pin_stage("effects/reverb/moorer", "Schroeder::moorer, 6 combs, T60 2 s", s);
 }
 
@@ -120,12 +120,12 @@ fn room() {
 
 #[test]
 fn peak_detector() {
-    pin_stage("effects/dynamics/peak", "Peak detector, 5 ms attack, 50 ms release", Peak::new(5.0, 50.0));
+    pin_stage("effects/dynamics/peak", "Peak detector, 5 ms attack, 50 ms release", Peak::new(ms(5.0), ms(50.0)));
 }
 
 #[test]
 fn rms_detector() {
-    pin_stage("effects/dynamics/rms", "Rms detector, 10 ms", Rms::new(10.0));
+    pin_stage("effects/dynamics/rms", "Rms detector, 10 ms", Rms::new(ms(10.0)));
 }
 
 #[test]
@@ -133,13 +133,13 @@ fn program_dependent_detector() {
     pin_stage(
         "effects/dynamics/program_dependent",
         "ProgramDependent detector, 1/50/1000/500 ms",
-        ProgramDependent::new(1.0, 50.0, 1_000.0, 500.0),
+        ProgramDependent::new(ms(1.0), ms(50.0), ms(1_000.0), ms(500.0)),
     );
 }
 
 #[test]
 fn sidechain() {
-    pin_stage("effects/dynamics/sidechain", "Sidechain, HP 100 Hz, LP 8 kHz", Sidechain::new(Some(100.0), Some(8_000.0)));
+    pin_stage("effects/dynamics/sidechain", "Sidechain, HP 100 Hz, LP 8 kHz", Sidechain::new(Some(hz(100.0)), Some(hz(8_000.0))));
 }
 
 const CURVE: GainComputer = GainComputer { threshold_db: -20.0, ratio: 4.0, knee_db: 6.0 };
@@ -170,12 +170,12 @@ fn compressor_feedback() {
 
 #[test]
 fn limiter_true_peak() {
-    hot("effects/dynamics/limiter_true_peak", "Limiter, true peak, −1 dB, input ×4", Limiter::new(Peaks::True, -1.0));
+    hot("effects/dynamics/limiter_true_peak", "Limiter, true peak, −1 dB, input ×4", Limiter::new(Peaks::True, db(-1.0)));
 }
 
 #[test]
 fn limiter_sample_peak() {
-    hot("effects/dynamics/limiter_sample_peak", "Limiter, sample peak, −1 dB, input ×4", Limiter::new(Peaks::Sample, -1.0));
+    hot("effects/dynamics/limiter_sample_peak", "Limiter, sample peak, −1 dB, input ×4", Limiter::new(Peaks::Sample, db(-1.0)));
 }
 
 const CORNERS: [units::Hz; 3] = [hz(120.0), hz(800.0), hz(5_000.0)];
@@ -266,7 +266,7 @@ fn single_sideband() {
     let mut ssb = SingleSideband::new(Sideband::Upper);
     ssb.prepare(RATE);
     let mut carrier = Osc::new(Waveform::Sine);
-    carrier.set_hz(440.0);
+    carrier.set_frequency(hz(440.0));
     carrier.prepare(RATE);
     pin("effects/modulation/single_sideband", "SingleSideband, upper, a 440 Hz sine carrier", |x| {
         ssb.modulate(x, carrier.tick(0.0))
@@ -618,7 +618,7 @@ fn a_moved_stage_is_named_and_every_digest_is_current() {
     use stave_test::golden::{path, root, stimulus, Digest};
     let committed = Digest::committed("effects/reverb/fdn_householder").unwrap().unwrap();
     let mut f = fdn(Mixing::Householder);
-    f.set_t60_s(2.1);
+    f.set_decay(seconds(2.1));
     f.prepare(RATE);
     let out: Vec<f32> = stimulus().into_iter().map(|x| f.tick(x)).collect();
     let moved = committed.diff(&Digest::of("effects/reverb/fdn_householder", &committed.model, &out));

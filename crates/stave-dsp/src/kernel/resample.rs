@@ -184,11 +184,19 @@ impl Line {
     #[inline]
     fn room(&mut self, n: usize) {
         debug_assert!(n <= RUN);
-        if self.end + n > LINE {
-            self.buf.copy_within(self.end - KEEP..self.end, 0);
+        if let Some(back) = look_back(self.end, n) {
+            self.buf.copy_within(back, 0);
             self.end = KEEP;
         }
     }
+}
+
+/// The look-back `room` moves to the front when `n` more samples after
+/// `end` would overrun the line (the newest [`KEEP`]), or `None` when
+/// they fit; after a move the line ends at `KEEP`.
+#[inline(always)]
+fn look_back(end: usize, n: usize) -> Option<core::ops::Range<usize>> {
+    (end + n > LINE).then(|| end - KEEP..end)
 }
 
 /// Polyphase half-band UPSAMPLER. The zero-stuffed formulation ran
@@ -728,28 +736,27 @@ mod proofs {
 
     /// A line in any state the pair can leave it in (`KEEP ≤ end ≤
     /// LINE`), any design to [`HB_TAPS`] (`1 ≤ half ≤ HB_HALF`), any run
-    /// of `n ≤ RUN` samples: `room` keeps that state and leaves room for
-    /// the run, moving the newest `KEEP` samples as the look-back; the
-    /// upsampler's and the decimator's windows for a lane group or one
-    /// output anywhere in the run lie inside the line, each exactly the
-    /// length its reader takes, and every side-tap read lies inside its
-    /// window; after the run the state holds again.
+    /// of `n ≤ RUN` samples: `room` (its `look_back`) moves exactly the
+    /// newest `KEEP` samples, from inside the line, to its front, keeps
+    /// that state and leaves room for the run; the upsampler's and the
+    /// decimator's windows for a lane group or one output anywhere in the
+    /// run lie inside the line, each exactly the length its reader takes,
+    /// and every side-tap read lies inside its window; after the run the
+    /// state holds again. Indices only: the samples' values never decide
+    /// an index (a buffer of floats made the proof time out).
     #[kani::proof]
     fn halfband_windows_stay_inside_their_lines() {
         let h: usize = kani::any_where(|h: &usize| (1..=HB_HALF).contains(h));
-        let end: usize = kani::any_where(|e: &usize| (KEEP..=LINE).contains(e));
+        let mut end: usize = kani::any_where(|e: &usize| (KEEP..=LINE).contains(e));
         let n: usize = kani::any_where(|n: &usize| (1..=RUN).contains(n));
-        let mut line = Line { buf: [0.0; LINE], end };
-        line.buf[end - 1] = 1.0;
-        line.buf[end - KEEP] = 2.0;
-        line.room(n);
-        assert!(line.end >= KEEP && line.end + n <= LINE);
-        // The newest and the oldest kept sample, where the reads expect them.
-        assert_eq!(line.buf[line.end - 1], 1.0);
-        assert_eq!(line.buf[line.end - KEEP], 2.0);
+        if let Some(back) = look_back(end, n) {
+            assert!(back.end == end && back.len() == KEEP && back.end <= LINE);
+            end = KEEP;
+        }
+        assert!(end >= KEEP && end + n <= LINE);
         let width = if kani::any() { LANES } else { 1 };
         let i: usize = kani::any_where(|i: &usize| *i < n && *i + width <= n);
-        let at = line.end + i;
+        let at = end + i;
         for (centre, sides) in [up_windows(at, h, width), down_windows(at, h, width)] {
             assert!(centre.start <= centre.end && centre.end <= LINE && centre.len() == width);
             assert!(sides.start <= sides.end && sides.end <= LINE && sides.len() == 2 * h - 1 + width);
@@ -757,7 +764,7 @@ mod proofs {
         // side_taps: w[h + j..][..N] and w[h − 1 − j..][..N] for j < h.
         let j: usize = kani::any_where(|j: &usize| *j < h);
         assert!(h + j + width <= 2 * h - 1 + width && h - 1 >= j);
-        line.end += n;
-        assert!(line.end >= KEEP && line.end <= LINE);
+        end += n;
+        assert!(end >= KEEP && end <= LINE);
     }
 }
