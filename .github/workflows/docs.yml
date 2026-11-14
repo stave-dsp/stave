@@ -60,9 +60,6 @@ jobs:
       - if: env.AFFECTED_SITE == '1'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          # Never on persistent self-hosted runners: its cleanBin deletes the
-          # tools that were in ~/.cargo/bin before the job (rustup, nextest…).
-          cache-bin: "${{ runner.environment == 'github-hosted' }}"
           shared-key: docsite
           save-if: "${{ github.ref == 'refs/heads/main' }}"
       - if: env.AFFECTED_SITE == '1'
