@@ -288,7 +288,7 @@ sign() {
   note "download:"
   local f
   for f in "$OUT"/*; do
-    [[ -f "$f" ]] && echo "  $f"
+    if [[ -f "$f" ]]; then echo "  $f"; fi
   done
 }
 
