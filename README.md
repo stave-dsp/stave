@@ -20,6 +20,8 @@ are generated from the code, and nothing on it is written twice.
 - `crates/stave-guide` — the guide's articles, in Markdown.
 - `OVERHAUL.md` — the project's working ledger.
 - `DSP.md` — the DSP roadmap: models, verification loops and profiling.
+- `FRAMEWORK.md` — the framework roadmap: formats, hosts, shipping, GUI and
+  MIDI, and where stave stands against JUCE.
 
 The plugins built on Stave live in
 [stave-plugins](https://github.com/stave-dsp/stave-plugins).
