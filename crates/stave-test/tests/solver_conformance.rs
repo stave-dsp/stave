@@ -298,6 +298,14 @@ mod dk {
         }
     }
 
+    #[test]
+    fn mxr_distortion_plus_converges_at_the_host_rate() {
+        use stave_dsp::circuit::topologies::mxr_distortion_plus;
+        for distortion in [0.0, 0.5, 1.0] {
+            run_netlist("MXR Distortion+", &mxr_distortion_plus(distortion, 1.0), "vin", CLASSIC_FRAMES, |n| hot(n, 1.5));
+        }
+    }
+
     /// DSP.md A1: the circuits with stateful ADAA at the host rate, under
     /// the hot signals above and four times hotter — finite, bounded by
     /// their rails, no solve at its cap (the quadrature's extra solves

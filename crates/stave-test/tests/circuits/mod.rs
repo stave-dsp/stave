@@ -1,6 +1,8 @@
 //! The characterised circuits: each deck's input (the source the plan
 //! drives, at its operating-point DC level) and anything held.
 
+use stave_dsp::circuit::netlist::Netlist;
+use stave_dsp::circuit::topologies;
 use stave_test::characterise::{Budget, Characterise, Input, Rates, Shipping, Tier};
 
 pub struct Circuit {
@@ -10,7 +12,16 @@ pub struct Circuit {
     pub supply: bool,
     /// A fixed settling time; otherwise half the linearised tail.
     pub settle: Option<f64>,
+    /// A classic circuit (DSP.md R24, R25): the catalogued topology's
+    /// netlist and its `stave_dsp` path. Its matrix runs that netlist on
+    /// the deck's plan, against ngspice on the deck (the deck writes the
+    /// topology's op-amps and triodes as behavioural sources; the two are
+    /// held together by `classics_match_ngspice.rs`).
+    pub classic: Option<Classic>,
 }
+
+/// A classic's catalogued topology and its `stave_dsp` path.
+pub type Classic = (fn() -> Netlist, &'static str);
 
 const fn circuit(name: &'static str, input: fn() -> Input) -> Circuit {
     Circuit {
@@ -18,10 +29,21 @@ const fn circuit(name: &'static str, input: fn() -> Input) -> Circuit {
         input,
         supply: false,
         settle: None,
+        classic: None,
     }
 }
 
-pub static CIRCUITS: [Circuit; 21] = [
+const fn classic(name: &'static str, topology: fn() -> Netlist, catalogue: &'static str) -> Circuit {
+    Circuit {
+        name,
+        input: || Input::new("vin", 0.0),
+        supply: false,
+        settle: None,
+        classic: Some((topology, catalogue)),
+    }
+}
+
+pub static CIRCUITS: [Circuit; 30] = [
     circuit("diode_clipper", || Input::new("v1", 0.0)),
     circuit("opamp_clipper", || Input::new("v1", 0.0)),
     // The TS808 stage rides on the 4.5 V reference.
@@ -40,6 +62,7 @@ pub static CIRCUITS: [Circuit; 21] = [
         input: || Input::new("il", 0.02),
         supply: true,
         settle: Some(0.35),
+        classic: None,
     },
     circuit("fuzz_face", || Input::new("vin", 0.0)),
     circuit("rangemaster", || Input::new("vin", 0.0)),
@@ -56,7 +79,68 @@ pub static CIRCUITS: [Circuit; 21] = [
     circuit("ota_vca", || Input::new("vin", 0.0).holding("vc", 5.0)),
     // The CE-2's BBD filters (the BBD a unity copy), from IC1A's output.
     circuit("boss_ce2_filters", || Input::new("vin", 0.0)),
+    // The classics (DSP.md R24, R25), each its catalogued topology on its
+    // transient deck's plan, at the settings that deck documents.
+    classic(
+        "tube_screamer_ts808",
+        topologies::tube_screamer_ts808,
+        "stave_dsp::circuit::topologies::tube_screamer::tube_screamer_ts808",
+    ),
+    classic(
+        "big_muff_rams_head",
+        topologies::big_muff_rams_head,
+        "stave_dsp::circuit::topologies::big_muff::big_muff_rams_head",
+    ),
+    classic("proco_rat", topologies::proco_rat, "stave_dsp::circuit::topologies::proco_rat::proco_rat"),
+    classic(
+        "marshall_jcm800_2203",
+        topologies::marshall_jcm800_2203,
+        "stave_dsp::circuit::topologies::marshall_jcm800::marshall_jcm800_2203",
+    ),
+    // Regeneration k = 3, the transient deck's.
+    classic(
+        "moog_ladder_feedback",
+        || topologies::moog_ladder_904a(3.0),
+        "stave_dsp::circuit::topologies::moog_ladder::moog_ladder_904a",
+    ),
+    // The gates frozen at 3.4 V.
+    classic(
+        "mxr_phase90",
+        || topologies::mxr_phase90(3.4),
+        "stave_dsp::circuit::topologies::mxr_phase90::mxr_phase90",
+    ),
+    classic("boss_ds1", topologies::boss_ds1, "stave_dsp::circuit::topologies::boss_ds1::boss_ds1"),
+    // Gain and treble at noon.
+    classic(
+        "klon_centaur",
+        || topologies::klon_centaur(0.5, 0.5),
+        "stave_dsp::circuit::topologies::klon_centaur::klon_centaur",
+    ),
+    // Distortion and output at maximum.
+    classic(
+        "mxr_distortion_plus",
+        || topologies::mxr_distortion_plus(1.0, 1.0),
+        "stave_dsp::circuit::topologies::mxr_distortion_plus::mxr_distortion_plus",
+    ),
 ];
+
+/// The circuit `name`.
+pub fn find(name: &str) -> &'static Circuit {
+    CIRCUITS
+        .iter()
+        .find(|c| c.name == name)
+        .unwrap_or_else(|| panic!("no circuit {name}"))
+}
+
+/// `name`'s model at `tier`: `Circuit<Dk>` on the deck, or a classic's
+/// catalogued topology on the deck's plan.
+pub fn model(name: &str, tier: Tier) -> Characterise {
+    let c = Characterise::ngspice(name).tier(tier);
+    match find(name).classic {
+        Some((topology, catalogue)) => c.netlist(topology()).catalogue(catalogue),
+        None => c.circuit(),
+    }
+}
 
 /// The solver's rate for a case at `tier`: the oversampling its waveform
 /// case runs at (`matches_ngspice.rs`, `dk_matches_ngspice.rs`,
@@ -65,9 +149,17 @@ pub static CIRCUITS: [Circuit; 21] = [
 /// 1× for a memoryless circuit's T0 (no step to refine: its "oversampled"
 /// run is its 48 kHz one; T1's 4× measures it free of aliasing), 16× for
 /// the transistor decks whose cards' charge storage puts poles far above
-/// the audio band (DSP.md R11), else 4×.
+/// the audio band (DSP.md R11), else 4×. The classics run at the grid
+/// their waveform cases converge on (`classics_match_ngspice.rs`): 32×
+/// where an op-amp slews or rails into hard clipping (the RAT's LM308,
+/// the DS-1, the Distortion+'s 741), 16× for the other op-amp and triode
+/// circuits and the Big Muff, 8× for the Klon and the resonant Moog
+/// ladder.
 pub fn oversample(case: &str, tier: Tier) -> u32 {
     match (case.split('/').next().unwrap(), tier) {
+        ("proco_rat" | "boss_ds1" | "mxr_distortion_plus", _) => 32,
+        ("tube_screamer_ts808" | "big_muff_rams_head" | "marshall_jcm800_2203" | "mxr_phase90", _) => 16,
+        ("klon_centaur" | "moog_ladder_feedback", _) => 8,
         ("tube_screamer", Tier::T0) => 8,
         ("opamp_clipper" | "tube_screamer", _) => 16,
         ("fuzz_face" | "ce_stage" | "mosfet_booster", _) => 16,
@@ -238,7 +330,8 @@ pub fn piano_anmr(name: &str, host: f64, s: Shipping, offset: f64) -> (f64, f64)
     use stave_test::characterise::{deck, Plan};
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("spice");
     let plan = Plan::parse(&std::fs::read_to_string(dir.join(format!("{name}.plan"))).unwrap()).unwrap();
-    let deck = deck(name);
+    // A classic runs as its catalogued topology.
+    let deck = find(name).classic.map_or_else(|| deck(name), |(topology, _)| topology());
     let sweep = SteppedTone {
         amplitude: plan.knee.unwrap().at(offset),
         // Past the slowest settling (≤ 50 ms) in one window.

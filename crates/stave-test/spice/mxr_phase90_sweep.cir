@@ -1,0 +1,100 @@
+* MXR Phase 90 (script logo, 1974), the audio path with the LFO swept:
+* the four JFET-swept allpass stages' gates driven together by a slow
+* 4 Hz sine from 3.1 to 4.3 V (channels nearly off to a few kilohms),
+* one whole sweep in 0.25 s, standing in for the LFO's output on the gate
+* bus (its triangle, and the bus's 3M9 / 47n smoothing, not modelled).
+* Driven 300 mV at 1 kHz: the notches sweep across the tone, and the
+* channels move within each period of it.
+* Sources: General Guitar Gadgets, "P90" schematic (JD Sleep, version
+* 2015June30), BOM and build instructions (gate and source voltages),
+* https://www.generalguitargadgets.com; madbeanpedals, "NomNom" build
+* documentation (a Phase 90 with mods; its stock values agree);
+* R. G. Keen, "The Technology of Phase Shifters and Flangers" (GEOFEX).
+* Input: R1 10k, C1 10n into IC1, a follower, biased by R2 470k from the
+* 5.1 V zener reference (R16 10k / D2 / C6, ideal here). Four allpass
+* stages, each an op-amp with 10k in and 10k feedback on its inverting
+* input and 47n into its + input, which goes to the reference through
+* 22k || a 2N5952's channel (drain at the + input, source at the
+* reference); the gates share one bus (R17 1M from the bias trimmer, R18
+* 3M9 from the LFO, C10 47n to the reference), driven here by an ideal
+* source, the sweep. Script version: no R15 feedback resistor. The
+* mixer: dry (IC1) and wet (stage 4) through R27 and R24, 150k each, into
+* the base of Q5, a 2N4125 PNP with its emitter on the reference, R26
+* 150k collector-to-base and R28 56k to ground (an inverting summer,
+* about -1 per path); C9 47n, R29 150k, R30 10k into an amplifier's 1M
+* input. The six LM741s run on 0-9 V; the LFO (IC6) is left out. The
+* op-amps are stave's opamp::Macromodel::LM741 written as behavioural
+* sources (see opamp_slew.cir); 2N5952: the LTspice-standard card's DC
+* part (jfet::ShichmanHodges::N2N5952); 2N4125: National's card, DC part
+* (bjt::GummelPoon::N2N4125). Output: out.
+.param cc=1e-9 vos=2e-3 vhi=8 vlo=1 vmid=4.5 vk=0.02 kc=10
+.param gm={6.283185307179586*1.17e6*1e-9} isl={0.5e6*1e-9} g0={gm/200e3}
+VIN in 0 SIN(0 0.3 1k)
+VA va 0 9
+VR vr 0 5.1
+VG g 0 SIN(3.7 0.6 4)
+R1 in i1 10k
+C1 i1 p0 10n
+R2 p0 vr 470k
+BG1 0 n1 I = {isl*tanh(gm*(V(p0,b0)+vos)/isl) + g0*vmid - kc*isl*(max((V(n1)-vhi)/vk,0) + ln(1+exp(-abs((V(n1)-vhi)/vk))) - max((vlo-V(n1))/vk,0) - ln(1+exp(-abs((vlo-V(n1))/vk))))}
+RG1 n1 0 {1/g0}
+CC1 n1 0 {cc}
+EO1 b0 0 n1 0 1
+R7 b0 m1 10k
+R11 m1 y1 10k
+C2 b0 p1 47n
+R3 p1 vr 22k
+J1 p1 g vr J2N5952
+BG2 0 n2 I = {isl*tanh(gm*(V(p1,m1)+vos)/isl) + g0*vmid - kc*isl*(max((V(n2)-vhi)/vk,0) + ln(1+exp(-abs((V(n2)-vhi)/vk))) - max((vlo-V(n2))/vk,0) - ln(1+exp(-abs((vlo-V(n2))/vk))))}
+RG2 n2 0 {1/g0}
+CC2 n2 0 {cc}
+EO2 y1 0 n2 0 1
+R8 y1 m2 10k
+R12 m2 y2 10k
+C3 y1 p2 47n
+R4 p2 vr 22k
+J2 p2 g vr J2N5952
+BG3 0 n3 I = {isl*tanh(gm*(V(p2,m2)+vos)/isl) + g0*vmid - kc*isl*(max((V(n3)-vhi)/vk,0) + ln(1+exp(-abs((V(n3)-vhi)/vk))) - max((vlo-V(n3))/vk,0) - ln(1+exp(-abs((vlo-V(n3))/vk))))}
+RG3 n3 0 {1/g0}
+CC3 n3 0 {cc}
+EO3 y2 0 n3 0 1
+R9 y2 m3 10k
+R13 m3 y3 10k
+C4 y2 p3 47n
+R5 p3 vr 22k
+J3 p3 g vr J2N5952
+BG4 0 n4 I = {isl*tanh(gm*(V(p3,m3)+vos)/isl) + g0*vmid - kc*isl*(max((V(n4)-vhi)/vk,0) + ln(1+exp(-abs((V(n4)-vhi)/vk))) - max((vlo-V(n4))/vk,0) - ln(1+exp(-abs((vlo-V(n4))/vk))))}
+RG4 n4 0 {1/g0}
+CC4 n4 0 {cc}
+EO4 y3 0 n4 0 1
+R10 y3 m4 10k
+R14 m4 y4 10k
+C5 y3 p4 47n
+R6 p4 vr 22k
+J4 p4 g vr J2N5952
+BG5 0 n5 I = {isl*tanh(gm*(V(p4,m4)+vos)/isl) + g0*vmid - kc*isl*(max((V(n5)-vhi)/vk,0) + ln(1+exp(-abs((V(n5)-vhi)/vk))) - max((vlo-V(n5))/vk,0) - ln(1+exp(-abs((vlo-V(n5))/vk))))}
+RG5 n5 0 {1/g0}
+CC5 n5 0 {cc}
+EO5 y4 0 n5 0 1
+R27 b0 b5 150k
+R24 y4 b5 150k
+Q5 c5 b5 vr Q2N4125
+R26 b5 c5 150k
+R28 c5 0 56k
+C9 c5 o9 47n
+R29 o9 0 150k
+R30 o9 out 10k
+RL out 0 1meg
+.model J2N5952 NJF(Beta=1.314m Lambda=4m Vto=-2.021 Rd=1 Rs=1 Is=33.57f N=1)
+.model Q2N4125 PNP(IS=1.41f BF=85.04 BR=5.576 VAF=18.7 VAR=6.5 IKF=80m RB=10 RC=2.5 RE=0.15)
+* ngspice's starting guess for the operating point; stave ignores it.
+.nodeset v(b0)=5.1 v(y1)=5.1 v(y2)=5.1 v(y3)=5.1 v(y4)=5.1 v(p0)=5.1 v(p1)=5.1 v(p2)=5.1 v(p3)=5.1 v(p4)=5.1 v(m1)=5.1 v(m2)=5.1 v(m3)=5.1 v(m4)=5.1 v(n1)=5.1 v(n2)=5.1 v(n3)=5.1 v(n4)=5.1 v(n5)=5.1
+.options interp reltol=1e-8 abstol=1e-15 vntol=1e-12
+.tran 20.8333333u 250m 0 0.1u
+.control
+set wr_singlescale
+set numdgt=12
+run
+wrdata OUTFILE v(out)
+.endc
+.end

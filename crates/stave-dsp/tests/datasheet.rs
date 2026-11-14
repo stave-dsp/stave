@@ -1353,6 +1353,9 @@ fn circuit_datasheet(sr: f32, input: &[f32]) {
     let mut klon = driven(topologies::klon_centaur(0.5, 0.5), sr);
     bench("Circuit<Dk> Klon Centaur (TL072)", input, |x| klon.tick(x));
     solve_health(&klon);
+    let mut dplus = driven(topologies::mxr_distortion_plus(1.0, 1.0), sr);
+    bench("Circuit<Dk> MXR Distortion+ (LM741)", input, |x| dplus.tick(x));
+    solve_health(&dplus);
 }
 
 /// A topology's netlist as `Circuit<Dk>`, its `vin` driven by the input.

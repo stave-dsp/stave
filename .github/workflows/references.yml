@@ -67,6 +67,12 @@ env:
   # perturbation step below proves the check still catches a 1% change.
   NGSPICE_PACKAGE: "42+ds-3build1"
   NGSPICE_VERSION: "42"
+  # The classic circuits' transient decks (DSP.md R24, R25, R27; with the
+  # Phase 90 swept, minutes of ngspice on its own): their
+  # tables take ngspice most of an hour and their T1 matrices tens of
+  # minutes at the 8–32× grids their op-amps need, so jobs of their own
+  # check them (the circuits' list in crates/stave-test/tests/circuits/).
+  CLASSICS: "tube_screamer_ts808,big_muff_rams_head,proco_rat,marshall_jcm800_2203,moog_ladder_feedback,mxr_phase90,boss_ds1,klon_centaur,mxr_distortion_plus,mxr_phase90_sweep"
 
 jobs:
   references:
@@ -86,7 +92,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends "ngspice=$NGSPICE_PACKAGE"
       - name: ngspice's waveforms and tables are current
-        run: python3 scripts/ngspice-simulate.py --check --expect-version "$NGSPICE_VERSION" --keep target/fresh-tables
+        run: python3 scripts/ngspice-simulate.py --check --expect-version "$NGSPICE_VERSION" --exclude "$CLASSICS" --keep target/fresh-tables
       # A stale table's fresh simulation under the pinned ngspice: download
       # it to commit (DSP.md R16: fixtures regenerated under ngspice 42).
       - if: failure()
@@ -131,4 +137,41 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
-      - run: cargo test -p stave-test --locked --test characterise_t1 -- --ignored
+      - run: "cargo test -p stave-test --locked --test characterise_t1 -- --ignored --skip classics::"
+
+  references-classics:
+    name: references (classics, ngspice)
+    timeout-minutes: 120
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/reference-requirements.txt
+      - run: pip install -r scripts/reference-requirements.txt
+      - name: Install ngspice ${{ env.NGSPICE_PACKAGE }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends "ngspice=$NGSPICE_PACKAGE"
+      - name: The classics' waveforms and tables are current
+        run: python3 scripts/ngspice-simulate.py --check --expect-version "$NGSPICE_VERSION" --only "$CLASSICS" --keep target/fresh-tables
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-tables-classics
+          path: target/fresh-tables
+          if-no-files-found: ignore
+
+  characterise-classics:
+    # The classics' T1 (`classics::` in characterise_t1.rs).
+    name: characterise classics (T1)
+    timeout-minutes: 120
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
+      - run: "cargo test -p stave-test --locked --test characterise_t1 -- --ignored classics::"

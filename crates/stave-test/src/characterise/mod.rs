@@ -453,7 +453,15 @@ impl Characterise {
             skipped: None,
             capped,
             seconds: started.elapsed().as_secs_f64(),
-            model: format!("{what} on spice/{}.cir", self.deck_name),
+            model: match (model, &self.catalogue) {
+                // A catalogued netlist (a classic's topology) on the deck's plan.
+                (Model::Circuit(_), Some(path)) => format!(
+                    "{what} on {}, through spice/{}.plan",
+                    path.trim_start_matches("stave_dsp::circuit::"),
+                    self.deck_name
+                ),
+                _ => format!("{what} on spice/{}.cir", self.deck_name),
+            },
             reference: Some((format!("{} ({})", reference.source, self.target.regenerate()), reference)),
             plan: self.plan,
             catalogue: self.catalogue,

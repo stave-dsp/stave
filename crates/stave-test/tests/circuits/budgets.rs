@@ -1263,6 +1263,456 @@ pub fn table(case: &str, tier: Tier) -> &'static [Row] {
             (ThdN, Oversampled, 5.0, NAN), // 0.679
             (ThdN, Shipping, 0.2, NAN), // 0.047 — aliasing as it ships
         ],
+        ("tube_screamer_ts808", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -69 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -56.2 / -39.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 15.0), // -7.7 / 8.9 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.1, 0.2), // 0.022 / 0.0616
+            (Bla, Shipping, 50.0, 100.0), // 8.9 / 19.3 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.0002, 0.001), // 4.73e-05 / 0.00033
+            (Compression, Shipping, 0.02, 0.5), // 0.00582 / 0.0979
+            (Detection, Oversampled, 2.0, NAN), // 0.484
+            (Detection, Shipping, 2.0, NAN), // 0.455
+            (GroupDelay, Oversampled, 0.0002, NAN), // 7.99e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.12e-06
+            (Harmonics, Oversampled, 0.05, 0.1), // 0.0123 / 0.0292
+            (Harmonics, Shipping, 20.0, 50.0), // 5.1 / 10.1 — FINDING: bilinear warping and aliasing at 1×
+            (OperatingPoint, Oversampled, 1e-06, NAN), // 2.01e-07
+            (OperatingPoint, Shipping, 1e-06, NAN), // 2.01e-07
+            (Response, Oversampled, 5e-07, 2e-06), // 8.95e-08 / 5.65e-07
+            (Response, Shipping, 50.0, 50.0), // 8.9 / 8.42 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.002, NAN), // 0.000422
+            (ThdN, Shipping, 0.5, NAN), // 0.11
+        ],
+        ("tube_screamer_ts808", Tier::T1) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -10.0, NAN), // -12.5 — aliasing as it ships
+            (Anmr, Shipping, 73.0, NAN), // 69.9 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -56.2 / -38.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 20.0), // -6.3 / 11.3 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.1, 0.1), // 0.022 / 0.0322
+            (Bla, Shipping, 50.0, 50.0), // 11.5 / 12.4 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.02, 0.05), // 0.00495 / 0.0153
+            (Compression, Shipping, 10.0, 50.0), // 1.85 / 9.4 — FINDING: bilinear warping at 1× (no prewarp)
+            (Detection, Oversampled, 2.0, NAN), // 0.484
+            (Detection, Shipping, 200.0, NAN), // 35.3 — aliasing as it ships
+            (Dynamics, Oversampled, 5e-05, 0.2), // 1.37e-05 / 0.0486
+            (Dynamics, Shipping, 0.001, 5.0), // 0.000211 / 0.781
+            (GroupDelay, Oversampled, 0.0002, NAN), // 7.99e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.33e-06
+            (Harmonics, Oversampled, 5.0, 20.0), // 1.27 / 3.63
+            (Harmonics, Shipping, 200.0, 500.0), // 43.9 / 75 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 2.0, 1.0), // 0.377 / 0.249
+            (Intermodulation, Shipping, 200.0, 100.0), // 63.4 / 25 — aliasing as it ships
+            (OperatingPoint, Oversampled, 1e-06, NAN), // 2.01e-07
+            (OperatingPoint, Shipping, 1e-06, NAN), // 2.01e-07
+            (Response, Oversampled, 5e-07, 2e-06), // 8.95e-08 / 5.65e-07
+            (Response, Shipping, 50.0, 50.0), // 11.5 / 10.1 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 1.0, NAN), // 0.321
+            (ThdN, Shipping, 500.0, NAN), // 69.6 — aliasing as it ships
+        ],
+        ("big_muff_rams_head", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -117.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -49.5 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -54.4 / -38.1 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 15.0), // -7.1 / 9.4 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.2, 0.2), // 0.0341 / 0.0463
+            (Bla, Shipping, 50.0, 50.0), // 13.6 / 13.8 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.0001, 0.0005), // 2.49e-05 / 0.000166
+            (Compression, Shipping, 0.05, 0.2), // 0.00715 / 0.0458
+            (Detection, Oversampled, 0.02, NAN), // 0.00637
+            (Detection, Shipping, 0.05, NAN), // 0.00874
+            (GroupDelay, Oversampled, 0.0002, NAN), // 2.14e-11
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.85e-06
+            (Harmonics, Oversampled, 0.05, 0.2), // 0.00859 / 0.0607
+            (Harmonics, Shipping, 10.0, 100.0), // 2.97 / 17.2 — FINDING: bilinear warping and aliasing at 1×
+            (OperatingPoint, Oversampled, 5e-06, NAN), // 8.52e-07
+            (OperatingPoint, Shipping, 5e-06, NAN), // 8.52e-07
+            (Response, Oversampled, 1e-05, 2e-05), // 2.33e-06 / 5.37e-06
+            (Response, Shipping, 50.0, 50.0), // 13.5 / 12.5 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.005, NAN), // 0.000669
+            (ThdN, Shipping, 0.2, NAN), // 0.0546
+        ],
+        ("big_muff_rams_head", Tier::T1) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -64.0, NAN), // -66.3 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -36 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -54.2 / -37.5 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 20.0), // -5.6 / 11.2 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.2, 0.2), // 0.0341 / 0.0478
+            (Bla, Shipping, 100.0, 100.0), // 17.4 / 19.4 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.05, 0.1), // 0.0079 / 0.0178
+            (Compression, Shipping, 10.0, 20.0), // 2.89 / 5.98 — FINDING: bilinear warping at 1× (no prewarp)
+            (Detection, Oversampled, 0.5, NAN), // 0.132
+            (Detection, Shipping, 0.5, NAN), // 0.116
+            (Dynamics, Oversampled, 0.0001, 0.2), // 1.95e-05 / 0.0663
+            (Dynamics, Shipping, 0.001, 5.0), // 0.000302 / 1.15
+            (GroupDelay, Oversampled, 0.0002, NAN), // 2.14e-11
+            (GroupDelay, Shipping, 0.0002, NAN), // 2.2e-06
+            (Harmonics, Oversampled, 0.5, 0.5), // 0.0755 / 0.0729
+            (Harmonics, Shipping, 100.0, 100.0), // 24.8 / 29.5 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 0.1, 0.002), // 0.0262 / 0.000464
+            (Intermodulation, Shipping, 50.0, 0.02), // 15.4 / 0.00351 — aliasing as it ships
+            (OperatingPoint, Oversampled, 5e-06, NAN), // 8.52e-07
+            (OperatingPoint, Shipping, 5e-06, NAN), // 8.52e-07
+            (Response, Oversampled, 1e-05, 2e-05), // 2.33e-06 / 5.37e-06
+            (Response, Shipping, 100.0, 50.0), // 17.4 / 15.2 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 100.0, NAN), // 17.5
+            (ThdN, Shipping, 100.0, NAN), // 17.5 — aliasing as it ships
+        ],
+        ("proco_rat", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -71.0, NAN), // -73.6 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -26.9 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -74.1 / -56.3 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 15.0), // -8.5 / 9.1 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.01, 0.05), // 0.00246 / 0.0108
+            (Bla, Shipping, 50.0, 100.0), // 7.14 / 19 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 5e-05, 0.0002), // 9.45e-06 / 4.08e-05
+            (Compression, Shipping, 0.1, 0.2), // 0.0171 / 0.0549
+            (Detection, Oversampled, 20.0, NAN), // 6.52
+            (Detection, Shipping, 20.0, NAN), // 6.53 — aliasing as it ships
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.11e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 3.6e-07
+            (Harmonics, Oversampled, 0.2, 0.02), // 0.0404 / 0.00526
+            (Harmonics, Shipping, 5.0, 50.0), // 1.16 / 9.39 — FINDING: bilinear warping and aliasing at 1×
+            (OperatingPoint, Oversampled, 1e-09, NAN), // 3.33e-10
+            (OperatingPoint, Shipping, 1e-09, NAN), // 3.33e-10
+            (Response, Oversampled, 1e-08, 5e-08), // 2.81e-09 / 9.49e-09
+            (Response, Shipping, 50.0, 100.0), // 7.14 / 19 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.05, NAN), // 0.0096
+            (ThdN, Shipping, 0.5, NAN), // 0.108
+        ],
+        ("proco_rat", Tier::T1) => &[
+            (Aliasing, Oversampled, -117.0, NAN), // -120
+            (Aliasing, Shipping, -43.0, NAN), // -45.2 — aliasing as it ships
+            (Anmr, Shipping, 28.0, NAN), // 24.1 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -74 / -56.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 20.0), // -6.7 / 11 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.01, 0.05), // 0.00245 / 0.00954
+            (Bla, Shipping, 50.0, 100.0), // 9.49 / 24.7 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.002, 0.01), // 0.000457 / 0.00175
+            (Compression, Shipping, 5.0, 10.0), // 1.25 / 3.17 — FINDING: bilinear warping at 1× (no prewarp)
+            (Detection, Oversampled, 20.0, NAN), // 6.52
+            (Detection, Shipping, 100.0, NAN), // 16.9 — aliasing as it ships
+            (Dynamics, Oversampled, 0.0002, 0.2), // 5.98e-05 / 0.0628
+            (Dynamics, Shipping, 0.002, 5.0), // 0.000604 / 0.678
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.11e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 4.29e-07
+            (Harmonics, Oversampled, 1.0, 0.5), // 0.23 / 0.0869
+            (Harmonics, Shipping, 100.0, 200.0), // 18 / 42.9 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 1.0, 0.02), // 0.172 / 0.0056
+            (Intermodulation, Shipping, 100.0, 10.0), // 31.7 / 2.65 — aliasing as it ships
+            (OperatingPoint, Oversampled, 1e-09, NAN), // 3.33e-10
+            (OperatingPoint, Shipping, 1e-09, NAN), // 3.33e-10
+            (Response, Oversampled, 1e-08, 5e-08), // 2.81e-09 / 9.49e-09
+            (Response, Shipping, 50.0, 100.0), // 9.44 / 24.5 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 50.0, NAN), // 12.1
+            (ThdN, Shipping, 50.0, NAN), // 13.4 — aliasing as it ships
+        ],
+        ("marshall_jcm800_2203", Tier::T0) => &[
+            (Aliasing, Oversampled, -105.0, NAN), // -108
+            (Aliasing, Shipping, -59.0, NAN), // -61.8 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -16.4 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -72.2 / -58.7 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, -10.0), // -26.1 / -11 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Bla, Oversampled, 0.005, 0.1), // 0.00124 / 0.0191
+            (Bla, Shipping, 5.0, 20.0), // 0.755 / 3.8
+            (Compression, Oversampled, 0.0002, 0.0002), // 5.18e-05 / 5.9e-05
+            (Compression, Shipping, 0.05, 0.05), // 0.0132 / 0.0162
+            (Detection, Oversampled, 0.5, NAN), // 0.129
+            (Detection, Shipping, 5.0, NAN), // 1.27 — aliasing as it ships
+            (GroupDelay, Oversampled, 0.0002, NAN), // 4.02e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 6.71e-07
+            (Harmonics, Oversampled, 0.02, 0.05), // 0.00335 / 0.00785
+            (Harmonics, Shipping, 2.0, 5.0), // 0.547 / 0.997
+            (OperatingPoint, Oversampled, 2e-07, NAN), // 4.09e-08
+            (OperatingPoint, Shipping, 2e-07, NAN), // 4.09e-08
+            (Response, Oversampled, 1e-08, 5e-08), // 2.09e-09 / 7.22e-09
+            (Response, Shipping, 0.2, 20.0), // 0.0615 / 3.52
+            (ThdN, Oversampled, 0.0005, NAN), // 0.000127
+            (ThdN, Shipping, 0.2, NAN), // 0.0376
+        ],
+        ("marshall_jcm800_2203", Tier::T1) => &[
+            (Aliasing, Oversampled, -63.0, NAN), // -65.3
+            (Aliasing, Shipping, -7.0, NAN), // -9.1 — aliasing as it ships
+            (Anmr, Shipping, 64.0, NAN), // 60.4 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -57.4 / -40.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, 10.0), // -13.8 / 3.6 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.02, 0.2), // 0.00372 / 0.0622
+            (Bla, Shipping, 5.0, 50.0), // 1.09 / 15.9 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.002, 0.02), // 0.000476 / 0.00582
+            (Compression, Shipping, 0.5, 10.0), // 0.0727 / 2.01
+            (Detection, Oversampled, 1.0, NAN), // 0.232
+            (Detection, Shipping, 20.0, NAN), // 4.83 — aliasing as it ships
+            (Dynamics, Oversampled, 0.005, 0.05), // 0.00119 / 0.0113
+            (Dynamics, Shipping, 0.1, 0.5), // 0.0179 / 0.162
+            (GroupDelay, Oversampled, 0.0002, NAN), // 4.02e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 7.96e-07
+            (Harmonics, Oversampled, 2.0, 1.0), // 0.335 / 0.292
+            (Harmonics, Shipping, 20.0, 20.0), // 3.88 / 5.01 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 0.5, 2.0), // 0.0827 / 0.544
+            (Intermodulation, Shipping, 2.0, 20.0), // 0.366 / 6.2 — aliasing as it ships
+            (OperatingPoint, Oversampled, 2e-07, NAN), // 4.09e-08
+            (OperatingPoint, Shipping, 2e-07, NAN), // 4.09e-08
+            (Response, Oversampled, 1e-08, 5e-08), // 2.09e-09 / 7.22e-09
+            (Response, Shipping, 0.5, 20.0), // 0.0725 / 4.24
+            (ThdN, Oversampled, 0.05, NAN), // 0.0134
+            (ThdN, Shipping, 50.0, NAN), // 14.2 — aliasing as it ships
+        ],
+        ("moog_ladder_feedback", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -45.4 / -29.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, 10.0), // -10.7 / 4.8 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 1.0, 1.0), // 0.202 / 0.251
+            (Bla, Shipping, 100.0, 100.0), // 18.4 / 30.5 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.0005, 0.01), // 0.000122 / 0.00243
+            (Compression, Shipping, 0.05, 0.5), // 0.00761 / 0.156
+            (Detection, Oversampled, 0.002, NAN), // 0.000587
+            (Detection, Shipping, 0.5, NAN), // 0.0991
+            (GroupDelay, Oversampled, 0.0002, NAN), // 6.75e-10
+            (GroupDelay, Shipping, 0.0002, NAN), // 8.88e-06
+            (Harmonics, Oversampled, 0.1, 0.5), // 0.0297 / 0.0692
+            (Harmonics, Shipping, 10.0, 20.0), // 2.28 / 4.69 — FINDING: bilinear warping and aliasing at 1×
+            (OperatingPoint, Oversampled, 1e-06, NAN), // 1.99e-07
+            (OperatingPoint, Shipping, 1e-06, NAN), // 1.99e-07
+            (Response, Oversampled, 0.0001, 0.0005), // 2.43e-05 / 0.000126
+            (Response, Shipping, 100.0, 50.0), // 18.1 / 11.3 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.02, NAN), // 0.0034
+            (ThdN, Shipping, 1.0, NAN), // 0.221
+        ],
+        ("moog_ladder_feedback", Tier::T1) => &[
+            (Aliasing, Oversampled, -56.0, NAN), // -58.2
+            (Aliasing, Shipping, 22.0, NAN), // 19.8 — aliasing as it ships
+            (Anmr, Shipping, 81.0, NAN), // 77.3 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -45 / -25.9 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 20.0), // -8.9 / 10.9 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 1.0, 1.0), // 0.203 / 0.257
+            (Bla, Shipping, 100.0, 200.0), // 23.8 / 48.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.2, 0.5), // 0.0475 / 0.0756
+            (Compression, Shipping, 20.0, 20.0), // 4.03 / 5.91 — FINDING: bilinear warping at 1× (no prewarp)
+            (Detection, Oversampled, 0.01, NAN), // 0.00227
+            (Detection, Shipping, 500.0, NAN), // 90.7 — aliasing as it ships
+            (Dynamics, Oversampled, 5e-08, 0.002), // 8.2e-09 / 0.00041
+            (Dynamics, Shipping, 2e-05, 1.0), // 3.86e-06 / 0.271
+            (GroupDelay, Oversampled, 0.0002, NAN), // 6.75e-10
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.06e-05
+            (Harmonics, Oversampled, 20.0, 5.0), // 4.31 / 0.725
+            (Harmonics, Shipping, 100.0, 500.0), // 32.2 / 151 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 10.0, 5.0), // 3.15 / 1.12
+            (Intermodulation, Shipping, 500.0, 100.0), // 77.1 / 19.2 — aliasing as it ships
+            (OperatingPoint, Oversampled, 1e-06, NAN), // 1.99e-07
+            (OperatingPoint, Shipping, 1e-06, NAN), // 1.99e-07
+            (Response, Oversampled, 0.0001, 0.0005), // 2.43e-05 / 0.000126
+            (Response, Shipping, 100.0, 50.0), // 23.4 / 13.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 200.0, NAN), // 61.8
+            (ThdN, Shipping, 500.0, NAN), // 140 — aliasing as it ships
+        ],
+        ("mxr_phase90", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -68.0, NAN), // -70.4 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -13.8 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -53 / -36.7 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 5.0, 20.0), // -4.6 / 11.9 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.1, 0.2), // 0.0301 / 0.0625
+            (Bla, Shipping, 100.0, 200.0), // 24.4 / 63.6 — FINDING: the notches move under bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.002, 0.005), // 0.000548 / 0.000927
+            (Compression, Shipping, 0.5, 1.0), // 0.148 / 0.249
+            (Detection, Oversampled, 0.005, NAN), // 0.00162
+            (Detection, Shipping, 2.0, NAN), // 0.477
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.68e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 2.73e-06
+            (Harmonics, Oversampled, 0.05, 0.5), // 0.0139 / 0.0999
+            (Harmonics, Shipping, 20.0, 100.0), // 4.78 / 31.3 — FINDING: bilinear warping and aliasing at 1×
+            (OperatingPoint, Oversampled, 2e-06, NAN), // 5.94e-07
+            (OperatingPoint, Shipping, 2e-06, NAN), // 5.94e-07
+            (Response, Oversampled, 1e-06, 1e-06), // 2.94e-07 / 2.06e-07
+            (Response, Shipping, 50.0, 100.0), // 7.74 / 19.8 — FINDING: the notches move under bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.005, NAN), // 0.000895
+            (ThdN, Shipping, 1.0, NAN), // 0.254
+        ],
+        ("mxr_phase90", Tier::T1) => &[
+            (Aliasing, Oversampled, -83.0, NAN), // -85.4
+            (Aliasing, Shipping, -13.0, NAN), // -15.4 — aliasing as it ships
+            (Anmr, Shipping, 65.0, NAN), // 61.1 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -33.2 / -12.8 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 25.0, 45.0), // 17.2 / 37.6 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.1, 0.5), // 0.0297 / 0.136
+            (Bla, Shipping, 100.0, 500.0), // 24.3 / 153 — FINDING: the notches move under bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.1, 0.1), // 0.0222 / 0.0265
+            (Compression, Shipping, 50.0, 100.0), // 15.5 / 25.7 — FINDING: bilinear warping at 1× (no prewarp)
+            (Detection, Oversampled, 0.01, NAN), // 0.00189
+            (Detection, Shipping, 2.0, NAN), // 0.628
+            (Dynamics, Oversampled, 5e-05, 0.01), // 8.13e-06 / 0.00202
+            (Dynamics, Shipping, 0.0005, 0.2), // 0.000124 / 0.0606
+            (GroupDelay, Oversampled, 0.0002, NAN), // 3.68e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 3.24e-06
+            (Harmonics, Oversampled, 5.0, 5.0), // 0.904 / 1.21
+            (Harmonics, Shipping, 100.0, 500.0), // 27.8 / 163 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 2.0, 5.0), // 0.55 / 0.721
+            (Intermodulation, Shipping, 100.0, 500.0), // 29.2 / 114 — aliasing as it ships
+            (OperatingPoint, Oversampled, 2e-06, NAN), // 5.94e-07
+            (OperatingPoint, Shipping, 2e-06, NAN), // 5.94e-07
+            (Response, Oversampled, 1e-06, 1e-06), // 2.94e-07 / 2.06e-07
+            (Response, Shipping, 50.0, 100.0), // 10.5 / 24.5 — FINDING: the notches move under bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.5, NAN), // 0.0725
+            (ThdN, Shipping, 50.0, NAN), // 14.4 — aliasing as it ships
+        ],
+        ("boss_ds1", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -68.0, NAN), // -70.4 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -26 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -75.2 / -56.7 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 15.0), // -9 / 9.1 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.01, 0.1), // 0.00245 / 0.0234
+            (Bla, Shipping, 50.0, 200.0), // 7.59 / 35.6 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 5e-05, 0.0002), // 9.27e-06 / 3.75e-05
+            (Compression, Shipping, 0.05, 0.2), // 0.00712 / 0.0368
+            (Detection, Oversampled, 5.0, NAN), // 0.843
+            (Detection, Shipping, 10.0, NAN), // 2.31 — aliasing as it ships
+            (GroupDelay, Oversampled, 0.0002, NAN), // 7.87e-12
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.3e-06
+            (Harmonics, Oversampled, 0.05, 0.02), // 0.0116 / 0.00515
+            (Harmonics, Shipping, 5.0, 50.0), // 1 / 7.62 — FINDING: bilinear warping and aliasing at 1×
+            (OperatingPoint, Oversampled, 5e-06, NAN), // 1.12e-06
+            (OperatingPoint, Shipping, 5e-06, NAN), // 1.12e-06
+            (Response, Oversampled, 1e-05, 5e-05), // 2.35e-06 / 6.85e-06
+            (Response, Shipping, 50.0, 200.0), // 7.59 / 35.4 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.005, NAN), // 0.00125
+            (ThdN, Shipping, 0.05, NAN), // 0.0117
+        ],
+        ("boss_ds1", Tier::T1) => &[
+            (Aliasing, Oversampled, -88.0, NAN), // -90.1
+            (Aliasing, Shipping, -10.0, NAN), // -12.4 — aliasing as it ships
+            (Anmr, Shipping, 68.0, NAN), // 65 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -73.9 / -55.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 20.0), // -5.1 / 12.1 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.01, 0.1), // 0.00247 / 0.0196
+            (Bla, Shipping, 50.0, 200.0), // 10.2 / 45 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.001, 0.02), // 0.000182 / 0.00508
+            (Compression, Shipping, 5.0, 50.0), // 0.808 / 14
+            (Detection, Oversampled, 5.0, NAN), // 0.843
+            (Detection, Shipping, 50.0, NAN), // 13.9 — aliasing as it ships
+            (Dynamics, Oversampled, 0.0001, 1.0), // 2.52e-05 / 0.234
+            (Dynamics, Shipping, 0.001, 10.0), // 0.00024 / 2.43
+            (GroupDelay, Oversampled, 0.0002, NAN), // 7.87e-12
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.54e-06
+            (Harmonics, Oversampled, 1.0, 1.0), // 0.245 / 0.271
+            (Harmonics, Shipping, 100.0, 500.0), // 21.3 / 96.5 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 0.5, 0.5), // 0.0986 / 0.0765
+            (Intermodulation, Shipping, 200.0, 500.0), // 44.8 / 96.4 — aliasing as it ships
+            (OperatingPoint, Oversampled, 5e-06, NAN), // 1.12e-06
+            (OperatingPoint, Shipping, 5e-06, NAN), // 1.12e-06
+            (Response, Oversampled, 1e-05, 5e-05), // 2.35e-06 / 6.85e-06
+            (Response, Shipping, 50.0, 200.0), // 10.2 / 44.8 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 20.0, NAN), // 4.75
+            (ThdN, Shipping, 100.0, NAN), // 26.6 — aliasing as it ships
+        ],
+        ("klon_centaur", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -77 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -46.8 / -30.2 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, 15.0), // -10.3 / 6.5 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.2, 0.1), // 0.0558 / 0.0269
+            (Bla, Shipping, 20.0, 10.0), // 4.94 / 1.86 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.0002, 0.005), // 3.96e-05 / 0.00121
+            (Compression, Shipping, 0.01, 0.5), // 0.00293 / 0.0786
+            (Detection, Oversampled, 0.02, NAN), // 0.00631
+            (Detection, Shipping, 1.0, NAN), // 0.328
+            (GroupDelay, Oversampled, 0.0002, NAN), // 1.3e-12
+            (GroupDelay, Shipping, 0.0002, NAN), // 6.16e-07
+            (Harmonics, Oversampled, 0.2, 0.1), // 0.0371 / 0.0174
+            (Harmonics, Shipping, 10.0, 5.0), // 3.14 / 1.18 — FINDING: bilinear warping and aliasing at 1×
+            (OperatingPoint, Oversampled, 2e-09, NAN), // 4.65e-10
+            (OperatingPoint, Shipping, 2e-09, NAN), // 4.65e-10
+            (Response, Oversampled, 5e-06, 5e-06), // 1.09e-06 / 1.31e-06
+            (Response, Shipping, 20.0, 10.0), // 4.94 / 1.87 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.005, NAN), // 0.000919
+            (ThdN, Shipping, 0.2, NAN), // 0.0622
+        ],
+        ("klon_centaur", Tier::T1) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -25.0, NAN), // -27.9 — aliasing as it ships
+            (Anmr, Shipping, 59.0, NAN), // 55.6 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -46.8 / -29.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 15.0), // -8.8 / 9.1 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.2, 0.1), // 0.0558 / 0.0269
+            (Bla, Shipping, 20.0, 10.0), // 6.32 / 2.12 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.05, 0.05), // 0.0164 / 0.00878
+            (Compression, Shipping, 5.0, 2.0), // 1.37 / 0.66 — FINDING: bilinear warping at 1× (no prewarp)
+            (Detection, Oversampled, 0.05, NAN), // 0.0156
+            (Detection, Shipping, 200.0, NAN), // 40 — aliasing as it ships
+            (Dynamics, Oversampled, 5e-06, 0.002), // 6.86e-07 / 0.000353
+            (Dynamics, Shipping, 0.005, 5.0), // 0.000979 / 0.732
+            (GroupDelay, Oversampled, 0.0002, NAN), // 1.3e-12
+            (GroupDelay, Shipping, 0.0002, NAN), // 7.3e-07
+            (Harmonics, Oversampled, 20.0, 1.0), // 3.84 / 0.275
+            (Harmonics, Shipping, 100.0, 100.0), // 22.8 / 21 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 5.0, 0.5), // 0.754 / 0.117
+            (Intermodulation, Shipping, 100.0, 20.0), // 21.6 / 5.19 — aliasing as it ships
+            (OperatingPoint, Oversampled, 2e-09, NAN), // 4.65e-10
+            (OperatingPoint, Shipping, 2e-09, NAN), // 4.65e-10
+            (Response, Oversampled, 5e-06, 5e-06), // 1.09e-06 / 1.31e-06
+            (Response, Shipping, 20.0, 10.0), // 6.32 / 2.12 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.2, NAN), // 0.0451
+            (ThdN, Shipping, 500.0, NAN), // 92.1 — aliasing as it ships
+        ],
+        ("mxr_distortion_plus", Tier::T0) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -118.0, NAN), // -120 — aliasing as it ships
+            (Anmr, Shipping, -10.0, NAN), // -121 — inaudible (Kahles et al.'s −10 dB)
+            (Audibility, Oversampled, -10.0, -10.0), // -78.8 / -60.7 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, -10.0, 15.0), // -10.9 / 7.2 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.005, 0.05), // 0.00146 / 0.00954
+            (Bla, Shipping, 20.0, 100.0), // 5.02 / 18.1 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 5e-05, 0.0002), // 7.75e-06 / 4.01e-05
+            (Compression, Shipping, 0.02, 0.2), // 0.00453 / 0.0547
+            (Detection, Oversampled, 2.0, NAN), // 0.558
+            (Detection, Shipping, 2.0, NAN), // 0.5
+            (GroupDelay, Oversampled, 0.0002, NAN), // 5.11e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.05e-06
+            (Harmonics, Oversampled, 0.002, 0.01), // 0.000652 / 0.00208
+            (Harmonics, Shipping, 1.0, 10.0), // 0.204 / 2.56
+            (OperatingPoint, Oversampled, 5e-13, NAN), // 8.79e-14
+            (OperatingPoint, Shipping, 5e-13, NAN), // 8.79e-14
+            (Response, Oversampled, 5e-06, 1e-05), // 1.25e-06 / 2.13e-06
+            (Response, Shipping, 20.0, 100.0), // 5.02 / 18.2 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 0.0001, NAN), // 2.89e-05
+            (ThdN, Shipping, 0.05, NAN), // 0.00873
+        ],
+        ("mxr_distortion_plus", Tier::T1) => &[
+            (Aliasing, Oversampled, -118.0, NAN), // -120
+            (Aliasing, Shipping, -18.0, NAN), // -20.3 — aliasing as it ships
+            (Anmr, Shipping, 56.0, NAN), // 52.6 — audible as it ships (1×): aliasing
+            (Audibility, Oversampled, -10.0, -10.0), // -78.5 / -60.4 — inaudible (R16: ≤ −10 dB total and worst band)
+            (Audibility, Shipping, 0.0, 15.0), // -8.7 / 9.3 — FINDING: audible as it ships (1×): bilinear warping and aliasing
+            (Bla, Oversampled, 0.005, 0.05), // 0.00146 / 0.00954
+            (Bla, Shipping, 20.0, 100.0), // 6.64 / 23.5 — FINDING: bilinear warping at 1× (no prewarp)
+            (Compression, Oversampled, 0.001, 0.01), // 0.00022 / 0.00304
+            (Compression, Shipping, 5.0, 20.0), // 0.843 / 4.75
+            (Detection, Oversampled, 5.0, NAN), // 1.47
+            (Detection, Shipping, 200.0, NAN), // 65.8 — aliasing as it ships
+            (Dynamics, Oversampled, 5e-05, 0.2), // 7.98e-06 / 0.0345
+            (Dynamics, Shipping, 0.0005, 2.0), // 8.29e-05 / 0.442
+            (GroupDelay, Oversampled, 0.0002, NAN), // 5.11e-13
+            (GroupDelay, Shipping, 0.0002, NAN), // 1.24e-06
+            (Harmonics, Oversampled, 0.5, 5.0), // 0.115 / 0.922
+            (Harmonics, Shipping, 50.0, 500.0), // 15.4 / 70.4 — FINDING: bilinear warping and aliasing at 1×
+            (Intermodulation, Oversampled, 0.2, 0.5), // 0.0366 / 0.153
+            (Intermodulation, Shipping, 200.0, 500.0), // 62.1 / 101 — aliasing as it ships
+            (OperatingPoint, Oversampled, 5e-13, NAN), // 8.79e-14
+            (OperatingPoint, Shipping, 5e-13, NAN), // 8.79e-14
+            (Response, Oversampled, 5e-06, 1e-05), // 1.25e-06 / 2.13e-06
+            (Response, Shipping, 20.0, 100.0), // 6.64 / 23.5 — FINDING: bilinear warping at 1× (no prewarp)
+            (ThdN, Oversampled, 50.0, NAN), // 8.9
+            (ThdN, Shipping, 500.0, NAN), // 99.7 — aliasing as it ships
+        ],
         (case, tier) => panic!("no budgets for `{case}` at {tier:?}"),
     }
 }

@@ -923,6 +923,48 @@ other references; a model with a capture is held to it within budget.
   because the latched output was nearly DC). No R18 fingerprint covered
   the 904-A, so none moved. At k = 0
   it matches the Huovilainen ladder at 2 kHz within 0.3 dB to 10 kHz.
+- [ ] **R27** The R25 follow-ups: the MXR Distortion+ as a verified deck
+  and topology (`mxr_distortion_plus(distortion, output)`: C1 1n, 10n /
+  10k into an LM741 non-inverting stage, 1M feedback, 47n + 4k7 + the 1M
+  rheostat, 1u / 10k into a germanium pair and 1n, the 10k output pot;
+  ElectroSmash's values, Aion FX's wiring and its note that the D+ had no
+  feedback cap; the 1N34A card stands in for the MXR's 1N270, which has
+  none) — AC at distortion 0.5 within 1.5e-6 dB, both pots at maximum
+  100 mV at 1 kHz 1.05e-4 at 32×, h² from 4× (6.2e-3, 1.8e-3, 4.4e-4,
+  1.05e-4, 2.5e-5 at 64×), no cap hit at 48 kHz, datasheet 2.1 µs/sample
+  at 1×; every R24/R25 classic in R17's T0/T1 matrix with its R18
+  fingerprint, each catalogued topology on its transient deck's plan
+  (`circuits::CIRCUITS`, `classic(..)`; the fingerprint names the
+  topology and the catalogue links it) at the grid its waveform case
+  converges on (32× RAT, DS-1, D+; 16× TS-808, Big Muff, JCM800, Phase 90;
+  8× Klon, Moog); the Phase 90 swept, its gates on a 4 Hz sine from 3.1
+  to 4.3 V (`mxr_phase90_sweep.cir`), 9.2e-6 at 16×, h² from 4× (1.6e-4,
+  3.9e-5, 9.2e-6, 2.1e-6 at 32×). Oversampled, the classics hold ngspice
+  within 6.7e-5 dB in response (the Moog), 1.3e-5 V at the operating
+  point (the RAT) and ≤ 0.04 dB per harmonic at T0. FINDINGS at 1× 48 kHz
+  (R12's, not chased here; no solver change): bilinear warping without
+  prewarp puts the response 8.9 (TS-808), 13.5 (Big Muff), 7.1 (RAT),
+  18.1 (Moog, resonant), 7.6 (DS-1), 4.9 (Klon) and 5.0 dB (D+) off at
+  16 kHz, moves the Phase 90's notches (7.7 dB at 6.4 kHz, its BLA 24 dB
+  there) and leaves only the JCM800 within 0.06 dB; at 44.1 kHz every
+  classic but the Big Muff (−28.1 dB) aliases audibly over the piano at
+  +20 dB re knee, worst ANMR 46.6 (TS-808), 21.4 (RAT), 48.0 (JCM800), 65.4 (Moog),
+  49.2 (Phase 90, at +12), 46.7 (DS-1), 26.6 (Klon) and 29.0 dB (D+).
+  By R16's null NMR every classic is inaudible oversampled (its worst band
+  at most −12.8 dB, the Phase 90 at T1) and audible in its worst band at
+  1× (+3.6 dB, the JCM800, to +37.6, the Phase 90, at T1; the classics
+  ship unoversampled until R12's sweep chooses their factors).
+  The Moog is characterised on its corrected regeneration (R26's finding:
+  `v(l4, r4)` fed back in phase latched it at k = 3; R27's matrix found
+  the same, and its decks and tables are those of the fix, #11), resonant
+  at k = 3. Cost, on P7's solver: T0 21 s for
+  the nine in release on three cores (past the tier's half second a
+  circuit), T1 344 s; ngspice ~45 min for the nine tables on three cores
+  (on CI's runners 14 and 26 min before P7), so CI checks the classics'
+  tables and T1 in jobs of their own
+  (`references (classics, ngspice)`, `characterise classics (T1)`,
+  `ngspice-simulate.py --exclude`/`--only`, `characterise_t1 classics::`);
+  the piano sweeps run on `par_map`, held to `RAYON_NUM_THREADS`.
 
 ### P — profiling and performance
 
