@@ -47,3 +47,27 @@ scripts/bump-framework.sh v0.3.0
 ```
 
 The release script prints this line when it finishes.
+
+## Plugins during an API break
+
+The `plugins against this change` job in CI builds and lints
+stave-plugins against every framework change. It is not a required
+check: between releases `main` may break the plugin API on purpose.
+So that the job still says something during a planned break, give it a
+stave-plugins branch that follows the break. `scripts/plugins-ref.sh`
+picks the first of:
+
+1. a `plugins-branch: <name>` line in the pull request's description
+   or the commit message (the branch must exist, or the job fails);
+2. a stave-plugins branch with the same name as the pull request's
+   branch;
+3. a stave-plugins branch `stave-<next>` or `stave-<major.minor>` of
+   the release being prepared: the newest `releases/v<next>.md` beyond
+   the workspace version (while `releases/v0.5.0.md` waits on 0.4.0,
+   `stave-0.5.0` or `stave-0.5`);
+4. stave-plugins' `main`.
+
+For a break that lands in several pull requests, keep one
+`stave-<next>` branch in stave-plugins migrated as each lands; once
+the release is tagged, merge it into stave-plugins' `main` and run
+`scripts/bump-framework.sh v<next>` there.
