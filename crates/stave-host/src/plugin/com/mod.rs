@@ -15,6 +15,15 @@ use std::ptr::NonNull;
 
 use stave_vst3_sys::{FUnknown, Tresult, Tuid, K_RESULT_OK};
 
+/// The panic boundary of every host-side COM callback: the plugin calls
+/// these through `extern "C"`, where an unwinding panic aborts the whole
+/// host (a validator killed by the plugin it is checking). `f` runs under
+/// `catch_unwind`; a panic answers `fallback` (an error result, null, or
+/// a neutral count) instead. Free when nothing panics.
+pub(crate) fn host_entry<R>(fallback: R, f: impl FnOnce() -> R) -> R {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(fallback)
+}
+
 /// The `FUnknown` prefix every VST3 vtable starts with.
 #[repr(C)]
 pub(crate) struct UnknownVtbl {
@@ -159,6 +168,12 @@ pub(crate) fn c_str_z(chars: &[std::ffi::c_char]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_entry_turns_a_panic_into_the_fallback() {
+        assert_eq!(host_entry(-1, || 7), 7);
+        assert_eq!(host_entry(-1, || -> i32 { panic!("plugin misuse") }), -1);
+    }
 
     #[test]
     fn utf16_stops_at_nul() {

@@ -8,10 +8,12 @@ use std::ptr;
 use stave_vst3_sys::{
     Event, EventData, IEventList, IEventListVtbl, NoteOffEvent, NoteOnEvent, Tresult, Tuid,
     EVENT_NOTE_OFF, EVENT_NOTE_ON, IID_FUNKNOWN, IID_IEVENT_LIST, K_INVALID_ARGUMENT,
-    K_NOT_IMPLEMENTED, K_NO_INTERFACE, K_RESULT_OK,
+    K_INTERNAL_ERROR, K_NOT_IMPLEMENTED, K_NO_INTERFACE, K_RESULT_OK,
 };
 
 use stave_core::{EventKind, NoteKind};
+
+use super::host_entry;
 
 /// Events one block can carry.
 pub(crate) const CAPACITY: usize = 512;
@@ -101,17 +103,19 @@ unsafe extern "C" fn query_interface(
     iid: *const Tuid,
     obj: *mut *mut c_void,
 ) -> Tresult {
-    // SAFETY: SDK: null or valid.
-    let (Some(&iid), Some(obj)) = (unsafe { iid.as_ref() }, unsafe { obj.as_mut() }) else {
-        return K_INVALID_ARGUMENT;
-    };
-    let hit = iid == IID_FUNKNOWN || iid == IID_IEVENT_LIST;
-    *obj = if hit { this.cast() } else { ptr::null_mut() };
-    if hit {
-        K_RESULT_OK
-    } else {
-        K_NO_INTERFACE
-    }
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: SDK: null or valid.
+        let (Some(&iid), Some(obj)) = (unsafe { iid.as_ref() }, unsafe { obj.as_mut() }) else {
+            return K_INVALID_ARGUMENT;
+        };
+        let hit = iid == IID_FUNKNOWN || iid == IID_IEVENT_LIST;
+        *obj = if hit { this.cast() } else { ptr::null_mut() };
+        if hit {
+            K_RESULT_OK
+        } else {
+            K_NO_INTERFACE
+        }
+    })
 }
 
 unsafe extern "C" fn add_ref(_this: *mut IEventList) -> u32 {
@@ -122,25 +126,29 @@ unsafe extern "C" fn release(_this: *mut IEventList) -> u32 {
 }
 
 unsafe extern "C" fn get_event_count(this: *mut IEventList) -> i32 {
-    // SAFETY: `this` is ours (see above).
-    unsafe { list(this) }.events.len() as i32
+    host_entry(0, || {
+        // SAFETY: `this` is ours (see above).
+        unsafe { list(this) }.events.len() as i32
+    })
 }
 
 unsafe extern "C" fn get_event(this: *mut IEventList, index: i32, event: *mut Event) -> Tresult {
-    if event.is_null() {
-        return K_INVALID_ARGUMENT;
-    }
-    // SAFETY: `this` is ours (see above).
-    let list = unsafe { list(this) };
-    match usize::try_from(index).ok().and_then(|i| list.events.get(i)) {
-        Some(e) => {
-            // SAFETY: SDK: writable. A raw write: the plugin's `Event`
-            // may be uninitialized.
-            unsafe { event.write(*e) };
-            K_RESULT_OK
+    host_entry(K_INTERNAL_ERROR, || {
+        if event.is_null() {
+            return K_INVALID_ARGUMENT;
         }
-        None => K_INVALID_ARGUMENT,
-    }
+        // SAFETY: `this` is ours (see above).
+        let list = unsafe { list(this) };
+        match usize::try_from(index).ok().and_then(|i| list.events.get(i)) {
+            Some(e) => {
+                // SAFETY: SDK: writable. A raw write: the plugin's `Event`
+                // may be uninitialized.
+                unsafe { event.write(*e) };
+                K_RESULT_OK
+            }
+            None => K_INVALID_ARGUMENT,
+        }
+    })
 }
 
 unsafe extern "C" fn add_event(_this: *mut IEventList, _event: *mut Event) -> Tresult {

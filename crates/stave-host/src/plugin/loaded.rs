@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use stave_telemetry::Telemetry;
 use stave_vst3_sys::{
-    AudioBusBuffers, IAudioProcessorVtbl, IComponentVtbl, ProcessData, K_RESULT_OK,
+    AudioBusBuffers, IAudioProcessorVtbl, IComponentVtbl, ProcessData, K_OUT_OF_MEMORY, K_RESULT_OK,
     PROCESS_MODE_REALTIME, SAMPLE_SIZE_32,
 };
 
@@ -225,6 +225,15 @@ impl LoadedPlugin {
     }
 }
 
+/// The frames a `process` call may run: the shortest of the first
+/// `n_in` inputs and `n_out` outputs (the channels the plugin touches),
+/// or 0 when the caller passed none of them.
+fn run_length(inputs: &[&[f32]], outputs: &[&mut [f32]], n_in: usize, n_out: usize) -> usize {
+    let ins = inputs.iter().take(n_in).map(|c| c.len());
+    let outs = outputs.iter().take(n_out).map(|c| c.len());
+    ins.chain(outs).min().unwrap_or(0)
+}
+
 impl Instance for LoadedPlugin {
     fn layout(&self) -> Layout {
         self.layout
@@ -246,12 +255,16 @@ impl Instance for LoadedPlugin {
     }
 
     /// Any length: split into `max_block` chunks, events re-based per chunk.
+    ///
+    /// The run is the shortest channel the plugin reads or writes (every
+    /// input and output up to the layout's counts), so a ragged caller can
+    /// never make the plugin read or write past a slice. Output frames past
+    /// that run are silenced rather than left stale.
     fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[Event]) {
-        let total = outputs
-            .first()
-            .map(|o| o.len())
-            .or(inputs.first().map(|i| i.len()));
-        let total = total.unwrap_or(0);
+        let total = run_length(inputs, outputs, self.layout.inputs, self.layout.outputs);
+        for out in outputs.iter_mut().take(self.layout.outputs) {
+            out[total..].fill(0.0);
+        }
         let mut start = 0;
         while start < total {
             let n = (total - start).min(self.layout.max_block);
@@ -302,6 +315,12 @@ impl Instance for LoadedPlugin {
         let c = &self.component;
         // SAFETY: the object's own method, called on the live object `Com` holds.
         match unsafe { (c.vtbl().get_state)(c.as_ptr(), s.as_funknown()) } {
+            // A write past `MAX_STATE_BYTES` was refused: the bytes are
+            // incomplete even if the plugin ignored the refusal.
+            K_RESULT_OK if s.overflowed() => Err(StateError::Refused {
+                call: "getState",
+                result: K_OUT_OF_MEMORY,
+            }),
             K_RESULT_OK => Ok(s.bytes()),
             result => Err(StateError::Refused {
                 call: "getState",

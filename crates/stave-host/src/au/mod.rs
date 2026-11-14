@@ -200,7 +200,12 @@ struct Feed {
 ///
 /// # Safety
 /// `refcon` is the `Feed` [`AuInstance`] registered, alive for the
-/// unit's life; `data` is the unit's buffer list for `frames` frames.
+/// unit's life; `data` is the unit's buffer list for `frames` frames,
+/// holding `mNumberBuffers` buffers (the C type is over-allocated from a
+/// one-element array, so the list may be smaller than [`AudioBufferList`]).
+///
+/// A panic here would abort the host through `extern "C"`: it is caught
+/// and answered with an error status instead.
 unsafe extern "C" fn feed(
     refcon: *mut c_void,
     _flags: *mut u32,
@@ -209,24 +214,52 @@ unsafe extern "C" fn feed(
     frames: u32,
     data: *mut AudioBufferList,
 ) -> OSStatus {
-    // SAFETY: the function's contract.
-    let (feed, list) = unsafe { (&mut *refcon.cast::<Feed>(), &mut *data) };
-    let frames = (frames as usize).min(feed.frames);
-    let buffers = (list.mNumberBuffers as usize).min(MAX_CHANNELS);
-    for (i, b) in list.mBuffers[..buffers].iter_mut().enumerate() {
-        let last = feed.channels.len() - 1;
-        let src = &mut feed.channels[i.min(last)];
-        if b.mData.is_null() {
-            b.mData = src.as_mut_ptr().cast();
-        } else {
-            // SAFETY: the unit's buffer holds `mDataByteSize` bytes, at
-            // least `frames` floats for a call of `frames`.
-            unsafe { ptr::copy_nonoverlapping(src.as_ptr(), b.mData.cast::<f32>(), frames) };
+    // `kAudio_ParamError`: the unit's input pull fails; the host lives.
+    const PARAM_ERROR: OSStatus = -50;
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if refcon.is_null() || data.is_null() {
+            return PARAM_ERROR;
         }
-        b.mDataByteSize = (frames * 4) as u32;
-    }
-    0
+        // SAFETY: the function's contract.
+        let feed = unsafe { &mut *refcon.cast::<Feed>() };
+        // Only the buffers the unit allocated: never a reference to the
+        // whole `[AuBuffer; MAX_CHANNELS]`, which may run past the list.
+        // SAFETY: `data` points at a live list (the contract); the count
+        // is its first field, and `mBuffers` holds that many buffers.
+        let buffers = unsafe {
+            let count = (ptr::addr_of!((*data).mNumberBuffers).read() as usize).min(MAX_CHANNELS);
+            let first = ptr::addr_of_mut!((*data).mBuffers).cast::<AuBuffer>();
+            std::slice::from_raw_parts_mut(first, count)
+        };
+        let frames = (frames as usize).min(feed.frames);
+        for (i, b) in buffers.iter_mut().enumerate() {
+            let Some(src) = feed.channels.len().checked_sub(1).map(|last| &mut feed.channels[i.min(last)]) else {
+                return PARAM_ERROR; // no input channels to feed from
+            };
+            const F32: usize = std::mem::size_of::<f32>();
+            let frames = frames.min(src.len());
+            let n = if b.mData.is_null() {
+                b.mData = src.as_mut_ptr().cast();
+                frames
+            } else {
+                // The unit's buffer holds `mDataByteSize` bytes: never
+                // write past that, whatever `frames` says.
+                let n = frames.min(b.mDataByteSize as usize / F32);
+                // SAFETY: `mData` is writable for `mDataByteSize` bytes,
+                // ≥ `n` floats; `src` holds ≥ `n` floats.
+                unsafe { ptr::copy_nonoverlapping(src.as_ptr(), b.mData.cast::<f32>(), n) };
+                n
+            };
+            // `n` ≤ `max_block` floats, far below 4 GiB.
+            b.mDataByteSize = (n * F32) as u32;
+        }
+        0
+    }))
+    .unwrap_or(PARAM_ERROR)
 }
+
+#[cfg(test)]
+mod feed_tests;
 
 /// An Audio Unit, initialised and processing offline (see the module).
 pub struct AuInstance {

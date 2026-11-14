@@ -6,9 +6,11 @@ use std::ffi::c_void;
 use std::ptr;
 
 use stave_vst3_sys::{
-    FUnknown, IHostApplicationVtbl, Tresult, Tuid, IID_FUNKNOWN, IID_IHOST_APPLICATION, K_INVALID_ARGUMENT, K_NO_INTERFACE, K_RESULT_FALSE,
+    FUnknown, IHostApplicationVtbl, Tresult, Tuid, IID_FUNKNOWN, IID_IHOST_APPLICATION, K_INTERNAL_ERROR, K_INVALID_ARGUMENT, K_NO_INTERFACE, K_RESULT_FALSE,
     K_RESULT_OK,
 };
+
+use super::host_entry;
 
 /// The name plugins see for their host.
 pub(crate) const HOST_NAME: &str = "stave-host";
@@ -47,28 +49,32 @@ unsafe extern "C" fn query_interface(
     iid: *const Tuid,
     obj: *mut *mut c_void,
 ) -> Tresult {
-    // SAFETY: SDK: null or valid.
-    let (Some(&iid), Some(obj)) = (unsafe { iid.as_ref() }, unsafe { obj.as_mut() }) else {
-        return K_INVALID_ARGUMENT;
-    };
-    let hit = iid == IID_IHOST_APPLICATION || iid == IID_FUNKNOWN;
-    *obj = if hit { this.cast() } else { ptr::null_mut() };
-    if hit {
-        K_RESULT_OK
-    } else {
-        K_NO_INTERFACE
-    }
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: SDK: null or valid.
+        let (Some(&iid), Some(obj)) = (unsafe { iid.as_ref() }, unsafe { obj.as_mut() }) else {
+            return K_INVALID_ARGUMENT;
+        };
+        let hit = iid == IID_IHOST_APPLICATION || iid == IID_FUNKNOWN;
+        *obj = if hit { this.cast() } else { ptr::null_mut() };
+        if hit {
+            K_RESULT_OK
+        } else {
+            K_NO_INTERFACE
+        }
+    })
 }
 
 /// Writes into a `String128` (128 UTF-16 units including the NUL).
 unsafe extern "C" fn get_name(_this: *mut FUnknown, name: *mut u16) -> Tresult {
-    if name.is_null() {
-        return K_INVALID_ARGUMENT;
-    }
-    let units: Vec<u16> = HOST_NAME.encode_utf16().take(127).chain([0]).collect();
-    // SAFETY: SDK: a `String128`, writable for 128 ≥ `units.len()` units.
-    unsafe { ptr::copy_nonoverlapping(units.as_ptr(), name, units.len()) };
-    K_RESULT_OK
+    host_entry(K_INTERNAL_ERROR, || {
+        if name.is_null() {
+            return K_INVALID_ARGUMENT;
+        }
+        let units: Vec<u16> = HOST_NAME.encode_utf16().take(127).chain([0]).collect();
+        // SAFETY: SDK: a `String128`, writable for 128 ≥ `units.len()` units.
+        unsafe { ptr::copy_nonoverlapping(units.as_ptr(), name, units.len()) };
+        K_RESULT_OK
+    })
 }
 
 /// We create no host objects (IMessage/IAttributeList) for plugins.
@@ -78,11 +84,13 @@ unsafe extern "C" fn create_instance(
     _iid: *mut Tuid,
     obj: *mut *mut c_void,
 ) -> Tresult {
-    // SAFETY: SDK: null or writable.
-    if let Some(obj) = unsafe { obj.as_mut() } {
-        *obj = ptr::null_mut();
-    }
-    K_RESULT_FALSE
+    host_entry(K_INTERNAL_ERROR, || {
+        // SAFETY: SDK: null or writable.
+        if let Some(obj) = unsafe { obj.as_mut() } {
+            *obj = ptr::null_mut();
+        }
+        K_RESULT_FALSE
+    })
 }
 
 // Every `unsafe` block in these tests plays the plugin: it calls this
