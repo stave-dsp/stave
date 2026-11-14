@@ -1,0 +1,79 @@
+# This privileged workflow only checks out main, never a PR or run artifact.
+name: CI facts and post-merge recovery
+on:
+  workflow_run:
+    workflows: [ci, platforms, main post-merge, deep, references, docs, canary, perf, reference, release]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ci-observe-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  facts:
+    runs-on: ubuntu-latest
+    outputs:
+      revert_sha: ${{ steps.facts.outputs.revert_sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - id: facts
+        run: python3 scripts/ci-run-facts.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROL_EVENTS_URL: ${{ secrets.CONTROL_EVENTS_URL }}
+          CONTROL_EVENTS_TOKEN: ${{ secrets.CONTROL_EVENTS_TOKEN }}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-facts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: |
+            ci-run-facts.json
+            control-event.json
+            control-delivery.json
+          if-no-files-found: error
+  revert:
+    needs: facts
+    if: needs.facts.outputs.revert_sha != ''
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    concurrency:
+      group: post-merge-revert-${{ needs.facts.outputs.revert_sha }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.CI_REVERT_TOKEN || github.token }}
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with: { tool: nextest@0.9.148 }
+      - run: |
+          cp scripts/ci-revert.sh "$RUNNER_TEMP/ci-revert.sh"
+          bash "$RUNNER_TEMP/ci-revert.sh"
+        env:
+          FAILED_SHA: ${{ needs.facts.outputs.revert_sha }}
+          FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          GH_TOKEN: ${{ secrets.CI_REVERT_TOKEN || github.token }}
+      - if: failure()
+        name: Escalate revert preparation failure
+        env:
+          GH_TOKEN: ${{ secrets.CI_REVERT_TOKEN || github.token }}
+          FAILED_SHA: ${{ needs.facts.outputs.revert_sha }}
+          FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          title="Post-merge recovery needs review: $FAILED_SHA"
+          existing="$(gh issue list --state all --search "$FAILED_SHA in:title" --json title --jq '.[].title')"
+          if ! grep -Fxq "$title" <<<"$existing"; then
+            printf 'Automatic revert preparation or validation failed.\n\nFailing run: %s\nRecovery run: %s/%s/actions/runs/%s\n\nInspect conflicts, build/test errors, or repository token permissions. No automatic merge was attempted.\n' "$FAILED_RUN_URL" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/recovery.md"
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/recovery.md"
+          fi

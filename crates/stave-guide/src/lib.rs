@@ -74,6 +74,8 @@ pub mod howto {
     pub mod local_config {}
     #[doc = include_str!("howto/affected.md")]
     pub mod affected {}
+    #[doc = include_str!("howto/merge-queue.md")]
+    pub mod merge_queue {}
 }
 
 #[doc = include_str!("glossary.md")]

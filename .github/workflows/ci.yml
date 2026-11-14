@@ -1,6 +1,6 @@
-# CI: the main signal (OVERHAUL.md C10). Every job here fits in
-# five minutes warm and the run's wall clock does too, so it gates every
-# push, pull request and merge group (main's merge queue).
+# CI: the main signal (OVERHAUL.md C10). Aim for five minutes warm;
+# ci-observe.yml measures execution and queue time rather than assuming it.
+# Runs on pushes, pull requests and merge groups (main's merge queue).
 #
 # A pull request or a merge group gates what it changes, and only that:
 # each job asks scripts/affected.sh which packages the change against its
@@ -10,14 +10,14 @@
 # success, so every required check reports on every change. Main,
 # release branches and a dispatched run gate everything. Builds are --locked against the committed
 # Cargo.lock; every tool is pinned. macOS runners only where macOS is
-# needed (Cocoa, bundles, the validators, auval) — four jobs. Two of the
-# macOS jobs run on a self-hosted runner for trusted events (a push, a merge
+# needed (Cocoa, bundles, the validators, auval): three test shards plus
+# lint and two validator jobs. Two macOS jobs run on a self-hosted runner
+# for trusted events (a push, a merge
 # group, a pull request from a branch here) and on GitHub's for a fork's
 # pull request; GitHub's free plan runs only five macOS jobs at once.
 #
-# The slow tools (Kani, sanitizers, long fuzzing, the simulated host's
-# wide sweep, advisories, semver-checks) are in deep.yml: nightly and on
-# demand, never in this run's way. The newest-stable canary is
+# Miri, T1, fuzz and Kani run in main-postmerge.yml on main and nightly.
+# Other deep tools remain in deep.yml. The newest-stable canary is
 # canary.yml (weekly); Linux and Windows are platforms.yml; the
 # documentation site, and with it the published rustdoc, is docs.yml.
 name: ci
@@ -39,8 +39,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # The one nightly (Miri here; sanitizers and fuzzing in deep.yml).
-  NIGHTLY: nightly-2026-11-01
   # scripts/affected.sh's base: the pull request's, or the merge group's.
   AFFECTED_ARGS: >-
     ${{ github.event_name == 'pull_request' && format('--base origin/{0}', github.base_ref)
@@ -48,40 +46,50 @@ env:
     || '--full' }}
 
 jobs:
-  test:
+  test-shards:
     # Every test of the workspace (nextest builds what it runs) and the
     # doctests, on macOS (the Cocoa platform, bundles, stave-host).
-    name: test (macOS)
+    name: test (macOS ${{ matrix.shard }}/3)
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install   # the pinned toolchain from rust-toolchain.toml
       - name: What the change affects
-        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: taiki-e/install-action@v2.90.3
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: nextest@0.9.148 }
       - if: env.AFFECTED_SCOPE != 'none'
-        run: cargo nextest run --locked --profile ci --no-tests=pass $AFFECTED_PACKAGES
-      - if: env.AFFECTED_LIB_PACKAGES != ''
-        run: cargo test --doc --locked $AFFECTED_LIB_PACKAGES
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          cargo nextest run --locked --profile ci --no-tests=pass --partition hash:${{ matrix.shard }}/3 $AFFECTED_PACKAGES
+      - if: matrix.shard == 1 && env.AFFECTED_LIB_PACKAGES != ''
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          cargo test --doc --locked $AFFECTED_LIB_PACKAGES
       # A golden-image mismatch leaves <name>.actual.png and .diff.png.
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: golden-diff
+          name: golden-diff-${{ matrix.shard }}
           path: target/golden-diff
           if-no-files-found: ignore
       # A reference case over its budget leaves target/reference-diff/<case>.tsv.
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: reference-diff
+          name: reference-diff-${{ matrix.shard }}
           path: target/reference-diff
           if-no-files-found: ignore
 
@@ -104,27 +112,35 @@ jobs:
           && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
           || 'macos-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
-        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
         run: rustup toolchain install 1.86.0 --profile minimal
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       # Policy lives in [workspace.lints] (Cargo.toml); every crate inherits it.
       - if: env.AFFECTED_SCOPE != 'none'
-        run: cargo clippy --all-targets --no-deps --locked $AFFECTED_PACKAGES -- -D warnings
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          cargo clippy --all-targets --no-deps --locked $AFFECTED_PACKAGES -- -D warnings
       # Every intra-doc link, private items' docs included, and none
       # dropped between crates documented side by side: the same script
       # docs.yml's site build runs.
       - if: env.AFFECTED_SCOPE != 'none'
-        run: scripts/rustdoc.sh --document-private-items $AFFECTED_DOC_PACKAGES
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          scripts/rustdoc.sh --document-private-items $AFFECTED_DOC_PACKAGES
       # The declared rust-version is a promise: hold it.
       - if: env.AFFECTED_SCOPE != 'none'
-        run: cargo +1.86.0 check --all-targets --locked $AFFECTED_PACKAGES
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          cargo +1.86.0 check --all-targets --locked $AFFECTED_PACKAGES
 
   validators:
     # The industry's own suites against every plugin: clap-validator and
@@ -139,18 +155,20 @@ jobs:
           && fromJSON('["self-hosted","macOS","ARM64","macos-build"]')
           || 'macos-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
-        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - name: Cache the validators
         if: env.AFFECTED_SCOPE != 'none'
         id: tools-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             vst3sdk/build/bin/Release/validator
@@ -184,13 +202,15 @@ jobs:
     timeout-minutes: 10
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
-        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        run: |
+          # shellcheck disable=SC2086
+          scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         run: scripts/validate-formats.sh au
@@ -203,7 +223,7 @@ jobs:
             target/release/stave-bench "$b" --validate > /dev/null
           done
       - if: always() && env.AFFECTED_SCOPE != 'none'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: auval
           path: target/validate/*.auval.txt
@@ -218,8 +238,8 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2.90.3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with: { tool: "cargo-deny@0.20.2,cargo-machete@0.9.2" }
       - run: scripts/check-file-sizes.sh
       - run: scripts/check-view-bindings.sh
@@ -227,9 +247,10 @@ jobs:
       - run: scripts/check-vocabulary.sh
       - run: scripts/check-purity.sh
       - run: scripts/check-golden-sizes.sh
-      # The nightly Kani matrix (deep.yml) is found by this parser: a
+      # The Kani matrix (main-postmerge.yml) is found by this parser: a
       # harness it cannot read fails here, on the change that wrote it.
       - run: scripts/kani.sh --list
+      - run: python3 -m unittest discover -s scripts/tests -v
       # This machine's values (host names, library paths) never land: the
       # check reads them from the repository's secrets, the same keys as
       # stave.env.example; unset, it checks the generic shapes only.
@@ -271,12 +292,14 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { path: stave, fetch-depth: 0 }
       - run: rustup toolchain install
         working-directory: stave
       - name: What the change affects
-        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
         working-directory: stave
       # The pull request: this run's, the merge group's (its ref names
       # it), or a push's squashed commit's "(#N)".
@@ -299,13 +322,13 @@ jobs:
           fi
           scripts/plugins-ref.sh --text "$text" --branch "$branch" | tee -a "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { repository: stave-dsp/stave-plugins, path: stave-plugins, ref: "${{ env.PLUGINS_REF }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         run: rustup toolchain install
         working-directory: stave-plugins
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: stave-plugins
           save-if: "${{ github.ref == 'refs/heads/main' }}"
@@ -323,13 +346,15 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
       - run: rustup toolchain install
       - name: What the change affects
-        run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
+        run: |
+          # shellcheck disable=SC2086 # affected.sh emits separate cargo flags
+          scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         run: >-
@@ -342,48 +367,37 @@ jobs:
         env:
           RUSTFLAGS: --cfg loom
 
+  test:
+    name: test (macOS)
+    needs: test-shards
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.test-shards.result }}
+
+  gate:
+    name: queue gate
+    needs: [test, lint, validators, audio-units, rules, portable]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 -c 'import json,os; assert all(j["result"] == "success" for j in json.loads(os.environ["NEEDS"]).values())'
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+
+  # Migration bridges for the old ruleset; no Miri executes before merge.
+  # Remove after the documented required-check migration has been applied.
   miri:
-    # The unsafe core and the FULL wrapper path (factory → vtables →
-    # in-place process → two instances → release) interpreted under the
-    # memory model — this caught the CLAP field-provenance bug. One
-    # nextest process per test, sharded so each shard stays under five
-    # minutes; safe-code sweeps are `#[cfg_attr(miri, ignore)]`.
     name: miri (${{ matrix.shard }}/4)
-    timeout-minutes: 10
+    needs: gate
+    if: always()
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }   # the base, for scripts/affected.sh
-      - run: rustup toolchain install $NIGHTLY --profile minimal --component miri,rust-src
-      # Miri's packages, or a change that reaches the whole workspace.
-      - name: What the change affects
-        env: { RUSTUP_TOOLCHAIN: "${{ env.NIGHTLY }}" }   # cargo metadata, without the pinned toolchain
-        run: |
-          out="$(scripts/affected.sh --outputs $AFFECTED_ARGS)"
-          echo "$out" >> "$GITHUB_ENV"
-          miri=0
-          grep -qx 'AFFECTED_SCOPE=workspace' <<<"$out" && miri=1
-          for p in $(sed -n 's/^AFFECTED_PACKAGE_NAMES=//p' <<<"$out"); do
-            case "$p" in stave-core | stave-telemetry | stave-vst3 | stave-clap) miri=1 ;; esac
-          done
-          echo "AFFECTED_MIRI=$miri" >> "$GITHUB_ENV"
-      - if: env.AFFECTED_MIRI == '1'
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: miri
-          save-if: "${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}"
-      - if: env.AFFECTED_MIRI == '1'
-        uses: taiki-e/install-action@v2.90.3
-        with: { tool: nextest@0.9.148 }
-      - if: env.AFFECTED_MIRI == '1'
-        run: cargo +$NIGHTLY miri setup
-      - if: env.AFFECTED_MIRI == '1'
-        run: >-
-          cargo +$NIGHTLY miri nextest run --locked --profile miri
-          --partition hash:${{ matrix.shard }}/4
-          -p stave-core -p stave-telemetry -p stave-vst3 -p stave-clap
-          -E 'package(stave-core) | package(stave-telemetry) | binary_id(/::(wrapper|table|diagnostics|negotiation|panic|state_race)_abi$/)'
+      - run: test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.gate.result }}
