@@ -1,24 +1,26 @@
-//! The frame around the views: top bar (rate, block, plugin), project
-//! sidebar, params panel, status bar.
+//! The side bars: the library (plugins and projects, on demand) on the
+//! left, the parameters inspector on the right; and the plugin and
+//! project operations they run.
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use stave_host::config::{non_zero, HostConfig, SampleRate};
 use stave_host::param::Param;
 
+use super::commands::{id, Invocation};
+use super::theme::Tokens;
 use super::{library, HostApp};
 use crate::project::{self, Project};
 
-const RATES: [SampleRate; 4] = [
+pub(super) const RATES: [SampleRate; 4] = [
     SampleRate::constant(44_100.0),
     SampleRate::constant(48_000.0),
     SampleRate::constant(88_200.0),
     SampleRate::constant(96_000.0),
 ];
-const BLOCKS: [NonZeroUsize; 6] = [
+pub(super) const BLOCKS: [NonZeroUsize; 6] = [
     non_zero(64),
     non_zero(128),
     non_zero(256),
@@ -27,92 +29,16 @@ const BLOCKS: [NonZeroUsize; 6] = [
     non_zero(2048),
 ];
 
+/// A side bar's section head: tracked small caps, soft ink.
+pub(super) fn section(ui: &mut egui::Ui, t: &Tokens, text: &str) {
+    ui.add_space(4.0);
+    ui.label(RichText::new(text.to_uppercase()).small().strong().color(t.ink_soft));
+    ui.add_space(2.0);
+}
+
 impl HostApp {
-    pub(super) fn draw_topbar(&mut self, ui: &mut egui::Ui) {
-        let mut reload = false;
-        ui.horizontal(|ui| {
-            ui.heading("stave-play");
-            ui.separator();
-            let dot = if self.dirty { "● " } else { "" };
-            ui.label(RichText::new(format!("{dot}{}", self.project.name)).strong());
-            ui.separator();
-            if let Some(s) = &self.session {
-                ui.label(format!("{} · {} ch out", s.name, s.outputs));
-                ui.separator();
-            }
-            // Rate and block are LIVE: a change reloads the plugin (and
-            // renegotiates the device, which writes the real rate back).
-            egui::ComboBox::from_id_source("sr_picker")
-                .selected_text(format!("{} Hz", self.project.sample_rate.hz()))
-                .width(110.0)
-                .show_ui(ui, |ui| {
-                    for sr in RATES {
-                        let sel = self.project.sample_rate == sr;
-                        if ui
-                            .selectable_label(sel, format!("{} Hz", sr.hz()))
-                            .clicked()
-                            && !sel
-                        {
-                            self.project.sample_rate = sr;
-                            reload = true;
-                        }
-                    }
-                });
-            egui::ComboBox::from_id_source("block_picker")
-                .selected_text(format!("block {}", self.project.block_size))
-                .width(110.0)
-                .show_ui(ui, |ui| {
-                    for b in BLOCKS {
-                        let sel = self.project.block_size == b;
-                        if ui.selectable_label(sel, format!("block {b}")).clicked() && !sel {
-                            self.project.block_size = b;
-                            reload = true;
-                        }
-                    }
-                });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                reload |= ui.button("Reload").clicked();
-                if ui.button("Browse…").clicked() {
-                    self.browse();
-                }
-                self.plugin_picker(ui);
-            });
-        });
-        if reload {
-            self.mark_dirty();
-            self.reload();
-        }
-    }
-
-    fn plugin_picker(&mut self, ui: &mut egui::Ui) {
-        let mut chosen: Option<PathBuf> = None;
-        egui::ComboBox::from_id_source("plugin_picker")
-            .selected_text(format!(
-                "plugin: {}",
-                library::display_name(&self.project.plugin_path)
-            ))
-            .width(260.0)
-            .show_ui(ui, |ui| {
-                for p in library::scan_vst3(&library::vst3_dirs())
-                    .into_iter()
-                    .chain(library::stages())
-                {
-                    let label = library::display_name(&p);
-                    if ui
-                        .selectable_label(p == self.project.plugin_path, label)
-                        .clicked()
-                    {
-                        chosen = Some(p);
-                    }
-                }
-            });
-        if let Some(p) = chosen {
-            self.adopt_plugin(p);
-        }
-    }
-
     /// `.vst3` bundles are directories, so pick a folder and check it.
-    fn browse(&mut self) {
+    pub(super) fn browse(&mut self) {
         let start = self.project.plugin_path.parent().map(PathBuf::from);
         let start = start.unwrap_or_else(|| library::vst3_dirs().remove(0));
         let Some(path) = rfd::FileDialog::new().set_directory(&start).pick_folder() else {
@@ -121,71 +47,38 @@ impl HostApp {
         if library::is_vst3(&path) {
             self.adopt_plugin(path);
         } else {
-            self.status = "not a .vst3 bundle".into();
+            self.fail("not a .vst3 bundle".into());
             self.shared
                 .log
                 .warn(format!("ignored non-vst3 selection: {}", path.display()));
         }
     }
 
-    fn adopt_plugin(&mut self, path: PathBuf) {
+    pub(super) fn adopt_plugin(&mut self, path: PathBuf) {
         self.project.name = library::display_name(&path);
         self.project.plugin_path = path;
         self.mark_dirty();
         self.reload();
     }
 
-    pub(super) fn draw_sidebar(&mut self, ui: &mut egui::Ui) {
-        ui.heading("projects");
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            if ui.button("new").clicked() {
-                self.project = Project::untitled(
-                    library::default_plugin(),
-                    HostConfig::default().sample_rate,
-                    project::DEFAULT_BLOCK,
-                );
-                self.project_path = None;
-                self.mark_dirty();
-                self.reload();
-            }
-            if ui.button("save").clicked() {
-                self.save_project();
-            }
-            if ui.button("refresh").clicked() {
-                self.projects = project::list_projects(&self.project_dir);
-            }
-        });
-        ui.separator();
-        let mut open: Option<PathBuf> = None;
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for (p, path) in &self.projects {
-                    let active = self.project.name == p.name;
-                    let mut label = RichText::new(&p.name);
-                    if active {
-                        label = label.strong().color(Color32::from_rgb(140, 200, 255));
-                    }
-                    if ui.selectable_label(active, label).clicked() {
-                        open = Some(path.clone());
-                    }
-                }
-                if self.projects.is_empty() {
-                    ui.label(RichText::new("(no saved projects)").italics().weak());
-                }
-            });
-        if let Some(path) = open {
-            self.open_project(path);
-        }
+    pub(super) fn new_project(&mut self) {
+        self.project = Project::untitled(
+            library::default_plugin(),
+            HostConfig::default().sample_rate,
+            project::DEFAULT_BLOCK,
+        );
+        self.project_path = None;
+        self.mark_dirty();
+        self.reload();
     }
 
-    fn save_project(&mut self) {
+    pub(super) fn save_project(&mut self) {
         match self.project.save(&self.project_dir) {
             Ok(p) => {
                 self.shared
                     .log
                     .info(format!("saved project → {}", p.display()));
+                self.say(format!("saved {}", self.project.name));
                 self.project_path = Some(p);
                 self.dirty = false;
                 self.projects = project::list_projects(&self.project_dir);
@@ -194,7 +87,7 @@ impl HostApp {
         }
     }
 
-    fn open_project(&mut self, path: PathBuf) {
+    pub(super) fn open_project(&mut self, path: PathBuf) {
         match Project::load(&path) {
             Ok(p) => {
                 self.shared.log.info(format!("opened project: {}", p.name));
@@ -207,16 +100,105 @@ impl HostApp {
         }
     }
 
-    /// Live params: stave's grouped panel when the plugin has
-    /// telemetry, the controller's generic sliders otherwise (third-party).
-    pub(super) fn draw_params(&mut self, ui: &mut egui::Ui) {
-        ui.heading(&self.project.name);
-        ui.label(RichText::new(library::display_name(&self.project.plugin_path)).weak());
-        ui.add_space(6.0);
+    /// The library side bar: find and open a plugin, open or save a
+    /// project. Everything here is also in the palette.
+    pub(super) fn draw_library(&mut self, ui: &mut egui::Ui) {
+        let t = self.tokens;
+        let mut run: Option<Invocation> = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("LIBRARY").small().strong().color(t.ink_soft));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let close = ui.add(egui::Button::new("×").frame(false));
+                if close.on_hover_text(self.tip("Close the library", id::LIBRARY, ui.ctx())).clicked() {
+                    run = Some(Invocation::new(id::LIBRARY));
+                }
+                if ui.add(egui::Button::new("⟳").frame(false)).on_hover_text("Rescan plugins and projects").clicked() {
+                    self.rescan_plugins();
+                    self.projects = project::list_projects(&self.project_dir);
+                }
+            });
+        });
+        ui.horizontal(|ui| {
+            let browse = ui.button("…").on_hover_text(self.tip("Browse for a .vst3", id::PLUGIN_BROWSE, ui.ctx()));
+            if browse.clicked() {
+                run = Some(Invocation::new(id::PLUGIN_BROWSE));
+            }
+            ui.add(
+                egui::TextEdit::singleline(&mut self.library_query)
+                    .hint_text("Filter plugins")
+                    .desired_width(f32::INFINITY),
+            );
+        });
+        ui.add_space(4.0);
+        let query = self.library_query.clone();
+        let current = self.project.plugin_path.clone();
+        let room = ui.available_height();
+        egui::ScrollArea::vertical()
+            .id_source("library-scroll")
+            .max_height((room - 130.0).max(120.0))
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                let (stages, vst3): (Vec<&PathBuf>, Vec<&PathBuf>) = self
+                    .plugin_list()
+                    .iter()
+                    .filter(|p| super::commands::fuzzy_score(&query, &library::display_name(p)).is_some())
+                    .partition(|p| stave_host::opened::stage_name(p).is_some());
+                for (title, list) in [("Plugins", vst3), ("Stages", stages)] {
+                    section(ui, &t, &format!("{title} · {}", list.len()));
+                    for p in list {
+                        let name = library::display_name(p);
+                        let name = name.strip_prefix(stave_host::stages::PREFIX).unwrap_or(&name).to_string();
+                        if ui.selectable_label(*p == current, name).clicked() && *p != current {
+                            run = Some(Invocation::with(id::PLUGIN_OPEN, p.display().to_string()));
+                        }
+                    }
+                }
+            });
         ui.separator();
-        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            section(ui, &t, "Projects");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Save").on_hover_text(self.tip("Save the project", id::PROJECT_SAVE, ui.ctx())).clicked() {
+                    run = Some(Invocation::new(id::PROJECT_SAVE));
+                }
+                if ui.small_button("New").clicked() {
+                    run = Some(Invocation::new(id::PROJECT_NEW));
+                }
+            });
+        });
+        egui::ScrollArea::vertical().id_source("projects-scroll").auto_shrink([false, false]).show(ui, |ui| {
+            for (p, path) in &self.projects {
+                let active = self.project_path.as_ref() == Some(path);
+                if ui.selectable_label(active, &p.name).clicked() && !active {
+                    run = Some(Invocation::with(id::PROJECT_OPEN, path.display().to_string()));
+                }
+            }
+            if self.projects.is_empty() {
+                ui.label(RichText::new("No saved projects yet. Save keeps the plugin, rate, block and view.").small().color(t.ink_soft));
+            }
+        });
+        if let Some(inv) = run {
+            self.run(&inv);
+        }
+    }
+
+    /// The parameters inspector: stave's grouped params, or the
+    /// controller's generic ones (third-party), as name · slider · value.
+    pub(super) fn draw_params(&mut self, ui: &mut egui::Ui) {
+        let t = self.tokens;
+        let mut close = false;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("PARAMETERS").small().strong().color(t.ink_soft));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let b = ui.add(egui::Button::new("×").frame(false));
+                close = b.on_hover_text(self.tip("Hide the inspector", id::INSPECTOR, ui.ctx())).clicked();
+            });
+        });
+        if close {
+            return self.run(&Invocation::new(id::INSPECTOR));
+        }
         let Some(s) = &self.session else {
-            ui.label(RichText::new("(no plugin loaded)").italics().weak());
+            ui.label(RichText::new("No plugin loaded").color(t.ink_soft));
             return;
         };
         let log = &self.shared.log;
@@ -227,37 +209,20 @@ impl HostApp {
         };
         let display = |name: &str, normalized: f64| s.display(name, normalized);
         let params = s.params();
-        if params.is_empty() {
-            ui.label(
-                RichText::new("(plugin exposes no parameters)")
-                    .italics()
-                    .weak(),
-            );
+        if params.iter().all(|c| c.flags.hidden || c.read_only) {
+            ui.label(RichText::new("This plugin exposes no parameters").color(t.ink_soft));
         } else {
-            generic_params(ui, &params, &mut write, &display);
+            generic_params(ui, &t, &params, &mut write, &display);
         }
-    }
-
-    pub(super) fn draw_statusbar(&self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            let peak = f32::from_bits(self.shared.peak.load(Ordering::Relaxed)).clamp(0.0, 1.5);
-            ui.label(format!("peak {peak:.2}"));
-            ui.separator();
-            ui.label(&self.device_name);
-            ui.separator();
-            ui.label(format!("{} Hz", self.project.sample_rate.hz()));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(&self.status);
-            });
-        });
     }
 }
 
-/// One slider per writable, visible param, under a heading per group.
-/// Sliders move in the param's own normalized space (its taper) and
-/// show its owner's text for the value.
+/// One row per writable, visible param, under a head per group. Sliders
+/// move in the param's own normalized space (its taper) and show its
+/// owner's text for the value.
 fn generic_params(
     ui: &mut egui::Ui,
+    t: &Tokens,
     params: &[Param],
     write: &mut dyn FnMut(&str, f64),
     display: &dyn Fn(&str, f64) -> String,
@@ -275,22 +240,34 @@ fn generic_params(
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            let width = ui.available_width();
+            let (name_w, value_w) = (88.0_f32.min(width * 0.32), 64.0);
+            ui.spacing_mut().slider_width = (width - name_w - value_w - 16.0).max(40.0);
             for group in groups {
                 if !group.is_empty() {
-                    ui.add_space(6.0);
-                    ui.label(RichText::new(group.to_uppercase()).strong());
+                    section(ui, t, group);
                 }
                 for c in shown.iter().filter(|c| c.group == group) {
-                    let mut normalized = c.normalized;
-                    let mut slider = egui::Slider::new(&mut normalized, 0.0..=1.0)
-                        .text(c.leaf())
-                        .custom_formatter(|n, _| display(&c.name, n));
-                    if c.step_count > 1 {
-                        slider = slider.step_by(1.0 / f64::from(c.step_count - 1));
-                    }
-                    if ui.add(slider).changed() {
-                        write(&c.name, normalized);
-                    }
+                    ui.horizontal(|ui| {
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(name_w, 20.0), egui::Sense::hover());
+                        ui.painter().text(
+                            r.left_center(),
+                            egui::Align2::LEFT_CENTER,
+                            c.leaf(),
+                            egui::TextStyle::Body.resolve(ui.style()),
+                            t.ink,
+                        );
+                        let mut normalized = c.normalized;
+                        let mut slider = egui::Slider::new(&mut normalized, 0.0..=1.0).show_value(false);
+                        if c.step_count > 1 {
+                            slider = slider.step_by(1.0 / f64::from(c.step_count - 1));
+                        }
+                        let response = ui.add(slider).on_hover_text(&c.name);
+                        if response.changed() {
+                            write(&c.name, normalized);
+                        }
+                        ui.label(RichText::new(display(&c.name, normalized)).monospace().color(t.ink_soft));
+                    });
                 }
             }
         });

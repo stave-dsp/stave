@@ -1,21 +1,26 @@
-//! The input panel: a piano (mouse + computer keys) and one-shot sample
-//! pads, so every analysis view has something to react to. Held notes
-//! are reconciled each frame into on/off events for the audio thread.
+//! The bottom panel's input: a compact piano strip (mouse + computer
+//! keys) and a row of one-shot sample chips, so every view has
+//! something to react to. Held notes are reconciled each frame into
+//! on/off events for the audio thread; the computer keys play whether
+//! or not the panel is open.
 
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use stave_host::note::NoteEvent;
 
+use super::commands::{id, Invocation};
 use super::HostApp;
 use crate::samples::{self, Sample};
 use crate::views;
 
 const VELOCITY: f64 = 0.85;
+/// The piano strip's height: compact, a DAW's docked keyboard.
+const PIANO_HEIGHT: f32 = 64.0;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum Tab {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum Tab {
     Midi,
     Samples,
 }
@@ -23,7 +28,7 @@ enum Tab {
 pub(super) struct Keyboard {
     held: HashSet<i16>,
     mouse: Option<i16>,
-    tab: Tab,
+    pub tab: Tab,
     bank: Vec<Sample>,
 }
 
@@ -41,6 +46,16 @@ impl Keyboard {
     pub fn release_all(&mut self) {
         self.held.clear();
         self.mouse = None;
+    }
+
+    /// The input that suits a plugin: an instrument (no inputs) is
+    /// played from the keys, an effect is fed samples.
+    pub fn tab_for(inputs: usize) -> Tab {
+        if inputs == 0 {
+            Tab::Midi
+        } else {
+            Tab::Samples
+        }
     }
 }
 
@@ -66,19 +81,13 @@ impl HostApp {
         }
     }
 
-    /// z / x shift the piano's octave.
-    pub(super) fn octave_shortcuts(&mut self, ctx: &egui::Context) {
-        let (down, up) = ctx.input(|i| (i.key_pressed(egui::Key::Z), i.key_pressed(egui::Key::X)));
-        if down || up {
-            self.project.octave =
-                (self.project.octave + i32::from(up) - i32::from(down)).clamp(0, 8);
-            self.mark_dirty();
-        }
-    }
-
     /// Computer keys + the mouse note → events for what changed.
     pub(super) fn sync_held_notes(&mut self, ctx: &egui::Context) {
-        let mut now = views::piano::keyboard_held(ctx, self.project.octave);
+        let mut now = if ctx.wants_keyboard_input() {
+            HashSet::new() // typing in a field plays nothing
+        } else {
+            views::piano::keyboard_held(ctx, self.project.octave)
+        };
         now.extend(self.keyboard.mouse);
         for ev in transitions(&self.keyboard.held, &now) {
             self.push_note(ev);
@@ -86,7 +95,7 @@ impl HostApp {
         self.keyboard.held = now;
     }
 
-    /// Let go of every note (the Voicing view has the keys).
+    /// Let go of every note (the Voicing view or the palette has the keys).
     pub(super) fn release_held_notes(&mut self) {
         for ev in transitions(&self.keyboard.held, &HashSet::new()) {
             self.push_note(ev);
@@ -96,83 +105,67 @@ impl HostApp {
     }
 
     pub(super) fn draw_keyboard_panel(&mut self, ui: &mut egui::Ui) {
+        let t = self.tokens;
+        let mut run = None;
         ui.horizontal(|ui| {
-            let kb = &mut self.keyboard;
-            if ui.selectable_label(kb.tab == Tab::Midi, "MIDI").clicked() {
-                kb.tab = Tab::Midi;
-            }
-            if ui
-                .selectable_label(kb.tab == Tab::Samples, "Samples")
-                .clicked()
-            {
-                kb.tab = Tab::Samples;
+            for (tab, label, command) in [(Tab::Midi, "Keyboard", id::KEYBOARD), (Tab::Samples, "Samples", id::SAMPLES)] {
+                if ui.selectable_label(self.keyboard.tab == tab, label).clicked() {
+                    run = Some(Invocation::new(command));
+                }
             }
             ui.separator();
-            match kb.tab {
+            match self.keyboard.tab {
                 Tab::Midi => {
-                    let mut octave = self.project.octave;
-                    if ui.button("octave −").clicked() {
-                        octave -= 1;
+                    if ui.small_button("−").on_hover_text("Octave down  (Z)").clicked() {
+                        run = Some(Invocation::new(id::OCTAVE_DOWN));
                     }
-                    ui.label(format!("octave {}", self.project.octave));
-                    if ui.button("octave +").clicked() {
-                        octave += 1;
-                    }
-                    if octave != self.project.octave {
-                        self.project.octave = octave.clamp(0, 8);
-                        self.dirty = true;
+                    ui.label(RichText::new(format!("octave {}", self.project.octave)).small());
+                    if ui.small_button("+").on_hover_text("Octave up  (X)").clicked() {
+                        run = Some(Invocation::new(id::OCTAVE_UP));
                     }
                     ui.separator();
-                    let mut names: Vec<String> = kb
-                        .held
-                        .iter()
-                        .map(|&n| views::piano::note_name(n))
-                        .collect();
-                    names.sort();
-                    ui.label(if names.is_empty() {
-                        "—".into()
-                    } else {
-                        names.join(" ")
-                    });
+                    let mut held: Vec<i16> = self.keyboard.held.iter().copied().collect();
+                    held.sort_unstable();
+                    let names: Vec<String> = held.into_iter().map(views::piano::note_name).collect();
+                    let text = if names.is_empty() { "A–; play  ·  Z/X octave".to_string() } else { names.join(" ") };
+                    ui.label(RichText::new(text).small().color(t.ink_soft));
                 }
                 Tab::Samples => {
-                    ui.label(format!("{} samples loaded", kb.bank.len()));
-                    ui.separator();
-                    ui.label(RichText::new("click to trigger one-shot").weak());
+                    ui.label(RichText::new("click a sample to play it through the plugin").small().color(t.ink_soft));
                 }
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let b = ui.add(egui::Button::new("×").frame(false));
+                if b.on_hover_text(self.tip("Hide the panel", id::PANEL, ui.ctx())).clicked() {
+                    run = Some(Invocation::new(id::PANEL));
+                }
+            });
         });
-        ui.add_space(4.0);
         match self.keyboard.tab {
             Tab::Midi => {
                 self.keyboard.mouse =
-                    views::piano::draw(ui, self.project.octave, &self.keyboard.held);
+                    views::piano::draw(ui, self.project.octave, &self.keyboard.held, PIANO_HEIGHT, t.accent);
             }
             Tab::Samples => {
                 self.keyboard.mouse = None; // leaving the piano releases its note
-                self.draw_sample_pads(ui);
+                self.draw_sample_chips(ui);
             }
+        }
+        if let Some(inv) = run {
+            self.run(&inv);
         }
     }
 
-    fn draw_sample_pads(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
+    /// One row of chips (scrolls sideways when they don't fit).
+    fn draw_sample_chips(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::horizontal()
+            .auto_shrink([false, true])
             .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
+                ui.horizontal(|ui| {
                     for s in &self.keyboard.bank {
-                        let label = RichText::new(format!(
-                            "▶  {}\n{} ms · {} ch · {} Hz",
-                            s.name,
-                            s.duration_ms(),
-                            s.channels,
-                            s.sample_rate
-                        ))
-                        .monospace();
-                        let pad = egui::Button::new(label)
-                            .min_size(egui::vec2(160.0, 56.0))
-                            .fill(Color32::from_rgb(38, 60, 88));
-                        if ui.add(pad).clicked() && self.shared.samples.push(s.trigger()).is_err() {
+                        let chip = egui::Button::new(format!("▶ {}", s.name)).min_size(egui::vec2(0.0, 26.0));
+                        let about = format!("{} ms · {} ch · {} Hz", s.duration_ms(), s.channels, s.sample_rate);
+                        if ui.add(chip).on_hover_text(about).clicked() && self.shared.samples.push(s.trigger()).is_err() {
                             self.shared.log.warn("sample queue full — trigger dropped");
                         }
                     }
@@ -203,5 +196,11 @@ mod tests {
     #[test]
     fn no_change_no_events() {
         assert!(transitions(&set(&[1, 2]), &set(&[2, 1])).is_empty());
+    }
+
+    #[test]
+    fn instruments_get_the_keys_effects_get_samples() {
+        assert_eq!(Keyboard::tab_for(0), Tab::Midi);
+        assert_eq!(Keyboard::tab_for(2), Tab::Samples);
     }
 }

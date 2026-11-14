@@ -22,7 +22,8 @@ use stave_host::config::{HostConfig, SampleRate};
 
 const USAGE: &str = "stave-play [PLUGIN.vst3] [--sample-rate HZ] [--block-size N] \
                      [--set NAME=VALUE ...] \
-                     [--screenshot PATH [--note PITCH] [--editor-only]] \
+                     [--view VIEW] [--theme system|dark|light] [--ui ITEM,ITEM] \
+                     [--window WxH] [--screenshot PATH [--note PITCH] [--editor-only]] \
                      [--face-trace PATH]
        stave-play --compare CANDIDATE --compare CANDIDATE ... [--material MATERIAL] \
                      [--trim DB] [--abx-trials N] [--voicing-dir DIR]
@@ -42,8 +43,14 @@ side (default rates 44100,48000, tier t1, process block 64).
 as wav:FILE) on the material, level- and latency-aligned, and prints the
 residual's NMR verdict (DSP.md R16, G5); --residual writes the residual
 to listen to. Exit status 0 inaudible, 1 audible, 2 an error. To hear it
-and ABX the pair, open the Voicing tab with --compare A --compare 'B;ref'
+and ABX the pair, open Listen (the Voicing view) with --compare A --compare 'B;ref'
 (the Null test mode).
+VIEW is a view (Plugin, Voicing, Response, Profiles, Spectrum, Spectrogram,
+Scope, Meters, Phase, CPU, Validate, Telemetry, Log) or a mode (Play, Listen,
+Measure, Validate, Debug). --ui opens or closes regions at start (library,
+inspector, panel, each with no- to close; keyboard, samples, palette, focus),
+so --screenshot can capture any state. In the app, Cmd+Shift+P (or Cmd+K)
+lists every command.
 MATERIAL is a built-in name, role:NAME[#N] (item N of a reference-corpus
 role from the sample library, DSP.md R22; see --list-material) or a WAV
 path.";
@@ -111,12 +118,17 @@ fn main() -> std::process::ExitCode {
         let _ = std::fs::remove_file(path);
         std::env::set_var("STAVE_FACE_SNAPSHOT", path);
     }
+    // Fits a 13" laptop screen with room for the dock; --window overrides.
+    let size = launch.window.unwrap_or([1280.0, 800.0]);
     let viewport = eframe::egui::ViewportBuilder::default()
         .with_title("stave-play")
-        .with_inner_size([1560.0, 920.0])
-        .with_min_inner_size([720.0, 420.0]);
+        .with_inner_size(size)
+        .with_min_inner_size([900.0, 560.0]);
     let options = eframe::NativeOptions {
         viewport,
+        // The app dresses itself from the design system's tokens and
+        // follows the OS theme itself (eframe's would reset the visuals).
+        follow_system_theme: false,
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -256,6 +268,13 @@ enum ArgError {
     UnexpectedArgument(String),
 }
 
+/// `1280x800` → `[1280, 800]` (each side at least 200).
+fn parse_size(s: &str) -> Option<[f32; 2]> {
+    let (w, h) = s.split_once(['x', 'X'])?;
+    let side = |v: &str| v.trim().parse::<f32>().ok().filter(|n| *n >= 200.0 && n.is_finite());
+    Some([side(w)?, side(h)?])
+}
+
 /// `Ok(None)` for --help.
 fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError> {
     let mut l = app::Launch {
@@ -267,6 +286,10 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
         screenshot_note: None,
         screenshot_region: app::CaptureRegion::Window,
         voicing: voicing::Launch::default(),
+        view: None,
+        theme: None,
+        ui: Vec::new(),
+        window: None,
     };
     let (mut verify_blessed, mut tolerance_db, mut list_material) = (None, -120.0, false);
     let mut export_material = None;
@@ -294,6 +317,24 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Cli>, ArgError
                 l.block_size = v.parse().map_err(|_| bad("--block-size", &v))?;
             }
             "--screenshot" => l.screenshot = Some(PathBuf::from(value("--screenshot")?)),
+            "--view" => {
+                let v = value("--view")?;
+                l.view = Some(project::ViewId::parse(&v).ok_or_else(|| bad("--view", &v))?);
+            }
+            "--theme" => {
+                let v = value("--theme")?;
+                l.theme = Some(app::theme::ThemeChoice::parse(&v).ok_or_else(|| bad("--theme", &v))?);
+            }
+            "--ui" => {
+                let v = value("--ui")?;
+                for item in v.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                    l.ui.push(app::UiFlag::parse(item).ok_or_else(|| bad("--ui", item))?);
+                }
+            }
+            "--window" => {
+                let v = value("--window")?;
+                l.window = Some(parse_size(&v).ok_or_else(|| bad("--window", &v))?);
+            }
             "--editor-only" => l.screenshot_region = app::CaptureRegion::Editor,
             "--note" => {
                 let v = value("--note")?;
@@ -420,6 +461,19 @@ mod tests {
         );
         assert_eq!(l.sets, [("mix".to_string(), 0.5)]);
         assert_eq!(l.plugin, Some(PathBuf::from("X.vst3")));
+    }
+
+    #[test]
+    fn parses_workbench_options() {
+        let l = p("--view cpu --theme light --ui library,no-panel,palette --window 1024x700").unwrap().unwrap();
+        assert_eq!(l.view, Some(project::ViewId::Perf));
+        assert_eq!(l.theme, Some(app::theme::ThemeChoice::Light));
+        assert_eq!(l.ui, [app::UiFlag::Library(true), app::UiFlag::Panel(false), app::UiFlag::Palette]);
+        assert_eq!(l.window, Some([1024.0, 700.0]));
+        assert!(matches!(p("--view nope"), Err(ArgError::InvalidValue { flag: "--view", .. })));
+        assert!(matches!(p("--ui sidebar"), Err(ArgError::InvalidValue { flag: "--ui", .. })));
+        assert!(matches!(p("--window 10x10"), Err(ArgError::InvalidValue { flag: "--window", .. })));
+        assert!(matches!(p("--theme neon"), Err(ArgError::InvalidValue { flag: "--theme", .. })));
     }
 
     #[test]

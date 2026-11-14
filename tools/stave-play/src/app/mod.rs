@@ -1,24 +1,50 @@
-//! stave-play's app: the project, the live [`Session`], and the frame.
+//! stave-play's app: the project, the live [`Session`], and the
+//! workbench around them, in VS Code's shape:
+//!
+//! ```text
+//! +----+---------+------------------------------+-----------+
+//! | A  | library | header: plugin · view tabs ⌕ |           |
+//! | c  | (on     +------------------------------+ inspector |
+//! | t  | demand) |  editor area: the active view| (params)  |
+//! | i  |         +------------------------------+           |
+//! | v  |         |  panel: keyboard | samples   |           |
+//! +----+---------+------------------------------+-----------+
+//! | status: device · rate · block · latency · CPU · peak     |
+//! +---------------------------------------------------------+
+//! ```
 //!
 //! ```text
 //! mod.rs         state + the per-frame layout
+//! commands.rs    command ids, sources, the keymap, fuzzy matching
+//! workbench.rs   the workbench's own commands and what they do
+//! palette.rs     the command palette
+//! layout.rs      which regions are open (persisted)
+//! theme.rs       the design system's tokens as egui visuals
+//! shell.rs       activity bar, header, status bar
+//! panels.rs      library side bar, params inspector; plugin + project ops
+//! central.rs     the editor area: the active view
+//! keyboard.rs    piano strip + sample chips; held-note bookkeeping
 //! session.rs     one live plugin (teardown order by construction)
 //! library.rs     plugin + project locations on disk
-//! panels.rs      top bar, project sidebar, params, status bar
-//! central.rs     the view tabs and the active view
-//! keyboard.rs    piano + sample pads; held-note bookkeeping
 //! screenshot.rs  headless --screenshot capture
-//! voicing.rs     the Voicing view's place in the app (device hand-over)
+//! voicing.rs     the Listen mode's place in the app (device hand-over)
 //! ```
 
 mod central;
+mod commands;
 mod keyboard;
+mod layout;
 pub(crate) mod library;
+mod palette;
 mod panels;
 mod screenshot;
 mod session;
+mod shell;
+pub(crate) mod theme;
 mod voicing;
+mod workbench;
 
+use std::cell::OnceCell;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
@@ -33,16 +59,20 @@ use stave_host::config::{HostConfig, SampleRate};
 use crate::analysis::AnalysisRing;
 use crate::audio::{self, Shared, MAX_EVENTS};
 use crate::debug_log::DebugLog;
-use crate::project::{self, Project, ViewId};
+use crate::project::{self, Mode, Project, ViewId};
 use crate::views;
 use crate::voicing::{self as voicing_view, Voicing};
 
+use commands::{CommandSource, Keymap};
 use keyboard::Keyboard;
+use layout::Layout;
+use palette::Palette;
 pub use screenshot::CaptureRegion;
 use screenshot::Screenshot;
 use session::Session;
+use theme::{ThemeChoice, Tokens};
 
-/// Per-view UI state (one per analysis tab).
+/// Per-view UI state (one per analysis view).
 #[derive(Default)]
 struct Views {
     scope: views::scope::ScopeState,
@@ -66,12 +96,14 @@ pub struct HostApp {
     session: Option<Session>,
     device_name: String,
     status: String,
+    /// The status line reports a failure (drawn in the error colour).
+    status_error: bool,
     keyboard: Keyboard,
     views: Views,
     last_frame: Instant,
     /// The window's root NSView — the parent the plugin editor floats in.
     ns_view: *mut std::ffi::c_void,
-    /// Where the Plugin tab reserved space this frame (egui points).
+    /// Where the Plugin view reserved space this frame (egui points).
     editor_rect: egui::Rect,
     screenshot: Option<Screenshot>,
     /// `--set` pairs, applied through the controller once the plugin is up.
@@ -80,6 +112,18 @@ pub struct HostApp {
     /// The main plugin was dropped so a comparison could take the device;
     /// leaving the Voicing view brings it back.
     suspended_for_voicing: bool,
+    layout: Layout,
+    /// Where the layout is saved and what it was last saved as; none
+    /// for a screenshot run (it neither reads nor writes the user's).
+    layout_store: Option<(PathBuf, Layout)>,
+    palette: Palette,
+    keymap: Keymap,
+    tokens: Tokens,
+    /// The theme last applied (dark or not), to re-dress only on change.
+    applied_dark: Option<bool>,
+    /// The library's plugin scan (VST3 folders + catalog stages).
+    plugins: OnceCell<Vec<PathBuf>>,
+    library_query: String,
 }
 
 /// What the command line hands the app.
@@ -92,6 +136,43 @@ pub struct Launch {
     pub screenshot_note: Option<i16>,
     pub screenshot_region: CaptureRegion,
     pub voicing: voicing_view::Launch,
+    /// `--view`: open on this view.
+    pub view: Option<ViewId>,
+    /// `--theme`: this session's theme (saved only if changed in the app).
+    pub theme: Option<ThemeChoice>,
+    /// `--ui`: regions to open or close at start.
+    pub ui: Vec<UiFlag>,
+    /// `--window WxH`: the window's inner size in points.
+    pub window: Option<[f32; 2]>,
+}
+
+/// One `--ui` item: a region opened or closed, a panel tab, the
+/// palette or focus mode (any state can be screenshotted).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum UiFlag {
+    Library(bool),
+    Inspector(bool),
+    Panel(bool),
+    Keyboard,
+    Samples,
+    Palette,
+    Focus,
+}
+
+impl UiFlag {
+    pub fn parse(s: &str) -> Option<Self> {
+        let (on, name) = s.strip_prefix("no-").map_or((true, s), |n| (false, n));
+        Some(match (name, on) {
+            ("library", _) => UiFlag::Library(on),
+            ("inspector", _) => UiFlag::Inspector(on),
+            ("panel", _) => UiFlag::Panel(on),
+            ("keyboard", true) => UiFlag::Keyboard,
+            ("samples", true) => UiFlag::Samples,
+            ("palette", true) => UiFlag::Palette,
+            ("focus", true) => UiFlag::Focus,
+            _ => return None,
+        })
+    }
 }
 
 impl HostApp {
@@ -104,6 +185,22 @@ impl HostApp {
             project_dir.display(),
             projects.len()
         ));
+        let layout_store = launch.screenshot.is_none().then(|| {
+            let path = layout::path();
+            let saved = match Layout::load(&path) {
+                Ok(l) => l,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Layout::default(),
+                Err(e) => {
+                    log.warn(format!("layout {}: {e} (using the defaults)", path.display()));
+                    Layout::default()
+                }
+            };
+            (path, saved)
+        });
+        let mut layout = layout_store.as_ref().map(|(_, l)| l.clone()).unwrap_or_default();
+        if let Some(t) = launch.theme {
+            layout.theme = t;
+        }
         let plugin = launch.plugin.unwrap_or_else(library::default_plugin);
         let mut app = Self {
             project: Project::untitled(plugin, launch.sample_rate, launch.block_size),
@@ -122,6 +219,7 @@ impl HostApp {
             session: None,
             device_name: String::new(),
             status: String::new(),
+            status_error: false,
             keyboard: Keyboard::new(),
             views: Views::default(),
             last_frame: Instant::now(),
@@ -133,6 +231,14 @@ impl HostApp {
             pending_sets: launch.sets,
             voicing,
             suspended_for_voicing: false,
+            layout,
+            layout_store,
+            palette: Palette::default(),
+            keymap: Keymap::default(),
+            tokens: Tokens::dark(),
+            applied_dark: None,
+            plugins: OnceCell::new(),
+            library_query: String::new(),
         };
         if launch.voicing.wants_voicing() {
             // Straight to the comparison: no main plugin to load, but the
@@ -150,9 +256,27 @@ impl HostApp {
                 )),
             }
         } else {
+            app.project.active_view = launch.view.unwrap_or_else(|| app.layout.view_for(Mode::Play));
             app.reload();
         }
+        for flag in launch.ui {
+            app.apply_flag(flag);
+        }
         app
+    }
+
+    fn apply_flag(&mut self, flag: UiFlag) {
+        use commands::{id, Invocation};
+        let l = &mut self.layout;
+        match flag {
+            UiFlag::Library(on) => l.library = on,
+            UiFlag::Inspector(on) => l.inspector = on,
+            UiFlag::Panel(on) => l.panel = on,
+            UiFlag::Keyboard => self.run(&Invocation::new(id::KEYBOARD)),
+            UiFlag::Samples => self.run(&Invocation::new(id::SAMPLES)),
+            UiFlag::Palette => self.palette.show(),
+            UiFlag::Focus => l.focus = true,
+        }
     }
 
     /// Tear the current plugin down and bring the project's up.
@@ -182,8 +306,9 @@ impl HostApp {
         ) {
             Ok(s) => {
                 self.shared.log.info(format!("up: {}", s.name));
+                self.keyboard.tab = Keyboard::tab_for(s.inputs);
                 self.session = Some(s);
-                self.status = "ready".into();
+                self.say("ready".into());
             }
             Err(e) => self.fail(format!("load failed: {}", crate::errors::with_causes(&e))),
         }
@@ -192,6 +317,13 @@ impl HostApp {
     fn fail(&mut self, msg: String) {
         self.shared.log.error(msg.clone());
         self.status = msg;
+        self.status_error = true;
+    }
+
+    /// A plain status message (clears an error).
+    fn say(&mut self, msg: String) {
+        self.status = msg;
+        self.status_error = false;
     }
 
     fn host_config(&self) -> HostConfig {
@@ -214,54 +346,133 @@ impl HostApp {
     fn mark_dirty(&mut self) {
         self.dirty = true;
     }
+
+    /// Re-dress the context when the resolved theme changes.
+    fn apply_theme(&mut self, ctx: &egui::Context, system: Option<eframe::Theme>) {
+        let dark = self.layout.theme.dark(system);
+        if self.applied_dark != Some(dark) {
+            self.tokens = theme::apply(ctx, dark);
+            self.applied_dark = Some(dark);
+        }
+    }
+
+    /// Save the layout when it changed (never for a screenshot run).
+    fn persist_layout(&mut self) {
+        let Some((path, saved)) = &mut self.layout_store else { return };
+        let now = Layout { focus: false, ..self.layout.clone() };
+        if now == *saved {
+            return;
+        }
+        match now.save(path) {
+            Ok(()) => *saved = now,
+            Err(e) => {
+                self.shared.log.warn(format!("layout {}: {e} (not saved)", path.display()));
+                *saved = now; // don't retry every frame
+            }
+        }
+    }
+
+    /// Run whatever this frame's shortcuts asked for. Bare keys (Z/X)
+    /// wait while a text field has focus or Listen owns the letters.
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        let bare_keys = !ctx.wants_keyboard_input() && self.project.active_view.mode() != Mode::Listen && !self.palette.open;
+        for inv in self.keymap.fired(ctx, bare_keys) {
+            if self.palette.open && inv.id != commands::id::PALETTE {
+                self.palette.close();
+            }
+            self.palette.ran(&inv);
+            self.run(&inv);
+        }
+    }
 }
 
 impl eframe::App for HostApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let now = Instant::now();
         let dt = now
             .duration_since(self.last_frame)
             .as_secs_f32()
             .clamp(0.001, 0.25);
         self.last_frame = now;
+        self.apply_theme(ctx, frame.info().system_theme);
         self.apply_pending_sets();
         self.tick_screenshot(ctx);
-        // The Voicing view owns the letter and digit keys.
-        let voicing = self.project.active_view == ViewId::Voicing;
-        if !voicing {
-            self.octave_shortcuts(ctx);
-        }
+        self.handle_shortcuts(ctx);
 
-        egui::TopBottomPanel::top("top").show(ctx, |ui| self.draw_topbar(ui));
-        egui::TopBottomPanel::bottom("bottom").show(ctx, |ui| self.draw_statusbar(ui));
-        if !voicing {
-            // Declared after `bottom`, so egui stacks it above the status row.
-            egui::TopBottomPanel::bottom("keyboard")
+        let t = self.tokens;
+        let mode = self.project.active_view.mode();
+        let regions = self.layout.regions(mode);
+        let frame_of = |fill| egui::Frame::none().fill(fill).inner_margin(egui::Margin::symmetric(8.0, 4.0));
+        let hairline = egui::Stroke::new(1.0, t.line);
+
+        // Declaration order is nesting order: the status bar spans the
+        // window, the side bars sit above it, the panel and header take
+        // only the editor column.
+        egui::TopBottomPanel::bottom("status")
+            .exact_height(shell::STATUS_HEIGHT)
+            .frame(frame_of(t.status).inner_margin(egui::Margin::symmetric(8.0, 0.0)))
+            .show(ctx, |ui| self.draw_statusbar(ui));
+        if regions.activity {
+            egui::SidePanel::left("activity")
+                .exact_width(shell::ACTIVITY_WIDTH)
                 .resizable(false)
-                .min_height(208.0)
-                .show(ctx, |ui| self.draw_keyboard_panel(ui));
+                .frame(egui::Frame::none().fill(t.chrome).stroke(hairline))
+                .show(ctx, |ui| self.draw_activity_bar(ui));
         }
-        egui::SidePanel::left("sidebar")
-            .default_width(170.0)
-            .show(ctx, |ui| self.draw_sidebar(ui));
-        if !voicing {
-            egui::SidePanel::right("params")
-                .resizable(true)
-                .default_width(300.0)
-                .min_width(220.0)
+        if regions.library {
+            egui::SidePanel::left("library")
+                .default_width(240.0)
+                .width_range(180.0..=420.0)
+                .frame(frame_of(t.chrome).inner_margin(egui::Margin::same(8.0)).stroke(hairline))
+                .show(ctx, |ui| self.draw_library(ui));
+        }
+        if regions.inspector {
+            egui::SidePanel::right("inspector")
+                .default_width(280.0)
+                .width_range(220.0..=480.0)
+                .frame(frame_of(t.chrome).inner_margin(egui::Margin::same(8.0)).stroke(hairline))
                 .show(ctx, |ui| self.draw_params(ui));
         }
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.draw_view_tabs(ui);
-            self.draw_central(ui, dt);
-        });
+        if regions.panel {
+            egui::TopBottomPanel::bottom("panel")
+                .resizable(false)
+                .frame(frame_of(t.chrome).inner_margin(egui::Margin::same(8.0)).stroke(hairline))
+                .show(ctx, |ui| self.draw_keyboard_panel(ui));
+        }
+        egui::TopBottomPanel::top("header")
+            .exact_height(36.0)
+            .frame(frame_of(t.canvas).inner_margin(egui::Margin::symmetric(12.0, 0.0)).stroke(hairline))
+            .show(ctx, |ui| self.draw_header(ui));
+        egui::CentralPanel::default()
+            .frame(frame_of(t.canvas).inner_margin(egui::Margin::same(12.0)))
+            .show(ctx, |ui| self.draw_central(ui, dt));
 
-        if voicing {
+        let items = self.commands();
+        if let Some(inv) = self.palette.ui(ctx, &items, &self.keymap, &t) {
+            self.run(&inv);
+        }
+
+        if self.project.active_view.mode() == Mode::Listen || self.palette.open {
             self.release_held_notes();
         } else {
             self.sync_held_notes(ctx);
         }
         self.place_editor(ctx);
+        self.persist_layout();
         ctx.request_repaint();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_flags_parse_open_and_closed() {
+        assert_eq!(UiFlag::parse("library"), Some(UiFlag::Library(true)));
+        assert_eq!(UiFlag::parse("no-panel"), Some(UiFlag::Panel(false)));
+        assert_eq!(UiFlag::parse("palette"), Some(UiFlag::Palette));
+        assert_eq!(UiFlag::parse("no-palette"), None);
+        assert_eq!(UiFlag::parse("sidebar"), None);
     }
 }
