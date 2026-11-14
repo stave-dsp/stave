@@ -479,7 +479,7 @@ fn capstan_drift_has_its_process_statistics() {
     // σ = 0.2 %, τ = 50 ms, the loop's τs = 200 ms, at 1 kHz for 2²²
     // samples: about 20 000 of the loop's time constants.
     let (sigma, tau, servo, rate) = (2e-3, 0.05, 0.2, 1_000.0);
-    let mut c = Capstan::new(21).with_drift(Drift { rms: sigma, tau_s: tau }).with_servo(servo);
+    let mut c = Capstan::new(21).with_drift(Drift { rms: sigma, tau_s: tau }).with_servo(stave_dsp::units::seconds(servo));
     c.prepare(rate as f32);
     let base = f64::from(c.latency()) / rate;
     let n = 1 << 22;
