@@ -3,16 +3,18 @@
 
 use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
+use crate::units::{Hz, Seconds};
 
 /// The per-sample step of a one-pole toward its target for a time
-/// constant of `seconds` at `sample_rate`: `1 − e^(−1/(seconds·fs))`.
+/// constant `tau` at `sample_rate`: `1 − e^(−1/(seconds·fs))`.
 /// After one time constant a step input has covered `1 − 1/e` (63 %) of
 /// the way. Zero or negative times follow instantly (coefficient 1).
 ///
 /// The one formula every smoother, envelope and lag in the crate uses:
-/// `y += tau_coeff(τ, fs) · (x − y)`.
+/// `y += tau_coeff(Seconds::new(f64::from(τ)), fs) · (x − y)`.
 #[inline]
-pub fn tau_coeff(seconds: f32, sample_rate: f32) -> f32 {
+pub fn tau_coeff(tau: Seconds, sample_rate: f32) -> f32 {
+    let seconds = tau.get() as f32;
     if seconds <= 0.0 {
         return 1.0;
     }
@@ -24,7 +26,8 @@ pub fn tau_coeff(seconds: f32, sample_rate: f32) -> f32 {
 /// unity (slow RCs at oversampled rates) that `f32` would quantize the
 /// time constant.
 #[inline]
-pub fn tau_coeff64(seconds: f64, sample_rate: f64) -> f64 {
+pub fn tau_coeff64(tau: Seconds, sample_rate: f64) -> f64 {
+    let seconds = tau.get();
     if seconds <= 0.0 {
         return 1.0;
     }
@@ -52,36 +55,38 @@ pub struct OnePole {
 }
 
 impl OnePole {
-    pub fn new(mode: OnePoleMode, hz: f32) -> Self {
+    pub fn new(mode: OnePoleMode, cutoff: Hz) -> Self {
         let mut f = Self {
             mode,
-            hz,
+            hz: cutoff.get(),
             sample_rate: 48_000.0,
             a: 1.0,
             y: 0.0,
         };
-        f.set_hz(hz);
+        f.set_frequency(cutoff);
         f
     }
 
-    pub fn lowpass(hz: f32) -> Self {
-        Self::new(OnePoleMode::Lowpass, hz)
+    pub fn lowpass(cutoff: Hz) -> Self {
+        Self::new(OnePoleMode::Lowpass, cutoff)
     }
 
-    pub fn highpass(hz: f32) -> Self {
-        Self::new(OnePoleMode::Highpass, hz)
+    pub fn highpass(cutoff: Hz) -> Self {
+        Self::new(OnePoleMode::Highpass, cutoff)
     }
 
     /// Move the corner (state kept). Held below 0.49·fs.
-    pub fn set_hz(&mut self, hz: f32) {
+    pub fn set_frequency(&mut self, cutoff: Hz) {
+        let hz = cutoff.get();
         debug_assert!(hz >= 0.0, "corner {hz} Hz");
         self.hz = hz;
         let hz = hz.clamp(0.0, 0.49 * self.sample_rate);
         self.a = 1.0 - (-core::f32::consts::TAU * hz / self.sample_rate).exp();
     }
 
-    pub const fn hz(&self) -> f32 {
-        self.hz
+    /// The corner.
+    pub const fn frequency(&self) -> Hz {
+        Hz::new(self.hz)
     }
 
     /// Move the clock (state kept): the coefficient follows the new
@@ -91,7 +96,7 @@ impl OnePole {
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_frequency(Hz::new(self.hz));
     }
 }
 
@@ -134,25 +139,26 @@ impl Default for DcBlocker {
     /// A 5 Hz corner: below the audio band, fast enough to clear an
     /// operating-point shift in a fraction of a second.
     fn default() -> Self {
-        Self::new(5.0)
+        Self::new(Hz::new(5.0))
     }
 }
 
 impl DcBlocker {
-    pub fn new(hz: f32) -> Self {
+    pub fn new(corner: Hz) -> Self {
         let mut d = Self {
-            hz,
+            hz: corner.get(),
             sample_rate: 48_000.0,
             r: 0.0,
             x1: 0.0,
             y1: 0.0,
         };
-        d.set_hz(hz);
+        d.set_frequency(corner);
         d
     }
 
     /// Move the corner (state kept).
-    pub fn set_hz(&mut self, hz: f32) {
+    pub fn set_frequency(&mut self, corner: Hz) {
+        let hz = corner.get();
         self.hz = hz;
         self.r = (-2.0 * core::f64::consts::PI * f64::from(hz) / f64::from(self.sample_rate)).exp();
     }
@@ -161,7 +167,7 @@ impl DcBlocker {
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_frequency(Hz::new(self.hz));
     }
 }
 
@@ -189,22 +195,23 @@ impl Stage for DcBlocker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::units::{hz, seconds};
 
     #[test]
     fn tau_coeff_covers_63_percent_in_one_time_constant() {
         let fs = 48_000.0;
-        let a = tau_coeff(0.010, fs);
+        let a = tau_coeff(seconds(0.010), fs);
         let mut y = 0.0f32;
         for _ in 0..480 {
             y += a * (1.0 - y);
         }
         assert!((y - (1.0 - (-1.0f32).exp())).abs() < 1e-3, "{y}");
-        assert_eq!(tau_coeff(0.0, fs), 1.0);
+        assert_eq!(tau_coeff(seconds(0.0), fs), 1.0);
     }
 
     #[test]
     fn a_moving_clock_re_voices_without_a_reset() {
-        let mut moved = OnePole::lowpass(500.0);
+        let mut moved = OnePole::lowpass(hz(500.0));
         moved.prepare(48_000.0);
         for _ in 0..64 {
             moved.tick(1.0);
@@ -212,12 +219,12 @@ mod tests {
         let held = moved.tick(1.0);
         moved.set_sample_rate(24_000.0);
         // The state survives the move; the coefficient is the new rate's.
-        let mut fresh = OnePole::lowpass(500.0);
+        let mut fresh = OnePole::lowpass(hz(500.0));
         fresh.prepare(24_000.0);
         let a = fresh.tick(1.0);
         assert_eq!(moved.tick(1.0), held + a * (1.0 - held));
 
-        let mut dc = DcBlocker::new(20.0);
+        let mut dc = DcBlocker::new(hz(20.0));
         dc.prepare(48_000.0);
         dc.tick(1.0);
         dc.set_sample_rate(96_000.0);
@@ -229,7 +236,7 @@ mod tests {
         let fs = 48_000.0f32;
         let hz = 1_000.0f32;
         let gain = |mode: OnePoleMode| {
-            let mut f = OnePole::new(mode, hz);
+            let mut f = OnePole::new(mode, Hz::new(hz));
             f.prepare(fs);
             let (mut acc_in, mut acc_out) = (0.0f64, 0.0f64);
             for i in 0..48_000 {
@@ -247,7 +254,7 @@ mod tests {
         let (lp, hp) = (gain(OnePoleMode::Lowpass), gain(OnePoleMode::Highpass));
         assert!((lp + 3.0).abs() < 0.1, "lowpass {lp:.2} dB");
         assert!((hp + 3.6).abs() < 0.1, "highpass {hp:.2} dB");
-        let (mut lp, mut hp) = (OnePole::lowpass(300.0), OnePole::highpass(300.0));
+        let (mut lp, mut hp) = (OnePole::lowpass(Hz::new(300.0)), OnePole::highpass(Hz::new(300.0)));
         lp.prepare(fs);
         hp.prepare(fs);
         for i in 0..1_000 {
@@ -279,7 +286,7 @@ mod tests {
 
     #[test]
     fn one_pole_tail_matches_its_pole() {
-        let mut f = OnePole::lowpass(100.0);
+        let mut f = OnePole::lowpass(hz(100.0));
         f.prepare(48_000.0);
         let Tail::Samples(n) = f.tail() else { panic!() };
         let mut y = 1.0f32;

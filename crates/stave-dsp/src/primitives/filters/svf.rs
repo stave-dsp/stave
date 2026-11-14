@@ -8,6 +8,7 @@
 
 use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Hz;
 
 /// The four simultaneous responses of one [`Svf`] step.
 #[derive(Clone, Copy, Debug)]
@@ -68,17 +69,17 @@ pub struct Svf {
 impl Default for Svf {
     /// 1 kHz, Butterworth Q.
     fn default() -> Self {
-        Self::new(1_000.0, core::f32::consts::FRAC_1_SQRT_2)
+        Self::new(Hz::new(1_000.0), core::f32::consts::FRAC_1_SQRT_2)
     }
 }
 
 impl Svf {
-    /// A filter with its corner at `hz` and quality factor `q`
+    /// A filter with its corner at `cutoff` and quality factor `q`
     /// (1/√2 = Butterworth; higher rings).
-    pub fn new(hz: f32, q: f32) -> Self {
+    pub fn new(cutoff: Hz, q: f32) -> Self {
         let mut f = Self {
             sample_rate: 48_000.0,
-            hz,
+            hz: cutoff.get(),
             q,
             g: 0.0,
             k: 0.0,
@@ -88,14 +89,15 @@ impl Svf {
             ic1eq: 0.0,
             ic2eq: 0.0,
         };
-        f.set(hz, q);
+        f.set(cutoff, q);
         f
     }
 
     /// Retune (state kept). The corner is held inside (1 Hz, 0.49·fs)
     /// and `q` inside [0.05, 500]. Cheap enough to call per sample.
     #[inline]
-    pub fn set(&mut self, hz: f32, q: f32) {
+    pub fn set(&mut self, cutoff: Hz, q: f32) {
+        let hz = cutoff.get();
         self.hz = hz;
         self.q = q;
         let cutoff = hz.clamp(1.0, self.sample_rate * 0.49);
@@ -135,7 +137,7 @@ impl Stage for Svf {
     fn prepare(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set(self.hz, self.q);
+        self.set(Hz::new(self.hz), self.q);
         self.reset();
     }
     fn reset(&mut self) {
@@ -159,10 +161,11 @@ impl Stage for Svf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::units::hz;
 
     #[test]
     fn taps_are_one_step_and_tick_is_the_lowpass() {
-        let (mut a, mut b) = (Svf::new(800.0, 2.0), Svf::new(800.0, 2.0));
+        let (mut a, mut b) = (Svf::new(hz(800.0), 2.0), Svf::new(hz(800.0), 2.0));
         a.prepare(48_000.0);
         b.prepare(48_000.0);
         for i in 0..512 {
@@ -187,7 +190,7 @@ mod tests {
             let den = ((1.0 - w * w).powi(2) + (w / q).powi(2)).sqrt();
             let want = [1.0 / den, w / den, w * w / den].map(|m| 20.0 * m.log10());
             for (tap, want) in want.iter().enumerate() {
-                let mut f = Svf::new(f0 as f32, q as f32);
+                let mut f = Svf::new(Hz::new(f0 as f32), q as f32);
                 f.prepare(fs as f32);
                 let n = fs as usize / 2;
                 let (mut acc_in, mut acc_out) = (0.0f64, 0.0f64);
@@ -211,7 +214,7 @@ mod tests {
 
     #[test]
     fn tail_tracks_the_measured_ring() {
-        let mut f = Svf::new(500.0, 8.0);
+        let mut f = Svf::new(hz(500.0), 8.0);
         f.prepare(48_000.0);
         let Tail::Samples(n) = f.tail() else { panic!() };
         f.tick(1.0);

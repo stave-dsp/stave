@@ -6,6 +6,7 @@
 
 use crate::kernel::denormal;
 use crate::kernel::node::{Stage, Tail};
+use crate::units::Hz;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Allpass1 {
@@ -18,26 +19,27 @@ pub struct Allpass1 {
 impl Default for Allpass1 {
     /// Centred at 1 kHz.
     fn default() -> Self {
-        Self::new(1_000.0)
+        Self::new(Hz::new(1_000.0))
     }
 }
 
 impl Allpass1 {
-    pub fn new(hz: f32) -> Self {
+    pub fn new(centre: Hz) -> Self {
         let mut ap = Self {
-            hz,
+            hz: centre.get(),
             sample_rate: 48_000.0,
             g: 0.0,
             z: 0.0,
         };
-        ap.set_hz(hz);
+        ap.set_frequency(centre);
         ap
     }
 
     /// Move the phase-shift centre (state kept). Held inside
     /// (1 Hz, 0.499·fs).
     #[inline]
-    pub fn set_hz(&mut self, hz: f32) {
+    pub fn set_frequency(&mut self, centre: Hz) {
+        let hz = centre.get();
         self.hz = hz;
         let hz = hz.clamp(1.0, self.sample_rate * 0.499);
         let t = (core::f32::consts::PI * hz / self.sample_rate).tan();
@@ -49,7 +51,7 @@ impl Stage for Allpass1 {
     fn prepare(&mut self, sample_rate: f32) {
         debug_assert!(sample_rate > 0.0, "sample rate must be positive");
         self.sample_rate = sample_rate;
-        self.set_hz(self.hz);
+        self.set_frequency(Hz::new(self.hz));
         self.reset();
     }
     fn reset(&mut self) {
