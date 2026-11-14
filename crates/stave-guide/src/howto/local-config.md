@@ -28,7 +28,7 @@ one says which, and how to set it.
 | `STAVE_OFFLOAD_EVENTS` | `scripts/offload.sh` | a command fed one JSON line (`job.started` / `job.finished`, with host, slot, outcome) per job event, e.g. a dashboard's ingest; unset, none |
 | `STAVE_REFERENCE_HOST` | `scripts/datasheet.sh` | the machine whose numbers are committed to `datasheet.json` |
 | `STAVE_REFERENCE_NAME` | `scripts/datasheet.sh` | how the Cost page describes it (the hardware, e.g. "Apple M1, 8 cores") |
-| `STAVE_SAMPLE_LIBRARY` | program-material tests, `scripts/corpus.sh`, `stave-play --material role:NAME`, `stave-fit --program` | reference audio (never committed; tests skip when unset); `crates/stave-test/corpus.spec` names the roles it fills |
+| `STAVE_SAMPLE_LIBRARY` | program-material tests, `scripts/corpus.sh`, `stave null --material role:NAME`, `stave fit --program` | reference audio (never committed; tests skip when unset); `crates/stave-test/corpus.spec` names the roles it fills |
 | `STAVE_CORPUS_LOCK` | `scripts/corpus.sh lock`, the corpus readers | the local lock of each corpus pick's SHA-256 (default `~/.config/stave/corpus.lock`; never committed) |
 | `STAVE_CAPTURES` | capture comparisons | hardware captures (never committed; tests skip when unset) |
 | `STAVE_SIGN_IDENTITY` | `scripts/package.sh sign` | the macOS Developer ID Application identity, by name or SHA-1 ([Ship your plugin](crate::howto::ship)); unset, bundles stay ad-hoc signed |

@@ -13,6 +13,9 @@ publish = false
 stave-host.workspace = true
 stave-core.workspace = true
 stave-measure.workspace = true
+stave-dsp.workspace = true
+# The R17 characterisation, the circuit decks and the reference corpus.
+stave-test.workspace = true
 thiserror.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -14,6 +14,9 @@
 //! registry  commands by id; input validation; JSON Schema of the fields
 //! target    what a command opens (path, au:, stage:, @session) and the Workspace
 //! commands/ the built-in commands, one module per family
+//! cli       the CLI layer: words → command, flags → input, help, exit codes
+//! mcp       the MCP layer: JSON-RPC over stdio, tools, progress, resources
+//! stdout    keeping stdout for data while plugins print
 //! ```
 //!
 //! Running one, as any layer does:
@@ -29,10 +32,13 @@
 //! assert!(out.data["stages"].as_array().unwrap().len() > 3);
 //! ```
 
+pub mod cli;
 pub mod command;
 pub mod commands;
 pub mod listen;
+pub mod mcp;
 pub mod registry;
+pub mod stdout;
 pub mod target;
 
 pub use command::{
@@ -41,6 +47,8 @@ pub use command::{
 };
 pub use registry::Registry;
 pub use target::Workspace;
+/// Inputs and outputs are JSON; a layer needs no serde_json of its own.
+pub use serde_json::{json, Value};
 
 /// A registry holding every built-in command.
 pub fn registry() -> Registry {

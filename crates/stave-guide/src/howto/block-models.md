@@ -9,14 +9,14 @@ transfer you can see. It cannot hold memory inside the nonlinearity,
 such as a corner that moves with level or bias that shifts after a
 burst. The fit measures that before you trust it. The models are
 `stave_dsp::learned::block`, the fitting is `stave_measure::identify`,
-and `stave-fit` runs both (DSP.md M3, M4).
+and `stave fit` runs both (DSP.md M3, M4; also an MCP tool, `fit`).
 
 ## From a device
 
 1. **Write the stimulus.**
 
    ```text
-   cargo run --release -p stave-fit -- stimulus capture.wav --reference 0.05
+   stave fit stimulus capture.wav --reference 0.05
    ```
 
    `capture.wav` is about 30 s long, 48 kHz, mono, 32-bit float. It holds
@@ -38,8 +38,8 @@ and `stave-fit` runs both (DSP.md M3, M4).
 3. **Fit.**
 
    ```text
-   cargo run --release -p stave-fit -- fit --stimulus capture.wav \
-       --capture recording.wav -o pedal.json
+   stave fit --stimulus capture.wav \
+       --capture recording.wav --out pedal.json
    ```
 
    The latency comes from `--latency`, if given. Otherwise it comes
@@ -56,7 +56,7 @@ and `stave-fit` runs both (DSP.md M3, M4).
 ## From a stave circuit
 
 ```text
-cargo run --release -p stave-fit -- fit --circuit tube_screamer -o ts.json
+stave fit --circuit tube_screamer --out ts.json
 ```
 
 This fits any R17 deck (`crates/stave-test/spice/<name>.cir`), measured

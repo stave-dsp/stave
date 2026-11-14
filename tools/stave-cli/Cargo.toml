@@ -1,0 +1,24 @@
+[package]
+name = "stave-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The stave tool: every command on the command line (stave <command>), as an MCP server (stave mcp), and the GUI (stave play)"
+publish = false
+
+[[bin]]
+name = "stave"
+path = "src/main.rs"
+# Its rustdoc would land in doc/stave/, the umbrella crate's; the guide
+# and the CLI reference document it.
+doc = false
+
+[dependencies]
+stave-tools.workspace = true
+serde_json = "1"
+
+[lints]
+workspace = true

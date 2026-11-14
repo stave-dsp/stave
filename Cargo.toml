@@ -35,6 +35,7 @@ members = [
 
     "tools/docsite",
     "tools/stave-bench",
+    "tools/stave-cli",
     "tools/stave-fit",
     "tools/stave-play",
     "tools/storybook",

@@ -73,16 +73,18 @@ An author depends on one crate, [`stave`](stave), and imports
   modulation. No file I/O.
 - [`stave_host`] — host any VST3 (or any catalogued stave-dsp stage) as
   an [`Instance`](stave_host::instance::Instance), then drive, measure
-  and validate it. `stave-bench` and `stave-play` are its CLI and GUI
-  (see [the host tools](crate::howto::host_tools)).
+  and validate it.
+- [`stave_tools`] — every capability as a typed command in one registry;
+  the `stave` CLI, its MCP server and the `stave-play` GUI present it
+  (see [the stave tool](crate::howto::stave_tool)).
 - [`stave_test`] — the checks every plugin mounts and the harness that
   drives a plugin in-process (see [testing](crate::concepts::testing)).
 - `stave-model` — protocol models of the plugin ↔ host contracts,
   checked by a small explicit-state model checker and used as oracles
   for real traces (see [verification](crate::concepts::verification)).
 
-The worked example is `examples/tilt`; the tools are `tools/stave-bench`,
-`tools/stave-play`, `tools/storybook` and `tools/docsite` (which builds
+The worked example is `examples/tilt`; the tools are `tools/stave-cli` (the
+`stave` binary), `tools/stave-play`, `tools/storybook` and `tools/docsite` (which builds
 this site). This guide is the
 `stave-guide` crate: Markdown included as module docs, so its links and
 examples are checked with everything else.

@@ -6,7 +6,7 @@
 #   scripts/profile.sh stage triode                 # a stage of crates/stave-dsp/benches/stages.rs
 #   scripts/profile.sh --seconds 30 stage amp-chain
 #   scripts/profile.sh test stave-dsp datasheet primitive_datasheet   # PKG TEST [FILTER]
-#   scripts/profile.sh bench stage:coupler --seconds 10    # stave-bench, any of its arguments
+#   scripts/profile.sh bench stage:coupler --seconds 10    # stave bench, any of its arguments
 #   scripts/profile.sh -- target/release/my-tool --flag    # any command
 #
 #   options (before the target):
@@ -67,9 +67,9 @@ case "$KIND" in
     CMD=("$BIN" --nocapture --test-threads 1 ${3:+"$3"})
     ;;
   bench)
-    cargo build --locked --profile profiling -p stave-bench
+    cargo build --locked --profile profiling -p stave-cli
     NAME="bench-$(basename "${1:-plugin}" | tr -c 'A-Za-z0-9._\n-' _)"
-    CMD=(target/profiling/stave-bench "$@")
+    CMD=(target/profiling/stave bench "$@")
     ;;
   --)
     (($#)) || usage

@@ -3008,11 +3008,7 @@ version = "0.5.0"
 name = "stave-bench"
 version = "0.5.0"
 dependencies = [
- "serde",
- "serde_json",
- "stave-host",
- "stave-measure",
- "thiserror 2.0.18",
+ "stave-tools",
 ]
 
 [[package]]
@@ -3031,6 +3027,14 @@ dependencies = [
 [[package]]
 name = "stave-clap-sys"
 version = "0.5.0"
+
+[[package]]
+name = "stave-cli"
+version = "0.5.0"
+dependencies = [
+ "serde_json",
+ "stave-tools",
+]
 
 [[package]]
 name = "stave-core"
@@ -3075,10 +3079,7 @@ dependencies = [
 name = "stave-fit"
 version = "0.5.0"
 dependencies = [
- "stave-dsp",
- "stave-host",
- "stave-measure",
- "stave-test",
+ "stave-tools",
 ]
 
 [[package]]
@@ -3105,6 +3106,7 @@ dependencies = [
  "stave-telemetry",
  "stave-test",
  "stave-tilt-vst3",
+ "stave-tools",
  "stave-ui",
 ]
 
@@ -3262,8 +3264,10 @@ dependencies = [
  "serde",
  "serde_json",
  "stave-core",
+ "stave-dsp",
  "stave-host",
  "stave-measure",
+ "stave-test",
  "thiserror 2.0.18",
 ]
 

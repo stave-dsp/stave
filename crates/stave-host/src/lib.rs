@@ -1,6 +1,7 @@
 //! stave's plugin host as a library: load VST3 plugins, drive them, and
-//! measure them (through `stave-measure`). `stave-bench` (agents) and
-//! `stave-play` (humans) are thin apps over this.
+//! measure them (through `stave-measure`). `stave-tools` makes each
+//! capability a command; the `stave` CLI and MCP server (agents) and
+//! `stave-play` (humans) present them.
 //!
 //! ```text
 //! plugin/    VST3 hosting → LoadedPlugin

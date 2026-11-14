@@ -232,7 +232,7 @@ tables and symbols):
 ```sh
 scripts/profile.sh stage amp-chain                     # a stage, 10 s (--seconds N)
 scripts/profile.sh test stave-dsp datasheet primitive_datasheet
-scripts/profile.sh bench stage:coupler --seconds 10    # stave-bench, any of its arguments
+scripts/profile.sh bench stage:coupler --seconds 10    # stave bench, any of its arguments
 scripts/profile.sh -- path/to/binary --flag            # any command
 ```
 
@@ -255,7 +255,7 @@ needs `kernel.perf_event_paranoid` at 2 or below and the
 grant. The stave-dsp build container cannot profile, so profile on a
 Mac, a Linux machine you own, or a GitHub runner. A plugin bundle built
 by the bundle scripts has its symbols stripped. Profile a stage
-through `stave-bench stage:NAME`, which builds it in, or build the
+through `stave bench stage:NAME`, which builds it in, or build the
 plugin with `--profile profiling`.
 
 The release perf check is also a clean hot loop of exactly the plugin,
