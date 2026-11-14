@@ -116,7 +116,7 @@ jobs:
       shards: ${{ steps.pick.outputs.shards }}
       total: ${{ steps.pick.outputs.total }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 2 }   # a pull request's merge commit and its base
       - id: pick
         run: |
@@ -154,7 +154,7 @@ jobs:
       matrix:
         shard: ${{ fromJSON(needs.changes.outputs.shards) }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/reference-tools
         with: { ngspice-package: "${{ env.NGSPICE_PACKAGE }}" }
       # Every deck's stamps, as the last run's `stamps` job saved them.
@@ -225,7 +225,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/reference-tools
         with: { ngspice-package: "${{ env.NGSPICE_PACKAGE }}" }
       # The tolerance absorbs print and platform noise, not a real change:
