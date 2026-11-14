@@ -178,7 +178,11 @@ jobs:
     # Every change, before it merges: do the plugins in stave-dsp/stave-plugins
     # still build and lint against it? Not a required check — main may
     # break the plugin API (they pin a release tag) — but a red mark here
-    # says the next bump-framework.sh needs plugin work.
+    # says the next bump-framework.sh needs plugin work. During a planned
+    # break the job builds the stave-plugins branch that follows it, when
+    # there is one (scripts/plugins-ref.sh: a `plugins-branch:` line in
+    # the pull request or commit, a branch of the same name, or
+    # `stave-<next release>`), else stave-plugins' main.
     name: plugins against this change (Linux)
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -190,9 +194,29 @@ jobs:
       - name: What the change affects
         run: scripts/affected.sh --outputs $AFFECTED_ARGS >> "$GITHUB_ENV"
         working-directory: stave
+      # The pull request: this run's, the merge group's (its ref names
+      # it), or a push's squashed commit's "(#N)".
+      - name: Which stave-plugins branch
+        if: env.AFFECTED_SCOPE != 'none'
+        working-directory: stave
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message || github.event.merge_group.head_commit.message }}
+        run: |
+          pr="$PR"
+          [[ -z "$pr" && "$GITHUB_REF" =~ /pr-([0-9]+)- ]] && pr="${BASH_REMATCH[1]}"
+          [[ -z "$pr" && "$HEAD_MESSAGE" =~ \(#([0-9]+)\) ]] && pr="${BASH_REMATCH[1]}"
+          text="$RUNNER_TEMP/change.txt" branch=""
+          printf '%s\n' "$HEAD_MESSAGE" > "$text"
+          if [[ -n "$pr" ]]; then
+            gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json body -q .body >> "$text"
+            branch="$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefName -q .headRefName)"
+          fi
+          scripts/plugins-ref.sh --text "$text" --branch "$branch" | tee -a "$GITHUB_ENV"
       - if: env.AFFECTED_SCOPE != 'none'
         uses: actions/checkout@v4
-        with: { repository: stave-dsp/stave-plugins, path: stave-plugins }
+        with: { repository: stave-dsp/stave-plugins, path: stave-plugins, ref: "${{ env.PLUGINS_REF }}" }
       - if: env.AFFECTED_SCOPE != 'none'
         run: rustup toolchain install
         working-directory: stave-plugins
