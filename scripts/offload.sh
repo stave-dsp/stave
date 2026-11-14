@@ -165,14 +165,7 @@ if ((GC)); then
   exit
 fi
 
-# Send one event (a JSON object) to STAVE_OFFLOAD_EVENTS, in the background,
-# holding none of our descriptors (the slot holder's pipes must close when
-# we close them).
-emit() {
-  [[ -n "${STAVE_OFFLOAD_EVENTS:-}" ]] || return 0
-  { printf '%s\n' "$1" | bash -c "$STAVE_OFFLOAD_EVENTS" > /dev/null 2>&1; } 3>&- 4>&- 5>&- < /dev/null &
-  disown $! 2> /dev/null || true
-}
+. "$LIB/offload-events.sh"
 
 if ((REAP)); then
   HOST="$(resolve "$HOST")"

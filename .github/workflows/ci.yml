@@ -247,6 +247,7 @@ jobs:
       - run: scripts/check-vocabulary.sh
       - run: scripts/check-purity.sh
       - run: scripts/check-golden-sizes.sh
+      - run: bash scripts/test-offload-events.sh
       # The Kani matrix (main-postmerge.yml) is found by this parser: a
       # harness it cannot read fails here, on the change that wrote it.
       - run: scripts/kani.sh --list

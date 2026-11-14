@@ -14,6 +14,7 @@ bash scripts/check-plugin-rules.sh
 bash scripts/check-vocabulary.sh
 bash scripts/check-purity.sh
 bash scripts/check-golden-sizes.sh
+bash scripts/test-offload-events.sh
 if [[ "${1:-}" == affected ]]; then
   python3 scripts/test-affected.py "${2:-HEAD}"
 else
