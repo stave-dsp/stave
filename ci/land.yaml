@@ -24,8 +24,10 @@ instances:
     image: {image: "ctrl:image/session", channel: stable}
     placement: {machine: "ctrl:machine/pc"}
     resources:
-      requests: {cpuMillis: 8000, memoryBytes: 12884901888, diskBytes: 42949672960}
-      limits: {cpuMillis: 8000, memoryBytes: 21474836480, diskBytes: 42949672960, processes: 20000}
+      # The PC's ctrl project has 16 GiB beyond ctrl's own instances: a
+      # ceiling above that is never placed.
+      requests: {cpuMillis: 8000, memoryBytes: 8589934592, diskBytes: 42949672960}
+      limits: {cpuMillis: 8000, memoryBytes: 15032385536, diskBytes: 42949672960, processes: 20000}
     priority: batch
     isolation: {idmap: isolated, nesting: false, privileged: false}
 steps:
