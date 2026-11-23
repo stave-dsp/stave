@@ -1,0 +1,249 @@
+# Landing stave-dsp/stave: what a commit must pass on Linux, then main
+# fast-forwarded to it. A ctrl pipeline (the `land` queue of the
+# bitdepth-audio project, read from this file as it is on main):
+#
+#   ctrl pipeline ci/land.yaml --rev <full commit id> --without land --follow
+#
+# The Linux checks of .github/workflows/ on a push to main, one step each:
+# ci.yml's `rules`, `portable` and `plugins`, ci.yml's MSRV check, and
+# platforms.yml's ubuntu legs of `test`, `clippy` and `validators`. A
+# landing gates everything, as a push to main does there, so
+# scripts/affected.sh does not select. What needs macOS (the test shards,
+# rustdoc.sh, the validators' and auval's jobs, the docs site), Windows,
+# Xvfb (the three X11 window test binaries) or GitHub (Pages deploy) is
+# not here; perf.yml and references.yml are path-filtered and not merge
+# gates there, and main-postmerge.yml runs after a merge.
+#
+# One instance, made for the pipeline and removed after it; its stable
+# name keeps the cache at /cache warm: Cargo's registry, one target
+# directory per step (cargo holds a target directory's lock for a whole
+# build) and the pinned tools of ci/tools.sh under /cache/tools.
+instances:
+  stave-gate-1:
+    kind: container
+    image: {image: "ctrl:image/session", channel: stable}
+    placement: {machine: "ctrl:machine/pc"}
+    resources:
+      requests: {cpuMillis: 8000, memoryBytes: 12884901888, diskBytes: 42949672960}
+      limits: {cpuMillis: 8000, memoryBytes: 21474836480, diskBytes: 42949672960, processes: 20000}
+    priority: batch
+    isolation: {idmap: isolated, nesting: false, privileged: false}
+steps:
+  checkout:
+    instance: stave-gate-1
+    run:
+      program: {program: command, argv: [git, -C, /src/stave, log, "-1", --oneline]}
+      source: {repository: stave-dsp/stave, rev: main, path: /src/stave}
+  # The image's toolchain is rust-toolchain.toml's (1.96.0); the rest is pinned in ci/tools.sh.
+  tools:
+    instance: stave-gate-1
+    needs: [checkout]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, install, alsa, cargo-deny, cargo-machete, rust-msrv, cmake]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools}
+  validator-tools:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, install, clap-validator, vst3-validator]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/tools}
+
+  # ci.yml `rules`: the tree rules and hygiene.
+  file-sizes:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-file-sizes.sh]}, workdir: /src/stave}
+  view-bindings:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-view-bindings.sh]}, workdir: /src/stave}
+  plugin-rules:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-plugin-rules.sh]}, workdir: /src/stave}
+  vocabulary:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-vocabulary.sh]}, workdir: /src/stave}
+  purity:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-purity.sh]}, workdir: /src/stave}
+  golden-sizes:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-golden-sizes.sh]}, workdir: /src/stave}
+  offload-events:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [bash, scripts/test-offload-events.sh]}, workdir: /src/stave}
+  kani-list:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/kani.sh, --list]}, workdir: /src/stave}
+  script-tests:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [python3, -m, unittest, discover, -s, scripts/tests, -v]}, workdir: /src/stave}
+  # Without the repository's secrets: the generic shapes only, as the script does with none set.
+  local-leaks:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-local-leaks.sh]}, workdir: /src/stave}
+  machine-paths:
+    instance: stave-gate-1
+    needs: [checkout]
+    run:
+      program:
+        program: command
+        argv: [bash, -c, "if git grep -nE '/Users/[A-Za-z]|/home/[a-z][a-z0-9_-]*/|[.]claude/worktrees/agent-[[:xdigit:]]+'; then echo 'a machine path is written into the repo (use the config keys, stave.env.example)' >&2; exit 1; fi"]
+      workdir: /src/stave
+  offload-reap:
+    instance: stave-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [scripts/check-offload-reap.sh]}, workdir: /src/stave}
+  deps:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, scripts/hygiene.sh, deps]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools}
+
+  # ci.yml `portable`: the portable crates check on x86_64 Linux, and their loom models.
+  portable:
+    instance: stave-gate-1
+    needs: [checkout]
+    run:
+      program:
+        program: command
+        argv: [cargo, check, --all-targets, --locked, -p, stave-core, -p, stave-dsp, -p, stave-telemetry, -p, stave-measure, -p, stave-macros, -p, stave-ui, -p, stave-raster, -p, stave-face, -p, stave-clap, -p, stave-clap-sys, -p, stave-vst3, -p, stave-vst3-sys, -p, stave-au, -p, stave-au-sys, -p, stave-model]
+      workdir: /src/stave
+      env: {CARGO_TARGET_DIR: /cache/target/stave/portable}
+  loom:
+    instance: stave-gate-1
+    needs: [checkout]
+    run:
+      program: {program: command, argv: [cargo, test, -p, stave-core, -p, stave-telemetry, --test, loom, --release, --locked]}
+      workdir: /src/stave
+      env: {CARGO_TARGET_DIR: /cache/target/stave/loom, RUSTFLAGS: "--cfg loom"}
+
+  # ci.yml `plugins`: stave-plugins built and linted against this commit.
+  plugins:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, ci/plugins.sh]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/plugins}
+
+  # ci.yml `lint`'s MSRV check: the declared rust-version (1.86) holds, here for Linux's targets.
+  msrv:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, --rust, 1.86.0, cargo, check, --all-targets, --locked, --workspace]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/msrv}
+
+  # platforms.yml `test` (ubuntu-latest): every target builds, every test and doctest runs.
+  linux-build:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, cargo, build, --all-targets, --locked, --workspace]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/test}
+  # Without Xvfb in the image, the three binaries that open an X11 window are left out
+  # by name; STAVE_REQUIRE_DISPLAY still fails any other test that would need a display.
+  linux-test:
+    instance: stave-gate-1
+    needs: [linux-build]
+    run:
+      program:
+        program: command
+        argv: [bash, ci/tools.sh, run, cargo, nextest, run, --locked, --profile, ci, --no-tests=pass, --workspace, -E, "not (binary_id(stave-ui-x11::xvfb) | binary_id(stave-clap::gui_window) | binary_id(stave-vst3::view_window))"]
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/test, STAVE_REQUIRE_DISPLAY: "1"}
+  linux-doctest:
+    instance: stave-gate-1
+    needs: [linux-build]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, cargo, test, --doc, --locked, --workspace]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/test}
+
+  # platforms.yml `clippy` (ubuntu-latest): clippy, the standalone's clippy, rustdoc of what only compiles here.
+  linux-clippy:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, cargo, clippy, --all-targets, --no-deps, --locked, --workspace, --, -D, warnings]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/clippy}
+  linux-clippy-standalone:
+    instance: stave-gate-1
+    needs: [linux-clippy]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, cargo, clippy, -p, stave-tilt-vst3, --features, standalone, --all-targets, --no-deps, --locked, --, -D, warnings]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/clippy}
+  linux-rustdoc:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, cargo, doc, --no-deps, --document-private-items, --locked, --workspace]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/doc, RUSTDOCFLAGS: "-D warnings"}
+
+  # platforms.yml `validators` (ubuntu-latest): the release binaries export Linux's entry
+  # points, pass clap-validator and Steinberg's validator, and stave-host opens the bundle.
+  # The two validate-formats.sh runs share target/validate (each clears it): one at a time.
+  validators-build:
+    instance: stave-gate-1
+    needs: [tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, cargo, build, --release, --locked, -p, stave-tilt-vst3, -p, stave-pluck, -p, stave-cli]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/validators}
+  exports:
+    instance: stave-gate-1
+    needs: [validators-build]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, scripts/check-exports.sh]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/validators}
+  clap-validator:
+    instance: stave-gate-1
+    needs: [validators-build, validator-tools]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, scripts/validate-formats.sh, clap]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/validators}
+  vst3-validator:
+    instance: stave-gate-1
+    needs: [clap-validator]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, scripts/validate-formats.sh, vst3]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/validators}
+  host-opens-bundle:
+    instance: stave-gate-1
+    needs: [vst3-validator]
+    run:
+      program: {program: command, argv: [bash, ci/tools.sh, run, /cache/target/stave/validators/release/stave, validate, target/validate/StaveTilt.vst3, --json]}
+      workdir: /src/stave
+      env: {CI_TOOLS: /cache/tools, CARGO_TARGET_DIR: /cache/target/stave/validators}
+
+  land:
+    instance: stave-gate-1
+    needs: [file-sizes, view-bindings, plugin-rules, vocabulary, purity, golden-sizes, offload-events, kani-list, script-tests, local-leaks, machine-paths, offload-reap, deps, portable, loom, plugins, msrv, linux-test, linux-doctest, linux-clippy-standalone, linux-rustdoc, exports, host-opens-bundle]
+    run:
+      program:
+        program: land
+        repository: stave-dsp/stave
+        path: /src/stave
+        # Set by --rev.
+        commit: "0000000000000000000000000000000000000000"
