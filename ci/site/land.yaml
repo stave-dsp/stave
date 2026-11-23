@@ -1,0 +1,43 @@
+# Landing stave-dsp/stave-dsp.github.io (the site): what its commit must
+# pass, then its main fast-forwarded to it. The `land-site` queue of the
+# bitdepth-audio project, whose queue files are read from its home
+# repository (this one) only: so this file lives here, and its one `source`
+# is the site. An entry's revision is a site commit; it is what `checkout`
+# fetches and what `land` lands.
+#
+#   ctrl pipeline ci/site/land.yaml --rev <full site commit> --without land --follow
+#
+# The site's one check, hero.yml's `check` (ubuntu-latest): the hero's code
+# is the stave crate's example at the newest release tag. It reads the tags
+# and that file from GitHub, as the workflow does. Its weekly schedule is
+# not a landing's.
+instances:
+  stave-site-gate-1:
+    kind: container
+    image: {image: "ctrl:image/session", channel: stable}
+    placement: {machine: "ctrl:machine/pc"}
+    resources:
+      requests: {cpuMillis: 1000, memoryBytes: 1073741824, diskBytes: 8589934592}
+      limits: {cpuMillis: 1000, memoryBytes: 2147483648, diskBytes: 8589934592, processes: 1000}
+    priority: batch
+    isolation: {idmap: isolated, nesting: false, privileged: false}
+steps:
+  checkout:
+    instance: stave-site-gate-1
+    run:
+      program: {program: command, argv: [git, -C, /src/site, log, "-1", --oneline]}
+      source: {repository: stave-dsp/stave-dsp.github.io, rev: main, path: /src/site}
+  hero:
+    instance: stave-site-gate-1
+    needs: [checkout]
+    run: {program: {program: command, argv: [python3, scripts/hero.py, --check]}, workdir: /src/site}
+  land:
+    instance: stave-site-gate-1
+    needs: [hero]
+    run:
+      program:
+        program: land
+        repository: stave-dsp/stave-dsp.github.io
+        path: /src/site
+        # Set by --rev.
+        commit: "0000000000000000000000000000000000000000"
